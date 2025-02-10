@@ -1,0 +1,203 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
+     width="800" height="600" viewBox="-400.0 -300.0 800 600">
+<defs>
+<path d="M0,0 L1.0,0.0 L1.5,-0.8660254037844386 L2.3660254037844384,-0.3660254037844386 L2.3660254037844384,0.6339745962155614 L3.3660254037844384,0.6339745962155614 L3.8660254037844384,1.5 L3.0,2.0 L2.1339745962155616,1.5 L1.6339745962155614,2.3660254037844384 L0.6339745962155614,2.3660254037844384 L-0.3660254037844386,2.3660254037844384 L-0.8660254037844386,1.5 L0.0,1.0 Z" id="d0" />
+</defs>
+<g transform="matrix(30.0 0.0 0.0 30.0 -360.0 -150.0)">
+<use xlink:href="#d0" x="0" y="0" fill="rgb(220, 220, 220)" stroke="black" stroke-width="0.1" />
+<text x="1.5" y="1.0" font-size="0.4" text-anchor="middle" fill="black" dominant-baseline="middle">Delta</text>
+<text x="0.5" y="0.3" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">3.0A</text>
+<text x="1.5098076211353315" y="-0.2830127018922193" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">3.1A</text>
+<text x="1.7830127018922193" y="-0.35621778264910703" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">2.0A</text>
+<text x="2.0660254037844386" y="0.1339745962155614" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">2.1A</text>
+<text x="2.8660254037844384" y="0.9339745962155614" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">2.2A</text>
+<text x="3.356217782649107" y="1.2169872981077807" font-size="0.15" text-anchor="middle" fill="red" dominant-baseline="middle">-5.1A</text>
+<text x="3.2830127018922193" y="1.4901923788646685" font-size="0.15" text-anchor="middle" fill="red" dominant-baseline="middle">-5.0A</text>
+<text x="2.7169872981077807" y="1.4901923788646685" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">1.0A</text>
+<text x="1.6241669750802301" y="1.783012701892219" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">1.1A</text>
+<text x="1.1339745962155614" y="2.0660254037844386" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">1.2A</text>
+<text x="0.1339745962155614" y="2.0660254037844386" font-size="0.15" text-anchor="middle" fill="red" dominant-baseline="middle">-3.1A</text>
+<text x="-0.35621778264910703" y="1.7830127018922193" font-size="0.15" text-anchor="middle" fill="red" dominant-baseline="middle">-3.0A</text>
+<text x="-0.2830127018922193" y="1.5098076211353315" font-size="0.15" text-anchor="middle" fill="red" dominant-baseline="middle">-6.1A</text>
+<text x="0.3" y="0.5" font-size="0.15" text-anchor="middle" fill="red" dominant-baseline="middle">-6.0A</text>
+<path d="M2.3660254037844384,0.1339745962155614 L3.6160254037844384,1.0669872981077808" stroke="black" stroke-width="0.02" />
+</g>
+<g transform="matrix(30.0 0.0 0.0 30.0 -210.0 -150.0)">
+<use xlink:href="#d0" x="0" y="0" fill="rgb(255, 191, 191)" stroke="black" stroke-width="0.1" />
+<text x="1.5" y="1.0" font-size="0.4" text-anchor="middle" fill="black" dominant-baseline="middle">Theta</text>
+<text x="0.5" y="0.3" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">3.0A</text>
+<text x="1.5098076211353315" y="-0.2830127018922193" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">3.1A</text>
+<text x="1.7830127018922193" y="-0.35621778264910703" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">2.0A</text>
+<text x="2.0660254037844386" y="0.1339745962155614" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">2.1A</text>
+<text x="2.8660254037844384" y="0.9339745962155614" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">2.2A</text>
+<text x="3.356217782649107" y="1.2169872981077807" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">8.0A</text>
+<text x="3.2830127018922193" y="1.4901923788646685" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">2.0B</text>
+<text x="2.7169872981077807" y="1.4901923788646685" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">2.1B</text>
+<text x="1.6241669750802301" y="1.783012701892219" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">2.2B</text>
+<text x="1.1339745962155614" y="2.0660254037844386" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">0.0A</text>
+<text x="0.1339745962155614" y="2.0660254037844386" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">0.1A</text>
+<text x="-0.35621778264910703" y="1.7830127018922193" font-size="0.15" text-anchor="middle" fill="red" dominant-baseline="middle">-2.2A</text>
+<text x="-0.2830127018922193" y="1.5098076211353315" font-size="0.15" text-anchor="middle" fill="red" dominant-baseline="middle">-2.1A</text>
+<text x="0.3" y="0.5" font-size="0.15" text-anchor="middle" fill="red" dominant-baseline="middle">-2.0A</text>
+<path d="M2.3660254037844384,0.1339745962155614 L-0.4330127018922193,1.25" stroke="black" stroke-width="0.02" />
+<path d="M2.566987298107781,1.75 L3.6160254037844384,1.0669872981077808" stroke="black" stroke-width="0.02" />
+</g>
+<g transform="matrix(30.0 0.0 0.0 30.0 -60.0 -150.0)">
+<use xlink:href="#d0" x="0" y="0" fill="rgb(255, 160, 122)" stroke="black" stroke-width="0.1" />
+<text x="1.5" y="1.0" font-size="0.4" text-anchor="middle" fill="black" dominant-baseline="middle">Lambda</text>
+<text x="0.5" y="0.3" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">3.0A</text>
+<text x="1.5098076211353315" y="-0.2830127018922193" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">3.1A</text>
+<text x="1.7830127018922193" y="-0.35621778264910703" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">2.0A</text>
+<text x="2.0660254037844386" y="0.1339745962155614" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">2.1A</text>
+<text x="2.8660254037844384" y="0.9339745962155614" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">2.2A</text>
+<text x="3.356217782649107" y="1.2169872981077807" font-size="0.15" text-anchor="middle" fill="red" dominant-baseline="middle">-5.1A</text>
+<text x="3.2830127018922193" y="1.4901923788646685" font-size="0.15" text-anchor="middle" fill="red" dominant-baseline="middle">-5.0A</text>
+<text x="2.7169872981077807" y="1.4901923788646685" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">1.0A</text>
+<text x="1.6241669750802301" y="1.783012701892219" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">1.1A</text>
+<text x="1.1339745962155614" y="2.0660254037844386" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">1.2A</text>
+<text x="0.1339745962155614" y="2.0660254037844386" font-size="0.15" text-anchor="middle" fill="red" dominant-baseline="middle">-8.0A</text>
+<text x="-0.35621778264910703" y="1.7830127018922193" font-size="0.15" text-anchor="middle" fill="red" dominant-baseline="middle">-2.2A</text>
+<text x="-0.2830127018922193" y="1.5098076211353315" font-size="0.15" text-anchor="middle" fill="red" dominant-baseline="middle">-2.1A</text>
+<text x="0.3" y="0.5" font-size="0.15" text-anchor="middle" fill="red" dominant-baseline="middle">-2.0A</text>
+<path d="M2.3660254037844384,0.1339745962155614 L3.6160254037844384,1.0669872981077808" stroke="black" stroke-width="0.02" />
+<path d="M-0.4330127018922193,1.25 L0.1339745962155614,2.3660254037844384" stroke="black" stroke-width="0.02" />
+</g>
+<g transform="matrix(30.0 0.0 0.0 30.0 90.0 -150.0)">
+<use xlink:href="#d0" x="0" y="0" fill="rgb(255, 242, 0)" stroke="black" stroke-width="0.1" />
+<text x="1.5" y="1.0" font-size="0.4" text-anchor="middle" fill="black" dominant-baseline="middle">Xi</text>
+<text x="0.5" y="0.3" font-size="0.15" text-anchor="middle" fill="red" dominant-baseline="middle">-1.2A</text>
+<text x="1.5098076211353315" y="-0.2830127018922193" font-size="0.15" text-anchor="middle" fill="red" dominant-baseline="middle">-1.1A</text>
+<text x="1.7830127018922193" y="-0.35621778264910703" font-size="0.15" text-anchor="middle" fill="red" dominant-baseline="middle">-1.0A</text>
+<text x="2.0660254037844386" y="0.1339745962155614" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">5.0A</text>
+<text x="2.8660254037844384" y="0.9339745962155614" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">5.1A</text>
+<text x="3.356217782649107" y="1.2169872981077807" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">8.0A</text>
+<text x="3.2830127018922193" y="1.4901923788646685" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">2.0A</text>
+<text x="2.7169872981077807" y="1.4901923788646685" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">2.1A</text>
+<text x="1.6241669750802301" y="1.783012701892219" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">2.2A</text>
+<text x="1.1339745962155614" y="2.0660254037844386" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">0.0A</text>
+<text x="0.1339745962155614" y="2.0660254037844386" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">0.1A</text>
+<text x="-0.35621778264910703" y="1.7830127018922193" font-size="0.15" text-anchor="middle" fill="red" dominant-baseline="middle">-2.2A</text>
+<text x="-0.2830127018922193" y="1.5098076211353315" font-size="0.15" text-anchor="middle" fill="red" dominant-baseline="middle">-2.1A</text>
+<text x="0.3" y="0.5" font-size="0.15" text-anchor="middle" fill="red" dominant-baseline="middle">-2.0A</text>
+<path d="M2.566987298107781,1.75 L-0.4330127018922193,1.25" stroke="black" stroke-width="0.02" />
+<path d="M2.8660254037844384,0.6339745962155614 L3.6160254037844384,1.0669872981077808" stroke="black" stroke-width="0.02" />
+</g>
+<g transform="matrix(30.0 0.0 0.0 30.0 240.0 -150.0)">
+<use xlink:href="#d0" x="0" y="0" fill="rgb(135, 206, 250)" stroke="black" stroke-width="0.1" />
+<text x="1.5" y="1.0" font-size="0.4" text-anchor="middle" fill="black" dominant-baseline="middle">Pi</text>
+<text x="0.5" y="0.3" font-size="0.15" text-anchor="middle" fill="red" dominant-baseline="middle">-1.2A</text>
+<text x="1.5098076211353315" y="-0.2830127018922193" font-size="0.15" text-anchor="middle" fill="red" dominant-baseline="middle">-1.1A</text>
+<text x="1.7830127018922193" y="-0.35621778264910703" font-size="0.15" text-anchor="middle" fill="red" dominant-baseline="middle">-1.0A</text>
+<text x="2.0660254037844386" y="0.1339745962155614" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">5.0A</text>
+<text x="2.8660254037844384" y="0.9339745962155614" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">5.1A</text>
+<text x="3.356217782649107" y="1.2169872981077807" font-size="0.15" text-anchor="middle" fill="red" dominant-baseline="middle">-5.1A</text>
+<text x="3.2830127018922193" y="1.4901923788646685" font-size="0.15" text-anchor="middle" fill="red" dominant-baseline="middle">-5.0A</text>
+<text x="2.7169872981077807" y="1.4901923788646685" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">1.0A</text>
+<text x="1.6241669750802301" y="1.783012701892219" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">1.1A</text>
+<text x="1.1339745962155614" y="2.0660254037844386" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">1.2A</text>
+<text x="0.1339745962155614" y="2.0660254037844386" font-size="0.15" text-anchor="middle" fill="red" dominant-baseline="middle">-8.0A</text>
+<text x="-0.35621778264910703" y="1.7830127018922193" font-size="0.15" text-anchor="middle" fill="red" dominant-baseline="middle">-2.2A</text>
+<text x="-0.2830127018922193" y="1.5098076211353315" font-size="0.15" text-anchor="middle" fill="red" dominant-baseline="middle">-2.1A</text>
+<text x="0.3" y="0.5" font-size="0.15" text-anchor="middle" fill="red" dominant-baseline="middle">-2.0A</text>
+<path d="M-0.4330127018922193,1.25 L2.8660254037844384,0.6339745962155614" stroke="black" stroke-width="0.02" />
+<path d="M3.6160254037844384,1.0669872981077808 L0.1339745962155614,2.3660254037844384" stroke="black" stroke-width="0.02" />
+</g>
+<g transform="matrix(30.0 0.0 0.0 30.0 -360.0 60.0)">
+<use xlink:href="#d0" x="0" y="0" fill="rgb(245, 245, 220)" stroke="black" stroke-width="0.1" />
+<text x="1.5" y="1.0" font-size="0.4" text-anchor="middle" fill="black" dominant-baseline="middle">Sigma</text>
+<text x="0.5" y="0.3" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">4.2A</text>
+<text x="1.5098076211353315" y="-0.2830127018922193" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">4.3A</text>
+<text x="1.7830127018922193" y="-0.35621778264910703" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">2.0A</text>
+<text x="2.0660254037844386" y="0.1339745962155614" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">2.1A</text>
+<text x="2.8660254037844384" y="0.9339745962155614" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">2.2A</text>
+<text x="3.356217782649107" y="1.2169872981077807" font-size="0.15" text-anchor="middle" fill="red" dominant-baseline="middle">-5.1A</text>
+<text x="3.2830127018922193" y="1.4901923788646685" font-size="0.15" text-anchor="middle" fill="red" dominant-baseline="middle">-5.0A</text>
+<text x="2.7169872981077807" y="1.4901923788646685" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">1.0A</text>
+<text x="1.6241669750802301" y="1.783012701892219" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">1.1A</text>
+<text x="1.1339745962155614" y="2.0660254037844386" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">1.2A</text>
+<text x="0.1339745962155614" y="2.0660254037844386" font-size="0.15" text-anchor="middle" fill="red" dominant-baseline="middle">-3.1A</text>
+<text x="-0.35621778264910703" y="1.7830127018922193" font-size="0.15" text-anchor="middle" fill="red" dominant-baseline="middle">-3.0A</text>
+<text x="-0.2830127018922193" y="1.5098076211353315" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">4.0A</text>
+<text x="0.3" y="0.5" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">4.1A</text>
+<path d="M2.3660254037844384,0.1339745962155614 L3.6160254037844384,1.0669872981077808" stroke="black" stroke-width="0.02" />
+</g>
+<g transform="matrix(30.0 0.0 0.0 30.0 -210.0 60.0)">
+<use xlink:href="#d0" x="0" y="0" fill="rgb(0,   255, 0)" stroke="black" stroke-width="0.1" />
+<text x="1.5" y="1.0" font-size="0.4" text-anchor="middle" fill="black" dominant-baseline="middle">Phi</text>
+<text x="0.5" y="0.3" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">3.0A</text>
+<text x="1.5098076211353315" y="-0.2830127018922193" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">3.1A</text>
+<text x="1.7830127018922193" y="-0.35621778264910703" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">2.0A</text>
+<text x="2.0660254037844386" y="0.1339745962155614" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">2.1A</text>
+<text x="2.8660254037844384" y="0.9339745962155614" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">2.2A</text>
+<text x="3.356217782649107" y="1.2169872981077807" font-size="0.15" text-anchor="middle" fill="red" dominant-baseline="middle">-5.1A</text>
+<text x="3.2830127018922193" y="1.4901923788646685" font-size="0.15" text-anchor="middle" fill="red" dominant-baseline="middle">-5.0A</text>
+<text x="2.7169872981077807" y="1.4901923788646685" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">5.0A</text>
+<text x="1.6241669750802301" y="1.783012701892219" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">5.1A</text>
+<text x="1.1339745962155614" y="2.0660254037844386" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">0.0A</text>
+<text x="0.1339745962155614" y="2.0660254037844386" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">0.1A</text>
+<text x="-0.35621778264910703" y="1.7830127018922193" font-size="0.15" text-anchor="middle" fill="red" dominant-baseline="middle">-2.2A</text>
+<text x="-0.2830127018922193" y="1.5098076211353315" font-size="0.15" text-anchor="middle" fill="red" dominant-baseline="middle">-2.1A</text>
+<text x="0.3" y="0.5" font-size="0.15" text-anchor="middle" fill="red" dominant-baseline="middle">-2.0A</text>
+<path d="M2.3660254037844384,0.1339745962155614 L-0.4330127018922193,1.25" stroke="black" stroke-width="0.02" />
+<path d="M1.8839745962155616,1.9330127018922192 L3.6160254037844384,1.0669872981077808" stroke="black" stroke-width="0.02" />
+</g>
+<g transform="matrix(30.0 0.0 0.0 30.0 -60.0 60.0)">
+<use xlink:href="#d0" x="0" y="0" fill="rgb(0,   255, 255)" stroke="black" stroke-width="0.1" />
+<text x="1.5" y="1.0" font-size="0.4" text-anchor="middle" fill="black" dominant-baseline="middle">Psi</text>
+<text x="0.5" y="0.3" font-size="0.15" text-anchor="middle" fill="red" dominant-baseline="middle">-1.2A</text>
+<text x="1.5098076211353315" y="-0.2830127018922193" font-size="0.15" text-anchor="middle" fill="red" dominant-baseline="middle">-1.1A</text>
+<text x="1.7830127018922193" y="-0.35621778264910703" font-size="0.15" text-anchor="middle" fill="red" dominant-baseline="middle">-1.0A</text>
+<text x="2.0660254037844386" y="0.1339745962155614" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">5.0A</text>
+<text x="2.8660254037844384" y="0.9339745962155614" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">5.1A</text>
+<text x="3.356217782649107" y="1.2169872981077807" font-size="0.15" text-anchor="middle" fill="red" dominant-baseline="middle">-5.1A</text>
+<text x="3.2830127018922193" y="1.4901923788646685" font-size="0.15" text-anchor="middle" fill="red" dominant-baseline="middle">-5.0A</text>
+<text x="2.7169872981077807" y="1.4901923788646685" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">5.0B</text>
+<text x="1.6241669750802301" y="1.783012701892219" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">5.1B</text>
+<text x="1.1339745962155614" y="2.0660254037844386" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">0.0A</text>
+<text x="0.1339745962155614" y="2.0660254037844386" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">0.1A</text>
+<text x="-0.35621778264910703" y="1.7830127018922193" font-size="0.15" text-anchor="middle" fill="red" dominant-baseline="middle">-2.2A</text>
+<text x="-0.2830127018922193" y="1.5098076211353315" font-size="0.15" text-anchor="middle" fill="red" dominant-baseline="middle">-2.1A</text>
+<text x="0.3" y="0.5" font-size="0.15" text-anchor="middle" fill="red" dominant-baseline="middle">-2.0A</text>
+<path d="M-0.4330127018922193,1.25 L2.8660254037844384,0.6339745962155614" stroke="black" stroke-width="0.02" />
+<path d="M1.8839745962155616,1.9330127018922192 L3.6160254037844384,1.0669872981077808" stroke="black" stroke-width="0.02" />
+</g>
+<g transform="matrix(30.0 0.0 0.0 30.0 90.0 60.0)">
+<use xlink:href="#d0" x="0" y="0" fill="rgb(255, 255, 255)" stroke="black" stroke-width="0.1" />
+<text x="1.5" y="1.0" font-size="0.4" text-anchor="middle" fill="black" dominant-baseline="middle">Gamma1</text>
+<text x="0.5" y="0.3" font-size="0.15" text-anchor="middle" fill="red" dominant-baseline="middle">-1.2A</text>
+<text x="1.5098076211353315" y="-0.2830127018922193" font-size="0.15" text-anchor="middle" fill="red" dominant-baseline="middle">-1.1A</text>
+<text x="1.7830127018922193" y="-0.35621778264910703" font-size="0.15" text-anchor="middle" fill="red" dominant-baseline="middle">-1.0A</text>
+<text x="2.0660254037844386" y="0.1339745962155614" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">1.0A</text>
+<text x="2.8660254037844384" y="0.9339745962155614" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">1.1A</text>
+<text x="3.356217782649107" y="1.2169872981077807" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">1.2A</text>
+<text x="3.2830127018922193" y="1.4901923788646685" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">7.0A</text>
+<text x="2.7169872981077807" y="1.4901923788646685" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">7.1A</text>
+<text x="1.6241669750802301" y="1.783012701892219" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">7.2A</text>
+<text x="1.1339745962155614" y="2.0660254037844386" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">7.3A</text>
+<text x="0.1339745962155614" y="2.0660254037844386" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">2.2A</text>
+<text x="-0.35621778264910703" y="1.7830127018922193" font-size="0.15" text-anchor="middle" fill="red" dominant-baseline="middle">-2.2A</text>
+<text x="-0.2830127018922193" y="1.5098076211353315" font-size="0.15" text-anchor="middle" fill="red" dominant-baseline="middle">-2.1A</text>
+<text x="0.3" y="0.5" font-size="0.15" text-anchor="middle" fill="red" dominant-baseline="middle">-2.0A</text>
+<path d="M-0.4330127018922193,1.25 L2.566987298107781,1.75" stroke="black" stroke-width="0.02" />
+</g>
+<g transform="matrix(25.98076211353316 14.999999999999998 -14.999999999999998 25.98076211353316 154.01923788646684 105.0)">
+<use xlink:href="#d0" x="0" y="0" fill="rgb(255, 255, 255)" stroke="black" stroke-width="0.1" />
+<text x="1.5" y="1.0" font-size="0.4" text-anchor="middle" fill="black" dominant-baseline="middle">Gamma2</text>
+<text x="0.5" y="0.3" font-size="0.15" text-anchor="middle" fill="red" dominant-baseline="middle">-7.1A</text>
+<text x="1.5098076211353315" y="-0.2830127018922193" font-size="0.15" text-anchor="middle" fill="red" dominant-baseline="middle">-7.0A</text>
+<text x="1.7830127018922193" y="-0.35621778264910703" font-size="0.15" text-anchor="middle" fill="red" dominant-baseline="middle">-3.1A</text>
+<text x="2.0660254037844386" y="0.1339745962155614" font-size="0.15" text-anchor="middle" fill="red" dominant-baseline="middle">-3.0A</text>
+<text x="2.8660254037844384" y="0.9339745962155614" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">6.0A</text>
+<text x="3.356217782649107" y="1.2169872981077807" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">6.1A</text>
+<text x="3.2830127018922193" y="1.4901923788646685" font-size="0.15" text-anchor="middle" fill="red" dominant-baseline="middle">-4.3A</text>
+<text x="2.7169872981077807" y="1.4901923788646685" font-size="0.15" text-anchor="middle" fill="red" dominant-baseline="middle">-4.2A</text>
+<text x="1.6241669750802301" y="1.783012701892219" font-size="0.15" text-anchor="middle" fill="red" dominant-baseline="middle">-4.1A</text>
+<text x="1.1339745962155614" y="2.0660254037844386" font-size="0.15" text-anchor="middle" fill="red" dominant-baseline="middle">-4.0A</text>
+<text x="0.1339745962155614" y="2.0660254037844386" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">2.0A</text>
+<text x="-0.35621778264910703" y="1.7830127018922193" font-size="0.15" text-anchor="middle" fill="blue" dominant-baseline="middle">2.1A</text>
+<text x="-0.2830127018922193" y="1.5098076211353315" font-size="0.15" text-anchor="middle" fill="red" dominant-baseline="middle">-7.3A</text>
+<text x="0.3" y="0.5" font-size="0.15" text-anchor="middle" fill="red" dominant-baseline="middle">-7.2A</text>
+<path d="M-0.6160254037844386,1.9330127018922192 L0.5,0.0" stroke="black" stroke-width="0.02" />
+</g>
+</svg>
