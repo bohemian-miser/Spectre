@@ -1,0 +1,8 @@
+Metadata-Version: 2.4
+Name: spectre
+Version: 0.1.0
+Summary: Edge and Graph Analysis Toolkit
+Author: bohemian-miser
+License-File: LICENSE
+Requires-Dist: click
+Dynamic: license-file

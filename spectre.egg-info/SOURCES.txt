@@ -1,0 +1,13 @@
+LICENSE
+README.md
+pyproject.toml
+setup.py
+spectre/__init__.py
+spectre/__main__.py
+spectre/cli.py
+spectre.egg-info/PKG-INFO
+spectre.egg-info/SOURCES.txt
+spectre.egg-info/dependency_links.txt
+spectre.egg-info/entry_points.txt
+spectre.egg-info/requires.txt
+spectre.egg-info/top_level.txt
