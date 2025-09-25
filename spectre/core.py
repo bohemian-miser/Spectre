@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from typing import List, Optional, Dict, Iterator
 import re
+import logging
 
 # --- Edge and TileEdges classes ported from notebook ---
 @dataclass(frozen=True, order=True)
@@ -131,6 +132,18 @@ class TileEdges:
     def multiplicity_major(self, multiplicity):
         """multiplicity is a dict from major edge to how many lines go through it"""
         return {e:multiplicity[e.major] for e in create_tile_edges()['Delta'].major_edges() if e.major in multiplicity}
+
+    def make_edge_graph(self, big_edge_graph, allowed_edges=None):
+        """
+        Populate the big_edge_graph with edges from this tile.
+
+        Args:
+            big_edge_graph (dict): The graph to populate.
+            allowed_edges (list, optional): List of allowed edges. Defaults to None.
+        """
+        for edge in self.edges:
+            if allowed_edges is None or edge in allowed_edges:
+                big_edge_graph[edge] = {}
 
 def is_connectable_edge(edge):
    """Check if edge can be connected (has minor=1 or major=8)."""
@@ -313,3 +326,652 @@ def check_combo_valid(edges, combo_selected):
         if int(digit) > max_val:
             return False, f"Digit {digit} at position {i} exceeds max {max_val} for {ALL_TILE_NAMES[i]}."
     return True, f"Combo is valid for edges {edges}. Max options: {max_options}"
+
+
+def analyze_graph(edges, combo_selected):
+    """
+    Perform graph analysis for the given edges and combination selection.
+
+    Args:
+        edges (list): List of selected edges.
+        combo_selected (str): Combination selection string.
+
+    Returns:
+        dict: Analysis results including leaves, circuits, and other components.
+    """
+    # Validate the combination selection
+    is_valid, validation_message = check_combo_valid(edges, combo_selected)
+    if not is_valid:
+        return {"error": validation_message}
+
+    # Generate valid combinations and filter non-crossing ones
+    all_edges = generate_map_of_valid_combinations(edges)
+    non_crossing_options = filter_non_crossing_combinations(all_edges)
+
+    # Extract allowed edges based on the combination
+    allowed_edges = get_edges_from_combo(non_crossing_options, string_to_combo(combo_selected))
+
+    # Filter edges in the graph
+    fg = filter_edges(big_edge_graph, allowed_edges)
+
+    # Find components in the graph
+    components = find_components(fg)
+
+    # Analyze components into leaves, circuits, and others
+    leaves, circuits, others, unique_comps = comps_and_analysis(fg, components)
+
+    # Return the analysis results
+    return {
+        "leaves": leaves,
+        "circuits": circuits,
+        "others": others,
+        "unique_components": unique_comps
+    }
+
+# Set up logging for debugging
+logging.basicConfig(level=logging.DEBUG, filename='debug.log', filemode='w', force=True)
+logger = logging.getLogger(__name__)
+
+def analyze_graph_with_level(edges, combo_selected, level):
+    """
+    Perform graph analysis for the given edges, combination selection, and level.
+
+    Args:
+        edges (list): List of selected edges.
+        combo_selected (str): Combination selection string.
+        level (int): Depth level for analysis.
+
+    Returns:
+        dict: Analysis results including leaves, circuits, and other components.
+    """
+    # Validate the combination selection
+    is_valid, validation_message = check_combo_valid(edges, combo_selected)
+    if not is_valid:
+        logger.debug(f"Validation failed: {validation_message}")
+        return {"error": validation_message}
+
+    # Compute supertiles and edges
+    logger.debug(f"Computing supertiles for edges: {edges}")
+    all_edges = generate_map_of_valid_combinations(edges)
+    logger.debug(f"Generated valid combinations: {all_edges}")
+
+    non_crossing_options = filter_non_crossing_combinations(all_edges)
+    logger.debug(f"Filtered non-crossing combinations: {non_crossing_options}")
+
+    # Extract allowed edges based on the combination
+    allowed_edges = get_edges_from_combo(non_crossing_options, string_to_combo(combo_selected))
+    logger.debug(f"Allowed edges: {allowed_edges}")
+
+    # Filter edges in the graph
+    fg = filter_edges(big_edge_graph, allowed_edges)
+    logger.debug(f"Filtered graph: {fg}")
+
+    # Find components in the graph
+    components = find_components(fg)
+    logger.debug(f"Components: {components}")
+
+    # Analyze components into leaves, circuits, and others
+    leaves, circuits, others, unique_comps = comps_and_analysis(fg, components)
+    logger.debug(f"Leaves: {leaves}, Circuits: {circuits}, Others: {others}, Unique Components: {unique_comps}")
+
+    # Filter results based on the level
+    leaves = [leaf for leaf in leaves if len(leaf) <= level]
+    circuits = [circuit for circuit in circuits if len(circuit) <= level]
+
+    logger.debug(f"Filtered Leaves: {leaves}, Filtered Circuits: {circuits}")
+
+    # Return the analysis results
+    return {
+        "leaves": leaves,
+        "circuits": circuits,
+        "others": others,
+        "unique_components": unique_comps
+    }
+
+# Ensure debug_comps_and_analysis is used globally
+def comps_and_analysis(graph, components):
+    return debug_comps_and_analysis(graph, components)
+
+# Define missing functions and variables
+
+def string_to_combo(combo_selected):
+    """
+    Convert a combination string into a list of integers.
+
+    Args:
+        combo_selected (str): Combination string (e.g., '0100101100').
+
+    Returns:
+        list: List of integers representing the combination.
+    """
+    return [int(digit) for digit in combo_selected]
+
+def get_edges_from_combo(non_crossing_options, combo):
+    """
+    Extract edges from the combination string.
+
+    Args:
+        non_crossing_options (dict): Non-crossing combinations for each tile.
+        combo (list): Combination as a list of integers.
+
+    Returns:
+        list: Allowed edges based on the combination.
+    """
+    allowed_edges = []
+    for tile, index in zip(non_crossing_options.keys(), combo):
+        if index < len(non_crossing_options[tile]):
+            allowed_edges.extend(non_crossing_options[tile][index])
+    return allowed_edges
+
+def filter_edges(graph, edges):
+    """
+    Filter edges in the graph based on the allowed edges.
+
+    Args:
+        graph (dict): The graph to filter.
+        edges (list): List of allowed edges.
+
+    Returns:
+        dict: Filtered graph containing only the allowed edges.
+    """
+    logger.debug(f"Original graph: {graph}")
+    logger.debug(f"Edges to filter: {edges}")
+
+    # Ensure the graph contains the edges to filter
+    filtered_graph = {}
+    for edge in edges:
+        if edge in graph:
+            filtered_graph[edge] = graph[edge]
+
+    logger.debug(f"Filtered graph: {filtered_graph}")
+    return filtered_graph
+
+def find_components(graph):
+    """
+    Find components in the graph.
+
+    Args:
+        graph: The graph to analyze.
+
+    Returns:
+        list: List of components in the graph.
+    """
+    # Placeholder implementation
+    return [[node] for node in graph]
+
+def debug_comps_and_analysis(graph, components):
+    """
+    Debug version of comps_and_analysis to trace intermediate results.
+
+    Args:
+        graph: The graph to analyze.
+        components (list): List of components.
+
+    Returns:
+        tuple: Leaves, circuits, others, and unique components.
+    """
+    logger.debug(f"Graph: {graph}")
+    logger.debug(f"Components: {components}")
+
+    leaves = [comp for comp in components if len(comp) == 1]
+    circuits = [comp for comp in components if len(comp) > 1]
+    others = []
+    unique_comps = list(set(tuple(sorted(comp)) for comp in components))
+
+    logger.debug(f"Leaves: {leaves}")
+    logger.debug(f"Circuits: {circuits}")
+    logger.debug(f"Others: {others}")
+    logger.debug(f"Unique Components: {unique_comps}")
+
+    return leaves, circuits, others, unique_comps
+
+# Replace comps_and_analysis with debug_comps_and_analysis in analyze_graph_with_level
+analyze_graph_with_level.__globals__['comps_and_analysis'] = debug_comps_and_analysis
+
+# Adapted from https://github.com/shrx/spectre/blob/master/spectre.py
+
+import drawsvg as draw
+import numpy as np
+from time import time
+#@title The guts of the algorithms
+# Adapted from https://github.com/shrx/spectre/blob/master/spectre.py
+
+import drawsvg as draw
+import numpy as np
+from time import time
+
+
+#@title Geometry and utilities.
+
+class pt:
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+        self.xy = [x, y]
+
+def midpoint(point1 :pt, point2:pt) -> pt:
+    return pt(
+        (point1.x + point2.x) / 2,
+        (point1.y + point2.y) / 2
+    )
+
+# Affine matrix multiply
+def mul(A, B):
+    return [
+        A[0]*B[0] + A[1]*B[3],
+        A[0]*B[1] + A[1]*B[4],
+        A[0]*B[2] + A[1]*B[5] + A[2],
+
+        A[3]*B[0] + A[4]*B[3],
+        A[3]*B[1] + A[4]*B[4],
+        A[3]*B[2] + A[4]*B[5] + A[5]
+    ]
+
+def parse_matrix_transform(a, b, c, d, e, f):
+    """ Manually create a transformation matrix """
+    return np.array([[a, c, e],
+                  [b, d, f],
+                  [0, 0, 1]])
+
+def invert_transform(M):
+    """Invert 2x3 affine transform matrix"""
+    # Extract 2x2 part
+    a, b, tx = M[0], M[1], M[2]
+    c, d, ty = M[3], M[4], M[5]
+
+    # Calculate determinant
+    det = a*d - b*c
+
+    # Invert 2x2 part
+    a_inv = d/det
+    b_inv = -b/det
+    c_inv = -c/det
+    d_inv = a/det
+
+    # Calculate translation part
+    tx_inv = -(a_inv*tx + b_inv*ty)
+    ty_inv = -(c_inv*tx + d_inv*ty)
+
+    return [a_inv, b_inv, tx_inv, c_inv, d_inv, ty_inv]
+
+
+# Rotation matrix
+def trot(ang):
+    c = np.cos(ang)
+    s = np.sin(ang)
+    return [c, -s, 0, s, c, 0]
+
+# Translation matrix
+def ttrans(tx, ty):
+    return [1, 0, tx, 0, 1, ty]
+
+def transTo(p, q):
+    return ttrans(q.x - p.x, q.y - p.y)
+
+# Matrix * point
+def transPt(M, P):
+    return pt(M[0]*P.x + M[1]*P.y + M[2], M[3]*P.x + M[4]*P.y + M[5])
+
+def get_inset_point(p1, p2, inset=.3):
+   """Get point that's inset from midpoint perpendicular to edge"""
+   mid_x = (p1.x + p2.x)/2
+   mid_y = (p1.y + p2.y)/2
+
+   # Vector along edge
+   dx = p2.x - p1.x
+   dy = p2.y - p1.y
+
+   # Perpendicular vector (rotate 90° counterclockwise)
+   perp_x = -dy
+   perp_y = dx
+
+   # Normalize and scale
+   length = np.sqrt(perp_x**2 + perp_y**2)
+   perp_x = perp_x/length * inset
+   perp_y = perp_y/length * inset
+
+   return (mid_x + perp_x, mid_y + perp_y)
+
+
+
+
+def align_edge(p1: pt, p2: pt, t1: pt, t2: pt):
+    """Calculate affine matrix to transform input points to target points"""
+    # Get vectors between points
+    v1 = pt(p2.x - p1.x, p2.y - p1.y)
+    v2 = pt(t2.x - t1.x, t2.y - t1.y)
+
+    # Calculate rotation angle
+    ang1 = np.arctan2(v1.y, v1.x)
+    ang2 = np.arctan2(v2.y, v2.x)
+    rot_angle = ang2 - ang1
+
+    # Calculate scale
+    len1 = np.sqrt(v1.x**2 + v1.y**2)
+    len2 = np.sqrt(v2.x**2 + v2.y**2)
+    scale = len2/len1 if len1 != 0 else 1
+
+    # Compose transformation:
+    # 1. Translate p1 to origin
+    M = ttrans(-p1.x, -p1.y)
+    # 2. Rotate
+    M = mul(trot(rot_angle), M)
+    # 3. Scale
+    M = mul([scale, 0, 0, 0, scale, 0], M)
+    # 4. Translate to t1
+    M = mul(ttrans(t1.x, t1.y), M)
+
+    return M
+
+def list_to_str(l):
+  return ''.join(str(x) for x in l)
+
+def str_to_array(s):
+  return np.array([int(x) for x in s])
+
+def edge_vec(l):
+  return [1 if x in l else 0 for x in range(9)]
+
+def tails_for_major_edges(major_edge_matrix, s):
+  """ Given a set of """
+  v = np.array(edge_vec(s))
+  return (major_edge_matrix @ v)%2
+
+def set_to_str(ss):
+  l = list(ss)
+  l = sorted(l)
+  return list_to_str(l)
+def str_to_set(sr):
+  return set(str_to_array(sr))
+
+
+
+def pt_distance(p1:pt, p2:pt):
+    return np.sqrt((p1.x - p2.x)**2 + (p1.y - p2.y)**2)
+def euclidean_distance(p1, p2):
+    return pt_distance(pt(*p1), pt(*p2))
+
+def distance(p1, p2):
+    return euclidean_distance(p1,p2)
+# Usefull when debugging with a plot.
+def is_near_focal(point,focal_coords, dist=10):
+    return any(distance(point, fp) <= dist for fp in focal_coords)
+
+def flatten(lst):
+    return [item for sublist in lst for item in sublist]
+num_tiles = 0
+
+IDENTITY = [1, 0, 0, 0, 1, 0]
+
+TILE_NAMES = ["Gamma", "Delta", "Theta", "Lambda", "Xi", "Pi", "Sigma", "Phi", "Psi"]
+
+COLOR_MAP_ORIG = {
+    "Gamma":  "rgb(255, 255, 255)",
+    "Gamma1": "rgb(255, 255, 255)",
+    "Gamma2": "rgb(255, 255, 255)",
+    "Delta":  "rgb(220, 220, 220)",
+    "Theta":  "rgb(255, 191, 191)",
+    "Lambda": "rgb(255, 160, 122)",
+    "Xi":     "rgb(255, 242, 0)",
+    "Pi":     "rgb(135, 206, 250)",
+    "Sigma":  "rgb(245, 245, 220)",
+    "Phi":    "rgb(0,   255, 0)",
+    "Psi":    "rgb(0,   255, 255)"
+}
+
+COLOR_MAP_MYSTICS = {
+    "Gamma":  "rgb(196, 201, 169)",
+    "Gamma1": "rgb(196, 201, 169)",
+    "Gamma2": "rgb(156, 160, 116)",
+    "Delta":  "rgb(247, 252, 248)",
+    "Theta":  "rgb(247, 252, 248)",
+    "Lambda": "rgb(247, 252, 248)",
+    "Xi":     "rgb(247, 252, 248)",
+    "Pi":     "rgb(247, 252, 248)",
+    "Sigma":  "rgb(247, 252, 248)",
+    "Phi":    "rgb(247, 252, 248)",
+    "Psi":    "rgb(247, 252, 248)"
+}
+
+COLOR_MAP = COLOR_MAP_ORIG
+
+SPECTRE_POINTS = [
+    pt(0,                0),
+    pt(1.0,              0.0),
+    pt(1.5,              -np.sqrt(3)/2),
+    pt(1.5+np.sqrt(3)/2, 0.5-np.sqrt(3)/2),
+    pt(1.5+np.sqrt(3)/2, 1.5-np.sqrt(3)/2),
+    pt(2.5+np.sqrt(3)/2, 1.5-np.sqrt(3)/2),
+    pt(3+np.sqrt(3)/2,   1.5),
+    pt(3.0,              2.0),
+    pt(3-np.sqrt(3)/2,   1.5),
+    pt(2.5-np.sqrt(3)/2, 1.5+np.sqrt(3)/2),
+    pt(1.5-np.sqrt(3)/2, 1.5+np.sqrt(3)/2),
+    pt(0.5-np.sqrt(3)/2, 1.5+np.sqrt(3)/2),
+    pt(-np.sqrt(3)/2,    1.5),
+    pt(0.0,              1.0)
+]
+
+SPECTRE_SHAPE = draw.Lines(*flatten([p.xy for p in SPECTRE_POINTS]), close=True)
+
+Centerpoint = pt(1.5, 1.0)
+def drawPolygon(drawing, T, label, functions=None):
+    """
+    Draw a polygon with transformation and accepts a list of drawing functions
+
+    Args:
+        drawing: The drawing object to append to
+        T: Transformation matrix
+        label: The tile label
+        functions: List of functions that each accept (group, label) as arguments
+    """
+    group = draw.Group(
+        transform=f"matrix({T[0]} {T[3]} {T[1]} {T[4]} {T[2]} {T[5]})"
+    )
+
+    # Apply each drawing function
+    if functions:
+        for func in functions:
+            func(group, label, T)
+
+    drawing.append(group)
+
+# Then define the individual drawing functions:
+def draw_base(group, label, _):
+    group.append(draw.Use(
+        SPECTRE_SHAPE,
+        0, 0,
+        fill=COLOR_MAP[label],
+        stroke="black",
+        stroke_width=0.1))
+
+def draw_center_text(group, label, _):
+    group.append(draw.Text(
+        label,
+        .4,
+        1.5, 1.0,
+        text_anchor="middle",
+        fill="black",
+        dominant_baseline="middle"
+    ))
+
+def draw_edge_numbers(group, label, _):
+    edge_labels = get_edge_labels(label)
+    for i in range(len(SPECTRE_POINTS)):
+        p1 = SPECTRE_POINTS[i]
+        p2 = SPECTRE_POINTS[(i + 1) % len(SPECTRE_POINTS)]
+        label_x, label_y = get_inset_point(p1, p2)
+        elab = str(edge_labels[i])
+        group.append(draw.Text(
+            elab,
+            0.15, # .22
+            label_x, label_y,
+            text_anchor="middle",
+            fill="red" if '-' in elab else "blue",
+            dominant_baseline="middle"
+        ))
+
+def check_edge_pair_conditions(pair, minor_edge_selector=1):
+    """Check if edge pair meets the minor edge or major 8 conditions."""
+    return (
+        is_connectable_edge(pair[0]) and is_connectable_edge(pair[1])
+      )
+
+def is_connectable_edge(edge):
+   """Check if edge can be connected (has minor=1 or major=8)."""
+   return edge.minor == 1 or edge.major == 8
+
+def make_edge_graph(big_edge_graph, T, face, allowed_edges=None):
+    """Create graph edges for a tile, similar to drawPolygon. TODO prefilter for allowed_edges"""
+
+    # Get transformed points
+    transformed_points = [transPt(T, p) for p in SPECTRE_POINTS]
+
+    # Add edges using edge labels
+    edges = get_edge_labels(face)
+    face_point = transPt(T, pt(1.5,1))
+
+    face_label = f"{face}:[{round(face_point.x*10,3)},{round(face_point.y*10,3)}]"
+
+    for i in range(len(SPECTRE_POINTS)):
+        pA = transformed_points[i]
+        pAuse = pA
+        if edges[i].major != 0:
+          pA2 = transformed_points[(i+1) % len(SPECTRE_POINTS)]
+          pAuse = midpoint(pA,pA2)
+        p1_key = (round(pAuse.x*10,3), round(pAuse.y*10,3))
+        for i2 in range(len(SPECTRE_POINTS)):
+          if i2 <= i:
+            continue
+
+          edge_pair = (edges[i], edges[i2])
+          # Filter the edge pair before adding
+          # This filters for only .1's except 8's which only have 1 edge.
+          if check_edge_pair_conditions(edge_pair):
+            pB = transformed_points[i2]
+            pBuse = pB
+            if edges[i2].major != 0:
+              pB2 = transformed_points[(i2+1) % len(SPECTRE_POINTS)]
+              pBuse = midpoint(pB,pB2)
+            p2_key = (round(pBuse.x*10,3), round(pBuse.y*10,3))
+            big_edge_graph.setdefault(p1_key, {}).setdefault(p2_key, {}).setdefault(face_label, []).append(edge_pair)
+
+class Tile:
+    def __init__(self, pts, label):
+        """
+        pts: list of Tile coordinate points
+        label: Tile type used for coloring
+        """
+        self.quad = [pts[3], pts[5], pts[7], pts[11]]
+        self.label = label
+
+    def draw(self, drawing, tile_transformation=IDENTITY, draw_funcs=None):
+        global num_tiles
+        num_tiles += 1
+        return drawPolygon(drawing, tile_transformation, self.label, draw_funcs)
+
+    def make_edge_graph(self, big_edge_graph, tile_transformation=IDENTITY, allowed_edges=None):
+        make_edge_graph(big_edge_graph, tile_transformation, self.label, allowed_edges=allowed_edges)
+
+class MetaTile:
+    def __init__(self, geometries=[], quad=[]):
+        """
+        geometries: list of pairs of (Meta)Tiles and their transformations
+        quad: MetaTile quad points
+        """
+        self.geometries = geometries
+        self.quad = quad
+
+    def draw(self, drawing, metatile_transformation=IDENTITY,draw_funcs=None):
+        """
+        recursively expand MetaTiles down to Tiles and draw those
+        """
+        # TODO: parallelize?
+        [ shape.draw(drawing, mul(metatile_transformation, shape_transformation), draw_funcs) for shape, shape_transformation in self.geometries ]
+
+    def make_edge_graph(self, big_edge_graph, metatile_transformation=IDENTITY,allowed_edges=None):
+        for shape, shape_transformation in self.geometries:
+            shape.make_edge_graph(big_edge_graph, mul(metatile_transformation, shape_transformation), allowed_edges=allowed_edges)
+
+def draw_shape(shape_data):
+    drawing, metatile_transformation, shape, shape_transformation = shape_data
+    return shape.draw(drawing, mul(metatile_transformation, shape_transformation))
+
+def buildSpectreBase():
+    spectre_base_cluster = { label: Tile(SPECTRE_POINTS, label) for label in TILE_NAMES if label != "Gamma" }
+    # special rule for Gamma
+    mystic = MetaTile(
+        [
+            [Tile(SPECTRE_POINTS, "Gamma1"), IDENTITY],
+            [Tile(SPECTRE_POINTS, "Gamma2"), mul(ttrans(SPECTRE_POINTS[8].x, SPECTRE_POINTS[8].y), trot(np.pi/6))]
+        ],
+        [SPECTRE_POINTS[3], SPECTRE_POINTS[5], SPECTRE_POINTS[7], SPECTRE_POINTS[11]]
+    )
+    spectre_base_cluster["Gamma"] = mystic
+
+    return spectre_base_cluster
+
+# This is where the magic happens.
+def buildSupertiles(tileSystem):
+    """
+    iteratively build on current system of tiles
+    tileSystem = current system of tiles, initially built with buildSpectreBase()
+    """
+
+    # First, use any of the nine-unit tiles in tileSystem to obtain
+    # a list of transformation matrices for placing tiles within
+    # supertiles.
+    quad = tileSystem["Delta"].quad
+    R = [-1, 0, 0, 0, 1, 0]
+
+    """
+    [rotation angle, starting quad point, target quad point]
+    """
+    transformation_rules = [
+        [60, 3, 1], [0, 2, 0], [60, 3, 1], [60, 3, 1],
+        [0, 2, 0], [60, 3, 1], [-120, 3, 3]
+    ]
+
+    transformations = [IDENTITY]
+    total_angle = 0
+    rotation = IDENTITY
+    transformed_quad = list(quad)
+
+    for _angle, _from, _to in transformation_rules:
+        if(_angle != 0):
+            total_angle += _angle
+            rotation = trot(np.deg2rad(total_angle))
+            transformed_quad = [ transPt(rotation, quad_pt) for quad_pt in quad ]
+
+        ttt = transTo(
+            transformed_quad[_to],
+            transPt(transformations[-1], quad[_from])
+        )
+        transformations.append(mul(ttt, rotation))
+
+    transformations = [ mul(R, transformation) for transformation in transformations ]
+
+    # Now build the actual supertiles, labelling appropriately.
+    super_rules = {
+        "Gamma":  ["Pi",  "Delta", None,  "Theta", "Sigma", "Xi",  "Phi",    "Gamma"],
+        "Delta":  ["Xi",  "Delta", "Xi",  "Phi",   "Sigma", "Pi",  "Phi",    "Gamma"],
+        "Theta":  ["Psi", "Delta", "Pi",  "Phi",   "Sigma", "Pi",  "Phi",    "Gamma"],
+        "Lambda": ["Psi", "Delta", "Xi",  "Phi",   "Sigma", "Pi",  "Phi",    "Gamma"],
+        "Xi":     ["Psi", "Delta", "Pi",  "Phi",   "Sigma", "Psi", "Phi",    "Gamma"],
+        "Pi":     ["Psi", "Delta", "Xi",  "Phi",   "Sigma", "Psi", "Phi",    "Gamma"],
+        "Sigma":  ["Xi",  "Delta", "Xi",  "Phi",   "Sigma", "Pi",  "Lambda", "Gamma"],
+        "Phi":    ["Psi", "Delta", "Psi", "Phi",   "Sigma", "Pi",  "Phi",    "Gamma"],
+        "Psi":    ["Psi", "Delta", "Psi", "Phi",   "Sigma", "Psi", "Phi",    "Gamma"]
+    }
+    super_quad = [
+        transPt(transformations[6], quad[2]),
+        transPt(transformations[5], quad[1]),
+        transPt(transformations[3], quad[2]),
+        transPt(transformations[0], quad[1])
+    ]
+
+    return {
+        label: MetaTile(
+            [ [tileSystem[substitution], transformation] for substitution, transformation in zip(substitutions, transformations) if substitution ],
+            super_quad
+        ) for label, substitutions in super_rules.items() }

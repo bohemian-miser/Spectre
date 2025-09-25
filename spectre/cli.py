@@ -71,5 +71,35 @@ def generate_template(edges, combo_selected, out):
 def graph_stats(edges, combo_selected, depth):
     click.echo(f"Graph stats for {edges} {combo_selected} at depth {depth}")
 
+@cli.command('analyze-graph')
+@click.argument('edges')
+@click.argument('combo_selected')
+def analyze_graph_command(edges, combo_selected):
+    """
+    Perform graph analysis for the given edges and combination selection.
+
+    Args:
+        edges (str): Selected edges (e.g., '023678').
+        combo_selected (str): Combination selection string (e.g., '0100101100').
+    """
+    from .core import analyze_graph, parse_edges
+
+    try:
+        edges_list = parse_edges(edges)
+    except ValueError as e:
+        click.secho(f"Error: {e}", fg='red')
+        return
+
+    result = analyze_graph(edges_list, combo_selected)
+
+    if "error" in result:
+        click.secho(result["error"], fg='red')
+    else:
+        click.secho("Graph Analysis Results:", fg='green')
+        click.echo(f"Leaves: {result['leaves']}")
+        click.echo(f"Circuits: {result['circuits']}")
+        click.echo(f"Others: {result['others']}")
+        click.echo(f"Unique Components: {result['unique_components']}")
+
 if __name__ == '__main__':
     cli()
