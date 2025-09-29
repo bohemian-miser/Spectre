@@ -15,7 +15,7 @@ class Shape
 		if( !labels || labels.length === 0 ) return;
 		// draw labels at midpoints of consecutive pts
 		textAlign(CENTER, CENTER);
-		fill(0xff);
+		fill(0x9f);
 		noStroke();
 		// use original vertex list if available (CurvyShape stores `origPts`)
 		const basePts = (this.origPts && this.origPts.length) ? this.origPts : this.pts;
@@ -23,22 +23,28 @@ class Shape
 			const a = basePts[i];
 			const b = basePts[(i+1) % basePts.length];
 			const ma = transPt( S, pt( (a.x + b.x)/2, (a.y + b.y)/2 ) );
-			// compute perpendicular inward offset: use vector from centroid to midpoint
+			// compute perpendicular inward offset along the edge normal (screen space)
 			const centroid = (() => {
 				let sx=0, sy=0; for(const p of basePts){ sx+=p.x; sy+=p.y; } return pt(sx/basePts.length, sy/basePts.length);
 			})();
 			const c_world = transPt( S, centroid );
-			const vx = ma.x - c_world.x;
-			const vy = ma.y - c_world.y;
-			const mag = Math.sqrt(vx*vx + vy*vy) || 1;
-			// desired inset in screen pixels (fixed on-screen offset)
-			const DESIRED_INSET_PX = 0.3;
+			const a_world = transPt( S, a );
+			const b_world = transPt( S, b );
+			const ex = b_world.x - a_world.x;
+			const ey = b_world.y - a_world.y;
+			// perpendicular (edge normal)
+			let nx_e = -ey;
+			let ny_e = ex;
+			// ensure normal points inward toward centroid (ma -> centroid)
+			const dot = nx_e * (c_world.x - ma.x) + ny_e * (c_world.y - ma.y);
+			if (dot < 0) { nx_e = -nx_e; ny_e = -ny_e; }
+			const nmag = Math.sqrt(nx_e*nx_e + ny_e*ny_e) || 1;
+			const DESIRED_INSET_PX = 0;
 			const inset = DESIRED_INSET_PX;
-			const nx = (vx / mag) * inset;
-			const ny = (vy / mag) * inset;
-			// move label slightly inward toward the centroid (invert nx/ny)
-			const px = ma.x - nx;
-			const py = ma.y - ny;
+			const ox = (nx_e / nmag) * inset;
+			const oy = (ny_e / nmag) * inset;
+			const px = ma.x + ox;
+			const py = ma.y + oy;
 			const lab = labels[i] || '';
 			// set text size in screen pixels (fixed)
 			const DESIRED_LABEL_PX = 2;
