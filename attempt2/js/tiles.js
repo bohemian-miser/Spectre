@@ -7,6 +7,49 @@ class Shape
 		this.label = label;
 	}
 
+	// draw edge labels when requested
+	_drawEdgeLabels( S ) {
+		if( typeof showEdgeLabels === 'undefined' || !showEdgeLabels ) return;
+		if( typeof unique_edge_labels === 'undefined' ) return;
+		const labels = unique_edge_labels[this.label];
+		if( !labels || labels.length === 0 ) return;
+		// draw labels at midpoints of consecutive pts
+		textAlign(CENTER, CENTER);
+		fill(0);
+		noStroke();
+		// use original vertex list if available (CurvyShape stores `origPts`)
+		const basePts = (this.origPts && this.origPts.length) ? this.origPts : this.pts;
+		for( let i = 0; i < basePts.length; ++i ) {
+			const a = basePts[i];
+			const b = basePts[(i+1) % basePts.length];
+			const ma = transPt( S, pt( (a.x + b.x)/2, (a.y + b.y)/2 ) );
+			// compute perpendicular inward offset: use vector from centroid to midpoint
+			const centroid = (() => {
+				let sx=0, sy=0; for(const p of basePts){ sx+=p.x; sy+=p.y; } return pt(sx/basePts.length, sy/basePts.length);
+			})();
+			const c_world = transPt( S, centroid );
+			const vx = ma.x - c_world.x;
+			const vy = ma.y - c_world.y;
+			const mag = Math.sqrt(vx*vx + vy*vy) || 1;
+			// desired inset in screen pixels (fixed on-screen offset)
+			const DESIRED_INSET_PX = 6;
+			const inset = DESIRED_INSET_PX;
+			const nx = (vx / mag) * inset;
+			const ny = (vy / mag) * inset;
+			const px = ma.x + nx;
+			const py = ma.y + ny;
+			const lab = labels[i] || '';
+			// set text size in screen pixels (fixed)
+			const DESIRED_LABEL_PX = 1;
+			const ts = DESIRED_LABEL_PX;
+			push();
+			translate( px, py );
+			textSize( ts );
+			text( lab, 0, 0 );
+			pop();
+		}
+	}
+
 	draw( S )
 	{
 		drawPolygon( this.pts, S, colmap[this.label], [0,0,0], 0.1 );
@@ -23,6 +66,14 @@ class Shape
 				endShape();
 			}
 		}
+
+		// draw edge labels if requested
+		if( typeof this._drawEdgeLabels === 'function' ) this._drawEdgeLabels( S );
+	}
+
+	// hook into draw to render labels
+	_drawHook( S ) {
+		this._drawEdgeLabels( S );
 	}
 
 	streamSVG( S, stream )
@@ -51,6 +102,8 @@ class CurvyShape
 	{
 		this.quad = quad;
 		this.label = label;
+		// preserve original vertex list (useful for label placement on curved shapes)
+		this.origPts = pts.slice();
 
 		let blah = true;
 
@@ -154,6 +207,13 @@ class Meta
 					vertex( p.x, p.y );
 				}
 				endShape();
+			}
+		}
+
+		// if composite children have edge labels, draw them too
+		for( let g of this.geoms ) {
+			if( g.geom && typeof g.geom._drawEdgeLabels === 'function' ) {
+				g.geom._drawEdgeLabels( mul( S, g.xform ) );
 			}
 		}
 	}

@@ -2,6 +2,8 @@ let to_screen = [20, 0, 0, 0, -20, 0];
 let lw_scale = 1;
 
 let sys;
+// UI flags
+let showEdgeLabels = false;
 
 let scale_centre;
 let scale_start;
@@ -127,16 +129,6 @@ function drawPolygon( shape, T, f, s, w )
 	endShape( CLOSE );
 }
 
-function isButtonActive( but )
-{
-	return false;
-}
-
-function setButtonActive( but, b )
-{
-	// no-op: translate/scale buttons removed
-}
-
 function setup() {
 	createCanvas( windowWidth, windowHeight );
 
@@ -201,15 +193,23 @@ function setup() {
 	tile_sel.changed( loop );
 
 	// --- Thumbnail palette: one miniature tile of each flavour for drawing overlays
+	// thumbnail sizing constants (must be defined before paletteDiv uses them)
+	const THUMB_MULT = 3; // thumbnails 3x larger
+	const thumbSizeBase = 64;
+	const thumbSize = thumbSizeBase * THUMB_MULT;
+	const thumbScale = 14 * THUMB_MULT; // scale factor for thumbnail
+	// --- Thumbnail palette: one miniature tile of each flavour for drawing overlays
 	paletteDiv = createDiv('');
 	// style as absolute container; actual position set by repositionPalette()
 	paletteDiv.style('position','absolute');
-	paletteDiv.style('display','flex');
+	// use CSS grid so we have a fixed 5-column layout (2 rows for 10 thumbnails)
+	paletteDiv.style('display','grid');
+	paletteDiv.style('grid-template-columns', `repeat(5, ${thumbSize}px)`);
+	paletteDiv.style('grid-auto-rows', `${thumbSize}px`);
 	paletteDiv.style('gap','8px');
-	paletteDiv.style('align-items','center');
-	// allow horizontal scroll if thumbnails overflow
+	// allow horizontal scroll if thumbnails overflow; allow wrapping into rows
 	paletteDiv.style('overflow-x','auto');
-	paletteDiv.style('white-space','nowrap');
+	paletteDiv.style('white-space','normal');
 	paletteDiv.elt.style.padding = '4px';
 
 	// overlays: stored per-label as array of strokes (stroke = array of tile-local points)
@@ -318,8 +318,6 @@ function setup() {
 		return out;
 	}
 
-	const thumbSize = 64;
-	const thumbScale = 14; // scale factor for thumbnail
 	// miniCanvases is hoisted
 	const activeStroke = { label: null, points: null, canvas: null };
 
@@ -330,6 +328,11 @@ function setup() {
 		el.parent(paletteDiv);
 		el.elt.style.border = '1px solid #888';
 		el.elt.style.cursor = 'crosshair';
+		// ensure the canvas fills the grid cell exactly
+		el.elt.style.margin = '0';
+		el.elt.style.boxSizing = 'border-box';
+		el.elt.style.width = thumbSize + 'px';
+		el.elt.style.height = thumbSize + 'px';
 		const ctx = el.elt.getContext('2d');
 		// compute thumbnail transform: center + scale (flip y)
 		// center the shape's centroid in the thumbnail
@@ -405,7 +408,9 @@ function setup() {
 	}
 
 	// build thumbnails for each flavour (include Gamma1, Gamma2, then all other names except the composite 'Gamma')
+	// ensure exactly 10 thumbnails: Gamma1, Gamma2, then the 8 named tiles
 	miniNames = ['Gamma1','Gamma2'].concat(tile_names.filter(n => n !== 'Gamma'));
+	if (miniNames.length > 10) miniNames = miniNames.slice(0,10);
 	for( let name of miniNames ) {
 		makeThumbnail(name);
 		if( !overlays[name] ) overlays[name] = [];
@@ -439,13 +444,16 @@ function setup() {
 	// initial thumbnail refresh to match dropdown on load
 	refreshThumbnails();
 
-	// center visible thumbnails if they fit, otherwise allow scroll
+	// center visible thumbnails into two rows of 5 columns if they fit
 	try {
-		const totalWidth = miniNames.length * (thumbSize + 8);
+		const cols = 5;
+		const totalWidth = cols * (thumbSize + 8);
 		if( totalWidth + 40 < windowWidth ) {
 			const left = Math.floor((windowWidth - totalWidth)/2);
 			paletteDiv.position(left, 5);
 		} else {
+			const minLeft = 140;
+			paletteDiv.position(minLeft, 5);
 			// ensure first thumbnails visible
 			paletteDiv.elt.scrollLeft = 0;
 		}
@@ -453,14 +461,19 @@ function setup() {
 
 	// reposition palette to avoid overlapping left controls
 	function repositionPalette() {
-		const gap = 8;
-		const totalWidth = miniNames.length * (thumbSize + gap);
+		const gap = 6;
+		const cols = 5;
+		const totalWidth = cols * (thumbSize + gap);
 		// center across the top
-	const minLeft = 140; // avoid left controls
-	const left = (totalWidth + 40 < windowWidth) ? Math.floor((windowWidth - totalWidth)/2) : minLeft;
-	paletteDiv.position( left, 5 );
+		const minLeft = 140; // avoid left controls
+		const left = (totalWidth + 40 < windowWidth) ? Math.floor((windowWidth - totalWidth)/2) : minLeft;
+			paletteDiv.position( left, 5 );
+			paletteDiv.style('width', `${totalWidth}px`);
+			// reserve two rows of thumbnail height for layout
+			paletteDiv.style('height', `${(thumbSize * 2) + (gap)}px`);
 		paletteDiv.style('z-index', '1000');
-		customDiv.position( left, 5 + thumbSize + 12 );
+		// position custom div under two rows of thumbnails
+		customDiv.position( left, 5 + (thumbSize * 2) + 16 );
 		customDiv.style('z-index', '1000');
 	}
 
@@ -549,6 +562,16 @@ function setup() {
 		refreshThumbnails();
 	} );
 
+	// Checkbox: show edge labels
+	const lbl_check = createCheckbox('Show Edge Labels', false);
+	lbl_check.position( 10, 210 );
+	lbl_check.changed( function() {
+		showEdgeLabels = lbl_check.checked();
+		loop();
+	} );
+
+	// ...existing code...
+
 	// Pan/zoom controls removed: drag to pan and scroll to zoom
 	
 	let save_button = createButton( "Save PNG" );
@@ -618,6 +641,7 @@ function draw()
 		colmap = cm;
 	}
 
+	// draw the currently selected tile only
 	sys[tile_sel.value()].draw( ident );
 
 	pop();
