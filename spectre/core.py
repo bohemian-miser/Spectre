@@ -384,6 +384,13 @@ def analyze_graph_with_level(edges, combo_selected, level):
     Returns:
         dict: Analysis results including leaves, circuits, and other components.
     """
+    # Initialize big_edge_graph
+    big_edge_graph = {}
+
+    # Populate big_edge_graph with edges
+    for tile_name, tile_edges in create_tile_edges().items():
+        tile_edges.make_edge_graph(big_edge_graph)
+
     # Validate the combination selection
     is_valid, validation_message = check_combo_valid(edges, combo_selected)
     if not is_valid:
@@ -855,6 +862,7 @@ def make_edge_graph(big_edge_graph, T, face, allowed_edges=None):
               pBuse = midpoint(pB,pB2)
             p2_key = (round(pBuse.x*10,3), round(pBuse.y*10,3))
             big_edge_graph.setdefault(p1_key, {}).setdefault(p2_key, {}).setdefault(face_label, []).append(edge_pair)
+            logger.debug(f"Adding edge pair {edge_pair} between {p1_key} and {p2_key}")
 
 class Tile:
     def __init__(self, pts, label):

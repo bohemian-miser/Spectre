@@ -1,3 +1,5 @@
+// js/app.js
+
 // Global variables
 let sys, palette_sys;
 let to_screen = [20, 0, 0, 0, -20, 0];
@@ -252,4 +254,3 @@ function mouseWheel(event) {
     loop();
     return false;
 }
-
