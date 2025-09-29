@@ -15,7 +15,7 @@ class Shape
 		if( !labels || labels.length === 0 ) return;
 		// draw labels at midpoints of consecutive pts
 		textAlign(CENTER, CENTER);
-		fill(0);
+		fill(0xff);
 		noStroke();
 		// use original vertex list if available (CurvyShape stores `origPts`)
 		const basePts = (this.origPts && this.origPts.length) ? this.origPts : this.pts;
@@ -32,18 +32,21 @@ class Shape
 			const vy = ma.y - c_world.y;
 			const mag = Math.sqrt(vx*vx + vy*vy) || 1;
 			// desired inset in screen pixels (fixed on-screen offset)
-			const DESIRED_INSET_PX = 6;
+			const DESIRED_INSET_PX = 0.3;
 			const inset = DESIRED_INSET_PX;
 			const nx = (vx / mag) * inset;
 			const ny = (vy / mag) * inset;
-			const px = ma.x + nx;
-			const py = ma.y + ny;
+			// move label slightly inward toward the centroid (invert nx/ny)
+			const px = ma.x - nx;
+			const py = ma.y - ny;
 			const lab = labels[i] || '';
 			// set text size in screen pixels (fixed)
-			const DESIRED_LABEL_PX = 1;
+			const DESIRED_LABEL_PX = 2;
 			const ts = DESIRED_LABEL_PX;
 			push();
-			translate( px, py );
+            translate(px, py);
+            scale(0.1);
+            scale(1, -1);
 			textSize( ts );
 			text( lab, 0, 0 );
 			pop();
