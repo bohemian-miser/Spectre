@@ -253,6 +253,59 @@ function setup() {
 				ctx.stroke();
 			}
 		}
+
+		// draw edge labels on thumbnails when requested
+		try {
+			if (typeof showEdgeLabels !== 'undefined' && showEdgeLabels && typeof unique_edge_labels !== 'undefined') {
+				const labList = unique_edge_labels[labelForFill];
+				if (labList && labList.length) {
+					// map leading char to colors (same palette as main view)
+					const leadColors = {
+						'-': 'rgb(180,30,30)', '0': 'rgb(31,119,180)', '1': 'rgb(255,127,14)',
+						'2': 'rgb(44,160,44)', '3': 'rgb(214,39,40)', '4': 'rgb(148,103,189)',
+						'5': 'rgb(140,86,75)', '6': 'rgb(227,119,194)', '7': 'rgb(127,127,127)',
+						'8': 'rgb(188,189,34)', '9': 'rgb(23,190,207)'
+					};
+					// compute centroid in screen space
+					let sx=0, sy=0, sc=0;
+					for (const p of (geom.pts || [])) { const tp = transPt(S, p); sx += tp.x; sy += tp.y; sc++; }
+					const centroid = sc ? { x: sx/sc, y: sy/sc } : { x:0, y:0 };
+					const pts = geom.pts || [];
+					const n = pts.length;
+					const k = labList.length;
+					const step = Math.max(1, Math.floor(n / k));
+					const fontPx = Math.max(8, Math.floor(10 * (thumbSize / 192))); // scale font with thumbSize
+					ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+					ctx.lineWidth = 2;
+					for (let j = 0; j < k; ++j) {
+						const idxA = (j * step) % n;
+						const idxB = (idxA + 1) % n;
+						const a = transPt(S, pts[idxA]);
+						const b = transPt(S, pts[idxB]);
+						const mx = (a.x + b.x)/2; const my = (a.y + b.y)/2;
+						// edge normal
+						let ex = b.x - a.x; let ey = b.y - a.y;
+						let nx = -ey; let ny = ex;
+						// ensure normal points inward
+						const dot = nx * (centroid.x - mx) + ny * (centroid.y - my);
+						if (dot < 0) { nx = -nx; ny = -ny; }
+						const nmag = Math.sqrt(nx*nx + ny*ny) || 1;
+						const inset = Math.max(4, Math.floor(6 * (thumbSize / 192)));
+						const px = mx + (nx / nmag) * inset;
+						const py = my + (ny / nmag) * inset;
+						const lab = labList[j] || '';
+						const lead = lab && lab.length ? lab.charAt(0) : '';
+						const col = leadColors.hasOwnProperty(lead) ? leadColors[lead] : 'black';
+						// draw outline then fill
+						ctx.strokeStyle = 'black';
+						ctx.fillStyle = col;
+						ctx.font = `${fontPx}px sans-serif`;
+						ctx.strokeText(lab, px, py);
+						ctx.fillText(lab, px, py);
+					}
+				}
+			}
+		} catch(e) { /* non-fatal for thumbnails */ }
 	}
 
 	// Create a thumbnail-friendly deep snapshot of `sys` where each geom
