@@ -76,13 +76,27 @@ const colmap_pride = {
 let colmap = colmap_pride;
 
 // default custom colours (hex) and current custom mapping (hoisted so draw() can read)
-const defaultCustom = {
-	'Gamma': '#ffffff', 'Gamma1': '#ffffff', 'Gamma2': '#ffffff',
-	'Delta': '#dcdcdc', 'Theta': '#ffbfbf', 'Lambda': '#ffa07a',
-	'Xi': '#fff200', 'Pi': '#87cefa', 'Sigma': '#f5f5dc',
-	'Phi': '#00ff00', 'Psi': '#00ffff'
-};
+// Initialize custom colours to match the currently active `colmap` so the
+// colour pickers default to the same values as the dropdown scheme.
+const defaultCustom = (function() {
+	const out = {};
+	// include Gamma1/Gamma2 plus named tiles
+	const names = ['Gamma1','Gamma2'].concat(tile_names);
+	for (const n of names) {
+		const rgb = (colmap && colmap[n]) ? colmap[n] : [255,255,255];
+		out[n] = rgbArrayToHex(rgb);
+	}
+	return out;
+})();
 let custom_colors = { ...defaultCustom };
+
+// UI palette elements (hoisted so repositioning can run on resize)
+let overlays = {};
+let paletteDiv;
+let customDiv;
+let miniNames;
+let miniCanvases = {};
+let palette_sys = null;
 
 // helper: convert [r,g,b] to '#rrggbb'
 function rgbArrayToHex(a) {
@@ -127,6 +141,8 @@ function setup() {
 	createCanvas( windowWidth, windowHeight );
 
 	sys = buildSpectreBase();
+	// initial thumbnail snapshot
+	palette_sys = makePaletteSnapshot(sys);
 
 	let lab = createSpan( 'Shapes' );
 	lab.position( 10, 10 );
@@ -155,14 +171,19 @@ function setup() {
 		}
 		to_screen = [20, 0, 0, 0, -20, 0];
 		lw_scale = 1;
+		// do not update palette snapshot here; thumbnails should remain
+		// showing the original flavours and never change when sys is rebuilt
 		loop();
 	} );
+	// trigger the change once so the pickers and `custom_colors` reflect the initial selection
+	try { colscheme_sel.elt.dispatchEvent(new Event('change')); } catch(e) {}
 
 	subst_button = createButton( "Build Supertiles" );
 	subst_button.position( 10, 60 );
 	subst_button.size( 125, 25 );
 	subst_button.mousePressed( function() {
-		sys = buildSupertiles( sys );	
+		sys = buildSupertiles( sys );
+		// do not touch palette snapshot here; thumbnails are persistent
 		loop();
 	} );
 
@@ -179,6 +200,277 @@ function setup() {
 	tile_sel.value( 'Delta' );
 	tile_sel.changed( loop );
 
+	// --- Thumbnail palette: one miniature tile of each flavour for drawing overlays
+	paletteDiv = createDiv('');
+	// style as absolute container; actual position set by repositionPalette()
+	paletteDiv.style('position','absolute');
+	paletteDiv.style('display','flex');
+	paletteDiv.style('gap','8px');
+	paletteDiv.style('align-items','center');
+	// allow horizontal scroll if thumbnails overflow
+	paletteDiv.style('overflow-x','auto');
+	paletteDiv.style('white-space','nowrap');
+	paletteDiv.elt.style.padding = '4px';
+
+	// overlays: stored per-label as array of strokes (stroke = array of tile-local points)
+	// (overlays is hoisted to module scope)
+
+	// helper to draw a geometry (Shape or Meta) into a 2D canvas context using transform S
+	function drawGeomToContext(ctx, geom, S, overrideLabel) {
+		if( !geom ) return; // guard against missing sys[label]
+		if( geom.geoms && Array.isArray(geom.geoms) ) {
+			for( let g of geom.geoms ) {
+				if( g && g.geom ) drawGeomToContext(ctx, g.geom, mul(S, g.xform), overrideLabel);
+			}
+			return;
+		}
+		// shape-like
+		ctx.beginPath();
+		for( let i = 0; i < (geom.pts ? geom.pts.length : 0); ++i ) {
+			const p = geom.pts[i];
+			const tp = transPt(S, p);
+			if( i==0 ) ctx.moveTo(tp.x, tp.y); else ctx.lineTo(tp.x, tp.y);
+		}
+		ctx.closePath();
+		const labelForFill = overrideLabel || geom.label;
+		const col = colmap[labelForFill] || [200,200,200];
+		ctx.fillStyle = `rgb(${col[0]},${col[1]},${col[2]})`;
+		ctx.fill();
+		ctx.strokeStyle = 'black';
+		ctx.lineWidth = 1;
+		ctx.stroke();
+		// draw overlays if present
+		const overlayKey = overrideLabel || geom.label;
+		if( typeof overlays !== 'undefined' && overlays[overlayKey] ) {
+			ctx.strokeStyle = 'black';
+			ctx.lineWidth = 2;
+			for( let stroke of overlays[overlayKey] ) {
+				ctx.beginPath();
+				for( let j = 0; j < stroke.length; ++j ) {
+					const sp = transPt(S, stroke[j]);
+					if( j==0 ) ctx.moveTo(sp.x, sp.y); else ctx.lineTo(sp.x, sp.y);
+				}
+				ctx.stroke();
+			}
+		}
+	}
+
+	// Create a thumbnail-friendly deep snapshot of `sys` where each geom
+	// is turned into plain objects (pts, label) or geoms arrays so the
+	// 2D canvas renderer never touches live Shape/Meta instances.
+	function clonePt(p) { return { x: p.x, y: p.y }; }
+	function clonePtsArray(pts) { return pts.map(p => clonePt(p)); }
+
+	function cloneGeom(geom) {
+		if (!geom) return null;
+		// Meta-like composite
+		if (geom.geoms && Array.isArray(geom.geoms)) {
+			const out = { geoms: [], quad: geom.quad ? clonePtsArray(geom.quad) : undefined };
+			for (const child of geom.geoms) {
+				out.geoms.push({ geom: cloneGeom(child.geom), xform: child.xform.slice() });
+			}
+			return out;
+		}
+		// shape-like (Shape or CurvyShape) - copy pts and label
+		return { pts: clonePtsArray(geom.pts || []), label: geom.label, quad: geom.quad ? clonePtsArray(geom.quad) : undefined };
+	}
+
+	// Collect all world-space points for a snapshot geom under transform T
+	function collectPoints(geom, T, out) {
+		if (!geom) return;
+		if (geom.geoms && Array.isArray(geom.geoms)) {
+			for (const c of geom.geoms) {
+				const childT = mul(T, c.xform);
+				collectPoints(c.geom, childT, out);
+			}
+			return;
+		}
+		// shape-like
+		for (const p of (geom.pts || [])) {
+			const tp = transPt(T, p);
+			out.push({ x: tp.x, y: tp.y });
+		}
+	}
+
+	function computeCentroid(geom) {
+		if (!geom) return { x: 0, y: 0 };
+		const pts = [];
+		collectPoints(geom, ident, pts);
+		if (pts.length === 0) return { x: 0, y: 0 };
+		let sx = 0, sy = 0;
+		for (const p of pts) { sx += p.x; sy += p.y; }
+		return { x: sx / pts.length, y: sy / pts.length };
+	}
+
+	function makePaletteSnapshot(src) {
+		const out = {};
+		for (const k in src) {
+			out[k] = cloneGeom(src[k]);
+		}
+		// If Gamma is a composite, also expose its children (Gamma1/Gamma2)
+		if (out['Gamma'] && out['Gamma'].geoms && Array.isArray(out['Gamma'].geoms)) {
+			for (const c of out['Gamma'].geoms) {
+				if (c && c.geom && c.geom.label) {
+					out[c.geom.label] = cloneGeom(c.geom);
+				}
+			}
+		}
+		return out;
+	}
+
+	const thumbSize = 64;
+	const thumbScale = 14; // scale factor for thumbnail
+	// miniCanvases is hoisted
+	const activeStroke = { label: null, points: null, canvas: null };
+
+	function makeThumbnail( label ) {
+		const el = createElement('canvas');
+		el.attribute('width', thumbSize);
+		el.attribute('height', thumbSize);
+		el.parent(paletteDiv);
+		el.elt.style.border = '1px solid #888';
+		el.elt.style.cursor = 'crosshair';
+		const ctx = el.elt.getContext('2d');
+		// compute thumbnail transform: center + scale (flip y)
+		// center the shape's centroid in the thumbnail
+		let center = { x: 0, y: 0 };
+		if (palette_sys && palette_sys[label]) {
+			center = computeCentroid(palette_sys[label]);
+		}
+		// translate centroid to origin then scale and move to canvas center
+		const toCenter = ttrans( -center.x, -center.y );
+		const scale = [thumbScale,0,0,0,-thumbScale,0];
+		const place = ttrans( thumbSize/2, thumbSize/2 );
+		const S_thumb = mul( place, mul( scale, toCenter ) );
+
+		function renderThumb() {
+			ctx.clearRect(0,0,thumbSize,thumbSize);
+			// Use only the persistent palette snapshot. If a label is missing
+			// from the snapshot, render nothing (do not fall back to live sys).
+			const source = (palette_sys && palette_sys[label]) ? palette_sys[label] : null;
+			drawGeomToContext(ctx, source, S_thumb);
+		}
+
+		// events for drawing
+		el.elt.addEventListener('pointerdown', function(ev) {
+			ev.preventDefault();
+			const rect = el.elt.getBoundingClientRect();
+			const x = ev.clientX - rect.left;
+			const y = ev.clientY - rect.top;
+			// convert to tile-local coords
+			const invS = inv(S_thumb);
+			const local = transPt(invS, pt(x, y));
+			activeStroke.label = label;
+			activeStroke.points = [ local ];
+			activeStroke.canvas = el.elt;
+			// ensure overlay array exists
+			if( !overlays[label] ) overlays[label] = [];
+			// draw feedback
+			renderThumb();
+			ctx.beginPath(); ctx.moveTo(x,y);
+		});
+
+		el.elt.addEventListener('pointermove', function(ev) {
+			if( !activeStroke.points || activeStroke.canvas !== el.elt ) return;
+			ev.preventDefault();
+			const rect = el.elt.getBoundingClientRect();
+			const x = ev.clientX - rect.left;
+			const y = ev.clientY - rect.top;
+			const invS = inv(S_thumb);
+			const local = transPt(invS, pt(x, y));
+			activeStroke.points.push(local);
+			// immediate feedback on thumb
+			renderThumb();
+			ctx.beginPath();
+			for( let i = 0; i < activeStroke.points.length; ++i ) {
+				const p = transPt(S_thumb, activeStroke.points[i]);
+				if( i==0 ) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y);
+			}
+			ctx.strokeStyle = 'black'; ctx.lineWidth = 2; ctx.stroke();
+		});
+
+		window.addEventListener('pointerup', function(ev) {
+			if( activeStroke.points && activeStroke.label === label && activeStroke.canvas === el.elt ) {
+				overlays[label].push(activeStroke.points);
+				activeStroke.points = null;
+				activeStroke.canvas = null;
+				// trigger main redraw
+				loop();
+			}
+		});
+
+		// initial render
+		renderThumb();
+		miniCanvases[label] = { el: el.elt, ctx: ctx, S_thumb };
+	}
+
+	// build thumbnails for each flavour (include Gamma1, Gamma2, then all other names except the composite 'Gamma')
+	miniNames = ['Gamma1','Gamma2'].concat(tile_names.filter(n => n !== 'Gamma'));
+	for( let name of miniNames ) {
+		makeThumbnail(name);
+		if( !overlays[name] ) overlays[name] = [];
+	}
+
+	function refreshThumbnails() {
+		// ensure colmap reflects selector (and custom_colors)
+		const s = colscheme_sel ? colscheme_sel.value() : 'Pride';
+		if (s === 'Custom') {
+			let cm = {};
+			for (let k in custom_colors) {
+				const hex = custom_colors[k];
+				const h = hex.replace('#','');
+				cm[k] = [parseInt(h.substring(0,2),16), parseInt(h.substring(2,4),16), parseInt(h.substring(4,6),16)];
+			}
+			colmap = cm;
+		} else if (s == 'Figure 5.3') colmap = colmap53;
+		else if (s == 'Bright') colmap = colmap_orig;
+		else if (s == 'Pride') colmap = colmap_pride;
+		else colmap = colmap_mystics;
+
+		for (const name of miniNames) {
+			const mc = miniCanvases[name];
+			if (!mc) continue;
+			mc.ctx.clearRect(0,0, thumbSize, thumbSize);
+			// draw from persistent snapshot only
+			drawGeomToContext(mc.ctx, (palette_sys && palette_sys[name]) ? palette_sys[name] : null, mc.S_thumb);
+		}
+	}
+
+	// initial thumbnail refresh to match dropdown on load
+	refreshThumbnails();
+
+	// center visible thumbnails if they fit, otherwise allow scroll
+	try {
+		const totalWidth = miniNames.length * (thumbSize + 8);
+		if( totalWidth + 40 < windowWidth ) {
+			const left = Math.floor((windowWidth - totalWidth)/2);
+			paletteDiv.position(left, 5);
+		} else {
+			// ensure first thumbnails visible
+			paletteDiv.elt.scrollLeft = 0;
+		}
+	} catch(e) {}
+
+	// reposition palette to avoid overlapping left controls
+	function repositionPalette() {
+		const gap = 8;
+		const totalWidth = miniNames.length * (thumbSize + gap);
+		// center across the top
+	const minLeft = 140; // avoid left controls
+	const left = (totalWidth + 40 < windowWidth) ? Math.floor((windowWidth - totalWidth)/2) : minLeft;
+	paletteDiv.position( left, 5 );
+		paletteDiv.style('z-index', '1000');
+		customDiv.position( left, 5 + thumbSize + 12 );
+		customDiv.style('z-index', '1000');
+	}
+
+	// create customDiv (moved here so reposition can reference thumbSize)
+	customDiv = createDiv('');
+	customDiv.style('position','absolute');
+	customDiv.style('padding', '6px');
+	customDiv.style('background', 'rgba(255,255,255,0.9)');
+	repositionPalette();
+
 	lab = createSpan( 'Colours' );
 	lab.position( 10, 150 );
 	lab.size( 125, 15 );
@@ -192,13 +484,10 @@ function setup() {
 	colscheme_sel.option( 'Custom' );
 	colscheme_sel.option( 'Bright' );
 	// changed handler will be assigned after the colour pickers are created
+	// ensure UI reflects initial scheme: trigger change after handler assignment
 
-	// --- Custom colour pickers area (above control panel)
-	// container div so we can position the group
-	const customDiv = createDiv('');
-	customDiv.position( 150, 10 );
-	customDiv.style('padding', '6px');
-	customDiv.style('background', 'rgba(255,255,255,0.9)');
+	// --- Custom colour pickers area (below thumbnails)
+	// container div created earlier (customDiv) — styles/position handled by repositionPalette()
 
 	// Map of custom colours is defined at module scope
 
@@ -212,7 +501,7 @@ function setup() {
 		lab.parent(holder);
 		lab.style('display','block');
 		lab.style('font-size','11px');
-		const inp = createInput( defaultCustom[name], 'color' );
+	const inp = createInput( custom_colors[name] || '#ffffff', 'color' );
 		inp.parent(holder);
 		inp.input( function() {
 				// when user edits a picker, switch the scheme to Custom and redraw
@@ -221,6 +510,7 @@ function setup() {
 					colscheme_sel.value('Custom');
 				}
 				loop();
+				refreshThumbnails();
 			} );
 		return inp;
 	}
@@ -256,6 +546,7 @@ function setup() {
 		// update active colmap immediately
 		colmap = src;
 		loop();
+		refreshThumbnails();
 	} );
 
 	// Pan/zoom controls removed: drag to pan and scroll to zoom
@@ -343,6 +634,7 @@ function draw()
 function windowResized() 
 {
 	resizeCanvas( windowWidth, windowHeight );
+	try { repositionPalette(); } catch(e) {}
 }
 
 function mousePressed()

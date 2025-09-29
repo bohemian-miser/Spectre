@@ -10,6 +10,19 @@ class Shape
 	draw( S )
 	{
 		drawPolygon( this.pts, S, colmap[this.label], [0,0,0], 0.1 );
+		if( typeof overlays !== 'undefined' && overlays[this.label] ) {
+			stroke(0);
+			strokeWeight( 0.1 );
+			noFill();
+			for( let st of overlays[this.label] ) {
+				beginShape();
+				for( let i = 0; i < st.length; ++i ) {
+					const p = transPt( S, st[i] );
+					vertex( p.x, p.y );
+				}
+				endShape();
+			}
+		}
 	}
 
 	streamSVG( S, stream )
@@ -76,6 +89,19 @@ class CurvyShape
 			bezierVertex( a.x, a.y, b.x, b.y, c.x, c.y );
 		}
 		endShape( CLOSE );
+		if( typeof overlays !== 'undefined' && overlays[this.label] ) {
+			stroke(0);
+			strokeWeight( 0.1 );
+			noFill();
+			for( let st of overlays[this.label] ) {
+				beginShape();
+				for( let i = 0; i < st.length; ++i ) {
+					const p = transPt( S, st[i] );
+					vertex( p.x, p.y );
+				}
+				endShape();
+			}
+		}
 	}
 
 	streamSVG( S, stream )
@@ -116,6 +142,19 @@ class Meta
 	{
 		for( let g of this.geoms ) {
 			g.geom.draw( mul( S, g.xform ) );
+		}
+		if( typeof overlays !== 'undefined' && overlays['Gamma'] ) {
+			stroke(0);
+			strokeWeight( 0.1 );
+			noFill();
+			for( let st of overlays['Gamma'] ) {
+				beginShape();
+				for( let i = 0; i < st.length; ++i ) {
+					const p = transPt( S, st[i] );
+					vertex( p.x, p.y );
+				}
+				endShape();
+			}
 		}
 	}
 
@@ -178,6 +217,21 @@ function buildSpectreBase( curved )
 
 	return ret;
 }
+
+// Unique edge labels (ported from Spectre_Patterns.ipynb)
+const unique_edge_labels = {
+	'Delta':  ['3.0A','3.1A', '2.0A','2.1A','2.2A', '-5.1A','-5.0A', '1.0A','1.1A','1.2A', '-3.1A','-3.0A', '-6.1A','-6.0A'],
+	'Theta':  ['3.0A','3.1A', '2.0A','2.1A','2.2A', '8.0A', '2.0B','2.1B','2.2B', '0.0A','0.1A', '-2.2A','-2.1A','-2.0A'],
+	'Lambda': ['3.0A','3.1A', '2.0A','2.1A','2.2A', '-5.1A','-5.0A', '1.0A','1.1A','1.2A', '-8.0A', '-2.2A','-2.1A','-2.0A'],
+	'Xi':     ['-1.2A','-1.1A','-1.0A', '5.0A','5.1A', '8.0A', '2.0A','2.1A','2.2A', '0.0A','0.1A', '-2.2A','-2.1A','-2.0A'],
+	'Pi':     ['-1.2A','-1.1A','-1.0A', '5.0A','5.1A', '-5.1A','-5.0A', '1.0A','1.1A','1.2A', '-8.0A', '-2.2A','-2.1A','-2.0A'],
+	'Sigma':  ['4.2A','4.3A', '2.0A','2.1A','2.2A', '-5.1A','-5.0A', '1.0A','1.1A','1.2A', '-3.1A','-3.0A', '4.0A','4.1A'],
+	'Phi':    ['3.0A','3.1A', '2.0A','2.1A','2.2A', '-5.1A','-5.0A', '5.0A','5.1A', '0.0A','0.1A', '-2.2A','-2.1A','-2.0A'],
+	'Psi':    ['-1.2A','-1.1A','-1.0A', '5.0A','5.1A', '-5.1A','-5.0A', '5.0B','5.1B', '0.0A','0.1A', '-2.2A','-2.1A','-2.0A'],
+	'Gamma2': ['-7.1A','-7.0A', '-3.1A','-3.0A', '6.0A','6.1A', '-4.3A','-4.2A','-4.1A','-4.0A', '2.0A','2.1A', '-7.3A','-7.2A'],
+	'Gamma1': ['-1.2A','-1.1A','-1.0A', '1.0A','1.1A','1.2A', '7.0A','7.1A','7.2A','7.3A', '2.2A', '-2.2A','-2.1A','-2.0A']
+};
+
 
 function buildHatTurtleBase( hat_dominant )
 {
