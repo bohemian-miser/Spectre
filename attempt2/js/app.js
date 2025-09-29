@@ -13,8 +13,6 @@ let shape_sel;
 let colscheme_sel;
 
 let subst_button;
-let translate_button;
-let scale_button;
 let dragging = false;
 let uibox = true;
 
@@ -77,6 +75,23 @@ const colmap_pride = {
 
 let colmap = colmap_pride;
 
+// default custom colours (hex) and current custom mapping (hoisted so draw() can read)
+const defaultCustom = {
+	'Gamma': '#ffffff', 'Gamma1': '#ffffff', 'Gamma2': '#ffffff',
+	'Delta': '#dcdcdc', 'Theta': '#ffbfbf', 'Lambda': '#ffa07a',
+	'Xi': '#fff200', 'Pi': '#87cefa', 'Sigma': '#f5f5dc',
+	'Phi': '#00ff00', 'Psi': '#00ffff'
+};
+let custom_colors = { ...defaultCustom };
+
+// helper: convert [r,g,b] to '#rrggbb'
+function rgbArrayToHex(a) {
+	const r = (a[0]||0).toString(16).padStart(2,'0');
+	const g = (a[1]||0).toString(16).padStart(2,'0');
+	const b = (a[2]||0).toString(16).padStart(2,'0');
+	return `#${r}${g}${b}`;
+}
+
 function drawPolygon( shape, T, f, s, w )
 {
 	if( f != null ) {
@@ -100,12 +115,12 @@ function drawPolygon( shape, T, f, s, w )
 
 function isButtonActive( but )
 {
-	return but.elt.style.border.length > 0;
+	return false;
 }
 
 function setButtonActive( but, b )
 {
-	but.elt.style.border = (b ? "3px solid black" : "");
+	// no-op: translate/scale buttons removed
 }
 
 function setup() {
@@ -174,27 +189,76 @@ function setup() {
 	colscheme_sel.option( 'Pride' );
 	colscheme_sel.option( 'Mystics' );
 	colscheme_sel.option( 'Figure 5.3' );
+	colscheme_sel.option( 'Custom' );
 	colscheme_sel.option( 'Bright' );
-	colscheme_sel.changed( loop );
+	// changed handler will be assigned after the colour pickers are created
 
-	translate_button = createButton( "Translate" );
-	setButtonActive( translate_button, true );
-	translate_button.position( 10, 210 );
-	translate_button.size( 125, 25 );
-	translate_button.mousePressed( function() {
-		setButtonActive( translate_button, true );
-		setButtonActive( scale_button, false );
+	// --- Custom colour pickers area (above control panel)
+	// container div so we can position the group
+	const customDiv = createDiv('');
+	customDiv.position( 150, 10 );
+	customDiv.style('padding', '6px');
+	customDiv.style('background', 'rgba(255,255,255,0.9)');
+
+	// Map of custom colours is defined at module scope
+
+	// create one colour input per tile and label
+	function makeColorPicker( name ) {
+		const holder = createDiv('');
+		holder.parent(customDiv);
+		holder.style('display','inline-block');
+		holder.style('margin','4px');
+		const lab = createSpan(name);
+		lab.parent(holder);
+		lab.style('display','block');
+		lab.style('font-size','11px');
+		const inp = createInput( defaultCustom[name], 'color' );
+		inp.parent(holder);
+		inp.input( function() {
+				// when user edits a picker, switch the scheme to Custom and redraw
+				custom_colors[name] = inp.value();
+				if( colscheme_sel.value() !== 'Custom' ) {
+					colscheme_sel.value('Custom');
+				}
+				loop();
+			} );
+		return inp;
+	}
+
+	// Store pickers if needed later
+	const color_pickers = {};
+	for( let name of tile_names.concat(['Gamma1','Gamma2']) ) {
+		color_pickers[name] = makeColorPicker( name );
+	}
+
+	// Now wire the colscheme selector so changing schemes updates the color pickers
+	colscheme_sel.changed( function() {
+		const s = colscheme_sel.value();
+		if( s === 'Custom' ) {
+			// nothing to overwrite, user picks control custom_colors directly
+			loop();
+			return;
+		}
+		// pick source map
+		let src;
+		if( s == 'Figure 5.3' ) src = colmap53;
+		else if( s == 'Bright' ) src = colmap_orig;
+		else if( s == 'Pride' ) src = colmap_pride;
+		else src = colmap_mystics;
+		// update pickers and custom_colors to match the chosen scheme
+		for( let k in color_pickers ) {
+			const rgb = src[k] || [255,255,255];
+			const hex = rgbArrayToHex(rgb);
+			custom_colors[k] = hex;
+			// update picker UI value
+			try { color_pickers[k].value(hex); } catch(e) {}
+		}
+		// update active colmap immediately
+		colmap = src;
 		loop();
 	} );
 
-	scale_button = createButton( "Scale" );
-	scale_button.position( 10, 240 );
-	scale_button.size( 125, 25 );
-	scale_button.mousePressed( function() {
-		setButtonActive( translate_button, false );
-		setButtonActive( scale_button, true );
-		loop();
-	} );
+	// Pan/zoom controls removed: drag to pan and scroll to zoom
 	
 	let save_button = createButton( "Save PNG" );
 	save_button.position( 10, 280 );
@@ -247,6 +311,22 @@ function draw()
 		colmap = colmap_mystics;
 	}
 
+	// If Custom, convert hex pickers to rgb arrays for colmap lookup
+	if( s == 'Custom' ) {
+		// build a lightweight mapping of rgb arrays keyed by tile name
+		let cm = {};
+		for( let k in custom_colors ) {
+			const hex = custom_colors[k];
+			// strip '#'
+			const h = hex.replace('#','');
+			const r = parseInt(h.substring(0,2),16);
+			const g = parseInt(h.substring(2,4),16);
+			const b = parseInt(h.substring(4,6),16);
+			cm[k] = [r,g,b];
+		}
+		colmap = cm;
+	}
+
 	sys[tile_sel.value()].draw( ident );
 
 	pop();
@@ -268,33 +348,35 @@ function windowResized()
 function mousePressed()
 {
 	dragging = true;
-	if( isButtonActive( scale_button ) ) {
-		scale_centre = transPt( inv( to_screen ), pt( width/2, height/2 ) );
-		scale_start = pt( mouseX, mouseY );
-		scale_ts = [...to_screen];
-	}
 	loop();
 }
 
 function mouseDragged()
 {
 	if( dragging ) {
-		if( isButtonActive( translate_button ) ) {
-			to_screen = mul( ttrans( mouseX - pmouseX, mouseY - pmouseY ), 
-				to_screen );
-		} else if( isButtonActive( scale_button ) ) {
-			let sc = dist( mouseX, mouseY, width/2, height/2 ) / 
-				dist( scale_start.x, scale_start.y, width/2, height/2 );
-			to_screen = mul( 
-				mul( ttrans( scale_centre.x, scale_centre.y ),
-					mul( [sc, 0, 0, 0, sc, 0],
-						ttrans( -scale_centre.x, -scale_centre.y ) ) ),
-				scale_ts );
-			lw_scale = mag( to_screen[0], to_screen[1] ) / 20.0;
-		}
+		// always pan by mouse drag
+		to_screen = mul( ttrans( mouseX - pmouseX, mouseY - pmouseY ), to_screen );
+		lw_scale = mag( to_screen[0], to_screen[1] ) / 20.0;
 		loop();
 		return false;
 	} 
+}
+
+// Zoom with mouse wheel about cursor
+function mouseWheel(event) {
+	// deltaY > 0 => scroll down => zoom out
+	const factor = event.deltaY > 0 ? 0.95 : 1.05;
+	// compute world coords of mouse
+	const world = transPt( inv( to_screen ), pt( mouseX - width/2, mouseY - height/2 ) );
+	// scale about world point
+	to_screen = mul(
+		mul( ttrans( world.x, world.y ), [factor,0,0,0,factor,0] ),
+		mul( ttrans( -world.x, -world.y ), to_screen )
+	);
+	lw_scale = mag( to_screen[0], to_screen[1] ) / 20.0;
+	loop();
+	// prevent page scroll
+	return false;
 }
 
 function mouseReleased()
