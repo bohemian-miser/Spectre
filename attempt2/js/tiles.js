@@ -48,7 +48,27 @@ class Shape
 			const lab = labels[i] || '';
 			// set text size in screen pixels (fixed)
 			const DESIRED_LABEL_PX = 2;
-			const ts = DESIRED_LABEL_PX;
+            const ts = DESIRED_LABEL_PX;
+            
+            // map leading character to a color for the major edge
+			const lead = lab && lab.length ? lab.charAt(0) : '';
+			const leadColors = {
+				'-': [180, 30, 30],
+				'0': [31,119,180],
+				'1': [255,127,14],
+				'2': [44,160,44],
+				'3': [214,39,40],
+				'4': [148,103,189],
+				'5': [140,86,75],
+				'6': [227,119,194],
+				'7': [127,127,127],
+				'8': [188,189,34],
+				'9': [23,190,207]
+			};
+			const ec = leadColors.hasOwnProperty(lead) ? leadColors[lead] : [0,0,0];
+			fill(ec[0], ec[1], ec[2]);
+			stroke(0);
+			strokeWeight(1);
 			push();
             translate(px, py);
             scale(0.1);
