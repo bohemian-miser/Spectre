@@ -1,82 +1,98 @@
-class Shape
-{
-	constructor( pts, quad, label )
-	{
+
+// Consolidated edge label drawing utility
+function drawEdgeLabels(ctx, pts, labels, S, opts = {}) {
+	if (!labels || labels.length === 0) return;
+	// Default options
+	const {
+		fontPx = 2,
+		insetPx = 0,
+		useP5 = true // true: p5.js context, false: 2D canvas
+	} = opts;
+	// Compute centroid
+	let sx=0, sy=0;
+	for(const p of pts){ sx+=p.x; sy+=p.y; }
+	const centroid = { x: sx/pts.length, y: sy/pts.length };
+	// Draw labels at midpoints of consecutive pts
+	for( let i = 0; i < pts.length; ++i ) {
+		const a = pts[i];
+		const b = pts[(i+1) % pts.length];
+		// Midpoint
+		const ma = transPt( S, pt( (a.x + b.x)/2, (a.y + b.y)/2 ) );
+		// Edge normal
+		const c_world = transPt( S, centroid );
+		const a_world = transPt( S, a );
+		const b_world = transPt( S, b );
+		const ex = b_world.x - a_world.x;
+		const ey = b_world.y - a_world.y;
+		let nx_e = -ey;
+		let ny_e = ex;
+		// Ensure normal points inward
+		const dot = nx_e * (c_world.x - ma.x) + ny_e * (c_world.y - ma.y);
+		if (dot < 0) { nx_e = -nx_e; ny_e = -ny_e; }
+		const nmag = Math.sqrt(nx_e*nx_e + ny_e*ny_e) || 1;
+		const ox = (nx_e / nmag) * insetPx;
+		const oy = (ny_e / nmag) * insetPx;
+		const px = ma.x + ox;
+		const py = ma.y + oy;
+		const lab = labels[i] || '';
+		// Color by leading character
+		const lead = lab && lab.length ? lab.charAt(0) : '';
+		const leadColors = {
+			'-': [180, 30, 30],
+			'0': [31,119,180],
+			'1': [255,127,14],
+			'2': [44,160,44],
+			'3': [214,39,40],
+			'4': [148,103,189],
+			'5': [140,86,75],
+			'6': [227,119,194],
+			'7': [127,127,127],
+			'8': [188,189,34],
+			'9': [23,190,207]
+		};
+		const ec = leadColors.hasOwnProperty(lead) ? leadColors[lead] : [0,0,0];
+		if (useP5) {
+			fill(ec[0], ec[1], ec[2]);
+			stroke(0);
+			strokeWeight(1);
+			push();
+			translate(px, py);
+			scale(0.1);
+			scale(1, -1);
+			textAlign(CENTER, CENTER);
+			textSize(fontPx);
+			text(lab, 0, 0);
+			pop();
+		} else {
+			ctx.save();
+			ctx.translate(px, py);
+			ctx.scale(0.1, -0.1);
+			ctx.textAlign = 'center';
+			ctx.textBaseline = 'middle';
+			ctx.font = `${fontPx}px sans-serif`;
+			ctx.strokeStyle = 'black';
+			ctx.fillStyle = `rgb(${ec[0]},${ec[1]},${ec[2]})`;
+			ctx.strokeText(lab, 0, 0);
+			ctx.fillText(lab, 0, 0);
+			ctx.restore();
+		}
+	}
+}
+
+class Shape {
+	constructor(pts, quad, label) {
 		this.pts = pts;
 		this.quad = quad;
 		this.label = label;
 	}
 
-	// draw edge labels when requested
-	_drawEdgeLabels( S ) {
-		if( typeof showEdgeLabels === 'undefined' || !showEdgeLabels ) return;
-		if( typeof unique_edge_labels === 'undefined' ) return;
+	_drawEdgeLabels(S) {
+		if (typeof showEdgeLabels === 'undefined' || !showEdgeLabels) return;
+		if (typeof unique_edge_labels === 'undefined') return;
 		const labels = unique_edge_labels[this.label];
-		if( !labels || labels.length === 0 ) return;
-		// draw labels at midpoints of consecutive pts
-		textAlign(CENTER, CENTER);
-		fill(0x9f);
-		noStroke();
-		// use original vertex list if available (CurvyShape stores `origPts`)
+		if (!labels || labels.length === 0) return;
 		const basePts = (this.origPts && this.origPts.length) ? this.origPts : this.pts;
-		for( let i = 0; i < basePts.length; ++i ) {
-			const a = basePts[i];
-			const b = basePts[(i+1) % basePts.length];
-			const ma = transPt( S, pt( (a.x + b.x)/2, (a.y + b.y)/2 ) );
-			// compute perpendicular inward offset along the edge normal (screen space)
-			const centroid = (() => {
-				let sx=0, sy=0; for(const p of basePts){ sx+=p.x; sy+=p.y; } return pt(sx/basePts.length, sy/basePts.length);
-			})();
-			const c_world = transPt( S, centroid );
-			const a_world = transPt( S, a );
-			const b_world = transPt( S, b );
-			const ex = b_world.x - a_world.x;
-			const ey = b_world.y - a_world.y;
-			// perpendicular (edge normal)
-			let nx_e = -ey;
-			let ny_e = ex;
-			// ensure normal points inward toward centroid (ma -> centroid)
-			const dot = nx_e * (c_world.x - ma.x) + ny_e * (c_world.y - ma.y);
-			if (dot < 0) { nx_e = -nx_e; ny_e = -ny_e; }
-			const nmag = Math.sqrt(nx_e*nx_e + ny_e*ny_e) || 1;
-			const DESIRED_INSET_PX = 0;
-			const inset = DESIRED_INSET_PX;
-			const ox = (nx_e / nmag) * inset;
-			const oy = (ny_e / nmag) * inset;
-			const px = ma.x + ox;
-			const py = ma.y + oy;
-			const lab = labels[i] || '';
-			// set text size in screen pixels (fixed)
-			const DESIRED_LABEL_PX = 2;
-            const ts = DESIRED_LABEL_PX;
-            
-            // map leading character to a color for the major edge
-			const lead = lab && lab.length ? lab.charAt(0) : '';
-			const leadColors = {
-				'-': [180, 30, 30],
-				'0': [31,119,180],
-				'1': [255,127,14],
-				'2': [44,160,44],
-				'3': [214,39,40],
-				'4': [148,103,189],
-				'5': [140,86,75],
-				'6': [227,119,194],
-				'7': [127,127,127],
-				'8': [188,189,34],
-				'9': [23,190,207]
-			};
-			const ec = leadColors.hasOwnProperty(lead) ? leadColors[lead] : [0,0,0];
-			fill(ec[0], ec[1], ec[2]);
-			stroke(0);
-			strokeWeight(1);
-			push();
-            translate(px, py);
-            scale(0.1);
-            scale(1, -1);
-			textSize( ts );
-			text( lab, 0, 0 );
-			pop();
-		}
+		drawEdgeLabels(null, basePts, labels, S, { fontPx: 2, insetPx: 0, useP5: true });
 	}
 
 	draw( S )

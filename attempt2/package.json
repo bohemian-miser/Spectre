@@ -1,0 +1,13 @@
+{
+  "name": "spectre-attempt2",
+  "version": "1.0.0",
+  "description": "Spectre TypeScript migration and test harness",
+  "main": "js/app.ts",
+  "scripts": {
+    "test": "jest"
+  },
+  "devDependencies": {
+    "jest": "^29.0.0",
+    "@types/jest": "^29.0.0"
+  }
+}
