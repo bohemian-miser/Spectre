@@ -1,12 +1,17 @@
 import p5 from 'p5';
+import { Shape, CurvyShape, Meta } from './tiles';
+import { pt, mul, trot, ttrans, inv, transPt, ident } from './utils';
+
+p5.disableFriendlyErrors = true;
 
 const sketch = (p: p5) => {
-    const ident = [1, 0, 0, 0, 1, 0];
-
+    (window as any).p = p; // Make p5 instance globally available for modules
     let to_screen = [20, 0, 0, 0, -20, 0];
     let lw_scale = 1;
 
     let sys: any;
+    // UI flags
+    let showEdgeLabels = false;
 
     let scale_centre: p5.Vector;
     let scale_start: p5.Vector;
@@ -18,8 +23,6 @@ const sketch = (p: p5) => {
     let colscheme_sel: p5.Element;
 
     let subst_button: p5.Element;
-    let translate_button: p5.Element;
-    let scale_button: p5.Element;
     let dragging = false;
     let uibox = true;
 
@@ -86,225 +89,39 @@ const sketch = (p: p5) => {
     };
 
     let colmap = colmap_pride;
+    (window as any).colmap = colmap;
 
-    function pt(x: number, y: number) {
-        return p.createVector(x, y);
-    }
 
-    // Affine matrix inverse
-    function inv(T: number[]) {
-        const det = T[0] * T[4] - T[1] * T[3];
-        return [T[4] / det, -T[1] / det, (T[1] * T[5] - T[2] * T[4]) / det,
-        -T[3] / det, T[0] / det, (T[2] * T[3] - T[0] * T[5]) / det];
-    };
-
-    // Affine matrix multiply
-    function mul(A: number[], B: number[]) {
-        return [A[0] * B[0] + A[1] * B[3],
-        A[0] * B[1] + A[1] * B[4],
-        A[0] * B[2] + A[1] * B[5] + A[2],
-
-        A[3] * B[0] + A[4] * B[3],
-        A[3] * B[1] + A[4] * B[4],
-        A[3] * B[2] + A[4] * B[5] + A[5]];
-    }
-
-    function padd(p: p5.Vector, q: p5.Vector) {
-        return p5.Vector.add(p, q);
-    }
-
-    function psub(p: p5.Vector, q: p5.Vector) {
-        return p5.Vector.sub(p, q);
-    }
-
-    function pframe(o: p5.Vector, p: p5.Vector, q: p5.Vector, a: number, b: number) {
-        return p5.Vector.add(o, p5.Vector.add(p5.Vector.mult(p, a), p5.Vector.mult(q, b)));
-    }
-
-    // Rotation matrix
-    function trot(ang: number) {
-        const c = p.cos(ang);
-        const s = p.sin(ang);
-        return [c, -s, 0, s, c, 0];
-    }
-
-    // Translation matrix
-    function ttrans(tx: number, ty: number) {
-        return [1, 0, tx, 0, 1, ty];
-    }
-
-    function transTo(vec1: p5.Vector, vec2: p5.Vector) {
-        return ttrans(vec2.x - vec1.x, vec2.y - vec1.y);
-    }
-
-    function rotAbout(vec: p5.Vector, ang: number) {
-        return mul(ttrans(vec.x, vec.y),
-            mul(trot(ang), ttrans(-vec.x, -vec.y)));
-    }
-
-    // Matrix * point
-    function transPt(M: number[], P: p5.Vector) {
-        return pt(M[0] * P.x + M[1] * P.y + M[2], M[3] * P.x + M[4] * P.y + M[5]);
-    }
-
-    // Match unit interval to line segment p->q
-    function matchSeg(p: p5.Vector, q: p5.Vector) {
-        return [q.x - p.x, p.y - q.y, p.x, q.y - p.y, q.x - p.x, p.y];
-    };
-
-    // Match line segment p1->q1 to line segment p2->q2
-    function matchTwo(p1: p5.Vector, q1: p5.Vector, p2: p5.Vector, q2: p5.Vector) {
-        return mul(matchSeg(p2, q2), inv(matchSeg(p1, q1)));
-    };
-
-    function drawPolygon(shape: p5.Vector[], T: number[], f: number[] | null, s: number[] | null, w: number) {
-        if (f != null) {
-            p.fill(f[0], f[1], f[2]);
-        } else {
-            p.noFill();
+    // default custom colours (hex) and current custom mapping (hoisted so draw() can read)
+    // Initialize custom colours to match the currently active `colmap` so the
+    // colour pickers default to the same values as the dropdown scheme.
+    const defaultCustom = (function () {
+        const out: { [key: string]: string } = {};
+        // include Gamma1/Gamma2 plus named tiles
+        const names = ['Gamma1', 'Gamma2'].concat(tile_names);
+        for (const n of names) {
+            const rgb = (colmap && colmap[n]) ? colmap[n] : [255, 255, 255];
+            out[n] = rgbArrayToHex(rgb);
         }
-        if (s != null) {
-            p.stroke(0);
-            p.strokeWeight(w); // / lw_scale );
-        } else {
-            p.noStroke();
-        }
-        p.beginShape();
-        for (let v of shape) {
-            const tp = transPt(T, v);
-            p.vertex(tp.x, tp.y);
-        }
-        p.endShape(p.CLOSE);
-    }
+        return out;
+    })();
+    let custom_colors: { [key: string]: string } = { ...defaultCustom };
 
-    function streamPolygon(shape: p5.Vector[], T: number[], f: number[] | null, s: number[] | null, w: number) {
+    // UI palette elements (hoisted so repositioning can run on resize)
+    let overlays: { [key: string]: p5.Vector[][] } = {};
+    (window as any).overlays = overlays;
+    let paletteDiv: p5.Element;
+    let customDiv: p5.Element;
+    let miniNames: string[];
+    let miniCanvases: { [key: string]: any } = {};
+    let palette_sys: any = null;
 
-    }
-
-    class Shape {
-        pts: p5.Vector[];
-        quad: p5.Vector[];
-        label: string;
-
-        constructor(pts: p5.Vector[], quad: p5.Vector[], label: string) {
-            this.pts = pts;
-            this.quad = quad;
-            this.label = label;
-        }
-
-        draw(S: number[]) {
-            drawPolygon(this.pts, S, colmap[this.label], [0, 0, 0], 0.1);
-        }
-
-        streamSVG(S: number[], stream: string[]) {
-            var s = '<polygon points="';
-            var at_start = true;
-            for (let v of this.pts) {
-                const sp = transPt(S, v);
-                if (at_start) {
-                    at_start = false;
-                } else {
-                    s = s + ' ';
-                }
-                s = s + `${sp.x},${sp.y}`;
-            }
-            const col = colmap[this.label];
-
-            s = s + `" stroke="black" stroke-weight="0.1" fill="rgb(${col[0]},${col[1]},${col[2]})" />`;
-            stream.push(s);
-        }
-    }
-
-    class CurvyShape {
-        pts: p5.Vector[];
-        quad: p5.Vector[];
-        label: string;
-
-        constructor(pts: p5.Vector[], quad: p5.Vector[], label: string) {
-            this.quad = quad;
-            this.label = label;
-
-            let blah = true;
-
-            this.pts = [pts[pts.length - 1]];
-            for (const pt of pts) {
-                const prev = this.pts[this.pts.length - 1];
-                const v = psub(pt, prev);
-                const w = p.createVector(-v.y, v.x);
-                if (blah) {
-                    this.pts.push(pframe(prev, v, w, 0.33, 0.6));
-                    this.pts.push(pframe(prev, v, w, 0.67, 0.6));
-                } else {
-                    this.pts.push(pframe(prev, v, w, 0.33, -0.6));
-                    this.pts.push(pframe(prev, v, w, 0.67, -0.6));
-                }
-                blah = !blah;
-                this.pts.push(pt);
-            }
-        }
-
-        draw(S: number[]) {
-            p.fill(colmap[this.label][0], colmap[this.label][1], colmap[this.label][2]);
-            p.strokeWeight(0.1);
-            p.stroke(0);
-
-            p.beginShape();
-            const tp = transPt(S, this.pts[0]);
-            p.vertex(tp.x, tp.y);
-
-            for (let idx = 1; idx < this.pts.length; idx += 3) {
-                const a = transPt(S, this.pts[idx]);
-                const b = transPt(S, this.pts[idx + 1]);
-                const c = transPt(S, this.pts[idx + 2]);
-
-                p.bezierVertex(a.x, a.y, b.x, b.y, c.x, c.y);
-            }
-            p.endShape(p.CLOSE);
-        }
-
-        streamSVG(S: number[], stream: string[]) {
-            const tp = transPt(S, this.pts[0]);
-
-            var s = `<path d="M ${tp.x} ${tp.y}`;
-
-            for (let idx = 1; idx < this.pts.length; idx += 3) {
-                const a = transPt(S, this.pts[idx]);
-                const b = transPt(S, this.pts[idx + 1]);
-                const c = transPt(S, this.pts[idx + 2]);
-
-                s = s + ` C ${a.x} ${a.y} ${b.x} ${b.y} ${c.x} ${c.y}`;
-            }
-            const col = colmap[this.label];
-
-            s = s + `" stroke="black" stroke-weight="0.1" fill="rgb(${col[0]},${col[1]},${col[2]})" />`;
-            stream.push(s);
-        }
-    }
-
-    class Meta {
-        geoms: { geom: any, xform: number[] }[];
-        quad: p5.Vector[];
-
-        constructor() {
-            this.geoms = [];
-            this.quad = [];
-        }
-
-        addChild(g: any, T: number[]) {
-            this.geoms.push({ geom: g, xform: T });
-        }
-
-        draw(S: number[]) {
-            for (let g of this.geoms) {
-                g.geom.draw(mul(S, g.xform));
-            }
-        }
-
-        streamSVG(S: number[], stream: string[]) {
-            for (let g of this.geoms) {
-                g.geom.streamSVG(mul(S, g.xform), stream);
-            }
-        }
+    // helper: convert [r,g,b] to '#rrggbb'
+    function rgbArrayToHex(a: number[]) {
+        const r = (a[0] || 0).toString(16).padStart(2, '0');
+        const g = (a[1] || 0).toString(16).padStart(2, '0');
+        const b = (a[2] || 0).toString(16).padStart(2, '0');
+        return `#${r}${g}${b}`;
     }
 
     function buildSpectreBase(curved?: boolean) {
@@ -454,7 +271,7 @@ const sketch = (p: p5) => {
         let rot = ident;
         const tquad = [...quad];
         for (const [ang, from, to] of t_rules) {
-            total_ang += ang;
+            total_ang += ang as number;
             if (ang != 0) {
                 rot = trot(p.radians(total_ang));
                 for (let i = 0; i < 4; ++i) {
@@ -462,8 +279,7 @@ const sketch = (p: p5) => {
                 }
             }
 
-            const ttt = transTo(tquad[to],
-                transPt(Ts[Ts.length - 1], quad[from]));
+            const ttt = ttrans(transPt(Ts[Ts.length - 1], quad[from as number]).x - tquad[to as number].x, transPt(Ts[Ts.length - 1], quad[from as number]).y - tquad[to as number].y);
             Ts.push(mul(ttt, rot));
         }
 
@@ -507,18 +323,12 @@ const sketch = (p: p5) => {
         return ret;
     }
 
-    function isButtonActive(but: p5.Element) {
-        return but.elt.style.border.length > 0;
-    }
-
-    function setButtonActive(but: p5.Element, b: boolean) {
-        but.elt.style.border = (b ? "3px solid black" : "");
-    }
-
     p.setup = () => {
         p.createCanvas(p.windowWidth, p.windowHeight);
 
         sys = buildSpectreBase();
+        // initial thumbnail snapshot
+        palette_sys = makePaletteSnapshot(sys);
 
         let lab = p.createSpan('Shapes');
         lab.position(10, 10);
@@ -547,14 +357,19 @@ const sketch = (p: p5) => {
             }
             to_screen = [20, 0, 0, 0, -20, 0];
             lw_scale = 1;
+            // do not update palette snapshot here; thumbnails should remain
+            // showing the original flavours and never change when sys is rebuilt
             p.loop();
         });
+        // trigger the change once so the pickers and `custom_colors` reflect the initial selection
+        try { (colscheme_sel.elt as any).dispatchEvent(new Event('change')); } catch (e) { }
 
         subst_button = p.createButton("Build Supertiles");
         subst_button.position(10, 60);
         subst_button.size(125, 25);
         subst_button.mousePressed(() => {
             sys = buildSupertiles(sys);
+            // do not touch palette snapshot here; thumbnails are persistent
             p.loop();
         });
 
@@ -571,6 +386,299 @@ const sketch = (p: p5) => {
         tile_sel.value('Delta');
         tile_sel.changed(() => p.loop());
 
+        // --- Thumbnail palette: one miniature tile of each flavour for drawing overlays
+        // thumbnail sizing constants (must be defined before paletteDiv uses them)
+        const THUMB_MULT = 3; // thumbnails 3x larger
+        const thumbSizeBase = 64;
+        const thumbSize = thumbSizeBase * THUMB_MULT;
+        const thumbScale = 14 * THUMB_MULT; // scale factor for thumbnail
+        // --- Thumbnail palette: one miniature tile of each flavour for drawing overlays
+        paletteDiv = p.createDiv('');
+        // style as absolute container; actual position set by repositionPalette()
+        paletteDiv.style('position', 'absolute');
+        // use CSS grid so we have a fixed 5-column layout (2 rows for 10 thumbnails)
+        paletteDiv.style('display', 'grid');
+        paletteDiv.style('grid-template-columns', `repeat(5, ${thumbSize}px)`);
+        paletteDiv.style('grid-auto-rows', `${thumbSize}px`);
+        paletteDiv.style('gap', '8px');
+        // allow horizontal scroll if thumbnails overflow; allow wrapping into rows
+        paletteDiv.style('overflow-x', 'auto');
+        paletteDiv.style('white-space', 'normal');
+        (paletteDiv.elt as any).style.padding = '4px';
+
+        // overlays: stored per-label as array of strokes (stroke = array of tile-local points)
+        // (overlays is hoisted to module scope)
+
+        // helper to draw a geometry (Shape or Meta) into a 2D canvas context using transform S
+        function drawGeomToContext(ctx: CanvasRenderingContext2D, geom: any, S: number[], overrideLabel?: string) {
+            if (!geom) return; // guard against missing sys[label]
+            if (geom.geoms && Array.isArray(geom.geoms)) {
+                for (let g of geom.geoms) {
+                    if (g && g.geom) drawGeomToContext(ctx, g.geom, mul(S, g.xform), overrideLabel);
+                }
+                return;
+            }
+            // shape-like
+            ctx.beginPath();
+            for (let i = 0; i < (geom.pts ? geom.pts.length : 0); ++i) {
+                const pt = geom.pts[i];
+                const tp = transPt(S, pt);
+                if (i == 0) ctx.moveTo(tp.x, tp.y); else ctx.lineTo(tp.x, tp.y);
+            }
+            ctx.closePath();
+            const labelForFill = overrideLabel || geom.label;
+            const col = colmap[labelForFill] || [200, 200, 200];
+            ctx.fillStyle = `rgb(${col[0]},${col[1]},${col[2]})`;
+            ctx.fill();
+            ctx.strokeStyle = 'black';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+            // draw overlays if present
+            const overlayKey = overrideLabel || geom.label;
+            if (typeof overlays !== 'undefined' && overlays[overlayKey]) {
+                ctx.strokeStyle = 'black';
+                ctx.lineWidth = 2;
+                for (let stroke of overlays[overlayKey]) {
+                    ctx.beginPath();
+                    for (let j = 0; j < stroke.length; ++j) {
+                        const sp = transPt(S, stroke[j]);
+                        if (j == 0) ctx.moveTo(sp.x, sp.y); else ctx.lineTo(sp.x, sp.y);
+                    }
+                    ctx.stroke();
+                }
+            }
+        }
+
+        // Create a thumbnail-friendly deep snapshot of `sys` where each geom
+        // is turned into plain objects (pts, label) or geoms arrays so the
+        // 2D canvas renderer never touches live Shape/Meta instances.
+        function clonePt(p: p5.Vector) { return { x: p.x, y: p.y }; }
+        function clonePtsArray(pts: p5.Vector[]) { return pts.map(p => clonePt(p)); }
+
+        function cloneGeom(geom: any): any {
+            if (!geom) return null;
+            // Meta-like composite
+            if (geom.geoms && Array.isArray(geom.geoms)) {
+                const out: any = { geoms: [], quad: geom.quad ? clonePtsArray(geom.quad) : undefined };
+                for (const child of geom.geoms) {
+                    out.geoms.push({ geom: cloneGeom(child.geom), xform: child.xform.slice() });
+                }
+                return out;
+            }
+            // shape-like (Shape or CurvyShape) - copy pts and label
+            return { pts: clonePtsArray(geom.pts || []), label: geom.label, quad: geom.quad ? clonePtsArray(geom.quad) : undefined };
+        }
+
+        // Collect all world-space points for a snapshot geom under transform T
+        function collectPoints(geom: any, T: number[], out: p5.Vector[]) {
+            if (!geom) return;
+            if (geom.geoms && Array.isArray(geom.geoms)) {
+                for (const c of geom.geoms) {
+                    const childT = mul(T, c.xform);
+                    collectPoints(c.geom, childT, out);
+                }
+                return;
+            }
+            // shape-like
+            for (const p of (geom.pts || [])) {
+                const tp = transPt(T, p);
+                out.push(tp);
+            }
+        }
+
+        function computeCentroid(geom: any) {
+            if (!geom) return { x: 0, y: 0 };
+            const pts: p5.Vector[] = [];
+            collectPoints(geom, ident, pts);
+            if (pts.length === 0) return { x: 0, y: 0 };
+            let sx = 0, sy = 0;
+            for (const p of pts) { sx += p.x; sy += p.y; }
+            return { x: sx / pts.length, y: sy / pts.length };
+        }
+
+        function makePaletteSnapshot(src: any) {
+            const out: { [key: string]: any } = {};
+            for (const k in src) {
+                out[k] = cloneGeom(src[k]);
+            }
+            // If Gamma is a composite, also expose its children (Gamma1/Gamma2)
+            if (out['Gamma'] && out['Gamma'].geoms && Array.isArray(out['Gamma'].geoms)) {
+                for (const c of out['Gamma'].geoms) {
+                    if (c && c.geom && c.geom.label) {
+                        out[c.geom.label] = cloneGeom(c.geom);
+                    }
+                }
+            }
+            return out;
+        }
+
+        // miniCanvases is hoisted
+        const activeStroke: { label: string | null, points: p5.Vector[] | null, canvas: HTMLCanvasElement | null } = { label: null, points: null, canvas: null };
+
+        function makeThumbnail(label: string) {
+            const el = p.createElement('canvas');
+            el.attribute('width', thumbSize.toString());
+            el.attribute('height', thumbSize.toString());
+            el.parent(paletteDiv);
+            (el.elt as any).style.border = '1px solid #888';
+            (el.elt as any).style.cursor = 'crosshair';
+            // ensure the canvas fills the grid cell exactly
+            (el.elt as any).style.margin = '0';
+            (el.elt as any).style.boxSizing = 'border-box';
+            (el.elt as any).style.width = thumbSize + 'px';
+            (el.elt as any).style.height = thumbSize + 'px';
+            const ctx = (el.elt as any).getContext('2d');
+            // compute thumbnail transform: center + scale (flip y)
+            // center the shape's centroid in the thumbnail
+            let center = { x: 0, y: 0 };
+            if (palette_sys && palette_sys[label]) {
+                center = computeCentroid(palette_sys[label]);
+            }
+            // translate centroid to origin then scale and move to canvas center
+            const toCenter = ttrans(-center.x, -center.y);
+            const scale = [thumbScale, 0, 0, 0, -thumbScale, 0];
+            const place = ttrans(thumbSize / 2, thumbSize / 2);
+            const S_thumb = mul(place, mul(scale, toCenter));
+
+            function renderThumb() {
+                ctx.clearRect(0, 0, thumbSize, thumbSize);
+                // Use only the persistent palette snapshot. If a label is missing
+                // from the snapshot, render nothing (do not fall back to live sys).
+                const source = (palette_sys && palette_sys[label]) ? palette_sys[label] : null;
+                drawGeomToContext(ctx, source, S_thumb);
+            }
+
+            // events for drawing
+            (el.elt as any).addEventListener('pointerdown', function (ev: PointerEvent) {
+                ev.preventDefault();
+                ev.stopPropagation();
+                const rect = (el.elt as any).getBoundingClientRect();
+                const x = ev.clientX - rect.left;
+                const y = ev.clientY - rect.top;
+                // convert to tile-local coords
+                const invS = inv(S_thumb);
+                const local = transPt(invS, pt(x, y));
+                activeStroke.label = label;
+                activeStroke.points = [local];
+                activeStroke.canvas = el.elt;
+                // ensure overlay array exists
+                if (!overlays[label]) overlays[label] = [];
+                // draw feedback
+                renderThumb();
+                ctx.beginPath(); ctx.moveTo(x, y);
+            });
+
+            (el.elt as any).addEventListener('pointermove', function (ev: PointerEvent) {
+                if (!activeStroke.points || activeStroke.canvas !== el.elt) return;
+                ev.preventDefault();
+                const rect = (el.elt as any).getBoundingClientRect();
+                const x = ev.clientX - rect.left;
+                const y = ev.clientY - rect.top;
+                const invS = inv(S_thumb);
+                const local = transPt(invS, pt(x, y));
+                activeStroke.points.push(local);
+                // immediate feedback on thumb
+                renderThumb();
+                ctx.beginPath();
+                for (let i = 0; i < activeStroke.points.length; ++i) {
+                    const p = transPt(S_thumb, activeStroke.points[i]);
+                    if (i == 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y);
+                }
+                ctx.strokeStyle = 'black'; ctx.lineWidth = 2; ctx.stroke();
+            });
+
+            window.addEventListener('pointerup', function (ev) {
+                if (activeStroke.points && activeStroke.label === label && activeStroke.canvas === el.elt) {
+                    overlays[label].push(activeStroke.points);
+                    activeStroke.points = null;
+                    activeStroke.canvas = null;
+                    // trigger main redraw
+                    p.loop();
+                }
+            });
+
+            // initial render
+            renderThumb();
+            miniCanvases[label] = { el: el.elt, ctx: ctx, S_thumb };
+        }
+
+        // build thumbnails for each flavour (include Gamma1, Gamma2, then all other names except the composite 'Gamma')
+        // ensure exactly 10 thumbnails: Gamma1, Gamma2, then the 8 named tiles
+        miniNames = ['Gamma1', 'Gamma2'].concat(tile_names.filter(n => n !== 'Gamma'));
+        if (miniNames.length > 10) miniNames = miniNames.slice(0, 10);
+        for (let name of miniNames) {
+            makeThumbnail(name);
+            if (!overlays[name]) overlays[name] = [];
+        }
+
+        function refreshThumbnails() {
+            // ensure colmap reflects selector (and custom_colors)
+            const s = colscheme_sel ? colscheme_sel.value() : 'Pride';
+            if (s === 'Custom') {
+                let cm: { [key: string]: number[] } = {};
+                for (let k in custom_colors) {
+                    const hex = custom_colors[k];
+                    const h = hex.replace('#', '');
+                    cm[k] = [parseInt(h.substring(0, 2), 16), parseInt(h.substring(2, 4), 16), parseInt(h.substring(4, 6), 16)];
+                }
+                colmap = cm;
+            } else if (s == 'Figure 5.3') colmap = colmap53;
+            else if (s == 'Bright') colmap = colmap_orig;
+            else if (s == 'Pride') colmap = colmap_pride;
+            else colmap = colmap_mystics;
+
+            for (const name of miniNames) {
+                const mc = miniCanvases[name];
+                if (!mc) continue;
+                mc.ctx.clearRect(0, 0, thumbSize, thumbSize);
+                // draw from persistent snapshot only
+                drawGeomToContext(mc.ctx, (palette_sys && palette_sys[name]) ? palette_sys[name] : null, mc.S_thumb);
+            }
+        }
+
+        // initial thumbnail refresh to match dropdown on load
+        refreshThumbnails();
+
+        // center visible thumbnails into two rows of 5 columns if they fit
+        try {
+            const cols = 5;
+            const totalWidth = cols * (thumbSize + 8);
+            if (totalWidth + 40 < p.windowWidth) {
+                const left = Math.floor((p.windowWidth - totalWidth) / 2);
+                paletteDiv.position(left, 5);
+            } else {
+                const minLeft = 140;
+                paletteDiv.position(minLeft, 5);
+                // ensure first thumbnails visible
+                (paletteDiv.elt as any).scrollLeft = 0;
+            }
+        } catch (e) { }
+
+        // reposition palette to avoid overlapping left controls
+        function repositionPalette() {
+            const gap = 6;
+            const cols = 5;
+            const totalWidth = cols * (thumbSize + gap);
+            // center across the top
+            const minLeft = 140; // avoid left controls
+            const left = (totalWidth + 40 < p.windowWidth) ? Math.floor((p.windowWidth - totalWidth) / 2) : minLeft;
+            paletteDiv.position(left, 5);
+            paletteDiv.style('width', `${totalWidth}px`);
+            // reserve two rows of thumbnail height for layout
+            paletteDiv.style('height', `${(thumbSize * 2) + (gap)}px`);
+            paletteDiv.style('z-index', '1000');
+            // position custom div under two rows of thumbnails
+            customDiv.position(left, 5 + (thumbSize * 2) + 16);
+            customDiv.style('z-index', '1000');
+        }
+
+        // create customDiv (moved here so reposition can reference thumbSize)
+        customDiv = p.createDiv('');
+        customDiv.style('position', 'absolute');
+        customDiv.style('padding', '6px');
+        customDiv.style('background', 'rgba(255,255,255,0.9)');
+        repositionPalette();
+
         lab = p.createSpan('Colours');
         lab.position(10, 150);
         lab.size(125, 15);
@@ -581,27 +689,87 @@ const sketch = (p: p5) => {
         colscheme_sel.option('Pride');
         colscheme_sel.option('Mystics');
         colscheme_sel.option('Figure 5.3');
+        colscheme_sel.option('Custom');
         colscheme_sel.option('Bright');
-        colscheme_sel.changed(() => p.loop());
+        // changed handler will be assigned after the colour pickers are created
+        // ensure UI reflects initial scheme: trigger change after handler assignment
 
-        translate_button = p.createButton("Translate");
-        setButtonActive(translate_button, true);
-        translate_button.position(10, 210);
-        translate_button.size(125, 25);
-        translate_button.mousePressed(() => {
-            setButtonActive(translate_button, true);
-            setButtonActive(scale_button, false);
+        // --- Custom colour pickers area (below thumbnails)
+        // container div created earlier (customDiv) — styles/position handled by repositionPalette()
+
+        // Map of custom colours is defined at module scope
+
+        // create one colour input per tile and label
+        function makeColorPicker(name: string) {
+            const holder = p.createDiv('');
+            holder.parent(customDiv);
+            holder.style('display', 'inline-block');
+            holder.style('margin', '4px');
+            const lab = p.createSpan(name);
+            lab.parent(holder);
+            lab.style('display', 'block');
+            lab.style('font-size', '11px');
+            const inp = p.createInput(custom_colors[name] || '#ffffff', 'color');
+            inp.parent(holder);
+            inp.input(() => {
+                // when user edits a picker, switch the scheme to Custom and redraw
+                custom_colors[name] = inp.value() as string;
+                if (colscheme_sel.value() !== 'Custom') {
+                    colscheme_sel.value('Custom');
+                }
+                p.loop();
+                refreshThumbnails();
+            });
+            return inp;
+        }
+
+        // Store pickers if needed later
+        const color_pickers: { [key: string]: p5.Element } = {};
+        for (let name of tile_names.concat(['Gamma1', 'Gamma2'])) {
+            color_pickers[name] = makeColorPicker(name);
+        }
+
+        // Now wire the colscheme selector so changing schemes updates the color pickers
+        colscheme_sel.changed(() => {
+            const s = colscheme_sel.value();
+            if (s === 'Custom') {
+                // nothing to overwrite, user picks control custom_colors directly
+                p.loop();
+                return;
+            }
+            // pick source map
+            let src: { [key: string]: number[] };
+            if (s == 'Figure 5.3') src = colmap53;
+            else if (s == 'Bright') src = colmap_orig;
+            else if (s == 'Pride') src = colmap_pride;
+            else src = colmap_mystics;
+            // update pickers and custom_colors to match the chosen scheme
+            for (let k in color_pickers) {
+                const rgb = src[k] || [255, 255, 255];
+                const hex = rgbArrayToHex(rgb);
+                custom_colors[k] = hex;
+                // update picker UI value
+                try { color_pickers[k].value(hex); } catch (e) { }
+            }
+            // update active colmap immediately
+            colmap = src;
+            p.loop();
+            refreshThumbnails();
+        });
+
+        // Checkbox: show edge labels
+        const lbl_check = p.createCheckbox('Show Edge Labels', false);
+        (window as any).showEdgeLabels = showEdgeLabels;
+        lbl_check.position(10, 210);
+        lbl_check.changed(() => {
+            showEdgeLabels = lbl_check.checked() as boolean;
+            (window as any).showEdgeLabels = showEdgeLabels;
             p.loop();
         });
 
-        scale_button = p.createButton("Scale");
-        scale_button.position(10, 240);
-        scale_button.size(125, 25);
-        scale_button.mousePressed(() => {
-            setButtonActive(translate_button, false);
-            setButtonActive(scale_button, true);
-            p.loop();
-        });
+        // ...existing code...
+
+        // Pan/zoom controls removed: drag to pan and scroll to zoom
 
         let save_button = p.createButton("Save PNG");
         save_button.position(10, 280);
@@ -653,6 +821,24 @@ const sketch = (p: p5) => {
             colmap = colmap_mystics;
         }
 
+        // If Custom, convert hex pickers to rgb arrays for colmap lookup
+        if (s == 'Custom') {
+            // build a lightweight mapping of rgb arrays keyed by tile name
+            let cm: { [key: string]: number[] } = {};
+            for (let k in custom_colors) {
+                const hex = custom_colors[k];
+                // strip '#'
+                const h = hex.replace('#', '');
+                const r = parseInt(h.substring(0, 2), 16);
+                const g = parseInt(h.substring(2, 4), 16);
+                const b = parseInt(h.substring(4, 6), 16);
+                cm[k] = [r, g, b];
+            }
+            colmap = cm;
+        }
+        (window as any).colmap = colmap;
+
+        // draw the currently selected tile only
         sys[tile_sel.value() as string].draw(ident);
 
         p.pop();
@@ -668,36 +854,39 @@ const sketch = (p: p5) => {
 
     p.windowResized = () => {
         p.resizeCanvas(p.windowWidth, p.windowHeight);
+        try { (p as any).repositionPalette(); } catch (e) { }
     };
 
     p.mousePressed = () => {
         dragging = true;
-        if (isButtonActive(scale_button)) {
-            scale_centre = transPt(inv(to_screen), pt(p.width / 2, p.height / 2));
-            scale_start = pt(p.mouseX, p.mouseY);
-            scale_ts = [...to_screen];
-        }
         p.loop();
     };
 
     p.mouseDragged = () => {
         if (dragging) {
-            if (isButtonActive(translate_button)) {
-                to_screen = mul(ttrans(p.mouseX - p.pmouseX, p.mouseY - p.pmouseY),
-                    to_screen);
-            } else if (isButtonActive(scale_button)) {
-                let sc = p.dist(p.mouseX, p.mouseY, p.width / 2, p.height / 2) /
-                    p.dist(scale_start.x, scale_start.y, p.width / 2, p.height / 2);
-                to_screen = mul(
-                    mul(ttrans(scale_centre.x, scale_centre.y),
-                        mul([sc, 0, 0, 0, sc, 0],
-                            ttrans(-scale_centre.x, -scale_centre.y))),
-                    scale_ts);
-                lw_scale = p.mag(to_screen[0], to_screen[1]) / 20.0;
-            }
+            // always pan by mouse drag
+            to_screen = mul(ttrans(p.mouseX - p.pmouseX, p.mouseY - p.pmouseY), to_screen);
+            lw_scale = p.mag(to_screen[0], to_screen[1]) / 20.0;
             p.loop();
             return false;
         }
+    };
+
+    // Zoom with mouse wheel about cursor
+    p.mouseWheel = (event: any) => {
+        // deltaY > 0 => scroll down => zoom out
+        const factor = event.deltaY > 0 ? 0.95 : 1.05;
+        // compute world coords of mouse
+        const world = transPt(inv(to_screen), pt(p.mouseX - p.width / 2, p.mouseY - p.height / 2));
+        // scale about world point
+        to_screen = mul(
+            mul(ttrans(world.x, world.y), [factor, 0, 0, 0, factor, 0]),
+            mul(ttrans(-world.x, -world.y), to_screen)
+        );
+        lw_scale = p.mag(to_screen[0], to_screen[1]) / 20.0;
+        p.loop();
+        // prevent page scroll
+        return false;
     };
 
     p.mouseReleased = () => {
