@@ -1,0 +1,3 @@
+read this and tell me how we might implement a ui where you can select edge combos that are valid (read the colab to understand which combos are valid, there's actually a kernel of 8 subsets that are valid so maybe selecting those) then there will be a bunch of possible combinations for each tile for which edges can join to which other ones (we should have a toggle for non-crossing lines) I want to be able to scroll through the options so they increase like a number in a base where each position is a tile and I want to reorder the tiles in that so I can see what they look like as I scroll. I'll also need to do some circuit and graph analysis so we should think about that.
+
+Don't write any code, just tell me your thoughts for a plan and how we can make a great ui 
