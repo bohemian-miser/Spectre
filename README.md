@@ -1,11 +1,9 @@
 # Spectre
-Playing with the spectre tiling
+Playing with the spectre tiling. Mostly vibe coded and plagerised from https://cs.uwaterloo.ca/~csk/spectre/app.html. I've included the original version of this under 'web_orig'.
 
+Ignore the spectre dir, it was an attempt at doing this in python.
 
-Modified version of https://cs.uwaterloo.ca/~csk/spectre/app.html under 'attempt2'. There is also a version under web but that became a mess.
-
-
-run `python3 -m http.server --directory "./attempt2" 8000` to serve it.
+run `python3 -m http.server --directory "./web/dist" 8000` to serve the pre-built version.
 
 It lets you draw on each of the 10 flavours of tile and has better navigation and you can change the colours.
 
