@@ -6,6 +6,7 @@ declare let p: p5;
 declare let colmap: { [key: string]: number[] };
 declare let overlays: { [key: string]: p5.Vector[][] };
 declare let showEdgeLabels: boolean;
+declare let showEdgeJoiner: boolean;
 declare let showLines: boolean;
 declare let showOutlines: boolean;
 declare let showBackgrounds: boolean;
@@ -22,6 +23,27 @@ export const unique_edge_labels: { [key: string]: string[] } = {
 	'Gamma2': ['-7.1A','-7.0A', '-3.1A','-3.0A', '6.0A','6.1A', '-4.3A','-4.2A','-4.1A','-4.0A', '2.0A','2.1A', '-7.3A','-7.2A'],
 	'Gamma1': ['-1.2A','-1.1A','-1.0A', '1.0A','1.1A','1.2A', '7.0A','7.1A','7.2A','7.3A', '2.2A', '-2.2A','-2.1A','-2.0A']
 };
+
+export function getEdgeMidpoints(tileLabel: string, selectedEdges: Set<number>): p5.Vector[] {
+    const midpoints: p5.Vector[] = [];
+    if (typeof unique_edge_labels === 'undefined') return midpoints;
+    const labels = unique_edge_labels[tileLabel];
+    if (!labels || labels.length === 0) return midpoints;
+
+    const shape = new Shape([], [], tileLabel); // A bit of a hack to get access to the pts
+    const basePts = (shape.origPts && shape.origPts.length) ? shape.origPts : shape.pts;
+
+    for (let i = 0; i < basePts.length; ++i) {
+        const lab = labels[i] || '';
+        const major = parseInt(lab.replace('-', '').charAt(0));
+        if (selectedEdges.has(major)) {
+            const a = basePts[i];
+            const b = basePts[(i + 1) % basePts.length];
+            midpoints.push(p.createVector((a.x + b.x) / 2, (a.y + b.y) / 2));
+        }
+    }
+    return midpoints;
+}
 
 function drawPolygon( shape: p5.Vector[], T: number[], f: number[] | null, s: number[] | null, w: number )
 {
@@ -137,8 +159,9 @@ export class Shape
 
 	draw( S: number[] )
 	{
-		        drawPolygon( this.pts, S, colmap[this.label], [0,0,0], 0.1 );
-		        if( typeof overlays !== 'undefined' && overlays[this.label] && (window as any).showLines ) {			p.stroke(0);
+		drawPolygon( this.pts, S, colmap[this.label], [0,0,0], 0.1 );
+		if( typeof overlays !== 'undefined' && overlays[this.label] && (window as any).showLines ) {
+			p.stroke(0);
 			p.strokeWeight( 0.1 );
 			p.noFill();
 			for( let st of overlays[this.label] ) {

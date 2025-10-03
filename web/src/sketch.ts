@@ -11,6 +11,7 @@ p5.disableFriendlyErrors = true;
 // Make the tiles a lil bit smaller than the box and shift them up slightly.
 const adjust_mat = [0.95, 0, 0, 0, 0.95, 0.3];
 
+
 const sketch = (p: p5) => {
     (window as any).p = p; // Make p5 instance globally available for modules
     let to_screen = [20, 0, 0, 0, -20, 0];
@@ -739,12 +740,12 @@ const sketch = (p: p5) => {
         // center visible thumbnails into two rows of 5 columns if they fit
         try {
             const cols = 5;
-            const totalWidth = cols * (thumbSize + 8);
+            const totalWidth = cols * (thumbWidth + 8);
             if (totalWidth + 40 < p.windowWidth) {
                 const left = Math.floor((p.windowWidth - totalWidth) / 2);
                 paletteDiv.position(left, 5);
             } else {
-                const minLeft = 140;
+                const minLeft = 400;
                 paletteDiv.position(minLeft, 5);
                 // ensure first thumbnails visible
                 (paletteDiv.elt as any).scrollLeft = 0;
@@ -757,8 +758,7 @@ const sketch = (p: p5) => {
             const cols = 5;
             const totalWidth = cols * (thumbWidth + gap);
             // center across the top
-            const minLeft = 140; // avoid left controls
-            const left = (totalWidth + 40 < p.windowWidth) ? Math.floor((p.windowWidth - totalWidth) / 2) : minLeft;
+            const left = Math.floor((p.windowWidth - totalWidth) / 2);
             paletteDiv.position(left, 5);
             paletteDiv.style('width', `${totalWidth}px`);
             // reserve two rows of thumbnail height for layout
