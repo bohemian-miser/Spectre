@@ -1,4 +1,6 @@
 export const ident = [1, 0, 0, 0, 1, 0];
+// Make the tiles a lil bit smaller than the box and shift them up slightly.
+export const adjust_mat = [0.95, 0, 0, 0, 0.95, 0.3];
 export function pt(x, y) {
     return p.createVector(x, y);
 }

@@ -10,7 +10,6 @@ window.showLines = true;
 const adjust_mat = [0.95, 0, 0, 0, 0.95, 0.3];
 // let lw_scale = 1;
 const sketch = (p) => {
-    window.p = p; // Make p5 instance globally available for modules
     let to_screen = [20, 0, 0, 0, -20, 0];
     let sys;
     // UI flags
@@ -20,8 +19,7 @@ const sketch = (p) => {
     let subst_button;
     let dragging = false;
     let uibox = true;
-    let colmap = colmap_orig;
-    window.colmap = colmap;
+    window.p = p; // Make p5 instance globally available for modules
     // default custom colours (hex) and current custom mapping (hoisted so draw() can read)
     // Initialize custom colours to match the currently active `colmap` so the
     // colour pickers default to the same values as the dropdown scheme.
@@ -882,7 +880,7 @@ const sketch = (p) => {
             }
             colmap = cm;
         }
-        window.colmap = colmap;
+        window.colmapstate.colmap;
         // draw the currently selected tile only
         sys[tile_sel.value()].draw(ident);
         p.pop();

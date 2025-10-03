@@ -9,6 +9,7 @@ export const state = {
     shape: 'Tile(1,1)',
     tile: 'Delta',
     customColors: {} as { [key: string]: string },
+    p: null,
     colmap: {} as { [key: string]: number[] }
 };
 

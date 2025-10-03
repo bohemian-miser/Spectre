@@ -1,3 +1,4 @@
+import p5 from 'p5';
 export declare const state: {
     showOutlines: boolean;
     showBackgrounds: boolean;
@@ -11,6 +12,7 @@ export declare const state: {
     customColors: {
         [key: string]: string;
     };
+    p: p5;
 };
 export type AppState = typeof state;
 //# sourceMappingURL=state.d.ts.map

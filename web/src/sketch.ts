@@ -1,17 +1,14 @@
 import p5 from 'p5';
-import { Shape, CurvyShape, Meta, unique_edge_labels } from './tiles';
 import { state } from './state';
+import { Shape, CurvyShape, Meta, unique_edge_labels } from './tiles';
 import { tile_names, colmap53, colmap_orig, colmap_mystics, colmap_pride } from './config';
-import { pt, mul, trot, ttrans, inv, transPt, ident } from './utils';
+import { pt, mul, trot, ttrans, inv, transPt, ident, adjust_mat} from './utils';
 
 // p5.disableFriendlyErrors = true;
 
-(window as any).showOutlines = true;
-(window as any).showBackgrounds = true;
-(window as any).showLines = true;
-
-// Make the tiles a lil bit smaller than the box and shift them up slightly.
-const adjust_mat = [0.95, 0, 0, 0, 0.95, 0.3];
+state.showOutlines = true;
+state.showBackgrounds = true;
+state.showLines = true;
 
 
 // let lw_scale = 1;
@@ -32,7 +29,8 @@ const sketch = (p: p5) => {
 
 
     let colmap = colmap_orig;
-    (window as any).colmap = colmap;
+    state.colmap = colmap;
+    (window as any).p = p; // Make p5 instance globally available for modules
 
     // default custom colours (hex) and current custom mapping (hoisted so draw() can read)
     // Initialize custom colours to match the currently active `colmap` so the
@@ -51,7 +49,7 @@ const sketch = (p: p5) => {
 
     // UI palette elements (hoisted so repositioning can run on resize)
     let overlays: { [key: string]: p5.Vector[][] } = {};
-    (window as any).overlays = overlays;
+    state.overlays = overlays;
     let paletteDiv: p5.Element;
     let customDiv: p5.Element;
     let miniNames: string[];
@@ -369,18 +367,18 @@ const sketch = (p: p5) => {
             ctx.closePath();
             const labelForFill = overrideLabel || geom.label;
             const col = colmap[labelForFill] || [200, 200, 200];
-            if ((window as any).showBackgrounds) {
+            if (state.showBackgrounds) {
                 ctx.fillStyle = `rgb(${col[0]},${col[1]},${col[2]})`;
                 ctx.fill();
             }
-            if ((window as any).showOutlines) {
+            if (state.showOutlines) {
                 ctx.strokeStyle = 'black';
                 ctx.lineWidth = 1;
                 ctx.stroke();
             }
             // draw overlays if present
             const overlayKey = overrideLabel || geom.label;
-            if (typeof overlays !== 'undefined' && overlays[overlayKey] && (window as any).showLines) {
+            if (typeof overlays !== 'undefined' && overlays[overlayKey] && state.showLines) {
                 ctx.strokeStyle = 'black';
                 ctx.lineWidth = 2;
                 for (let stroke of overlays[overlayKey]) {
@@ -395,7 +393,7 @@ const sketch = (p: p5) => {
 
             // draw edge labels on thumbnails when requested
             try {
-                if ((window as any).selectedMajorEdges && (window as any).selectedMajorEdges.size > 0 && unique_edge_labels) {
+                if (state.selectedMajorEdges && state.selectedMajorEdges.size > 0 && unique_edge_labels) {
                     const labList = unique_edge_labels[labelForFill];
                     if (labList && labList.length) {
                         // map leading char to colors (same palette as main view)
@@ -420,7 +418,7 @@ const sketch = (p: p5) => {
                         for (let j = 0; j < k; ++j) {
                             const lab = labList[j] || '';
                             const major = parseInt(lab.replace('-', '').charAt(0));
-                            if (!(window as any).selectedMajorEdges.has(major)) {
+                            if (!state.selectedMajorEdges.has(major)) {
                                 continue;
                             }
                             const idxA = (j * step) % n;
@@ -789,13 +787,13 @@ const sketch = (p: p5) => {
 
         // Checkbox: show edge labels
         const lbl_check = p.createCheckbox('Show all edge numbers', false);
-        (window as any).selectedMajorEdges = new Set<number>();
+        state.selectedMajorEdges = new Set<number>();
         lbl_check.position(10, 210);
 
         const showOutlinesCheck = p.createCheckbox('Show Outlines', true);
         showOutlinesCheck.position(10, 440);
         showOutlinesCheck.changed(() => {
-            (window as any).showOutlines = showOutlinesCheck.checked() as boolean;
+            state.showOutlines = showOutlinesCheck.checked() as boolean;
             refreshThumbnails();
             p.loop();
         });
@@ -803,7 +801,7 @@ const sketch = (p: p5) => {
         const showBackgroundsCheck = p.createCheckbox('Show Backgrounds', true);
         showBackgroundsCheck.position(10, 460);
         showBackgroundsCheck.changed(() => {
-            (window as any).showBackgrounds = showBackgroundsCheck.checked() as boolean;
+            state.showBackgrounds = showBackgroundsCheck.checked() as boolean;
             refreshThumbnails();
             p.loop();
         });
@@ -811,7 +809,7 @@ const sketch = (p: p5) => {
         const showLinesCheck = p.createCheckbox('Show Lines', true);
         showLinesCheck.position(10, 480);
         showLinesCheck.changed(() => {
-            (window as any).showLines = showLinesCheck.checked() as boolean;
+            state.showLines = showLinesCheck.checked() as boolean;
             refreshThumbnails();
             p.loop();
         });
@@ -837,9 +835,9 @@ const sketch = (p: p5) => {
             checkbox.position(10, y_pos);
             checkbox.changed(() => {
                 if (checkbox.checked()) {
-                    (window as any).selectedMajorEdges.add(edge_type.value);
+                    state.selectedMajorEdges.add(edge_type.value);
                 } else {
-                    (window as any).selectedMajorEdges.delete(edge_type.value);
+                    state.selectedMajorEdges.delete(edge_type.value);
                 }
                 refreshThumbnails();
                 p.loop();
@@ -853,9 +851,9 @@ const sketch = (p: p5) => {
             majorEdgeCheckboxes.forEach((checkbox, index) => {
                 checkbox.checked(isChecked);
                 if (isChecked) {
-                    (window as any).selectedMajorEdges.add(edge_types[index].value);
+                    state.selectedMajorEdges.add(edge_types[index].value);
                 } else {
-                    (window as any).selectedMajorEdges.clear();
+                    state.selectedMajorEdges.clear();
                 }
             });
             refreshThumbnails();
@@ -932,7 +930,7 @@ const sketch = (p: p5) => {
             }
             colmap = cm;
         }
-        (window as any).colmap = colmap;
+        state.colmap = colmap;
 
         // draw the currently selected tile only
         sys[tile_sel.value() as string].draw(ident);
