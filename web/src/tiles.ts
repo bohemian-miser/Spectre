@@ -1,9 +1,10 @@
 import p5 from 'p5';
+import { state } from './state';
 import { pt, transPt, mul } from "./utils";
 
 // These need to be available for the draw functions
 declare let p: p5;
-declare let colmap: { [key: string]: number[] };
+// declare let state.colmap: { [key: string]: number[] };
 declare let overlays: { [key: string]: p5.Vector[][] };
 declare let showEdgeLabels: boolean;
 declare let showEdgeJoiner: boolean;
@@ -160,7 +161,7 @@ export class Shape
 
 	draw( S: number[] )
 	{
-		drawPolygon( this.pts, S, colmap[this.label], [0,0,0], 0.1 );
+		drawPolygon( this.pts, S, state.colmap[this.label], [0,0,0], 0.1 );
 		if( typeof overlays !== 'undefined' && overlays[this.label] && (window as any).showLines ) {
 			p.stroke(0);
 			p.strokeWeight( 0.1 );
@@ -192,7 +193,7 @@ export class Shape
 			}
 			s = s + `${sp.x},${sp.y}`;
 		}
-		const col = colmap[this.label];
+		const col = state.colmap[this.label];
 
 		s = s + `" stroke="black" stroke-weight="0.1" fill="rgb(${col[0]},${col[1]},${col[2]})" />`;
 		stream.push( s );
@@ -230,7 +231,7 @@ export class CurvyShape extends Shape
 
 	draw( S: number[] )
 	{
-		p.fill( colmap[this.label][0], colmap[this.label][1], colmap[this.label][2] );
+		p.fill( state.colmap[this.label][0], state.colmap[this.label][1], state.colmap[this.label][2] );
 		p.strokeWeight( 0.1 );
 		p.stroke( 0 );
 
@@ -274,7 +275,7 @@ export class CurvyShape extends Shape
 
 			s = s + ` C ${a.x} ${a.y} ${b.x} ${b.y} ${c.x} ${c.y}`;	
 		}
-		const col = colmap[this.label];
+		const col = state.colmap[this.label];
 
 		s = s + `" stroke="black" stroke-weight="0.1" fill="rgb(${col[0]},${col[1]},${col[2]})" />`;
 		stream.push( s );

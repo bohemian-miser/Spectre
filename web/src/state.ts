@@ -1,4 +1,4 @@
-export const state = {
+export var state = {
     showOutlines: true,
     showBackgrounds: true,
     showLines: true,
