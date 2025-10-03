@@ -56,7 +56,7 @@ export class Shape
 	}
 
 	_drawEdgeLabels( S: number[] ) {
-		if( typeof showEdgeLabels === 'undefined' || !showEdgeLabels ) return;
+		if( typeof (window as any).selectedMajorEdges === 'undefined' || (window as any).selectedMajorEdges.size === 0 ) return;
 		if( typeof unique_edge_labels === 'undefined' ) return;
 		const labels = unique_edge_labels[this.label];
 		if( !labels || labels.length === 0 ) return;
@@ -67,6 +67,12 @@ export class Shape
 		// use original vertex list if available (CurvyShape stores `origPts`)
 		const basePts = (this.origPts && this.origPts.length) ? this.origPts : this.pts;
 		for( let i = 0; i < basePts.length; ++i ) {
+			const lab = labels[i] || '';
+            const major = parseInt(lab.replace('-', '').charAt(0));
+            if (!(window as any).selectedMajorEdges.has(major)) {
+                continue;
+            }
+
 			const a = basePts[i];
 			const b = basePts[(i+1) % basePts.length];
 			const ma = transPt( S, pt( (a.x + b.x)/2, (a.y + b.y)/2 ) );
@@ -92,7 +98,7 @@ export class Shape
 			const oy = (ny_e / nmag) * inset;
 			const px = ma.x + ox;
 			const py = ma.y + oy;
-			const lab = labels[i] || '';
+			
 			// set text size in screen pixels (fixed)
 			const DESIRED_LABEL_PX = 2;
             const ts = DESIRED_LABEL_PX;
