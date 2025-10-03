@@ -8,6 +8,9 @@ p5.disableFriendlyErrors = true;
 (window as any).showBackgrounds = true;
 (window as any).showLines = true;
 
+// Make the tiles a lil bit smaller than the box and shift them up slightly.
+const adjust_mat = [0.95, 0, 0, 0, 0.95, 0.3];
+
 const sketch = (p: p5) => {
     (window as any).p = p; // Make p5 instance globally available for modules
     let to_screen = [20, 0, 0, 0, -20, 0];
@@ -394,7 +397,7 @@ const sketch = (p: p5) => {
         // thumbnail sizing constants (must be defined before paletteDiv uses them)
         const THUMB_MULT = 3; // thumbnails 3x larger
         const thumbWidth = 64 * THUMB_MULT;
-        const thumbHeight = 64 * THUMB_MULT;
+        const thumbHeight = 45 * THUMB_MULT;
         const thumbScale = 14 * THUMB_MULT; // scale factor for thumbnail
         // --- Thumbnail palette: one miniature tile of each flavour for drawing overlays
         paletteDiv = p.createDiv('');
@@ -415,6 +418,7 @@ const sketch = (p: p5) => {
 
         // helper to draw a geometry (Shape or Meta) into a 2D canvas context using transform S
         function drawGeomToContext(ctx: CanvasRenderingContext2D, geom: any, S: number[], overrideLabel?: string) {
+            S = mul(S, adjust_mat);
             if (!geom) return; // guard against missing sys[label]
             if (geom.geoms && Array.isArray(geom.geoms)) {
                 for (let g of geom.geoms) {
@@ -629,6 +633,9 @@ const sketch = (p: p5) => {
             const scale = [thumbScale, 0, 0, 0, -thumbScale, 0];
             const place = ttrans(thumbWidth / 2, thumbHeight / 2);
             const S_thumb = mul(place, mul(scale, toCenter));
+            
+            const S_thumb_adjusted = mul(S_thumb, adjust_mat);
+
 
             function renderThumb() {
                 ctx.clearRect(0, 0, thumbWidth, thumbHeight);
@@ -646,7 +653,7 @@ const sketch = (p: p5) => {
                 const x = ev.clientX - rect.left;
                 const y = ev.clientY - rect.top;
                 // convert to tile-local coords
-                const invS = inv(S_thumb);
+                const invS = inv(S_thumb_adjusted);
                 const local = transPt(invS, pt(x, y));
                 activeStroke.label = label;
                 activeStroke.points = [local];
@@ -664,14 +671,14 @@ const sketch = (p: p5) => {
                 const rect = (el.elt as any).getBoundingClientRect();
                 const x = ev.clientX - rect.left;
                 const y = ev.clientY - rect.top;
-                const invS = inv(S_thumb);
+                const invS = inv(S_thumb_adjusted);
                 const local = transPt(invS, pt(x, y));
                 activeStroke.points.push(local);
                 // immediate feedback on thumb
                 renderThumb();
                 ctx.beginPath();
                 for (let i = 0; i < activeStroke.points.length; ++i) {
-                    const p = transPt(S_thumb, activeStroke.points[i]);
+                    const p = transPt(S_thumb_adjusted, activeStroke.points[i]);
                     if (i == 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y);
                 }
                 ctx.strokeStyle = 'black'; ctx.lineWidth = 2; ctx.stroke();
