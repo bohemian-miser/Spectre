@@ -6,6 +6,7 @@ p5.disableFriendlyErrors = true;
 
 (window as any).showOutlines = true;
 (window as any).showBackgrounds = true;
+(window as any).showLines = true;
 
 const sketch = (p: p5) => {
     (window as any).p = p; // Make p5 instance globally available for modules
@@ -392,8 +393,8 @@ const sketch = (p: p5) => {
         // --- Thumbnail palette: one miniature tile of each flavour for drawing overlays
         // thumbnail sizing constants (must be defined before paletteDiv uses them)
         const THUMB_MULT = 3; // thumbnails 3x larger
-        const thumbSizeBase = 64;
-        const thumbSize = thumbSizeBase * THUMB_MULT;
+        const thumbWidth = 64 * THUMB_MULT;
+        const thumbHeight = 64 * THUMB_MULT;
         const thumbScale = 14 * THUMB_MULT; // scale factor for thumbnail
         // --- Thumbnail palette: one miniature tile of each flavour for drawing overlays
         paletteDiv = p.createDiv('');
@@ -401,8 +402,8 @@ const sketch = (p: p5) => {
         paletteDiv.style('position', 'absolute');
         // use CSS grid so we have a fixed 5-column layout (2 rows for 10 thumbnails)
         paletteDiv.style('display', 'grid');
-        paletteDiv.style('grid-template-columns', `repeat(5, ${thumbSize}px)`);
-        paletteDiv.style('grid-auto-rows', `${thumbSize}px`);
+        paletteDiv.style('grid-template-columns', `repeat(5, ${thumbWidth}px)`);
+        paletteDiv.style('grid-auto-rows', `${thumbHeight}px`);
         paletteDiv.style('gap', '8px');
         // allow horizontal scroll if thumbnails overflow; allow wrapping into rows
         paletteDiv.style('overflow-x', 'auto');
@@ -442,7 +443,7 @@ const sketch = (p: p5) => {
             }
             // draw overlays if present
             const overlayKey = overrideLabel || geom.label;
-            if (typeof overlays !== 'undefined' && overlays[overlayKey]) {
+            if (typeof overlays !== 'undefined' && overlays[overlayKey] && (window as any).showLines) {
                 ctx.strokeStyle = 'black';
                 ctx.lineWidth = 2;
                 for (let stroke of overlays[overlayKey]) {
@@ -475,7 +476,7 @@ const sketch = (p: p5) => {
                         const n = pts.length;
                         const k = labList.length;
                         const step = Math.max(1, Math.floor(n / k));
-                        const thumbSize = 192; // This should be available from the outer scope
+                        const thumbSize = thumbHeight; // Use thumbHeight for vertical scaling of font and inset
                         const fontPx = Math.max(8, Math.floor(10 * (thumbSize / 192))); // scale font with thumbSize
                         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
                         ctx.lineWidth = 2;
@@ -582,17 +583,40 @@ const sketch = (p: p5) => {
         const activeStroke: { label: string | null, points: p5.Vector[] | null, canvas: HTMLCanvasElement | null } = { label: null, points: null, canvas: null };
 
         function makeThumbnail(label: string) {
+            const holder = p.createDiv('');
+            holder.parent(paletteDiv);
+            holder.style('position', 'relative');
+
             const el = p.createElement('canvas');
-            el.attribute('width', thumbSize.toString());
-            el.attribute('height', thumbSize.toString());
-            el.parent(paletteDiv);
+            el.attribute('width', thumbWidth.toString());
+            el.attribute('height', thumbHeight.toString());
+            el.parent(holder);
+
+            const clearButton = p.createButton('X');
+            clearButton.parent(holder);
+            clearButton.style('position', 'absolute');
+            clearButton.style('top', '0px');
+            clearButton.style('right', '0px');
+            clearButton.style('width', '20px');
+            clearButton.style('height', '20px');
+            clearButton.style('padding', '0');
+            clearButton.style('border', 'none');
+            clearButton.style('background', 'rgba(255, 0, 0, 0.5)');
+            clearButton.style('color', 'white');
+            clearButton.style('cursor', 'pointer');
+            clearButton.mousePressed(() => {
+                overlays[label] = [];
+                renderThumb();
+                p.loop();
+            });
+
             (el.elt as any).style.border = '1px solid #888';
             (el.elt as any).style.cursor = 'crosshair';
             // ensure the canvas fills the grid cell exactly
             (el.elt as any).style.margin = '0';
             (el.elt as any).style.boxSizing = 'border-box';
-            (el.elt as any).style.width = thumbSize + 'px';
-            (el.elt as any).style.height = thumbSize + 'px';
+            (el.elt as any).style.width = thumbWidth + 'px';
+            (el.elt as any).style.height = thumbHeight + 'px';
             const ctx = (el.elt as any).getContext('2d');
             // compute thumbnail transform: center + scale (flip y)
             // center the shape's centroid in the thumbnail
@@ -603,11 +627,11 @@ const sketch = (p: p5) => {
             // translate centroid to origin then scale and move to canvas center
             const toCenter = ttrans(-center.x, -center.y);
             const scale = [thumbScale, 0, 0, 0, -thumbScale, 0];
-            const place = ttrans(thumbSize / 2, thumbSize / 2);
+            const place = ttrans(thumbWidth / 2, thumbHeight / 2);
             const S_thumb = mul(place, mul(scale, toCenter));
 
             function renderThumb() {
-                ctx.clearRect(0, 0, thumbSize, thumbSize);
+                ctx.clearRect(0, 0, thumbWidth, thumbHeight);
                 // Use only the persistent palette snapshot. If a label is missing
                 // from the snapshot, render nothing (do not fall back to live sys).
                 const source = (palette_sys && palette_sys[label]) ? palette_sys[label] : null;
@@ -696,7 +720,7 @@ const sketch = (p: p5) => {
             for (const name of miniNames) {
                 const mc = miniCanvases[name];
                 if (!mc) continue;
-                mc.ctx.clearRect(0, 0, thumbSize, thumbSize);
+                mc.ctx.clearRect(0, 0, thumbWidth, thumbHeight);
                 // draw from persistent snapshot only
                 drawGeomToContext(mc.ctx, (palette_sys && palette_sys[name]) ? palette_sys[name] : null, mc.S_thumb);
             }
@@ -724,17 +748,17 @@ const sketch = (p: p5) => {
         function repositionPalette() {
             const gap = 6;
             const cols = 5;
-            const totalWidth = cols * (thumbSize + gap);
+            const totalWidth = cols * (thumbWidth + gap);
             // center across the top
             const minLeft = 140; // avoid left controls
             const left = (totalWidth + 40 < p.windowWidth) ? Math.floor((p.windowWidth - totalWidth) / 2) : minLeft;
             paletteDiv.position(left, 5);
             paletteDiv.style('width', `${totalWidth}px`);
             // reserve two rows of thumbnail height for layout
-            paletteDiv.style('height', `${(thumbSize * 2) + (gap)}px`);
+            paletteDiv.style('height', `${(thumbHeight * 2) + (gap)}px`);
             paletteDiv.style('z-index', '1000');
             // position custom div under two rows of thumbnails
-            customDiv.position(left, 5 + (thumbSize * 2) + 16);
+            customDiv.position(left, 5 + (thumbHeight * 2) + 16);
             customDiv.style('z-index', '1000');
         }
 
@@ -845,6 +869,14 @@ const sketch = (p: p5) => {
             p.loop();
         });
 
+        const showLinesCheck = p.createCheckbox('Show Lines', true);
+        showLinesCheck.position(10, 480);
+        showLinesCheck.changed(() => {
+            (window as any).showLines = showLinesCheck.checked() as boolean;
+            refreshThumbnails();
+            p.loop();
+        });
+
         const majorEdgesLabel = p.createSpan('Major Edges');
         majorEdgesLabel.position(10, 240);
         const edge_types = [
@@ -897,7 +929,7 @@ const sketch = (p: p5) => {
         // Pan/zoom controls removed: drag to pan and scroll to zoom
 
         let save_button = p.createButton("Save PNG");
-        save_button.position(10, 500);
+        save_button.position(10, 520);
         save_button.size(125, 25);
         save_button.mousePressed(() => {
             uibox = false;
@@ -908,7 +940,7 @@ const sketch = (p: p5) => {
         });
 
         let svg_button = p.createButton("Save SVG");
-        svg_button.position(10, 530);
+        svg_button.position(10, 550);
         svg_button.size(125, 25);
         svg_button.mousePressed(() => {
             const stream: string[] = [];
@@ -972,7 +1004,7 @@ const sketch = (p: p5) => {
             p.stroke(0);
             p.strokeWeight(0.5);
             p.fill(255, 220);
-            p.rect(5, 5, 135, 565);
+            p.rect(5, 5, 135, 585);
         }
         p.noLoop();
     };

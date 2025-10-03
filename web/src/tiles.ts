@@ -6,6 +6,7 @@ declare let p: p5;
 declare let colmap: { [key: string]: number[] };
 declare let overlays: { [key: string]: p5.Vector[][] };
 declare let showEdgeLabels: boolean;
+declare let showLines: boolean;
 declare let showOutlines: boolean;
 declare let showBackgrounds: boolean;
 
@@ -136,9 +137,8 @@ export class Shape
 
 	draw( S: number[] )
 	{
-		drawPolygon( this.pts, S, colmap[this.label], [0,0,0], 0.1 );
-		if( typeof overlays !== 'undefined' && overlays[this.label] ) {
-			p.stroke(0);
+		        drawPolygon( this.pts, S, colmap[this.label], [0,0,0], 0.1 );
+		        if( typeof overlays !== 'undefined' && overlays[this.label] && (window as any).showLines ) {			p.stroke(0);
 			p.strokeWeight( 0.1 );
 			p.noFill();
 			for( let st of overlays[this.label] ) {
@@ -278,7 +278,7 @@ export class Meta
 		for( let g of this.geoms ) {
 			g.geom.draw( mul( S, g.xform ) );
 		}
-		if( typeof overlays !== 'undefined' && overlays['Gamma'] ) {
+		if( typeof overlays !== 'undefined' && overlays['Gamma'] && (window as any).showLines ) {
 			p.stroke(0);
 			p.strokeWeight( 0.1 );
 			p.noFill();
