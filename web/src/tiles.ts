@@ -1,5 +1,5 @@
-import p5 from "p5";
-import { pt, transPt, mul } from "./utils";
+import p5 from 'p5';
+import { pt, transPt, mul, ident, trot, ttrans } from "./utils";
 
 // These need to be available for the draw functions
 declare let p: p5;

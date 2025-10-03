@@ -1,0 +1,294 @@
+import * as p5 from 'p5';
+import { pt, transPt, mul, ident, trot, ttrans } from "./utils";
+export const unique_edge_labels = {
+    'Delta': ['3.0A', '3.1A', '2.0A', '2.1A', '2.2A', '-5.1A', '-5.0A', '1.0A', '1.1A', '1.2A', '-3.1A', '-3.0A', '-6.1A', '-6.0A'],
+    'Theta': ['3.0A', '3.1A', '2.0A', '2.1A', '2.2A', '8.0A', '2.0B', '2.1B', '2.2B', '0.0A', '0.1A', '-2.2A', '-2.1A', '-2.0A'],
+    'Lambda': ['3.0A', '3.1A', '2.0A', '2.1A', '2.2A', '-5.1A', '-5.0A', '1.0A', '1.1A', '1.2A', '-8.0A', '-2.2A', '-2.1A', '-2.0A'],
+    'Xi': ['-1.2A', '-1.1A', '-1.0A', '5.0A', '5.1A', '8.0A', '2.0A', '2.1A', '2.2A', '0.0A', '0.1A', '-2.2A', '-2.1A', '-2.0A'],
+    'Pi': ['-1.2A', '-1.1A', '-1.0A', '5.0A', '5.1A', '-5.1A', '-5.0A', '1.0A', '1.1A', '1.2A', '-8.0A', '-2.2A', '-2.1A', '-2.0A'],
+    'Sigma': ['4.2A', '4.3A', '2.0A', '2.1A', '2.2A', '-5.1A', '-5.0A', '1.0A', '1.1A', '1.2A', '-3.1A', '-3.0A', '4.0A', '4.1A'],
+    'Phi': ['3.0A', '3.1A', '2.0A', '2.1A', '2.2A', '-5.1A', '-5.0A', '5.0A', '5.1A', '0.0A', '0.1A', '-2.2A', '-2.1A', '-2.0A'],
+    'Psi': ['-1.2A', '-1.1A', '-1.0A', '5.0A', '5.1A', '-5.1A', '-5.0A', '5.0B', '5.1B', '0.0A', '0.1A', '-2.2A', '-2.1A', '-2.0A'],
+    'Gamma2': ['-7.1A', '-7.0A', '-3.1A', '-3.0A', '6.0A', '6.1A', '-4.3A', '-4.2A', '-4.1A', '-4.0A', '2.0A', '2.1A', '-7.3A', '-7.2A'],
+    'Gamma1': ['-1.2A', '-1.1A', '-1.0A', '1.0A', '1.1A', '1.2A', '7.0A', '7.1A', '7.2A', '7.3A', '2.2A', '-2.2A', '-2.1A', '-2.0A']
+};
+export function getEdgeMidpoints(tileLabel, selectedEdges) {
+    const midpoints = [];
+    if (typeof unique_edge_labels === 'undefined')
+        return midpoints;
+    const labels = unique_edge_labels[tileLabel];
+    if (!labels || labels.length === 0)
+        return midpoints;
+    const shape = new Shape([], [], tileLabel); // A bit of a hack to get access to the pts
+    const basePts = (shape.origPts && shape.origPts.length) ? shape.origPts : shape.pts;
+    for (let i = 0; i < basePts.length; ++i) {
+        const lab = labels[i] || '';
+        const major = parseInt(lab.replace('-', '').charAt(0));
+        if (selectedEdges.has(major)) {
+            const a = basePts[i];
+            const b = basePts[(i + 1) % basePts.length];
+            midpoints.push(p.createVector((a.x + b.x) / 2, (a.y + b.y) / 2));
+        }
+    }
+    return midpoints;
+}
+function drawPolygon(shape, T, f, s, w) {
+    if (f != null && window.showBackgrounds) {
+        p.fill(f[0], f[1], f[2]);
+    }
+    else {
+        p.noFill();
+    }
+    if (s != null && window.showOutlines) {
+        p.stroke(0);
+        p.strokeWeight(w); // / lw_scale );
+    }
+    else {
+        p.noStroke();
+    }
+    p.beginShape();
+    for (let v of shape) {
+        const tp = transPt(T, v);
+        p.vertex(tp.x, tp.y);
+    }
+    p.endShape(p.CLOSE);
+}
+export class Shape {
+    pts;
+    quad;
+    label;
+    origPts;
+    constructor(pts, quad, label) {
+        this.pts = pts;
+        this.quad = quad;
+        this.label = label;
+    }
+    _drawEdgeLabels(S) {
+        if (typeof window.selectedMajorEdges === 'undefined' || window.selectedMajorEdges.size === 0)
+            return;
+        if (typeof unique_edge_labels === 'undefined')
+            return;
+        const labels = unique_edge_labels[this.label];
+        if (!labels || labels.length === 0)
+            return;
+        // draw labels at midpoints of consecutive pts
+        p.textAlign(p.CENTER, p.CENTER);
+        p.fill(0x9f);
+        p.noStroke();
+        // use original vertex list if available (CurvyShape stores `origPts`)
+        const basePts = (this.origPts && this.origPts.length) ? this.origPts : this.pts;
+        for (let i = 0; i < basePts.length; ++i) {
+            const lab = labels[i] || '';
+            const major = parseInt(lab.replace('-', '').charAt(0));
+            if (!window.selectedMajorEdges.has(major)) {
+                continue;
+            }
+            const a = basePts[i];
+            const b = basePts[(i + 1) % basePts.length];
+            const ma = transPt(S, pt((a.x + b.x) / 2, (a.y + b.y) / 2));
+            // compute perpendicular inward offset along the edge normal (screen space)
+            const centroid = (() => {
+                let sx = 0, sy = 0;
+                for (const pt of basePts) {
+                    sx += pt.x;
+                    sy += pt.y;
+                }
+                return pt(sx / basePts.length, sy / basePts.length);
+            })();
+            const c_world = transPt(S, centroid);
+            const a_world = transPt(S, a);
+            const b_world = transPt(S, b);
+            const ex = b_world.x - a_world.x;
+            const ey = b_world.y - a_world.y;
+            // perpendicular (edge normal)
+            let nx_e = -ey;
+            let ny_e = ex;
+            // ensure normal points inward toward centroid (ma -> centroid)
+            const dot = nx_e * (c_world.x - ma.x) + ny_e * (c_world.y - ma.y);
+            if (dot < 0) {
+                nx_e = -nx_e;
+                ny_e = -ny_e;
+            }
+            const nmag = Math.sqrt(nx_e * nx_e + ny_e * ny_e) || 1;
+            const DESIRED_INSET_PX = 0;
+            const inset = DESIRED_INSET_PX;
+            const ox = (nx_e / nmag) * inset;
+            const oy = (ny_e / nmag) * inset;
+            const px = ma.x + ox;
+            const py = ma.y + oy;
+            // set text size in screen pixels (fixed)
+            const DESIRED_LABEL_PX = 2;
+            const ts = DESIRED_LABEL_PX;
+            // map leading character to a color for the major edge
+            const lead = lab && lab.length ? lab.charAt(0) : '';
+            const leadColors = {
+                '-': [180, 30, 30],
+                '0': [31, 119, 180],
+                '1': [255, 127, 14],
+                '2': [44, 160, 44],
+                '3': [214, 39, 40],
+                '4': [148, 103, 189],
+                '5': [140, 86, 75],
+                '6': [227, 119, 194],
+                '7': [127, 127, 127],
+                '8': [188, 189, 34],
+                '9': [23, 190, 207]
+            };
+            const ec = leadColors.hasOwnProperty(lead) ? leadColors[lead] : [0, 0, 0];
+            p.fill(ec[0], ec[1], ec[2]);
+            p.stroke(0);
+            p.strokeWeight(1);
+            p.push();
+            p.translate(px, py);
+            p.scale(0.1);
+            p.scale(1, -1);
+            p.textSize(ts);
+            p.text(lab, 0, 0);
+            p.pop();
+        }
+    }
+    draw(S) {
+        drawPolygon(this.pts, S, colmap[this.label], [0, 0, 0], 0.1);
+        if (typeof overlays !== 'undefined' && overlays[this.label] && window.showLines) {
+            p.stroke(0);
+            p.strokeWeight(0.1);
+            p.noFill();
+            for (let st of overlays[this.label]) {
+                p.beginShape();
+                for (let i = 0; i < st.length; ++i) {
+                    const pt = transPt(S, st[i]);
+                    p.vertex(pt.x, pt.y);
+                }
+                p.endShape();
+            }
+        }
+        // draw edge labels if requested
+        if (typeof this._drawEdgeLabels === 'function')
+            this._drawEdgeLabels(S);
+    }
+    streamSVG(S, stream) {
+        var s = '<polygon points="';
+        var at_start = true;
+        for (let pt of this.pts) {
+            const sp = transPt(S, pt);
+            if (at_start) {
+                at_start = false;
+            }
+            else {
+                s = s + ' ';
+            }
+            s = s + `${sp.x},${sp.y}`;
+        }
+        const col = colmap[this.label];
+        s = s + `" stroke="black" stroke-weight="0.1" fill="rgb(${col[0]},${col[1]},${col[2]})" />`;
+        stream.push(s);
+    }
+}
+export class CurvyShape extends Shape {
+    constructor(pts, quad, label) {
+        super(pts, quad, label);
+        this.quad = quad;
+        this.label = label;
+        // preserve original vertex list (useful for label placement on curved shapes)
+        this.origPts = pts.slice();
+        let blah = true;
+        this.pts = [pts[pts.length - 1]];
+        for (const pt of pts) {
+            const prev = this.pts[this.pts.length - 1];
+            const v = p.createVector(pt.x - prev.x, pt.y - prev.y);
+            const w = p.createVector(-v.y, v.x);
+            if (blah) {
+                this.pts.push(p.createVector(prev.x + 0.33 * v.x + 0.6 * w.x, prev.y + 0.33 * v.y + 0.6 * w.y));
+                this.pts.push(p.createVector(prev.x + 0.67 * v.x + 0.6 * w.x, prev.y + 0.67 * v.y + 0.6 * w.y));
+            }
+            else {
+                this.pts.push(p.createVector(prev.x + 0.33 * v.x - 0.6 * w.x, prev.y + 0.33 * v.y - 0.6 * w.y));
+                this.pts.push(p.createVector(prev.x + 0.67 * v.x - 0.6 * w.x, prev.y + 0.67 * v.y - 0.6 * w.y));
+            }
+            blah = !blah;
+            this.pts.push(pt);
+        }
+    }
+    draw(S) {
+        p.fill(colmap[this.label][0], colmap[this.label][1], colmap[this.label][2]);
+        p.strokeWeight(0.1);
+        p.stroke(0);
+        p.beginShape();
+        const tp = transPt(S, this.pts[0]);
+        p.vertex(tp.x, tp.y);
+        for (let idx = 1; idx < this.pts.length; idx += 3) {
+            const a = transPt(S, this.pts[idx]);
+            const b = transPt(S, this.pts[idx + 1]);
+            const c = transPt(S, this.pts[idx + 2]);
+            p.bezierVertex(a.x, a.y, b.x, b.y, c.x, c.y);
+        }
+        p.endShape(p.CLOSE);
+        if (typeof overlays !== 'undefined' && overlays[this.label]) {
+            p.stroke(0);
+            p.strokeWeight(0.1);
+            p.noFill();
+            for (let st of overlays[this.label]) {
+                p.beginShape();
+                for (let i = 0; i < st.length; ++i) {
+                    const pt = transPt(S, st[i]);
+                    p.vertex(pt.x, pt.y);
+                }
+                p.endShape();
+            }
+        }
+    }
+    streamSVG(S, stream) {
+        const tp = transPt(S, this.pts[0]);
+        var s = `<path d="M ${tp.x} ${tp.y}`;
+        for (let idx = 1; idx < this.pts.length; idx += 3) {
+            const a = transPt(S, this.pts[idx]);
+            const b = transPt(S, this.pts[idx + 1]);
+            const c = transPt(S, this.pts[idx + 2]);
+            s = s + ` C ${a.x} ${a.y} ${b.x} ${b.y} ${c.x} ${c.y}`;
+        }
+        const col = colmap[this.label];
+        s = s + `" stroke="black" stroke-weight="0.1" fill="rgb(${col[0]},${col[1]},${col[2]})" />`;
+        stream.push(s);
+    }
+}
+export class Meta {
+    geoms;
+    quad;
+    constructor() {
+        this.geoms = [];
+        this.quad = [];
+    }
+    addChild(g, T) {
+        this.geoms.push({ geom: g, xform: T });
+    }
+    draw(S) {
+        for (let g of this.geoms) {
+            g.geom.draw(mul(S, g.xform));
+        }
+        if (typeof overlays !== 'undefined' && overlays['Gamma'] && window.showLines) {
+            p.stroke(0);
+            p.strokeWeight(0.1);
+            p.noFill();
+            for (let st of overlays['Gamma']) {
+                p.beginShape();
+                for (let i = 0; i < st.length; ++i) {
+                    const pt = transPt(S, st[i]);
+                    p.vertex(pt.x, pt.y);
+                }
+                p.endShape();
+            }
+        }
+        // if composite children have edge labels, draw them too
+        for (let g of this.geoms) {
+            if (g.geom && typeof g.geom._drawEdgeLabels === 'function') {
+                g.geom._drawEdgeLabels(mul(S, g.xform));
+            }
+        }
+    }
+    streamSVG(S, stream) {
+        for (let g of this.geoms) {
+            g.geom.streamSVG(mul(S, g.xform), stream);
+        }
+    }
+}
+//# sourceMappingURL=tiles.js.map
