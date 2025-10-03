@@ -1,23 +1,18 @@
-import * as p5 from 'p5';
+import p5 from 'p5';
 import { Shape, CurvyShape, Meta, unique_edge_labels } from './tiles';
 import { pt, mul, trot, ttrans, inv, transPt, ident } from './utils';
-p5.disableFriendlyErrors = true;
+// p5.disableFriendlyErrors = true;
 window.showOutlines = true;
 window.showBackgrounds = true;
 window.showLines = true;
 // Make the tiles a lil bit smaller than the box and shift them up slightly.
 const adjust_mat = [0.95, 0, 0, 0, 0.95, 0.3];
+// let lw_scale = 1;
 const sketch = (p) => {
     window.p = p; // Make p5 instance globally available for modules
     let to_screen = [20, 0, 0, 0, -20, 0];
-    let lw_scale = 1;
     let sys;
     // UI flags
-    let showEdgeLabels = false;
-    let scale_centre;
-    let scale_start;
-    let scale_ts;
-    let reset_but;
     let tile_sel;
     let shape_sel;
     let colscheme_sel;
@@ -156,7 +151,6 @@ const sketch = (p) => {
         return ret;
     }
     function buildHatTurtleBase(hat_dominant) {
-        const r3 = 1.7320508075688772;
         const hr3 = 0.8660254037844386;
         function hexPt(x, y) {
             return pt(x + 0.5 * y, -hr3 * y);
@@ -310,7 +304,6 @@ const sketch = (p) => {
                 sys = buildSpectreBase(false);
             }
             to_screen = [20, 0, 0, 0, -20, 0];
-            lw_scale = 1;
             // do not update palette snapshot here; thumbnails should remain
             // showing the original flavours and never change when sys is rebuilt
             p.loop();
@@ -646,7 +639,7 @@ const sketch = (p) => {
                 ctx.lineWidth = 2;
                 ctx.stroke();
             });
-            window.addEventListener('pointerup', function (ev) {
+            window.addEventListener('pointerup', function () {
                 if (activeStroke.points && activeStroke.label === label && activeStroke.canvas === el.elt) {
                     overlays[label].push(activeStroke.points);
                     activeStroke.points = null;
@@ -972,10 +965,10 @@ const sketch = (p) => {
         if (dragging) {
             // always pan by mouse drag
             to_screen = mul(ttrans(p.mouseX - p.pmouseX, p.mouseY - p.pmouseY), to_screen);
-            lw_scale = p.mag(to_screen[0], to_screen[1]) / 20.0;
             p.loop();
             return false;
         }
+        return;
     };
     // Zoom with mouse wheel about cursor
     p.mouseWheel = (event) => {
@@ -985,7 +978,6 @@ const sketch = (p) => {
         const world = transPt(inv(to_screen), pt(p.mouseX - p.width / 2, p.mouseY - p.height / 2));
         // scale about world point
         to_screen = mul(mul(ttrans(world.x, world.y), [factor, 0, 0, 0, factor, 0]), mul(ttrans(-world.x, -world.y), to_screen));
-        lw_scale = p.mag(to_screen[0], to_screen[1]) / 20.0;
         p.loop();
         // prevent page scroll
         return false;
@@ -996,4 +988,3 @@ const sketch = (p) => {
     };
 };
 new p5(sketch);
-//# sourceMappingURL=sketch.js.map

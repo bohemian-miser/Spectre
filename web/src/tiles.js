@@ -1,5 +1,4 @@
-import * as p5 from 'p5';
-import { pt, transPt, mul, ident, trot, ttrans } from "./utils";
+import { pt, transPt, mul } from "./utils";
 export const unique_edge_labels = {
     'Delta': ['3.0A', '3.1A', '2.0A', '2.1A', '2.2A', '-5.1A', '-5.0A', '1.0A', '1.1A', '1.2A', '-3.1A', '-3.0A', '-6.1A', '-6.0A'],
     'Theta': ['3.0A', '3.1A', '2.0A', '2.1A', '2.2A', '8.0A', '2.0B', '2.1B', '2.2B', '0.0A', '0.1A', '-2.2A', '-2.1A', '-2.0A'],
@@ -54,14 +53,35 @@ function drawPolygon(shape, T, f, s, w) {
     p.endShape(p.CLOSE);
 }
 export class Shape {
-    pts;
-    quad;
-    label;
-    origPts;
     constructor(pts, quad, label) {
+        Object.defineProperty(this, "pts", {
+            enumerable: true,
+            configurable: true,
+            writable: true,
+            value: void 0
+        });
+        Object.defineProperty(this, "quad", {
+            enumerable: true,
+            configurable: true,
+            writable: true,
+            value: void 0
+        });
+        Object.defineProperty(this, "label", {
+            enumerable: true,
+            configurable: true,
+            writable: true,
+            value: void 0
+        });
+        Object.defineProperty(this, "origPts", {
+            enumerable: true,
+            configurable: true,
+            writable: true,
+            value: void 0
+        });
         this.pts = pts;
         this.quad = quad;
         this.label = label;
+        this.origPts = [];
     }
     _drawEdgeLabels(S) {
         if (typeof window.selectedMajorEdges === 'undefined' || window.selectedMajorEdges.size === 0)
@@ -252,9 +272,19 @@ export class CurvyShape extends Shape {
     }
 }
 export class Meta {
-    geoms;
-    quad;
     constructor() {
+        Object.defineProperty(this, "geoms", {
+            enumerable: true,
+            configurable: true,
+            writable: true,
+            value: void 0
+        });
+        Object.defineProperty(this, "quad", {
+            enumerable: true,
+            configurable: true,
+            writable: true,
+            value: void 0
+        });
         this.geoms = [];
         this.quad = [];
     }
@@ -291,4 +321,3 @@ export class Meta {
         }
     }
 }
-//# sourceMappingURL=tiles.js.map

@@ -1,4 +1,4 @@
-import * as p5 from 'p5';
+import p5 from 'p5';
 export declare const unique_edge_labels: {
     [key: string]: string[];
 };

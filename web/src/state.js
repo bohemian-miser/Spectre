@@ -10,4 +10,3 @@ export const state = {
     tile: 'Delta',
     customColors: {}
 };
-//# sourceMappingURL=state.js.map

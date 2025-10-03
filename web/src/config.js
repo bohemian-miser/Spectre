@@ -59,4 +59,3 @@ export const THUMB_MULT = 3; // thumbnails 3x larger
 export const thumbWidth = 64 * THUMB_MULT;
 export const thumbHeight = 64 * THUMB_MULT;
 export const thumbScale = 14 * THUMB_MULT; // scale factor for thumbnail
-//# sourceMappingURL=config.js.map

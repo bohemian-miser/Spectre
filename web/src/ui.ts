@@ -1,8 +1,6 @@
 import * as p5 from 'p5';
 import { AppState } from './state';
-import { tile_names, colmap53, colmap_orig, colmap_mystics, colmap_pride, thumbWidth, thumbHeight, thumbScale } from './config';
-import { pt, mul, trot, ttrans, inv, transPt } from './utils';
-import { unique_edge_labels, getEdgeMidpoints } from './tiles';
+import { tile_names } from './config';
 
 declare let p: p5;
 

@@ -1,4 +1,3 @@
-import * as p5 from 'p5';
 export const ident = [1, 0, 0, 0, 1, 0];
 export function pt(x, y) {
     return p.createVector(x, y);
@@ -33,4 +32,3 @@ export function ttrans(tx, ty) {
 export function transPt(M, P) {
     return pt(M[0] * P.x + M[1] * P.y + M[2], M[3] * P.x + M[4] * P.y + M[5]);
 }
-//# sourceMappingURL=utils.js.map
