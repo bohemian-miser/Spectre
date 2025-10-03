@@ -8,5 +8,6 @@ export const state = {
     colorScheme: 'Bright',
     shape: 'Tile(1,1)',
     tile: 'Delta',
-    customColors: {}
+    customColors: {},
+    colmap: {}
 };

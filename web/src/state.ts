@@ -8,7 +8,8 @@ export const state = {
     colorScheme: 'Bright',
     shape: 'Tile(1,1)',
     tile: 'Delta',
-    customColors: {} as { [key: string]: string }
+    customColors: {} as { [key: string]: string },
+    colmap: {} as { [key: string]: number[] }
 };
 
 export type AppState = typeof state;
