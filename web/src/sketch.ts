@@ -4,6 +4,9 @@ import { pt, mul, trot, ttrans, inv, transPt, ident } from './utils';
 
 p5.disableFriendlyErrors = true;
 
+(window as any).showOutlines = true;
+(window as any).showBackgrounds = true;
+
 const sketch = (p: p5) => {
     (window as any).p = p; // Make p5 instance globally available for modules
     let to_screen = [20, 0, 0, 0, -20, 0];
@@ -88,7 +91,7 @@ const sketch = (p: p5) => {
         'Psi': [255, 238, 0]
     };
 
-    let colmap = colmap_pride;
+    let colmap = colmap_orig;
     (window as any).colmap = colmap;
 
 
@@ -428,11 +431,15 @@ const sketch = (p: p5) => {
             ctx.closePath();
             const labelForFill = overrideLabel || geom.label;
             const col = colmap[labelForFill] || [200, 200, 200];
-            ctx.fillStyle = `rgb(${col[0]},${col[1]},${col[2]})`;
-            ctx.fill();
-            ctx.strokeStyle = 'black';
-            ctx.lineWidth = 1;
-            ctx.stroke();
+            if ((window as any).showBackgrounds) {
+                ctx.fillStyle = `rgb(${col[0]},${col[1]},${col[2]})`;
+                ctx.fill();
+            }
+            if ((window as any).showOutlines) {
+                ctx.strokeStyle = 'black';
+                ctx.lineWidth = 1;
+                ctx.stroke();
+            }
             // draw overlays if present
             const overlayKey = overrideLabel || geom.label;
             if (typeof overlays !== 'undefined' && overlays[overlayKey]) {
@@ -672,7 +679,7 @@ const sketch = (p: p5) => {
 
         function refreshThumbnails() {
             // ensure colmap reflects selector (and custom_colors)
-            const s = colscheme_sel ? colscheme_sel.value() : 'Pride';
+            const s = colscheme_sel ? colscheme_sel.value() : 'Bright';
             if (s === 'Custom') {
                 let cm: { [key: string]: number[] } = {};
                 for (let k in custom_colors) {
@@ -750,6 +757,7 @@ const sketch = (p: p5) => {
         colscheme_sel.option('Figure 5.3');
         colscheme_sel.option('Custom');
         colscheme_sel.option('Bright');
+        colscheme_sel.value('Bright');
         // changed handler will be assigned after the colour pickers are created
         // ensure UI reflects initial scheme: trigger change after handler assignment
 
@@ -821,6 +829,22 @@ const sketch = (p: p5) => {
         (window as any).selectedMajorEdges = new Set<number>();
         lbl_check.position(10, 210);
 
+        const showOutlinesCheck = p.createCheckbox('Show Outlines', true);
+        showOutlinesCheck.position(10, 440);
+        showOutlinesCheck.changed(() => {
+            (window as any).showOutlines = showOutlinesCheck.checked() as boolean;
+            refreshThumbnails();
+            p.loop();
+        });
+
+        const showBackgroundsCheck = p.createCheckbox('Show Backgrounds', true);
+        showBackgroundsCheck.position(10, 460);
+        showBackgroundsCheck.changed(() => {
+            (window as any).showBackgrounds = showBackgroundsCheck.checked() as boolean;
+            refreshThumbnails();
+            p.loop();
+        });
+
         const majorEdgesLabel = p.createSpan('Major Edges');
         majorEdgesLabel.position(10, 240);
         const edge_types = [
@@ -873,7 +897,7 @@ const sketch = (p: p5) => {
         // Pan/zoom controls removed: drag to pan and scroll to zoom
 
         let save_button = p.createButton("Save PNG");
-        save_button.position(10, 440);
+        save_button.position(10, 500);
         save_button.size(125, 25);
         save_button.mousePressed(() => {
             uibox = false;
@@ -884,7 +908,7 @@ const sketch = (p: p5) => {
         });
 
         let svg_button = p.createButton("Save SVG");
-        svg_button.position(10, 470);
+        svg_button.position(10, 530);
         svg_button.size(125, 25);
         svg_button.mousePressed(() => {
             const stream: string[] = [];
@@ -948,7 +972,7 @@ const sketch = (p: p5) => {
             p.stroke(0);
             p.strokeWeight(0.5);
             p.fill(255, 220);
-            p.rect(5, 5, 135, 505);
+            p.rect(5, 5, 135, 565);
         }
         p.noLoop();
     };

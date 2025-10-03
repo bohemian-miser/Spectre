@@ -6,6 +6,8 @@ declare let p: p5;
 declare let colmap: { [key: string]: number[] };
 declare let overlays: { [key: string]: p5.Vector[][] };
 declare let showEdgeLabels: boolean;
+declare let showOutlines: boolean;
+declare let showBackgrounds: boolean;
 
 export const unique_edge_labels: { [key: string]: string[] } = {
 	'Delta':  ['3.0A','3.1A', '2.0A','2.1A','2.2A', '-5.1A','-5.0A', '1.0A','1.1A','1.2A', '-3.1A','-3.0A', '-6.1A','-6.0A'],
@@ -22,12 +24,12 @@ export const unique_edge_labels: { [key: string]: string[] } = {
 
 function drawPolygon( shape: p5.Vector[], T: number[], f: number[] | null, s: number[] | null, w: number )
 {
-	if( f != null ) {
+	if( f != null && (window as any).showBackgrounds ) {
 		p.fill( f[0], f[1], f[2] );
 	} else {
 		p.noFill();
 	}
-	if( s != null ) {
+	if( s != null && (window as any).showOutlines ) {
 		p.stroke( 0 );
 		p.strokeWeight( w ) ; // / lw_scale );
 	} else {
