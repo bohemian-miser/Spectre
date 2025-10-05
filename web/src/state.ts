@@ -4,6 +4,8 @@ export var state = {
     showLines: true,
     showEdgeLabels: false,
     showEdgeJoiner: false,
+    showIds: true,
+    showQuads: true,
     selectedMajorEdges: new Set<number>(),
     selectedJoinerEdges: new Set<number>(),
     colorScheme: 'Bright',

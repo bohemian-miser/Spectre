@@ -100,6 +100,7 @@ const sketch = (p: p5) => {
         }
 
         const mystic = new Meta();
+        mystic.label = 'Gamma';
         if (curved) {
             mystic.addChild(
                 new CurvyShape(spectre, spectre_keys, 'Gamma1'), ident, 0);
@@ -152,6 +153,7 @@ const sketch = (p: p5) => {
             }
 
             const mystic = new Meta();
+            mystic.label = 'Gamma';
             mystic.addChild(new Shape(hat, hat_keys, 'Gamma1'), ident, 0);
             mystic.addChild(new Shape(turtle, turtle_keys, 'Gamma2'),
                 ttrans(hat[8].x, hat[8].y), 1);
@@ -164,6 +166,7 @@ const sketch = (p: p5) => {
             }
 
             const mystic = new Meta();
+            mystic.label = 'Gamma';
             mystic.addChild(new Shape(turtle, turtle_keys, 'Gamma1'), ident, 0);
             mystic.addChild(new Shape(hat, hat_keys, 'Gamma2'),
                 mul(ttrans(turtle[9].x, turtle[9].y), trot(p.PI / 3)), 1);
@@ -250,6 +253,7 @@ const sketch = (p: p5) => {
 
         for (const [lab, subs] of Object.entries(super_rules)) {
             const sup = new Meta();
+            sup.label = lab;
             for (let idx = 0; idx < 8; ++idx) {
                 if (subs[idx] == 'null') {
                     continue;
@@ -425,10 +429,17 @@ const sketch = (p: p5) => {
                     if (labList && labList.length) {
                         // map leading char to colors (same palette as main view)
                         const leadColors: {[key: string]: string} = {
-                            '-': 'rgb(180,30,30)', '0': 'rgb(31,119,180)', '1': 'rgb(255,127,14)',
-                            '2': 'rgb(44,160,44)', '3': 'rgb(214,39,40)', '4': 'rgb(148,103,189)',
-                            '5': 'rgb(140,86,75)', '6': 'rgb(227,119,194)', '7': 'rgb(127,127,127)',
-                            '8': 'rgb(188,189,34)', '9': 'rgb(23,190,207)'
+                            '-': 'rgb(218, 143, 143)',
+                            '0': 'rgb(143, 187, 218)',
+                            '1': 'rgb(255, 191, 135)',
+                            '2': 'rgb(150, 208, 150)',
+                            '3': 'rgb(235, 147, 148)',
+                            '4': 'rgb(202, 179, 222)',
+                            '5': 'rgb(198, 171, 165)',
+                            '6': 'rgb(241, 187, 225)',
+                            '7': 'rgb(191, 191, 191)',
+                            '8': 'rgb(222, 222, 145)',
+                            '9': 'rgb(139, 223, 231)'
                         };
                         // compute centroid in screen space
                         let sx=0, sy=0, sc=0;
@@ -972,6 +983,22 @@ const sketch = (p: p5) => {
         showLinesCheck.changed(() => {
             (window as any).showLines = showLinesCheck.checked() as boolean;
             refreshThumbnails();
+            p.loop();
+        });
+        y_pos += 20;
+
+        const showIdsCheck = p.createCheckbox('Show IDs', true);
+        showIdsCheck.position(10, y_pos);
+        showIdsCheck.changed(() => {
+            state.showIds = showIdsCheck.checked() as boolean;
+            p.loop();
+        });
+        y_pos += 20;
+
+        const showQuadsCheck = p.createCheckbox('Show Quads', true);
+        showQuadsCheck.position(10, y_pos);
+        showQuadsCheck.changed(() => {
+            state.showQuads = showQuadsCheck.checked() as boolean;
             p.loop();
         });
         y_pos += 40;

@@ -154,17 +154,17 @@ export class Shape
                 const ma = transPt( S, pt( (a.x + b.x)/2, (a.y + b.y)/2 ) );
                 const lead = lab && lab.length ? lab.charAt(0) : '';
                 const leadColors: {[key: string]: number[]} = {
-                    '-': [180, 30, 30],
-                    '0': [31,119,180],
-                    '1': [255,127,14],
-                    '2': [44,160,44],
-                    '3': [214, 39, 40],
-                    '4': [148,103,189],
-                    '5': [140,86,75],
-                    '6': [227,119,194],
-                    '7': [127,127,127],
-                    '8': [188,189,34],
-                    '9': [23,190,207]
+                    '-': [218, 143, 143],
+                    '0': [143, 187, 218],
+                    '1': [255, 191, 135],
+                    '2': [150, 208, 150],
+                    '3': [235, 147, 148],
+                    '4': [202, 179, 222],
+                    '5': [198, 171, 165],
+                    '6': [241, 187, 225],
+                    '7': [191, 191, 191],
+                    '8': [222, 222, 145],
+                    '9': [139, 223, 231]
                 };
                 const ec = leadColors.hasOwnProperty(lead) ? leadColors[lead] : [0,0,0];
                 p.fill(ec[0], ec[1], ec[2]);
@@ -210,17 +210,17 @@ export class Shape
 				// map leading character to a color for the major edge
 				const lead = lab && lab.length ? lab.charAt(0) : '';
 				const leadColors: { [key: string]: number[] } = {
-					'-': [180, 30, 30],
-					'0': [31, 119, 180],
-					'1': [255, 127, 14],
-					'2': [44, 160, 44],
-					'3': [214, 39, 40],
-					'4': [148, 103, 189],
-					'5': [140, 86, 75],
-					'6': [227, 119, 194],
-					'7': [127, 127, 127],
-					'8': [188, 189, 34],
-					'9': [23, 190, 207]
+                    '-': [218, 143, 143],
+                    '0': [143, 187, 218],
+                    '1': [255, 191, 135],
+                    '2': [150, 208, 150],
+                    '3': [235, 147, 148],
+                    '4': [202, 179, 222],
+                    '5': [198, 171, 165],
+                    '6': [241, 187, 225],
+                    '7': [191, 191, 191],
+                    '8': [222, 222, 145],
+                    '9': [139, 223, 231]
 				};
 				const ec = leadColors.hasOwnProperty(lead) ? leadColors[lead] : [0, 0, 0];
 				p.fill(ec[0], ec[1], ec[2]);
@@ -240,16 +240,18 @@ export class Shape
 	draw( S: number[], ppos = 0 )
 	{
 		drawPolygon( this.pts, S, state.colmap[this.label], [0,0,0], 0.1 );
-        p.push();
-        p.fill(0);
-        p.stroke(0);
-        p.textAlign(p.CENTER, p.CENTER);
-        const centroid = this.pts.reduce((acc, pt) => acc.add(pt), p.createVector(0, 0)).div(this.pts.length);
-        const tc = transPt(S, centroid);
-        p.translate(tc.x, tc.y);
-        p.scale(0.1, -0.1);
-        p.text(ppos, 0, 0);
-        p.pop();
+        if (state.showIds) {
+            p.push();
+            p.fill(0);
+            p.stroke(0);
+            p.textAlign(p.CENTER, p.CENTER);
+            const centroid = this.pts.reduce((acc, pt) => acc.add(pt), p.createVector(0, 0)).div(this.pts.length);
+            const tc = transPt(S, centroid);
+            p.translate(tc.x, tc.y);
+            p.scale(0.1, -0.1);
+            p.text(ppos, 0, 0);
+            p.pop();
+        }
 		if( typeof overlays !== 'undefined' && overlays[this.label] && (window as any).showLines ) {
 			p.stroke(0);
 			p.strokeWeight( 0.1 );
@@ -396,11 +398,13 @@ export class Meta
 {
 	geoms: { geom: any, xform: number[], pos: number }[];
 	quad: p5.Vector[];
+    label: string;
     
 	constructor()
 	{
 		this.geoms = [];
 		this.quad = [];
+        this.label = '';
 	}
 
 	addChild( g: any, T: number[], pos: number )
@@ -415,10 +419,11 @@ export class Meta
 			g.geom.draw( mul( S, g.xform ), ppos * m + g.pos );
 		}
 
-        if (this.geoms.length > 2) {
+        if (this.geoms.length > 2 && state.showQuads) {
             p.push();
             p.noFill();
-            p.stroke('red');
+            const col = state.colmap[this.label];
+            p.stroke(col[0], col[1], col[2]);
             p.strokeWeight(0.1);
             p.beginShape();
             for (const qp of this.quad) {
