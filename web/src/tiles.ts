@@ -1,6 +1,7 @@
 import p5 from 'p5';
 import { state } from './state';
 import { pt, transPt, mul } from "./utils";
+import { findPerfectMatchings } from './analysis';
 
 // These need to be available for the draw functions
 declare let p: p5;
@@ -47,10 +48,10 @@ export function getEdgeMidpoints(tileLabel: string, selectedEdges: Set<number>):
 }
 
 export function getEdgeDotMidpoints(tileLabel: string, selectedEdges: Set<number>): p5.Vector[] {
-    const midpoints: p5.Vector[] = [];
-    if (typeof unique_edge_labels === 'undefined') return midpoints;
+    const points: p5.Vector[] = [];
+    if (typeof unique_edge_labels === 'undefined') return points;
     const labels = unique_edge_labels[tileLabel];
-    if (!labels || labels.length === 0) return midpoints;
+    if (!labels || labels.length === 0) return points;
 
     // const shape = new Shape([], [], tileLabel); // A bit of a hack to get access to the pts
     const basePts = [
@@ -70,17 +71,29 @@ export function getEdgeDotMidpoints(tileLabel: string, selectedEdges: Set<number
 				pt(0.0, 1.0)
 			];
 
-    for (let i = 0; i < basePts.length; ++i) {
+    for (let i = 0; i < labels.length; i++) {
         const lab = labels[i] || '';
         const major = parseInt(lab.replace('-', '').charAt(0));
         const sub = parseInt(lab.replace('-', '').substring(2, 3));
-        if (selectedEdges.has(major) && sub === 0) {
-            const a = basePts[i];
-            const b = basePts[(i + 1) % basePts.length];
-            midpoints.push(p.createVector((a.x + b.x) / 2, (a.y + b.y) / 2));
+
+        if (selectedEdges.has(major)) {
+            if (major === 0) {
+                if (sub === 0) {
+                    // Special case for major edge 0: find vertex between 0.0 and 0.1
+                    // The vertex is the one at the end of the 0.0 edge.
+                    points.push(basePts[(i + 1) % basePts.length]);
+                }
+            } else {
+                if (sub === 0) {
+                    // Standard case: find midpoint of the .0 edge
+                    const a = basePts[i];
+                    const b = basePts[(i + 1) % basePts.length];
+                    points.push(p.createVector((a.x + b.x) / 2, (a.y + b.y) / 2));
+                }
+            }
         }
     }
-    return midpoints;
+    return points;
 }
 
 function drawPolygon( shape: p5.Vector[], T: number[], f: number[] | null, s: number[] | null, w: number )
@@ -145,7 +158,7 @@ export class Shape
                     '0': [31,119,180],
                     '1': [255,127,14],
                     '2': [44,160,44],
-                    '3': [214,39,40],
+                    '3': [214, 39, 40],
                     '4': [148,103,189],
                     '5': [140,86,75],
                     '6': [227,119,194],
@@ -243,6 +256,28 @@ export class Shape
 
 		// draw edge labels if requested
 		if( typeof this._drawEdgeLabels === 'function' ) this._drawEdgeLabels( S );
+
+        // draw selected joiner edges
+        if (state.selectedJoinerEdges.size > 0) {
+            const midpoints = getEdgeDotMidpoints(this.label, state.selectedJoinerEdges);
+            if (midpoints.length > 1) {
+                const matchings = findPerfectMatchings(midpoints.map(m => ({x: m.x, y: m.y})));
+                const slider = document.getElementById(`slider-${this.label}`) as HTMLInputElement;
+                if (slider) {
+                    const index = parseInt(slider.value, 10);
+                    if (matchings[index]) {
+                        const matching = matchings[index];
+                        p.stroke(0, 0, 0, 200);
+                        p.strokeWeight(0.1);
+                        for (const pair of matching) {
+                            const a = transPt(S, p.createVector(pair[0].x, pair[0].y));
+                            const b = transPt(S, p.createVector(pair[1].x, pair[1].y));
+                            p.line(a.x, a.y, b.x, b.y);
+                        }
+                    }
+                }
+            }
+        }
 	}
 
 	streamSVG( S: number[], stream: string[] )

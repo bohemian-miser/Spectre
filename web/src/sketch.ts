@@ -4,6 +4,7 @@ import { state } from './state';
 import { tile_names, colmap53, colmap_orig, colmap_mystics, colmap_pride } from './config';
 import { pt, mul, trot, ttrans, inv, transPt, ident, adjust_mat } from './utils';
 import { getEdgeDotCount } from './analysis';
+import { findPerfectMatchings } from './analysis';
 
 // p5.disableFriendlyErrors = true;
 
@@ -394,21 +395,25 @@ const sketch = (p: p5) => {
 
             // draw faint outlines between all selected dots
             if (state.selectedJoinerEdges.size > 0) {
-
                 const midpoints = getEdgeDotMidpoints(labelForFill, state.selectedJoinerEdges);
-                console.log(midpoints);
                 if (midpoints.length > 1) {
-                    ctx.strokeStyle = 'rgba(0, 0, 0, 0.2)';
-                    ctx.lineWidth = 1;
-                    for (let i = 0; i < midpoints.length; ++i) {
-                        for (let j = i + 1; j < midpoints.length; ++j) {
-                            const a = transPt(S, midpoints[i]);
-                            const b = transPt(S, midpoints[j]);
-                            ctx.beginPath();
-                            ctx.moveTo(a.x, a.y);
-                            ctx.lineTo(b.x, b.y);
-                            ctx.stroke();
-                        }
+                    const matchings = findPerfectMatchings(midpoints.map(m => ({ x: m.x, y: m.y })));
+                    const slider = document.getElementById(`slider-${labelForFill}`) as HTMLInputElement;
+                    if (slider) {
+                        const selectedIndex = parseInt(slider.value, 10);
+                        matchings.forEach((matching, index) => {
+                            const isSelected = index === selectedIndex;
+                            ctx.strokeStyle = isSelected ? 'rgba(0, 0, 0, 0.8)' : 'rgba(0, 0, 0, 0.1)';
+                            ctx.lineWidth = isSelected ? 2 : 1;
+                            for (const pair of matching) {
+                                const a = transPt(S, p.createVector(pair[0].x, pair[0].y));
+                                const b = transPt(S, p.createVector(pair[1].x, pair[1].y));
+                                ctx.beginPath();
+                                ctx.moveTo(a.x, a.y);
+                                ctx.lineTo(b.x, b.y);
+                                ctx.stroke();
+                            }
+                        });
                     }
                 }
             }
@@ -566,6 +571,23 @@ const sketch = (p: p5) => {
             el.attribute('height', thumbHeight.toString());
             el.parent(holder);
 
+            const slider = p.createSlider(0, 0, 0, 1) as any;
+            slider.parent(holder);
+            slider.style('position', 'absolute');
+            slider.style('bottom', '0px');
+            slider.style('left', '0px');
+            slider.style('width', '100%');
+            slider.style('visibility', 'hidden'); // Use visibility instead of display
+            slider.id(`slider-${label}`);
+            slider.input(() => {
+                renderThumb();
+                p.loop(); // Redraw main canvas
+            });
+
+            // Prevent mouse events on the slider from dragging the main canvas
+            (slider.elt as HTMLElement).addEventListener('pointerdown', (ev) => ev.stopPropagation());
+            (slider.elt as HTMLElement).addEventListener('pointermove', (ev) => ev.stopPropagation());
+
             const clearButton = p.createButton('X');
             clearButton.parent(holder);
             clearButton.style('position', 'absolute');
@@ -613,6 +635,19 @@ const sketch = (p: p5) => {
                 // from the snapshot, render nothing (do not fall back to live sys).
                 const source = (palette_sys && palette_sys[label]) ? palette_sys[label] : null;
                 drawGeomToContext(ctx, source, S_thumb);
+
+                const midpoints = getEdgeDotMidpoints(label, state.selectedJoinerEdges);
+                if (midpoints.length > 1 && midpoints.length % 2 === 0) {
+                    const matchings = findPerfectMatchings(midpoints.map(m => ({ x: m.x, y: m.y })));
+                    if (matchings.length > 1) {
+                        slider.style('visibility', 'visible');
+                        slider.elt.max = (matchings.length - 1).toString();
+                    } else {
+                        slider.style('visibility', 'hidden');
+                    }
+                } else {
+                    slider.style('visibility', 'hidden');
+                }
             }
 
             // events for drawing
@@ -873,7 +908,7 @@ const sketch = (p: p5) => {
         joinerEdgesLabel.position(10, y_pos);
         y_pos += 20;
 
-        const joinerEdgeCheckboxes: p.Element[] = [];
+        const joinerEdgeCheckboxes: p5.Element[] = [];
         for (const edge_type of edge_types) {
             const checkbox = p.createCheckbox(edge_type.label, false);
             checkbox.position(10, y_pos);
