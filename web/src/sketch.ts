@@ -1,5 +1,5 @@
 import p5 from 'p5';
-import { Shape, CurvyShape, Meta, unique_edge_labels, getEdgeMidpoints } from './tiles';
+import { Shape, CurvyShape, Meta, unique_edge_labels, getEdgeDotMidpoints } from './tiles';
 import { state } from './state';
 import { tile_names, colmap53, colmap_orig, colmap_mystics, colmap_pride } from './config';
 import { pt, mul, trot, ttrans, inv, transPt, ident, adjust_mat } from './utils';
@@ -392,11 +392,13 @@ const sketch = (p: p5) => {
                 }
             }
 
-            // draw faint outlines between all possible edge selections
+            // draw faint outlines between all selected dots
             if (state.selectedJoinerEdges.size > 0) {
-                const midpoints = getEdgeMidpoints(labelForFill, state.selectedJoinerEdges);
+
+                const midpoints = getEdgeDotMidpoints(labelForFill, state.selectedJoinerEdges);
+                console.log(midpoints);
                 if (midpoints.length > 1) {
-                    ctx.strokeStyle = 'rgba(0, 0, 0, 0.1)';
+                    ctx.strokeStyle = 'rgba(0, 0, 0, 0.2)';
                     ctx.lineWidth = 1;
                     for (let i = 0; i < midpoints.length; ++i) {
                         for (let j = i + 1; j < midpoints.length; ++j) {

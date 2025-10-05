@@ -46,6 +46,43 @@ export function getEdgeMidpoints(tileLabel: string, selectedEdges: Set<number>):
     return midpoints;
 }
 
+export function getEdgeDotMidpoints(tileLabel: string, selectedEdges: Set<number>): p5.Vector[] {
+    const midpoints: p5.Vector[] = [];
+    if (typeof unique_edge_labels === 'undefined') return midpoints;
+    const labels = unique_edge_labels[tileLabel];
+    if (!labels || labels.length === 0) return midpoints;
+
+    // const shape = new Shape([], [], tileLabel); // A bit of a hack to get access to the pts
+    const basePts = [
+				pt(0, 0),
+				pt(1.0, 0.0),
+				pt(1.5, -0.8660254037844386),
+				pt(2.366025403784439, -0.36602540378443865),
+				pt(2.366025403784439, 0.6339745962155614),
+				pt(3.366025403784439, 0.6339745962155614),
+				pt(3.866025403784439, 1.5),
+				pt(3.0, 2.0),
+				pt(2.133974596215561, 1.5),
+				pt(1.6339745962155614, 2.3660254037844393),
+				pt(0.6339745962155614, 2.3660254037844393),
+				pt(-0.3660254037844386, 2.3660254037844393),
+				pt(-0.866025403784439, 1.5),
+				pt(0.0, 1.0)
+			];
+
+    for (let i = 0; i < basePts.length; ++i) {
+        const lab = labels[i] || '';
+        const major = parseInt(lab.replace('-', '').charAt(0));
+        const sub = parseInt(lab.replace('-', '').substring(2, 3));
+        if (selectedEdges.has(major) && sub === 0) {
+            const a = basePts[i];
+            const b = basePts[(i + 1) % basePts.length];
+            midpoints.push(p.createVector((a.x + b.x) / 2, (a.y + b.y) / 2));
+        }
+    }
+    return midpoints;
+}
+
 function drawPolygon( shape: p5.Vector[], T: number[], f: number[] | null, s: number[] | null, w: number )
 {
 	if( f != null && (window as any).showBackgrounds ) {

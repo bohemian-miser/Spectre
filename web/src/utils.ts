@@ -1,5 +1,6 @@
 import * as p5 from 'p5';
 
+
 // This needs to be available for the functions
 declare let p: p5;
 
