@@ -5,6 +5,7 @@ export var state = {
     showEdgeLabels: false,
     showEdgeJoiner: false,
     selectedMajorEdges: new Set<number>(),
+    selectedJoinerEdges: new Set<number>(),
     colorScheme: 'Bright',
     shape: 'Tile(1,1)',
     tile: 'Delta',

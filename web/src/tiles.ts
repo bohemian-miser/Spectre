@@ -83,7 +83,7 @@ export class Shape
 	}
 
 	_drawEdgeLabels( S: number[] ) {
-		if( typeof (window as any).selectedMajorEdges === 'undefined' || (window as any).selectedMajorEdges.size === 0 ) return;
+		if( (state.selectedMajorEdges.size === 0 && state.selectedJoinerEdges.size === 0) ) return;
 		if( typeof unique_edge_labels === 'undefined' ) return;
 		const labels = unique_edge_labels[this.label];
 		if( !labels || labels.length === 0 ) return;
@@ -96,7 +96,38 @@ export class Shape
 		for( let i = 0; i < basePts.length; ++i ) {
 			const lab = labels[i] || '';
             const major = parseInt(lab.replace('-', '').charAt(0));
-            if (!(window as any).selectedMajorEdges.has(major)) {
+            const sub = parseInt(lab.replace('-', '').substring(2,3));
+
+            if (state.selectedMajorEdges.has(major)) {
+                // draw label
+            } else if (state.selectedJoinerEdges.has(major) && sub === 0) {
+                const a = basePts[i];
+                const b = basePts[(i+1) % basePts.length];
+                const ma = transPt( S, pt( (a.x + b.x)/2, (a.y + b.y)/2 ) );
+                const lead = lab && lab.length ? lab.charAt(0) : '';
+                const leadColors: {[key: string]: number[]} = {
+                    '-': [180, 30, 30],
+                    '0': [31,119,180],
+                    '1': [255,127,14],
+                    '2': [44,160,44],
+                    '3': [214,39,40],
+                    '4': [148,103,189],
+                    '5': [140,86,75],
+                    '6': [227,119,194],
+                    '7': [127,127,127],
+                    '8': [188,189,34],
+                    '9': [23,190,207]
+                };
+                const ec = leadColors.hasOwnProperty(lead) ? leadColors[lead] : [0,0,0];
+                p.fill(ec[0], ec[1], ec[2]);
+                p.stroke(0);
+                p.strokeWeight(1);
+                p.push();
+                p.translate(ma.x, ma.y);
+                p.ellipse(0, 0, 4, 4);
+                p.pop();
+                continue;
+            } else {
                 continue;
             }
 

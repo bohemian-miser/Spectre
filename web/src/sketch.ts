@@ -25,6 +25,7 @@ const sketch = (p: p5) => {
     let subst_button: p5.Element;
     let dragging = false;
     let uibox = true;
+    let y_pos = 0;
 
 
 
@@ -392,7 +393,7 @@ const sketch = (p: p5) => {
 
             // draw edge labels on thumbnails when requested
             try {
-                if ((window as any).selectedMajorEdges && (window as any).selectedMajorEdges.size > 0 && unique_edge_labels) {
+                if (unique_edge_labels && (state.selectedMajorEdges.size > 0 || state.selectedJoinerEdges.size > 0)) {
                     const labList = unique_edge_labels[labelForFill];
                     if (labList && labList.length) {
                         // map leading char to colors (same palette as main view)
@@ -417,9 +418,27 @@ const sketch = (p: p5) => {
                         for (let j = 0; j < k; ++j) {
                             const lab = labList[j] || '';
                             const major = parseInt(lab.replace('-', '').charAt(0));
-                            if (!(window as any).selectedMajorEdges.has(major)) {
+                            const sub = parseInt(lab.replace('-', '').substring(2,3));
+
+                            if (state.selectedMajorEdges.has(major)) {
+                                // draw label
+                            } else if (state.selectedJoinerEdges.has(major) && sub === 0) {
+                                const idxA = (j * step) % n;
+                                const idxB = (idxA + 1) % n;
+                                const a = transPt(S, pts[idxA]);
+                                const b = transPt(S, pts[idxB]);
+                                const mx = (a.x + b.x)/2; const my = (a.y + b.y)/2;
+                                const lead = lab && lab.length ? lab.charAt(0) : '';
+                                const col = leadColors.hasOwnProperty(lead) ? leadColors[lead] : 'black';
+                                ctx.fillStyle = col;
+                                ctx.beginPath();
+                                ctx.arc(mx, my, 4, 0, 2 * Math.PI);
+                                ctx.fill();
+                                continue;
+                            } else {
                                 continue;
                             }
+
                             const idxA = (j * step) % n;
                             const idxB = (idxA + 1) % n;
                             const a = transPt(S, pts[idxA]);
@@ -786,35 +805,14 @@ const sketch = (p: p5) => {
 
         // Checkbox: show edge labels
         const lbl_check = p.createCheckbox('Show all edge numbers', false);
-        (window as any).selectedMajorEdges = new Set<number>();
         lbl_check.position(10, 210);
 
-        const showOutlinesCheck = p.createCheckbox('Show Outlines', true);
-        showOutlinesCheck.position(10, 440);
-        showOutlinesCheck.changed(() => {
-            (window as any).showOutlines = showOutlinesCheck.checked() as boolean;
-            refreshThumbnails();
-            p.loop();
-        });
-
-        const showBackgroundsCheck = p.createCheckbox('Show Backgrounds', true);
-        showBackgroundsCheck.position(10, 460);
-        showBackgroundsCheck.changed(() => {
-            (window as any).showBackgrounds = showBackgroundsCheck.checked() as boolean;
-            refreshThumbnails();
-            p.loop();
-        });
-
-        const showLinesCheck = p.createCheckbox('Show Lines', true);
-        showLinesCheck.position(10, 480);
-        showLinesCheck.changed(() => {
-            (window as any).showLines = showLinesCheck.checked() as boolean;
-            refreshThumbnails();
-            p.loop();
-        });
+        y_pos = 240;
 
         const majorEdgesLabel = p.createSpan('Major Edges');
-        majorEdgesLabel.position(10, 240);
+        majorEdgesLabel.position(10, y_pos);
+        y_pos += 20;
+
         const edge_types = [
             { value: 0, label: '0' },
             { value: 1, label: '1' },
@@ -827,16 +825,15 @@ const sketch = (p: p5) => {
             { value: 8, label: '8' },
         ];
 
-        let y_pos = 260;
         const majorEdgeCheckboxes: p5.Element[] = [];
         for (const edge_type of edge_types) {
             const checkbox = p.createCheckbox(edge_type.label, false);
             checkbox.position(10, y_pos);
             checkbox.changed(() => {
                 if (checkbox.checked()) {
-                    (window as any).selectedMajorEdges.add(edge_type.value);
+                    state.selectedMajorEdges.add(edge_type.value);
                 } else {
-                    (window as any).selectedMajorEdges.delete(edge_type.value);
+                    state.selectedMajorEdges.delete(edge_type.value);
                 }
                 refreshThumbnails();
                 p.loop();
@@ -845,27 +842,87 @@ const sketch = (p: p5) => {
             y_pos += 20;
         }
 
+        const line = p.createDiv();
+        line.position(10, y_pos);
+        line.style('border-bottom', '1px solid black');
+        line.style('width', '125px');
+        y_pos += 10;
+
+        const joinerEdgesLabel = p.createSpan('Joiner Edges');
+        joinerEdgesLabel.position(10, y_pos);
+        y_pos += 20;
+
+        const joinerEdgeCheckboxes: p5.Element[] = [];
+        for (const edge_type of edge_types) {
+            const checkbox = p.createCheckbox(edge_type.label, false);
+            checkbox.position(10, y_pos);
+            checkbox.changed(() => {
+                if (checkbox.checked()) {
+                    state.selectedJoinerEdges.add(edge_type.value);
+                } else {
+                    state.selectedJoinerEdges.delete(edge_type.value);
+                }
+                refreshThumbnails();
+                p.loop();
+            });
+            joinerEdgeCheckboxes.push(checkbox);
+            y_pos += 20;
+        }
+
         lbl_check.changed(() => {
             const isChecked = lbl_check.checked() as boolean;
             majorEdgeCheckboxes.forEach((checkbox, index) => {
                 checkbox.checked(isChecked);
                 if (isChecked) {
-                    (window as any).selectedMajorEdges.add(edge_types[index].value);
+                    state.selectedMajorEdges.add(edge_types[index].value);
                 } else {
-                    (window as any).selectedMajorEdges.clear();
+                    state.selectedMajorEdges.clear();
+                }
+            });
+            joinerEdgeCheckboxes.forEach((checkbox, index) => {
+                checkbox.checked(isChecked);
+                if (isChecked) {
+                    state.selectedJoinerEdges.add(edge_types[index].value);
+                } else {
+                    state.selectedJoinerEdges.clear();
                 }
             });
             refreshThumbnails();
             p.loop();
         });
 
+        const showOutlinesCheck = p.createCheckbox('Show Outlines', true);
+        showOutlinesCheck.position(10, y_pos);
+        showOutlinesCheck.changed(() => {
+            (window as any).showOutlines = showOutlinesCheck.checked() as boolean;
+            refreshThumbnails();
+            p.loop();
+        });
+        y_pos += 20;
 
-        // ...existing code...
+        const showBackgroundsCheck = p.createCheckbox('Show Backgrounds', true);
+        showBackgroundsCheck.position(10, y_pos);
+        showBackgroundsCheck.changed(() => {
+            (window as any).showBackgrounds = showBackgroundsCheck.checked() as boolean;
+            refreshThumbnails();
+            p.loop();
+        });
+        y_pos += 20;
+
+        const showLinesCheck = p.createCheckbox('Show Lines', true);
+        showLinesCheck.position(10, y_pos);
+        showLinesCheck.changed(() => {
+            (window as any).showLines = showLinesCheck.checked() as boolean;
+            refreshThumbnails();
+            p.loop();
+        });
+        y_pos += 40;
+
 
         // Pan/zoom controls removed: drag to pan and scroll to zoom
 
         let save_button = p.createButton("Save PNG");
-        save_button.position(10, 520);
+        save_button.position(10, y_pos);
         save_button.size(125, 25);
         save_button.mousePressed(() => {
             uibox = false;
@@ -874,9 +931,10 @@ const sketch = (p: p5) => {
             uibox = true;
             p.draw();
         });
+        y_pos += 30;
 
         let svg_button = p.createButton("Save SVG");
-        svg_button.position(10, 550);
+        svg_button.position(10, y_pos);
         svg_button.size(125, 25);
         svg_button.mousePressed(() => {
             const stream: string[] = [];
@@ -940,7 +998,7 @@ const sketch = (p: p5) => {
             p.stroke(0);
             p.strokeWeight(0.5);
             p.fill(255, 220);
-            p.rect(5, 5, 135, 585);
+            p.rect(5, 5, 135, y_pos + 5);
         }
         p.noLoop();
     };
