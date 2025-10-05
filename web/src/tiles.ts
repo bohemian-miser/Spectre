@@ -98,9 +98,7 @@ export class Shape
             const major = parseInt(lab.replace('-', '').charAt(0));
             const sub = parseInt(lab.replace('-', '').substring(2,3));
 
-            if (state.selectedMajorEdges.has(major)) {
-                // draw label
-            } else if (state.selectedJoinerEdges.has(major) && sub === 0) {
+			if (state.selectedJoinerEdges.has(major) && sub === 0) {
                 const a = basePts[i];
                 const b = basePts[(i+1) % basePts.length];
                 const ma = transPt( S, pt( (a.x + b.x)/2, (a.y + b.y)/2 ) );
@@ -121,72 +119,71 @@ export class Shape
                 const ec = leadColors.hasOwnProperty(lead) ? leadColors[lead] : [0,0,0];
                 p.fill(ec[0], ec[1], ec[2]);
                 p.stroke(0);
-                p.strokeWeight(1);
+                // p.strokeWeight(1);
                 p.push();
                 p.translate(ma.x, ma.y);
-                p.ellipse(0, 0, 4, 4);
+                p.ellipse(0, 0, .3, .3);
                 p.pop();
-                continue;
-            } else {
-                continue;
-            }
+			}
+			if (state.selectedMajorEdges.has(major)) {
 
-			const a = basePts[i];
-			const b = basePts[(i+1) % basePts.length];
-			const ma = transPt( S, pt( (a.x + b.x)/2, (a.y + b.y)/2 ) );
-			// compute perpendicular inward offset along the edge normal (screen space)
-			const centroid = (() => {
-				let sx=0, sy=0; for(const pt of basePts){ sx+=pt.x; sy+=pt.y; } return pt(sx/basePts.length, sy/basePts.length);
-			})();
-			const c_world = transPt( S, centroid );
-			const a_world = transPt( S, a );
-			const b_world = transPt( S, b );
-			const ex = b_world.x - a_world.x;
-			const ey = b_world.y - a_world.y;
-			// perpendicular (edge normal)
-			let nx_e = -ey;
-			let ny_e = ex;
-			// ensure normal points inward toward centroid (ma -> centroid)
-			const dot = nx_e * (c_world.x - ma.x) + ny_e * (c_world.y - ma.y);
-			if (dot < 0) { nx_e = -nx_e; ny_e = -ny_e; }
-			const nmag = Math.sqrt(nx_e*nx_e + ny_e*ny_e) || 1;
-			const DESIRED_INSET_PX = 0;
-			const inset = DESIRED_INSET_PX;
-			const ox = (nx_e / nmag) * inset;
-			const oy = (ny_e / nmag) * inset;
-			const px = ma.x + ox;
-			const py = ma.y + oy;
+				const a = basePts[i];
+				const b = basePts[(i + 1) % basePts.length];
+				const ma = transPt(S, pt((a.x + b.x) / 2, (a.y + b.y) / 2));
+				// compute perpendicular inward offset along the edge normal (screen space)
+				const centroid = (() => {
+					let sx = 0, sy = 0; for (const pt of basePts) { sx += pt.x; sy += pt.y; } return pt(sx / basePts.length, sy / basePts.length);
+				})();
+				const c_world = transPt(S, centroid);
+				const a_world = transPt(S, a);
+				const b_world = transPt(S, b);
+				const ex = b_world.x - a_world.x;
+				const ey = b_world.y - a_world.y;
+				// perpendicular (edge normal)
+				let nx_e = -ey;
+				let ny_e = ex;
+				// ensure normal points inward toward centroid (ma -> centroid)
+				const dot = nx_e * (c_world.x - ma.x) + ny_e * (c_world.y - ma.y);
+				if (dot < 0) { nx_e = -nx_e; ny_e = -ny_e; }
+				const nmag = Math.sqrt(nx_e * nx_e + ny_e * ny_e) || 1;
+				const DESIRED_INSET_PX = 0;
+				const inset = DESIRED_INSET_PX;
+				const ox = (nx_e / nmag) * inset;
+				const oy = (ny_e / nmag) * inset;
+				const px = ma.x + ox;
+				const py = ma.y + oy;
 			
-			// set text size in screen pixels (fixed)
-			const DESIRED_LABEL_PX = 2;
-            const ts = DESIRED_LABEL_PX;
+				// set text size in screen pixels (fixed)
+				const DESIRED_LABEL_PX = 2;
+				const ts = DESIRED_LABEL_PX;
             
-            // map leading character to a color for the major edge
-			const lead = lab && lab.length ? lab.charAt(0) : '';
-			const leadColors: {[key: string]: number[]} = {
-				'-': [180, 30, 30],
-				'0': [31,119,180],
-				'1': [255,127,14],
-				'2': [44,160,44],
-				'3': [214,39,40],
-				'4': [148,103,189],
-				'5': [140,86,75],
-				'6': [227,119,194],
-				'7': [127,127,127],
-				'8': [188,189,34],
-				'9': [23,190,207]
-			};
-			const ec = leadColors.hasOwnProperty(lead) ? leadColors[lead] : [0,0,0];
-			p.fill(ec[0], ec[1], ec[2]);
-			p.stroke(0);
-			p.strokeWeight(1);
-			p.push();
-            p.translate(px, py);
-            p.scale(0.1);
-            p.scale(1, -1);
-			p.textSize( ts );
-			p.text( lab, 0, 0 );
-			p.pop();
+				// map leading character to a color for the major edge
+				const lead = lab && lab.length ? lab.charAt(0) : '';
+				const leadColors: { [key: string]: number[] } = {
+					'-': [180, 30, 30],
+					'0': [31, 119, 180],
+					'1': [255, 127, 14],
+					'2': [44, 160, 44],
+					'3': [214, 39, 40],
+					'4': [148, 103, 189],
+					'5': [140, 86, 75],
+					'6': [227, 119, 194],
+					'7': [127, 127, 127],
+					'8': [188, 189, 34],
+					'9': [23, 190, 207]
+				};
+				const ec = leadColors.hasOwnProperty(lead) ? leadColors[lead] : [0, 0, 0];
+				p.fill(ec[0], ec[1], ec[2]);
+				p.stroke(0);
+				p.strokeWeight(1);
+				p.push();
+				p.translate(px, py);
+				p.scale(0.1);
+				p.scale(1, -1);
+				p.textSize(ts);
+				p.text(lab, 0, 0);
+				p.pop();
+			}
 		}
 	}
 

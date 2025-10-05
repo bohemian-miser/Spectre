@@ -420,9 +420,9 @@ const sketch = (p: p5) => {
                             const major = parseInt(lab.replace('-', '').charAt(0));
                             const sub = parseInt(lab.replace('-', '').substring(2,3));
 
-                            if (state.selectedMajorEdges.has(major)) {
-                                // draw label
-                            } else if (state.selectedJoinerEdges.has(major) && sub === 0) {
+                            
+                            
+                            if (state.selectedJoinerEdges.has(major) && sub === 0) {
                                 const idxA = (j * step) % n;
                                 const idxB = (idxA + 1) % n;
                                 const a = transPt(S, pts[idxA]);
@@ -434,35 +434,34 @@ const sketch = (p: p5) => {
                                 ctx.beginPath();
                                 ctx.arc(mx, my, 4, 0, 2 * Math.PI);
                                 ctx.fill();
-                                continue;
-                            } else {
-                                continue;
-                            }
+                            } 
+                            if (state.selectedMajorEdges.has(major)) {
 
-                            const idxA = (j * step) % n;
-                            const idxB = (idxA + 1) % n;
-                            const a = transPt(S, pts[idxA]);
-                            const b = transPt(S, pts[idxB]);
-                            const mx = (a.x + b.x)/2; const my = (a.y + b.y)/2;
-                            // edge normal
-                            let ex = b.x - a.x; let ey = b.y - a.y;
-                            let nx = -ey; let ny = ex;
-                            // ensure normal points inward
-                            const dot = nx * (centroid.x - mx) + ny * (centroid.y - my);
-                            if (dot < 0) { nx = -nx; ny = -ny; }
-                            const nmag = Math.sqrt(nx*nx + ny*ny) || 1;
-                            const inset = Math.max(4, Math.floor(6 * (thumbSize / 192)));
-                            const px = mx + (nx / nmag) * inset;
-                            const py = my + (ny / nmag) * inset;
+                                const idxA = (j * step) % n;
+                                const idxB = (idxA + 1) % n;
+                                const a = transPt(S, pts[idxA]);
+                                const b = transPt(S, pts[idxB]);
+                                const mx = (a.x + b.x) / 2; const my = (a.y + b.y) / 2;
+                                // edge normal
+                                let ex = b.x - a.x; let ey = b.y - a.y;
+                                let nx = -ey; let ny = ex;
+                                // ensure normal points inward
+                                const dot = nx * (centroid.x - mx) + ny * (centroid.y - my);
+                                if (dot < 0) { nx = -nx; ny = -ny; }
+                                const nmag = Math.sqrt(nx * nx + ny * ny) || 1;
+                                const inset = Math.max(4, Math.floor(6 * (thumbSize / 192)));
+                                const px = mx + (nx / nmag) * inset;
+                                const py = my + (ny / nmag) * inset;
                             
-                            const lead = lab && lab.length ? lab.charAt(0) : '';
-                            const col = leadColors.hasOwnProperty(lead) ? leadColors[lead] : 'black';
-                            // draw outline then fill
-                            ctx.strokeStyle = 'black';
-                            ctx.fillStyle = col;
-                            ctx.font = `${fontPx}px sans-serif`;
-                            ctx.strokeText(lab, px, py);
-                            ctx.fillText(lab, px, py);
+                                const lead = lab && lab.length ? lab.charAt(0) : '';
+                                const col = leadColors.hasOwnProperty(lead) ? leadColors[lead] : 'black';
+                                // draw outline then fill
+                                ctx.strokeStyle = 'black';
+                                ctx.fillStyle = col;
+                                ctx.font = `${fontPx}px sans-serif`;
+                                ctx.strokeText(lab, px, py);
+                                ctx.fillText(lab, px, py);
+                            }
                         }
                     }
                 }
