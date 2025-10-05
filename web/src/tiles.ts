@@ -224,9 +224,9 @@ export class Shape
 				};
 				const ec = leadColors.hasOwnProperty(lead) ? leadColors[lead] : [0, 0, 0];
 				p.fill(ec[0], ec[1], ec[2]);
+				p.push();
 				p.stroke(0);
 				p.strokeWeight(1);
-				p.push();
 				p.translate(px, py);
 				p.scale(0.1);
 				p.scale(1, -1);
