@@ -1,8 +1,9 @@
 import p5 from 'p5';
-import { Shape, CurvyShape, Meta, unique_edge_labels } from './tiles';
+import { Shape, CurvyShape, Meta, unique_edge_labels, getEdgeMidpoints } from './tiles';
 import { state } from './state';
 import { tile_names, colmap53, colmap_orig, colmap_mystics, colmap_pride } from './config';
 import { pt, mul, trot, ttrans, inv, transPt, ident, adjust_mat } from './utils';
+import { getEdgeDotCount } from './analysis';
 
 // p5.disableFriendlyErrors = true;
 
@@ -388,6 +389,25 @@ const sketch = (p: p5) => {
                         if (j == 0) ctx.moveTo(sp.x, sp.y); else ctx.lineTo(sp.x, sp.y);
                     }
                     ctx.stroke();
+                }
+            }
+
+            // draw faint outlines between all possible edge selections
+            if (state.selectedJoinerEdges.size > 0) {
+                const midpoints = getEdgeMidpoints(labelForFill, state.selectedJoinerEdges);
+                if (midpoints.length > 1) {
+                    ctx.strokeStyle = 'rgba(0, 0, 0, 0.1)';
+                    ctx.lineWidth = 1;
+                    for (let i = 0; i < midpoints.length; ++i) {
+                        for (let j = i + 1; j < midpoints.length; ++j) {
+                            const a = transPt(S, midpoints[i]);
+                            const b = transPt(S, midpoints[j]);
+                            ctx.beginPath();
+                            ctx.moveTo(a.x, a.y);
+                            ctx.lineTo(b.x, b.y);
+                            ctx.stroke();
+                        }
+                    }
                 }
             }
 
@@ -851,7 +871,7 @@ const sketch = (p: p5) => {
         joinerEdgesLabel.position(10, y_pos);
         y_pos += 20;
 
-        const joinerEdgeCheckboxes: p5.Element[] = [];
+        const joinerEdgeCheckboxes: p.Element[] = [];
         for (const edge_type of edge_types) {
             const checkbox = p.createCheckbox(edge_type.label, false);
             checkbox.position(10, y_pos);
@@ -861,6 +881,7 @@ const sketch = (p: p5) => {
                 } else {
                     state.selectedJoinerEdges.delete(edge_type.value);
                 }
+                updateJoinerEdgesLabel();
                 refreshThumbnails();
                 p.loop();
             });
@@ -886,6 +907,7 @@ const sketch = (p: p5) => {
                     state.selectedJoinerEdges.clear();
                 }
             });
+            updateJoinerEdgesLabel();
             refreshThumbnails();
             p.loop();
         });
@@ -918,6 +940,17 @@ const sketch = (p: p5) => {
         y_pos += 40;
 
 
+        function updateJoinerEdgesLabel() {
+            let allEven = true;
+            for (const name of miniNames) {
+                const count = getEdgeDotCount(name, state.selectedJoinerEdges);
+                if (count % 2 !== 0) {
+                    allEven = false;
+                    break;
+                }
+            }
+            joinerEdgesLabel.html(`Joiner Edges ${allEven ? '&#9989;' : '&#10060;'}`);
+        }
         // Pan/zoom controls removed: drag to pan and scroll to zoom
 
         let save_button = p.createButton("Save PNG");
