@@ -422,9 +422,21 @@ export class Meta
         if (this.geoms.length > 2 && state.showQuads) {
             p.push();
             p.noFill();
+
+            // Draw a thicker black line for the outline
+            p.stroke(0);
+            p.strokeWeight(0.12);
+            p.beginShape();
+            for (const qp of this.quad) {
+                const tp = transPt(S, qp);
+                p.vertex(tp.x, tp.y);
+            }
+            p.endShape(p.CLOSE);
+
+            // Draw the colored line on top
             const col = state.colmap[this.label];
             p.stroke(col[0], col[1], col[2]);
-            p.strokeWeight(0.1);
+            p.strokeWeight(0.08);
             p.beginShape();
             for (const qp of this.quad) {
                 const tp = transPt(S, qp);
