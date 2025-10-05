@@ -237,9 +237,19 @@ export class Shape
 		}
 	}
 
-	draw( S: number[] )
+	draw( S: number[], ppos = 0 )
 	{
 		drawPolygon( this.pts, S, state.colmap[this.label], [0,0,0], 0.1 );
+        p.push();
+        p.fill(0);
+        p.stroke(0);
+        p.textAlign(p.CENTER, p.CENTER);
+        const centroid = this.pts.reduce((acc, pt) => acc.add(pt), p.createVector(0, 0)).div(this.pts.length);
+        const tc = transPt(S, centroid);
+        p.translate(tc.x, tc.y);
+        p.scale(0.1, -0.1);
+        p.text(ppos, 0, 0);
+        p.pop();
 		if( typeof overlays !== 'undefined' && overlays[this.label] && (window as any).showLines ) {
 			p.stroke(0);
 			p.strokeWeight( 0.1 );
@@ -384,7 +394,7 @@ export class CurvyShape extends Shape
 
 export class Meta
 {
-	geoms: { geom: any, xform: number[] }[];
+	geoms: { geom: any, xform: number[], pos: number }[];
 	quad: p5.Vector[];
     
 	constructor()
@@ -393,29 +403,36 @@ export class Meta
 		this.quad = [];
 	}
 
-	addChild( g: any, T: number[] )
+	addChild( g: any, T: number[], pos: number )
 	{
-		this.geoms.push( { geom : g, xform: T } );
+		this.geoms.push( { geom : g, xform: T, pos } );
 	}
 
-	draw( S: number[] ) 
+	draw( S: number[], ppos = 0 ) 
 	{
+        const m = this.geoms.length === 2 ? 1 : 10;
 		for( let g of this.geoms ) {
-			g.geom.draw( mul( S, g.xform ) );
+			g.geom.draw( mul( S, g.xform ), ppos * m + g.pos );
 		}
-		if( typeof overlays !== 'undefined' && overlays['Gamma'] && (window as any).showLines ) {
-			p.stroke(0);
-			p.strokeWeight( 0.1 );
-			p.noFill();
-			for( let st of overlays['Gamma'] ) {
-				p.beginShape();
-				for( let i = 0; i < st.length; ++i ) {
-					const pt = transPt( S, st[i] );
-					p.vertex( pt.x, pt.y );
-				}
-				p.endShape();
-			}
-		}
+
+        if (this.geoms.length > 2) {
+            p.push();
+            p.noFill();
+            p.stroke('red');
+            p.strokeWeight(0.1);
+            p.beginShape();
+            for (const qp of this.quad) {
+                const tp = transPt(S, qp);
+                p.vertex(tp.x, tp.y);
+            }
+            p.endShape(p.CLOSE);
+            
+            for (const qp of this.quad) {
+                const tp = transPt(S, qp);
+                p.circle(tp.x, tp.y, 0.1);
+            }
+            p.pop();
+        }
 
 		// if composite children have edge labels, draw them too
 		for( let g of this.geoms ) {

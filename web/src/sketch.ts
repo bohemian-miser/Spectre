@@ -102,14 +102,14 @@ const sketch = (p: p5) => {
         const mystic = new Meta();
         if (curved) {
             mystic.addChild(
-                new CurvyShape(spectre, spectre_keys, 'Gamma1'), ident);
+                new CurvyShape(spectre, spectre_keys, 'Gamma1'), ident, 0);
             mystic.addChild(
                 new CurvyShape(spectre, spectre_keys, 'Gamma2'),
-                mul(ttrans(spectre[8].x, spectre[8].y), trot(p.PI / 6)));
+                mul(ttrans(spectre[8].x, spectre[8].y), trot(p.PI / 6)), 1);
         } else {
-            mystic.addChild(new Shape(spectre, spectre_keys, 'Gamma1'), ident);
+            mystic.addChild(new Shape(spectre, spectre_keys, 'Gamma1'), ident, 0);
             mystic.addChild(new Shape(spectre, spectre_keys, 'Gamma2'),
-                mul(ttrans(spectre[8].x, spectre[8].y), trot(p.PI / 6)));
+                mul(ttrans(spectre[8].x, spectre[8].y), trot(p.PI / 6)), 1);
         }
         mystic.quad = spectre_keys;
         ret['Gamma'] = mystic;
@@ -152,9 +152,9 @@ const sketch = (p: p5) => {
             }
 
             const mystic = new Meta();
-            mystic.addChild(new Shape(hat, hat_keys, 'Gamma1'), ident);
+            mystic.addChild(new Shape(hat, hat_keys, 'Gamma1'), ident, 0);
             mystic.addChild(new Shape(turtle, turtle_keys, 'Gamma2'),
-                ttrans(hat[8].x, hat[8].y));
+                ttrans(hat[8].x, hat[8].y), 1);
             mystic.quad = hat_keys;
             ret['Gamma'] = mystic;
         } else {
@@ -164,9 +164,9 @@ const sketch = (p: p5) => {
             }
 
             const mystic = new Meta();
-            mystic.addChild(new Shape(turtle, turtle_keys, 'Gamma1'), ident);
+            mystic.addChild(new Shape(turtle, turtle_keys, 'Gamma1'), ident, 0);
             mystic.addChild(new Shape(hat, hat_keys, 'Gamma2'),
-                mul(ttrans(turtle[9].x, turtle[9].y), trot(p.PI / 3)));
+                mul(ttrans(turtle[9].x, turtle[9].y), trot(p.PI / 3)), 1);
             mystic.quad = turtle_keys;
             ret['Gamma'] = mystic;
         }
@@ -254,7 +254,7 @@ const sketch = (p: p5) => {
                 if (subs[idx] == 'null') {
                     continue;
                 }
-                sup.addChild(sys[subs[idx]], Ts[idx]);
+                sup.addChild(sys[subs[idx]], Ts[idx], idx);
             }
             sup.quad = super_quad;
 
