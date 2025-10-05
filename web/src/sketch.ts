@@ -3,7 +3,7 @@ import { Shape, CurvyShape, Meta, unique_edge_labels, getEdgeDotMidpoints } from
 import { state } from './state';
 import { tile_names, colmap53, colmap_orig, colmap_mystics, colmap_pride } from './config';
 import { pt, mul, trot, ttrans, inv, transPt, ident, adjust_mat } from './utils';
-import { getEdgeDotCount } from './analysis';
+import { getEdgeDotCount, analyzeAndColor } from './analysis';
 import { findPerfectMatchings } from './analysis';
 
 // p5.disableFriendlyErrors = true;
@@ -28,6 +28,7 @@ const sketch = (p: p5) => {
     let dragging = false;
     let uibox = true;
     let y_pos = 0;
+    (window as any).circuitColorMap = new Map<string, string>();
 
 
 
@@ -1048,6 +1049,9 @@ const sketch = (p: p5) => {
 
     p.draw = () => {
         p.background(255);
+
+        // Analyze circuits and get color map before drawing
+        (window as any).circuitColorMap = analyzeAndColor(sys[tile_sel.value() as string], p);
 
         p.push();
         p.translate(p.width / 2, p.height / 2);

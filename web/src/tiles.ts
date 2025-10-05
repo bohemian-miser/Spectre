@@ -279,11 +279,13 @@ export class Shape
                     const index = parseInt(slider.value, 10);
                     if (matchings[index]) {
                         const matching = matchings[index];
-                        p.stroke(0, 0, 0, 200);
                         p.strokeWeight(0.1);
                         for (const pair of matching) {
                             const a = transPt(S, p.createVector(pair[0].x, pair[0].y));
                             const b = transPt(S, p.createVector(pair[1].x, pair[1].y));
+                            const edgeKey = edgeToKey([[a.x, a.y], [b.x, b.y]]);
+                            const color = (window as any).circuitColorMap.get(edgeKey) || '#808080';
+                            p.stroke(color);
                             p.line(a.x, a.y, b.x, b.y);
                         }
                     }
@@ -465,4 +467,10 @@ export class Meta
 			g.geom.streamSVG( mul( S, g.xform ), stream );
 		}
 	}
+}
+
+function edgeToKey(edge: [[number, number], [number, number]]): string {
+    const key1 = `${edge[0][0].toFixed(3)},${edge[0][1].toFixed(3)}`;
+    const key2 = `${edge[1][0].toFixed(3)},${edge[1][1].toFixed(3)}`;
+    return key1 < key2 ? `${key1}_${key2}` : `${key2}_${key1}`;
 }
