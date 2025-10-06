@@ -1,1 +1,18 @@
 web/node_modules/
+
+# Generated files
+*.js
+*.js.map
+*.d.ts
+*.d.ts.map
+
+# Dependencies
+web/node_modules/
+
+web/package-lock.json
+
+# Build output
+web/dist/
+
+web/playwright-report/
+web/test-results/
