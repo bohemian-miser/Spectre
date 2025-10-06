@@ -1,7 +1,6 @@
 web/node_modules/
 
 # Generated files
-*.js
 *.js.map
 *.d.ts
 *.d.ts.map
