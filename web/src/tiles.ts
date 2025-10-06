@@ -30,6 +30,15 @@ export const spectre_pts = [
     {x:0.0, y:1.0}
 ];
 
+export const hex_pts = [
+    {x:0, y:0},
+    {x:1.0, y:0.0},
+    {x:1.5, y:0.8660254037844386},
+    {x:1, y:2 * 0.8660254037844386},
+    {x:0, y:2 * 0.8660254037844386},
+    {x:-0.5, y:0.8660254037844386}
+];
+
 export const unique_edge_labels: { [key: string]: string[] } = {
 	'Delta':  ['3.0A','3.1A', '2.0A','2.1A','2.2A', '-5.1A','-5.0A', '1.0A','1.1A','1.2A', '-3.1A','-3.0A', '-6.1A','-6.0A'],
 	'Theta':  ['3.0A','3.1A', '2.0A','2.1A','2.2A', '8.0A', '2.0B','2.1B','2.2B', '0.0A','0.1A', '-2.2A','-2.1A','-2.0A'],
@@ -86,8 +95,9 @@ export function getEdgeDotMidpoints(tileLabel: string, selectedEdges: Set<number
     if (!labels || labels.length === 0) return points;
 
     const p = (window as any).p as p5;
-    const spectreVectors = spectre_pts.map(pt => p.createVector(pt.x, pt.y));
-    const shape = new Shape(spectreVectors, [], tileLabel); // A bit of a hack to get access to the pts
+    const pointDefs = state.shape === 'Hexagons' ? hex_pts : spectre_pts;
+    const baseVectors = pointDefs.map(pt => p.createVector(pt.x, pt.y));
+    const shape = new Shape(baseVectors, [], tileLabel);
     const basePts = (shape.origPts && shape.origPts.length) ? shape.origPts : shape.pts;
 
     for (let i = 0; i < labels.length; i++) {

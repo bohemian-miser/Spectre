@@ -1,5 +1,5 @@
 import p5 from 'p5';
-import { Shape, CurvyShape, Meta, unique_edge_labels, getEdgeDotMidpoints, spectre_pts, hex_edge_labels } from './tiles';
+import { Shape, CurvyShape, Meta, unique_edge_labels, getEdgeDotMidpoints, spectre_pts, hex_edge_labels, hex_pts } from './tiles';
 import { state } from './state';
 import { tile_names, colmap53, colmap_orig, colmap_mystics, colmap_pride } from './config';
 import { pt, mul, trot, ttrans, inv, transPt, ident, adjust_mat } from './utils';
@@ -164,17 +164,7 @@ const sketch = (p: p5) => {
     }
 
     function buildHexBase() {
-        const hr3 = 0.8660254037844386;
-
-        const hex = [
-            pt(0, 0),
-            pt(1.0, 0.0),
-            pt(1.5, hr3),
-            pt(1, 2 * hr3),
-            pt(0, 2 * hr3),
-            pt(-0.5, hr3)
-        ];
-
+        const hex = hex_pts.map(pt => p.createVector(pt.x, pt.y));
         const hex_keys = [hex[1], hex[2], hex[3], hex[5]];
 
         const ret: { [key: string]: any } = {};
