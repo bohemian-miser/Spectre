@@ -1,5 +1,5 @@
 import p5 from 'p5';
-import { Shape, CurvyShape, Meta, unique_edge_labels, getEdgeDotMidpoints, spectre_pts } from './tiles';
+import { Shape, CurvyShape, Meta, unique_edge_labels, getEdgeDotMidpoints, spectre_pts, hex_edge_labels } from './tiles';
 import { state } from './state';
 import { tile_names, colmap53, colmap_orig, colmap_mystics, colmap_pride } from './config';
 import { pt, mul, trot, ttrans, inv, transPt, ident, adjust_mat } from './utils';
@@ -412,8 +412,12 @@ const sketch = (p: p5) => {
 
             // draw edge labels on thumbnails when requested
             try {
-                if (unique_edge_labels && (state.selectedMajorEdges.size > 0 || state.selectedJoinerEdges.size > 0)) {
-                    const labList = unique_edge_labels[labelForFill];
+                const getEdgeLabelsForShape = (tileLabel: string): readonly string[] => {
+                    const labels = state.shape === 'Hexagons' ? hex_edge_labels : unique_edge_labels;
+                    return labels[tileLabel] || [];
+                };
+                if (state.selectedMajorEdges.size > 0 || state.selectedJoinerEdges.size > 0) {
+                    const labList = getEdgeLabelsForShape(labelForFill);
                     if (labList && labList.length) {
                         // map leading char to colors (same palette as main view)
                         const leadColors: {[key: string]: string} = {
