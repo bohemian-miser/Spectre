@@ -6,6 +6,7 @@ export var state = {
     showEdgeJoiner: false,
     showIds: true,
     showQuads: true,
+    showEdgeDots: true,
     selectedMajorEdges: new Set<number>(),
     selectedJoinerEdges: new Set<number>(),
     colorScheme: 'Bright',

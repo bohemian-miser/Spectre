@@ -176,7 +176,7 @@ export class Shape
             const major = parseInt(lab.replace('-', '').charAt(0));
             const sub = parseInt(lab.replace('-', '').substring(2,3));
 
-			if (state.selectedJoinerEdges.has(major) && sub === 0) {
+			if (state.showEdgeDots && state.selectedJoinerEdges.has(major) && sub === 0) {
                 const a = basePts[i];
                 const b = basePts[(i+1) % basePts.length];
                 const ma = transPt( S, pt( (a.x + b.x)/2, (a.y + b.y)/2 ) );

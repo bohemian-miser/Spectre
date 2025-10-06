@@ -1003,6 +1003,14 @@ const sketch = (p: p5) => {
             state.showQuads = showQuadsCheck.checked() as boolean;
             p.loop();
         });
+        y_pos += 20;
+
+        const showEdgeDotsCheck = p.createCheckbox('Show Edge Dots', true);
+        showEdgeDotsCheck.position(10, y_pos);
+        showEdgeDotsCheck.changed(() => {
+            state.showEdgeDots = showEdgeDotsCheck.checked() as boolean;
+            p.loop();
+        });
         y_pos += 40;
 
 
