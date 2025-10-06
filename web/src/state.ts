@@ -7,6 +7,7 @@ export var state = {
     showIds: true,
     showQuads: true,
     showEdgeDots: true,
+    isCircuitAnalysisDirty: true,
     selectedMajorEdges: new Set<number>(),
     selectedJoinerEdges: new Set<number>(),
     colorScheme: 'Bright',

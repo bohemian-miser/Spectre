@@ -20,15 +20,18 @@ const sketch = (p: p5) => {
 
     let sys: any;
     // UI flags
-    let tile_sel: p5.Element;
-    let shape_sel: p5.Element;
-    let colscheme_sel: p5.Element;
+    let tile_sel: p5.Element & { option: (name: string) => void, changed: (callback: () => void) => void };
+    let shape_sel: p5.Element & { option: (name: string) => void, changed: (callback: () => void) => void };
+    let colscheme_sel: p5.Element & { option: (name: string) => void, changed: (callback: () => void) => void };
 
     let subst_button: p5.Element;
     let dragging = false;
     let uibox = true;
     let y_pos = 0;
     (window as any).circuitColorMap = new Map<string, string>();
+
+    // For pinch-to-zoom on mobile
+    let prevPinchDist = 0;
 
 
 
@@ -243,7 +246,7 @@ const sketch = (p: p5) => {
         lab.position(10, 10);
         lab.size(125, 15);
 
-        shape_sel = p.createSelect();
+        shape_sel = p.createSelect() as any;
         shape_sel.position(10, 30);
         shape_sel.size(125, 25);
         shape_sel.option('Tile(1,1)');
@@ -263,6 +266,7 @@ const sketch = (p: p5) => {
                 sys = buildSpectreBase(false);
             }
             to_screen = [20, 0, 0, 0, -20, 0];
+            state.isCircuitAnalysisDirty = true;
             // Rebuild and refresh thumbnails to match the new shape
             rebuildThumbnails();
             refreshThumbnails();
@@ -276,6 +280,7 @@ const sketch = (p: p5) => {
         subst_button.size(125, 25);
         subst_button.mousePressed(() => {
             sys = buildSupertiles(sys);
+            state.isCircuitAnalysisDirty = true;
             // do not touch palette snapshot here; thumbnails are persistent
             p.loop();
         });
@@ -284,14 +289,17 @@ const sketch = (p: p5) => {
         lab.position(10, 100);
         lab.size(125, 15);
 
-        tile_sel = p.createSelect();
+        tile_sel = p.createSelect() as any;
         tile_sel.position(10, 120);
         tile_sel.size(125, 25);
         for (let name of tile_names) {
             tile_sel.option(name);
         }
         tile_sel.value('Delta');
-        tile_sel.changed(() => p.loop());
+        tile_sel.changed(() => {
+            state.isCircuitAnalysisDirty = true;
+            p.loop();
+        });
 
         // --- Thumbnail palette: one miniature tile of each flavour for drawing overlays
         paletteDiv = p.createDiv('');
@@ -557,6 +565,7 @@ const sketch = (p: p5) => {
             slider.id(`slider-${label}`);
             slider.input(() => {
                 renderThumb();
+                state.isCircuitAnalysisDirty = true;
                 p.loop(); // Redraw main canvas
             });
 
@@ -784,7 +793,7 @@ const sketch = (p: p5) => {
         lab.position(10, 150);
         lab.size(125, 15);
 
-        colscheme_sel = p.createSelect();
+        colscheme_sel = p.createSelect() as any;
         colscheme_sel.position(10, 170);
         colscheme_sel.size(125, 25);
         colscheme_sel.option('Pride');
@@ -811,7 +820,7 @@ const sketch = (p: p5) => {
             lab.parent(holder);
             lab.style('display', 'block');
             lab.style('font-size', '11px');
-            const inp = p.createInput(custom_colors[name] || '#ffffff', 'color');
+            const inp = p.createInput(custom_colors[name] || '#ffffff', 'color') as any;
             inp.parent(holder);
             inp.input(() => {
                 // when user edits a picker, switch the scheme to Custom and redraw
@@ -860,7 +869,7 @@ const sketch = (p: p5) => {
         });
 
         // Checkbox: show edge labels
-        const lbl_check = p.createCheckbox('Show all edge numbers', false);
+        const lbl_check = p.createCheckbox('Show all edge numbers', false) as any;
         lbl_check.position(10, 210);
 
         y_pos = 240;
@@ -883,7 +892,7 @@ const sketch = (p: p5) => {
 
         const majorEdgeCheckboxes: p5.Element[] = [];
         for (const edge_type of edge_types) {
-            const checkbox = p.createCheckbox(edge_type.label, false);
+            const checkbox = p.createCheckbox(edge_type.label, false) as any;
             checkbox.position(10, y_pos);
             checkbox.changed(() => {
                 if (checkbox.checked()) {
@@ -910,7 +919,7 @@ const sketch = (p: p5) => {
 
         const joinerEdgeCheckboxes: p5.Element[] = [];
         for (const edge_type of edge_types) {
-            const checkbox = p.createCheckbox(edge_type.label, false);
+            const checkbox = p.createCheckbox(edge_type.label, false) as any;
             checkbox.position(10, y_pos);
             checkbox.changed(() => {
                 if (checkbox.checked()) {
@@ -919,6 +928,7 @@ const sketch = (p: p5) => {
                     state.selectedJoinerEdges.delete(edge_type.value);
                 }
                 updateJoinerEdgesLabel();
+                state.isCircuitAnalysisDirty = true;
                 refreshThumbnails();
                 p.loop();
             });
@@ -928,7 +938,7 @@ const sketch = (p: p5) => {
 
         lbl_check.changed(() => {
             const isChecked = lbl_check.checked() as boolean;
-            majorEdgeCheckboxes.forEach((checkbox, index) => {
+            majorEdgeCheckboxes.forEach((checkbox: any, index) => {
                 checkbox.checked(isChecked);
                 if (isChecked) {
                     state.selectedMajorEdges.add(edge_types[index].value);
@@ -936,7 +946,7 @@ const sketch = (p: p5) => {
                     state.selectedMajorEdges.clear();
                 }
             });
-            joinerEdgeCheckboxes.forEach((checkbox, index) => {
+            joinerEdgeCheckboxes.forEach((checkbox: any, index) => {
                 checkbox.checked(isChecked);
                 if (isChecked) {
                     state.selectedJoinerEdges.add(edge_types[index].value);
@@ -949,7 +959,7 @@ const sketch = (p: p5) => {
             p.loop();
         });
 
-        const showOutlinesCheck = p.createCheckbox('Show Outlines', true);
+        const showOutlinesCheck = p.createCheckbox('Show Outlines', true) as any;
         showOutlinesCheck.position(10, y_pos);
         showOutlinesCheck.changed(() => {
             (window as any).showOutlines = showOutlinesCheck.checked() as boolean;
@@ -958,7 +968,7 @@ const sketch = (p: p5) => {
         });
         y_pos += 20;
 
-        const showBackgroundsCheck = p.createCheckbox('Show Backgrounds', true);
+        const showBackgroundsCheck = p.createCheckbox('Show Backgrounds', true) as any;
         showBackgroundsCheck.position(10, y_pos);
         showBackgroundsCheck.changed(() => {
             (window as any).showBackgrounds = showBackgroundsCheck.checked() as boolean;
@@ -967,7 +977,7 @@ const sketch = (p: p5) => {
         });
         y_pos += 20;
 
-        const showLinesCheck = p.createCheckbox('Show Lines', true);
+        const showLinesCheck = p.createCheckbox('Show Lines', true) as any;
         showLinesCheck.position(10, y_pos);
         showLinesCheck.changed(() => {
             (window as any).showLines = showLinesCheck.checked() as boolean;
@@ -976,7 +986,7 @@ const sketch = (p: p5) => {
         });
         y_pos += 20;
 
-        const showIdsCheck = p.createCheckbox('Show IDs', true);
+        const showIdsCheck = p.createCheckbox('Show IDs', true) as any;
         showIdsCheck.position(10, y_pos);
         showIdsCheck.changed(() => {
             state.showIds = showIdsCheck.checked() as boolean;
@@ -984,7 +994,7 @@ const sketch = (p: p5) => {
         });
         y_pos += 20;
 
-        const showQuadsCheck = p.createCheckbox('Show Quads', true);
+        const showQuadsCheck = p.createCheckbox('Show Quads', true) as any;
         showQuadsCheck.position(10, y_pos);
         showQuadsCheck.changed(() => {
             state.showQuads = showQuadsCheck.checked() as boolean;
@@ -992,7 +1002,7 @@ const sketch = (p: p5) => {
         });
         y_pos += 20;
 
-        const showEdgeDotsCheck = p.createCheckbox('Show Edge Dots', true);
+        const showEdgeDotsCheck = p.createCheckbox('Show Edge Dots', true) as any;
         showEdgeDotsCheck.position(10, y_pos);
         showEdgeDotsCheck.changed(() => {
             state.showEdgeDots = showEdgeDotsCheck.checked() as boolean;
@@ -1046,8 +1056,11 @@ const sketch = (p: p5) => {
     p.draw = () => {
         p.background(255);
 
-        // Analyze circuits and get color map before drawing
-        (window as any).circuitColorMap = analyzeAndColor(sys[tile_sel.value() as string], p);
+        // Analyze circuits and get color map before drawing, only if needed
+        if (state.isCircuitAnalysisDirty) {
+            (window as any).circuitColorMap = analyzeAndColor(sys[tile_sel.value() as string], p);
+            state.isCircuitAnalysisDirty = false; // Reset the flag
+        }
 
         p.push();
         p.translate(p.width / 2, p.height / 2);
@@ -1138,6 +1151,55 @@ const sketch = (p: p5) => {
     p.mouseReleased = () => {
         dragging = false;
         p.loop();
+    };
+
+    // --- Touch Events for Mobile Pinch-to-Zoom ---
+
+    p.touchStarted = () => {
+        if (p.touches.length === 2) {
+            prevPinchDist = p.dist(
+                (p.touches[0] as any).x, (p.touches[0] as any).y,
+                (p.touches[1] as any).x, (p.touches[1] as any).y
+            );
+            // Prevent default browser actions
+            return false;
+        }
+        return;
+    };
+
+    p.touchMoved = () => {
+        // Handle pinch-to-zoom
+        if (p.touches.length === 2 && prevPinchDist > 0) {
+            const currentPinchDist = p.dist(
+                (p.touches[0] as any).x, (p.touches[0] as any).y,
+                (p.touches[1] as any).x, (p.touches[1] as any).y
+            );
+
+            const zoomFactor = currentPinchDist / prevPinchDist;
+
+            // Get the midpoint of the pinch gesture
+            const midX = ((p.touches[0] as any).x + (p.touches[1] as any).x) / 2;
+            const midY = ((p.touches[0] as any).y + (p.touches[1] as any).y) / 2;
+
+            // Use the same logic as mouseWheel for zooming
+            const world = transPt(inv(to_screen), pt(midX - p.width / 2, midY - p.height / 2));
+            to_screen = mul(
+                mul(ttrans(world.x, world.y), [zoomFactor, 0, 0, 0, zoomFactor, 0]),
+                mul(ttrans(-world.x, -world.y), to_screen)
+            );
+
+            prevPinchDist = currentPinchDist; // Update for next frame
+            p.loop();
+            // Prevent default browser actions (like scrolling)
+            return false;
+        }
+        return;
+    };
+
+    p.touchEnded = () => {
+        // Reset pinch distance when fingers are lifted
+        prevPinchDist = 0;
+        return;
     };
 };
 
