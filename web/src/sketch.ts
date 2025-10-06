@@ -1,5 +1,5 @@
 import p5 from 'p5';
-import { Shape, CurvyShape, Meta, unique_edge_labels, getEdgeDotMidpoints, spectre_pts, hex_edge_labels, hex_pts } from './tiles';
+import { Shape, CurvyShape, Meta, unique_edge_labels, getEdgeDotMidpoints, spectre_pts, hex_edge_labels, hex_pts, hat_pts, turtle_pts } from './tiles';
 import { state } from './state';
 import { tile_names, colmap53, colmap_orig, colmap_mystics, colmap_pride } from './config';
 import { pt, mul, trot, ttrans, inv, transPt, ident, adjust_mat } from './utils';
@@ -105,23 +105,8 @@ const sketch = (p: p5) => {
     }
 
     function buildHatTurtleBase(hat_dominant: boolean) {
-        const hr3 = 0.8660254037844386;
-
-        function hexPt(x: number, y: number) {
-            return pt(x + 0.5 * y, -hr3 * y);
-        }
-
-        const hat = [
-            hexPt(-1, 2), hexPt(0, 2), hexPt(0, 3), hexPt(2, 2), hexPt(3, 0),
-            hexPt(4, 0), hexPt(5, -1), hexPt(4, -2), hexPt(2, -1), hexPt(2, -2),
-            hexPt(1, -2), hexPt(0, -2), hexPt(-1, -1), hexPt(0, 0)
-        ];
-
-        const turtle = [
-            hexPt(0, 0), hexPt(2, -1), hexPt(3, 0), hexPt(4, -1), hexPt(4, -2),
-            hexPt(6, -3), hexPt(7, -5), hexPt(6, -5), hexPt(5, -4), hexPt(4, -5),
-            hexPt(2, -4), hexPt(0, -3), hexPt(-1, -1), hexPt(0, -1)
-        ];
+        const hat = hat_pts.map(pt => p.createVector(pt.x, pt.y));
+        const turtle = turtle_pts.map(pt => p.createVector(pt.x, pt.y));
 
         const hat_keys = [
             hat[3], hat[5], hat[7], hat[11]
@@ -279,7 +264,7 @@ const sketch = (p: p5) => {
             }
             to_screen = [20, 0, 0, 0, -20, 0];
             // Rebuild and refresh thumbnails to match the new shape
-            palette_sys = makePaletteSnapshot(sys);
+            rebuildThumbnails();
             refreshThumbnails();
             p.loop();
         });
@@ -330,6 +315,25 @@ const sketch = (p: p5) => {
 
         // overlays: stored per-label as array of strokes (stroke = array of tile-local points)
         // (overlays is hoisted to module scope)
+
+        function rebuildThumbnails() {
+            const shape = shape_sel ? shape_sel.value() as string : 'Tile(1,1)';
+            
+            palette_sys = makePaletteSnapshot(sys);
+
+            if (shape === 'Hexagons') {
+                miniNames = tile_names;
+            } else {
+                miniNames = ['Gamma1', 'Gamma2'].concat(tile_names.filter(n => n !== 'Gamma'));
+            }
+
+            paletteDiv.html('');
+            miniCanvases = {};
+            for (let name of miniNames) {
+                makeThumbnail(name);
+                if (!overlays[name]) overlays[name] = [];
+            }
+        }
 
         // helper to draw a geometry (Shape or Meta) into a 2D canvas context using transform S
         function drawGeomToContext(ctx: CanvasRenderingContext2D, geom: any, S: number[], overrideLabel?: string) {
@@ -525,16 +529,6 @@ const sketch = (p: p5) => {
             }
         }
 
-        function computeCentroid(geom: any) {
-            if (!geom) return { x: 0, y: 0 };
-            const pts: p5.Vector[] = [];
-            collectPoints(geom, ident, pts);
-            if (pts.length === 0) return { x: 0, y: 0 };
-            let sx = 0, sy = 0;
-            for (const p of pts) { sx += p.x; sy += p.y; }
-            return { x: sx / pts.length, y: sy / pts.length };
-        }
-
         function makePaletteSnapshot(src: any) {
             const out: { [key: string]: any } = {};
             for (const k in src) {
@@ -607,17 +601,49 @@ const sketch = (p: p5) => {
             (el.elt as any).style.width = thumbWidth + 'px';
             (el.elt as any).style.height = thumbHeight + 'px';
             const ctx = (el.elt as any).getContext('2d');
-            // compute thumbnail transform: center + scale (flip y)
-            // center the shape's centroid in the thumbnail
-            let center = { x: 0, y: 0 };
-            if (palette_sys && palette_sys[label]) {
-                center = computeCentroid(palette_sys[label]);
+
+            // --- Dynamic Thumbnail Transform Calculation ---
+            let S_thumb: number[];
+
+            const shapeGeom = (palette_sys && palette_sys[label]) ? palette_sys[label] : null;
+            if (shapeGeom) {
+                // Collect all points to calculate the bounding box
+                const allPoints: p5.Vector[] = [];
+                collectPoints(shapeGeom, ident, allPoints);
+
+                if (allPoints.length > 0) {
+                    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+                    for (const p of allPoints) {
+                        if (p.x < minX) minX = p.x;
+                        if (p.x > maxX) maxX = p.x;
+                        if (p.y < minY) minY = p.y;
+                        if (p.y > maxY) maxY = p.y;
+                    }
+
+                    const shapeWidth = maxX - minX;
+                    const shapeHeight = maxY - minY;
+                    const shapeCenterX = (minX + maxX) / 2;
+                    const shapeCenterY = (minY + maxY) / 2;
+
+                    // Determine scale to fit shape within thumbnail, with padding
+                    const padding = 0.9; // Use 90% of the space
+                    const scaleX = (thumbWidth * padding) / shapeWidth;
+                    const scaleY = (thumbHeight * padding) / shapeHeight;
+                    const scale = Math.min(scaleX, scaleY);
+
+                    // Create transformation matrix
+                    const toCenter = ttrans(-shapeCenterX, -shapeCenterY);
+                    const scaler = [scale, 0, 0, 0, -scale, 0]; // Flip Y-axis
+                    const place = ttrans(thumbWidth / 2, thumbHeight / 2);
+                    S_thumb = mul(place, mul(scaler, toCenter));
+                } else {
+                    // Fallback for shapes with no points
+                    S_thumb = [thumbScale, 0, thumbWidth / 2, 0, -thumbScale, thumbHeight / 2];
+                }
+            } else {
+                // Fallback for missing geometry
+                S_thumb = [thumbScale, 0, thumbWidth / 2, 0, -thumbScale, thumbHeight / 2];
             }
-            // translate centroid to origin then scale and move to canvas center
-            const toCenter = ttrans(-center.x, -center.y);
-            const scale = [thumbScale, 0, 0, 0, -thumbScale, 0];
-            const place = ttrans(thumbWidth / 2, thumbHeight / 2);
-            const S_thumb = mul(place, mul(scale, toCenter));
             
             const S_thumb_adjusted = mul(S_thumb, adjust_mat);
 
@@ -699,34 +725,9 @@ const sketch = (p: p5) => {
 
         // build thumbnails for each flavour (include Gamma1, Gamma2, then all other names except the composite 'Gamma')
         // ensure exactly 10 thumbnails: Gamma1, Gamma2, then the 8 named tiles
-        miniNames = ['Gamma1', 'Gamma2'].concat(tile_names.filter(n => n !== 'Gamma'));
-        if (miniNames.length > 10) miniNames = miniNames.slice(0, 10);
-        for (let name of miniNames) {
-            makeThumbnail(name);
-            if (!overlays[name]) overlays[name] = [];
-        }
+        rebuildThumbnails();
 
         function refreshThumbnails() {
-            // Update thumbnail names based on shape
-            const currentShape = shape_sel ? shape_sel.value() : 'Tile(1,1)';
-            let newMiniNames: string[];
-            if (currentShape === 'Hexagons') {
-                newMiniNames = tile_names; // Includes 'Gamma'
-            } else {
-                newMiniNames = ['Gamma1', 'Gamma2'].concat(tile_names.filter(n => n !== 'Gamma'));
-            }
-
-            if (JSON.stringify(newMiniNames) !== JSON.stringify(miniNames)) {
-                miniNames = newMiniNames;
-                // Clear and rebuild thumbnails
-                paletteDiv.html('');
-                miniCanvases = {};
-                for (let name of miniNames) {
-                    makeThumbnail(name);
-                    if (!overlays[name]) overlays[name] = [];
-                }
-            }
-
             // ensure colmap reflects selector (and custom_colors)
             const s = colscheme_sel ? colscheme_sel.value() : 'Bright';
             if (s === 'Custom') {

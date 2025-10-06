@@ -39,6 +39,26 @@ export const hex_pts = [
     {x:-0.5, y:0.8660254037844386}
 ];
 
+export const hat_pts = [
+    { x: 0, y: -1.7320508075688772 }, { x: 1, y: -1.7320508075688772 },
+    { x: 1.5, y: -2.598076211353316 }, { x: 3, y: -1.7320508075688772 },
+    { x: 3, y: 0 }, { x: 4, y: 0 },
+    { x: 4.5, y: 0.8660254037844386 }, { x: 3, y: 1.7320508075688772 },
+    { x: 1.5, y: 0.8660254037844386 }, { x: 1, y: 1.7320508075688772 },
+    { x: 0, y: 1.7320508075688772 }, { x: -1, y: 1.7320508075688772 },
+    { x: -1.5, y: 0.8660254037844386 }, { x: 0, y: 0 }
+];
+
+export const turtle_pts = [
+    { x: 0, y: 0 }, { x: 1.5, y: 0.8660254037844386 },
+    { x: 3, y: 0 }, { x: 3.5, y: 0.8660254037844386 },
+    { x: 3, y: 1.7320508075688772 }, { x: 4.5, y: 2.598076211353316 },
+    { x: 4.5, y: 4.330127018922193 }, { x: 3.5, y: 4.330127018922193 },
+    { x: 3, y: 3.4641016151377544 }, { x: 1.5, y: 4.330127018922193 },
+    { x: 0, y: 3.4641016151377544 }, { x: -1.5, y: 2.598076211353316 },
+    { x: -1.5, y: 0.8660254037844386 }, { x: -0.5, y: 0.8660254037844386 }
+];
+
 export const unique_edge_labels: { [key: string]: string[] } = {
 	'Delta':  ['3.0A','3.1A', '2.0A','2.1A','2.2A', '-5.1A','-5.0A', '1.0A','1.1A','1.2A', '-3.1A','-3.0A', '-6.1A','-6.0A'],
 	'Theta':  ['3.0A','3.1A', '2.0A','2.1A','2.2A', '8.0A', '2.0B','2.1B','2.2B', '0.0A','0.1A', '-2.2A','-2.1A','-2.0A'],
@@ -95,7 +115,21 @@ export function getEdgeDotMidpoints(tileLabel: string, selectedEdges: Set<number
     if (!labels || labels.length === 0) return points;
 
     const p = (window as any).p as p5;
-    const pointDefs = state.shape === 'Hexagons' ? hex_pts : spectre_pts;
+    
+    let pointDefs;
+    if (state.shape === 'Hexagons') {
+        pointDefs = hex_pts;
+    } else if (state.shape === 'Turtles in Hats') {
+        // Hat is dominant. Gamma1 is a Hat, Gamma2 is a Turtle.
+        pointDefs = (tileLabel === 'Gamma2') ? turtle_pts : hat_pts;
+    } else if (state.shape === 'Hats in Turtles') {
+        // Turtle is dominant. Gamma1 is a Turtle, Gamma2 is a Hat.
+        pointDefs = (tileLabel === 'Gamma2') ? hat_pts : turtle_pts;
+    } else {
+        // Default to spectre
+        pointDefs = spectre_pts;
+    }
+
     const baseVectors = pointDefs.map(pt => p.createVector(pt.x, pt.y));
     const shape = new Shape(baseVectors, [], tileLabel);
     const basePts = (shape.origPts && shape.origPts.length) ? shape.origPts : shape.pts;
