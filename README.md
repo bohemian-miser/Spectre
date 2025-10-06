@@ -1,4 +1,7 @@
 # Spectre
+
+See this live at bohemian-miser.github.io
+
 Playing with the spectre tiling. Mostly vibe coded and plagerised from https://cs.uwaterloo.ca/~csk/spectre/app.html. I've included the original version of this under 'web_orig'.
 
 Ignore the spectre dir, it was an attempt at doing this in python.
