@@ -59,6 +59,9 @@ const sketch = (p: p5) => {
     let miniCanvases: { [key: string]: any } = {};
     let palette_sys: any = null;
 
+    // Responsive thumbnail sizing
+    let thumbWidth: number, thumbHeight: number, thumbScale: number;
+
     // helper: convert [r,g,b] to '#rrggbb'
     function rgbArrayToHex(a: number[]) {
         const r = (a[0] || 0).toString(16).padStart(2, '0');
@@ -291,24 +294,11 @@ const sketch = (p: p5) => {
         tile_sel.changed(() => p.loop());
 
         // --- Thumbnail palette: one miniature tile of each flavour for drawing overlays
-        // thumbnail sizing constants (must be defined before paletteDiv uses them)
-        const THUMB_MULT = 3; // thumbnails 3x larger
-        const thumbWidth = 64 * THUMB_MULT;
-        const thumbHeight = 45 * THUMB_MULT;
-        const thumbScale = 14 * THUMB_MULT; // scale factor for thumbnail
-        // --- Thumbnail palette: one miniature tile of each flavour for drawing overlays
         paletteDiv = p.createDiv('');
-        // style as absolute container; actual position set by repositionPalette()
         paletteDiv.style('position', 'absolute');
-        // use CSS grid so we have a fixed 5-column layout (2 rows for 10 thumbnails)
         paletteDiv.style('display', 'grid');
-        paletteDiv.style('grid-template-columns', `repeat(5, ${thumbWidth}px)`);
-        paletteDiv.style('grid-auto-rows', `${thumbHeight}px`);
         paletteDiv.style('gap', '8px');
-        // allow horizontal scroll if thumbnails overflow; allow wrapping into rows
-        paletteDiv.style('overflow-x', 'auto');
-        paletteDiv.style('white-space', 'normal');
-        (paletteDiv.elt as any).style.padding = '4px';
+        paletteDiv.style('padding', '4px');
 
         // overlays: stored per-label as array of strokes (stroke = array of tile-local points)
         // (overlays is hoisted to module scope)
@@ -722,10 +712,6 @@ const sketch = (p: p5) => {
             miniCanvases[label] = { el: el.elt, ctx: ctx, S_thumb };
         }
 
-        // build thumbnails for each flavour (include Gamma1, Gamma2, then all other names except the composite 'Gamma')
-        // ensure exactly 10 thumbnails: Gamma1, Gamma2, then the 8 named tiles
-        rebuildThumbnails();
-
         function refreshThumbnails() {
             // ensure colmap reflects selector (and custom_colors)
             const s = colscheme_sel ? colscheme_sel.value() : 'Bright';
@@ -751,47 +737,48 @@ const sketch = (p: p5) => {
             }
         }
 
-        // initial thumbnail refresh to match dropdown on load
-        refreshThumbnails();
-
-        // center visible thumbnails into two rows of 5 columns if they fit
-        try {
-            const cols = 5;
-            const totalWidth = cols * (thumbWidth + 8);
-            if (totalWidth + 40 < p.windowWidth) {
-                const left = Math.floor((p.windowWidth - totalWidth) / 2);
-                paletteDiv.position(left, 5);
-            } else {
-                const minLeft = 400;
-                paletteDiv.position(minLeft, 5);
-                // ensure first thumbnails visible
-                (paletteDiv.elt as any).scrollLeft = 0;
-            }
-        } catch (e) { }
-
-        // reposition palette to avoid overlapping left controls
-        function repositionPalette() {
-            const gap = 6;
-            const cols = 5;
-            const totalWidth = cols * (thumbWidth + gap);
-            // center across the top
-            const left = Math.floor((p.windowWidth - totalWidth) / 2);
-            paletteDiv.position(left, 5);
-            paletteDiv.style('width', `${totalWidth}px`);
-            // reserve two rows of thumbnail height for layout
-            paletteDiv.style('height', `${(thumbHeight * 2) + (gap)}px`);
-            paletteDiv.style('z-index', '1000');
-            // position custom div under two rows of thumbnails
-            customDiv.position(left, 5 + (thumbHeight * 2) + 16);
-            customDiv.style('z-index', '1000');
-        }
-
         // create customDiv (moved here so reposition can reference thumbSize)
         customDiv = p.createDiv('');
         customDiv.style('position', 'absolute');
         customDiv.style('padding', '6px');
         customDiv.style('background', 'rgba(255,255,255,0.9)');
-        repositionPalette();
+        
+        function calculateAndApplyLayout() {
+            const leftPanelWidth = 150; // Width of the left control panel
+            const gap = 8;
+            const cols = 5;
+
+            // Calculate available width for the palette
+            const availableWidth = p.windowWidth - leftPanelWidth - (gap * (cols + 1));
+            
+            // Calculate new thumbnail width, constrained to a max size
+            const maxThumbWidth = 192; // 64 * 3
+            const newThumbWidth = Math.max(32, Math.min(maxThumbWidth, availableWidth / cols));
+
+            // Update global sizing variables if they have changed
+            if (newThumbWidth !== thumbWidth) {
+                const aspectRatio = 45 / 64;
+                thumbWidth = newThumbWidth;
+                thumbHeight = thumbWidth * aspectRatio;
+                thumbScale = thumbWidth / 4.5; // Maintain approximate scale ratio
+
+                // Rebuild all thumbnails with the new dimensions
+                rebuildThumbnails();
+            }
+
+            // Position the palette and custom color picker
+            const totalWidth = (thumbWidth * cols) + (gap * (cols - 1));
+            const left = leftPanelWidth + gap;
+            paletteDiv.position(left, 5);
+            paletteDiv.style('width', `${totalWidth}px`);
+            paletteDiv.style('grid-template-columns', `repeat(${cols}, 1fr)`);
+            paletteDiv.style('grid-auto-rows', `${thumbHeight}px`);
+            
+            customDiv.position(left, 5 + (thumbHeight * 2) + 16);
+            customDiv.style('z-index', '1000');
+        }
+
+        calculateAndApplyLayout();
 
         lab = p.createSpan('Colours');
         lab.position(10, 150);
@@ -1114,7 +1101,7 @@ const sketch = (p: p5) => {
 
     p.windowResized = () => {
         p.resizeCanvas(p.windowWidth, p.windowHeight);
-        try { (p as any).repositionPalette(); } catch (e) { }
+        calculateAndApplyLayout();
     };
 
     p.mousePressed = () => {
