@@ -6,7 +6,7 @@ import { pt, mul, trot, ttrans, inv, transPt, ident, adjust_mat } from './utils'
 import { getEdgeDotCount, analyzeAndColor } from './analysis';
 import { findPerfectMatchings } from './analysis';
 
-// p5.disableFriendlyErrors = true;
+p5.disableFriendlyErrors = true;
 
 (window as any).showOutlines = true;
 (window as any).showBackgrounds = true;
