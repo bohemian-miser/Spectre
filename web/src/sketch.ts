@@ -1,5 +1,5 @@
 import p5 from 'p5';
-import { Shape, CurvyShape, Meta, unique_edge_labels, getEdgeDotMidpoints } from './tiles';
+import { Shape, CurvyShape, Meta, unique_edge_labels, getEdgeDotMidpoints, spectre_pts } from './tiles';
 import { state } from './state';
 import { tile_names, colmap53, colmap_orig, colmap_mystics, colmap_pride } from './config';
 import { pt, mul, trot, ttrans, inv, transPt, ident, adjust_mat } from './utils';
@@ -68,22 +68,7 @@ const sketch = (p: p5) => {
     }
 
     function buildSpectreBase(curved?: boolean) {
-        const spectre = [
-            pt(0, 0),
-            pt(1.0, 0.0),
-            pt(1.5, -0.8660254037844386),
-            pt(2.366025403784439, -0.36602540378443865),
-            pt(2.366025403784439, 0.6339745962155614),
-            pt(3.366025403784439, 0.6339745962155614),
-            pt(3.866025403784439, 1.5),
-            pt(3.0, 2.0),
-            pt(2.133974596215561, 1.5),
-            pt(1.6339745962155614, 2.3660254037844393),
-            pt(0.6339745962155614, 2.3660254037844393),
-            pt(-0.3660254037844386, 2.3660254037844393),
-            pt(-0.866025403784439, 1.5),
-            pt(0.0, 1.0)
-        ];
+        const spectre = spectre_pts.map(pt => p.createVector(pt.x, pt.y));
 
         const spectre_keys = [
             spectre[3], spectre[5], spectre[7], spectre[11]
@@ -290,6 +275,7 @@ const sketch = (p: p5) => {
         shape_sel.option('Hats in Turtles');
         shape_sel.changed(() => {
             const s = shape_sel.value();
+            state.shape = s as string;
             if (s == 'Hexagons') {
                 sys = buildHexBase();
             } else if (s == 'Turtles in Hats') {
@@ -302,8 +288,9 @@ const sketch = (p: p5) => {
                 sys = buildSpectreBase(false);
             }
             to_screen = [20, 0, 0, 0, -20, 0];
-            // do not update palette snapshot here; thumbnails should remain
-            // showing the original flavours and never change when sys is rebuilt
+            // Rebuild and refresh thumbnails to match the new shape
+            palette_sys = makePaletteSnapshot(sys);
+            refreshThumbnails();
             p.loop();
         });
         // trigger the change once so the pickers and `custom_colors` reflect the initial selection
@@ -726,6 +713,26 @@ const sketch = (p: p5) => {
         }
 
         function refreshThumbnails() {
+            // Update thumbnail names based on shape
+            const currentShape = shape_sel ? shape_sel.value() : 'Tile(1,1)';
+            let newMiniNames: string[];
+            if (currentShape === 'Hexagons') {
+                newMiniNames = tile_names; // Includes 'Gamma'
+            } else {
+                newMiniNames = ['Gamma1', 'Gamma2'].concat(tile_names.filter(n => n !== 'Gamma'));
+            }
+
+            if (JSON.stringify(newMiniNames) !== JSON.stringify(miniNames)) {
+                miniNames = newMiniNames;
+                // Clear and rebuild thumbnails
+                paletteDiv.html('');
+                miniCanvases = {};
+                for (let name of miniNames) {
+                    makeThumbnail(name);
+                    if (!overlays[name]) overlays[name] = [];
+                }
+            }
+
             // ensure colmap reflects selector (and custom_colors)
             const s = colscheme_sel ? colscheme_sel.value() : 'Bright';
             if (s === 'Custom') {

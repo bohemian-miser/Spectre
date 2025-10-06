@@ -1,13 +1,17 @@
-import { unique_edge_labels } from './tiles';
+import { unique_edge_labels, hex_edge_labels } from './tiles';
 import { getEdgeDotMidpoints } from './tiles';
 import { state } from './state';
 import { mul, transPt, ident } from './utils';
 import p5 from 'p5';
 
+function getEdgeLabelsForShape(tileLabel: string): readonly string[] {
+    const labels = state.shape === 'Hexagons' ? hex_edge_labels : unique_edge_labels;
+    return labels[tileLabel] || [];
+}
+
 export function getEdgeDotCount(tileLabel: string, selectedEdges: Set<number>): number {
     let count = 0;
-    if (typeof unique_edge_labels === 'undefined') return 0;
-    const labels = unique_edge_labels[tileLabel];
+    const labels = getEdgeLabelsForShape(tileLabel);
     if (!labels) return 0;
 
     for (const lab of labels) {

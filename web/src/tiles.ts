@@ -13,6 +13,23 @@ declare let showLines: boolean;
 declare let showOutlines: boolean;
 declare let showBackgrounds: boolean;
 
+export const spectre_pts = [
+    {x:0, y:0},
+    {x:1.0, y:0.0},
+    {x:1.5, y:-0.8660254037844386},
+    {x:2.366025403784439, y:-0.36602540378443865},
+    {x:2.366025403784439, y:0.6339745962155614},
+    {x:3.366025403784439, y:0.6339745962155614},
+    {x:3.866025403784439, y:1.5},
+    {x:3.0, y:2.0},
+    {x:2.133974596215561, y:1.5},
+    {x:1.6339745962155614, y:2.3660254037844393},
+    {x:0.6339745962155614, y:2.3660254037844393},
+    {x:-0.3660254037844386, y:2.3660254037844393},
+    {x:-0.866025403784439, y:1.5},
+    {x:0.0, y:1.0}
+];
+
 export const unique_edge_labels: { [key: string]: string[] } = {
 	'Delta':  ['3.0A','3.1A', '2.0A','2.1A','2.2A', '-5.1A','-5.0A', '1.0A','1.1A','1.2A', '-3.1A','-3.0A', '-6.1A','-6.0A'],
 	'Theta':  ['3.0A','3.1A', '2.0A','2.1A','2.2A', '8.0A', '2.0B','2.1B','2.2B', '0.0A','0.1A', '-2.2A','-2.1A','-2.0A'],
@@ -26,10 +43,26 @@ export const unique_edge_labels: { [key: string]: string[] } = {
 	'Gamma1': ['-1.2A','-1.1A','-1.0A', '1.0A','1.1A','1.2A', '7.0A','7.1A','7.2A','7.3A', '2.2A', '-2.2A','-2.1A','-2.0A']
 };
 
+export const hex_edge_labels: { [key: string]: string[] } = {
+    'Delta':  ['3.0A','2.0A', '-5.0A', '1.0A', '-3.0A','-6.0A'],
+    'Theta':  ['3.0A','2.0A','8.0A', '2.0B', '0.0A', '-2.0A'],
+    'Lambda': ['3.0A','2.0A','-5.0A','1.0A','-8.0A', '-2.0A'],
+    'Xi':     ['-1.0A', '5.0A', '8.0A', '2.0A', '0.0A','-2.0A'],
+    'Pi':     ['-1.0A', '5.0A','-5.0A', '1.0A', '-8.0A','-2.0A'],
+    'Sigma':  ['6.0A', '2.0A','-5.0A','1.0A','-3.0A','4.0A'],
+    'Phi':    ['3.0A','2.0A', '-5.0A','5.0A','0.0A','-2.0A'],
+    'Psi':    ['-1.0A','5.0A','-5.0A','5.0B', '0.0A','-2.0A'],
+    'Gamma':  ['-1.0A','1.0A','-3.0A', '-4.0A','2.0A','-2.0A'],
+};
+
+function getEdgeLabelsForShape(tileLabel: string): readonly string[] {
+    const labels = state.shape === 'Hexagons' ? hex_edge_labels : unique_edge_labels;
+    return labels[tileLabel] || [];
+}
+
 export function getEdgeMidpoints(tileLabel: string, selectedEdges: Set<number>): p5.Vector[] {
     const midpoints: p5.Vector[] = [];
-    if (typeof unique_edge_labels === 'undefined') return midpoints;
-    const labels = unique_edge_labels[tileLabel];
+    const labels = getEdgeLabelsForShape(tileLabel);
     if (!labels || labels.length === 0) return midpoints;
 
     const shape = new Shape([], [], tileLabel); // A bit of a hack to get access to the pts
@@ -49,27 +82,13 @@ export function getEdgeMidpoints(tileLabel: string, selectedEdges: Set<number>):
 
 export function getEdgeDotMidpoints(tileLabel: string, selectedEdges: Set<number>): p5.Vector[] {
     const points: p5.Vector[] = [];
-    if (typeof unique_edge_labels === 'undefined') return points;
-    const labels = unique_edge_labels[tileLabel];
+    const labels = getEdgeLabelsForShape(tileLabel);
     if (!labels || labels.length === 0) return points;
 
-    // const shape = new Shape([], [], tileLabel); // A bit of a hack to get access to the pts
-    const basePts = [
-				pt(0, 0),
-				pt(1.0, 0.0),
-				pt(1.5, -0.8660254037844386),
-				pt(2.366025403784439, -0.36602540378443865),
-				pt(2.366025403784439, 0.6339745962155614),
-				pt(3.366025403784439, 0.6339745962155614),
-				pt(3.866025403784439, 1.5),
-				pt(3.0, 2.0),
-				pt(2.133974596215561, 1.5),
-				pt(1.6339745962155614, 2.3660254037844393),
-				pt(0.6339745962155614, 2.3660254037844393),
-				pt(-0.3660254037844386, 2.3660254037844393),
-				pt(-0.866025403784439, 1.5),
-				pt(0.0, 1.0)
-			];
+    const p = (window as any).p as p5;
+    const spectreVectors = spectre_pts.map(pt => p.createVector(pt.x, pt.y));
+    const shape = new Shape(spectreVectors, [], tileLabel); // A bit of a hack to get access to the pts
+    const basePts = (shape.origPts && shape.origPts.length) ? shape.origPts : shape.pts;
 
     for (let i = 0; i < labels.length; i++) {
         const lab = labels[i] || '';
@@ -134,8 +153,7 @@ export class Shape
 
 	_drawEdgeLabels( S: number[] ) {
 		if( (state.selectedMajorEdges.size === 0 && state.selectedJoinerEdges.size === 0) ) return;
-		if( typeof unique_edge_labels === 'undefined' ) return;
-		const labels = unique_edge_labels[this.label];
+		const labels = getEdgeLabelsForShape(this.label);
 		if( !labels || labels.length === 0 ) return;
 		// draw labels at midpoints of consecutive pts
 		p.textAlign(p.CENTER, p.CENTER);
