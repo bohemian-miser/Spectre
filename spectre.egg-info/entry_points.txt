@@ -1,2 +1,0 @@
-[console_scripts]
-spectre = spectre.cli:cli

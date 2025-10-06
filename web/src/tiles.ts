@@ -159,27 +159,6 @@ export function getEdgeDotMidpoints(tileLabel: string, selectedEdges: Set<number
     return points;
 }
 
-function drawPolygon( shape: p5.Vector[], T: number[], f: number[] | null, s: number[] | null, w: number )
-{
-	if( f != null && (window as any).showBackgrounds ) {
-		p.fill( f[0], f[1], f[2] );
-	} else {
-		p.noFill();
-	}
-	if( s != null && (window as any).showOutlines ) {
-		p.stroke( 0 );
-		p.strokeWeight( w ) ; // / lw_scale );
-	} else {
-		p.noStroke();
-	}
-	p.beginShape();
-	for( let v of shape ) {
-		const tp = transPt( T, v );
-		p.vertex( tp.x, tp.y );
-	}
-	p.endShape( p.CLOSE );
-}
-
 export class Shape
 {
 	pts: p5.Vector[];
@@ -301,7 +280,23 @@ export class Shape
 
 	draw( S: number[], ppos = 0 )
 	{
-		drawPolygon( this.pts, S, state.colmap[this.label], [0,0,0], 0.1 );
+        if( (window as any).showBackgrounds ) {
+            p.fill( state.colmap[this.label][0], state.colmap[this.label][1], state.colmap[this.label][2] );
+        } else {
+            p.noFill();
+        }
+        if( (window as any).showOutlines ) {
+            p.stroke( 0 );
+            p.strokeWeight( 0.1 ) ; // / lw_scale );
+        } else {
+            p.noStroke();
+        }
+        p.beginShape();
+        for( let v of this.pts ) {
+            const tp = transPt( S, v );
+            p.vertex( tp.x, tp.y );
+        }
+        p.endShape( p.CLOSE );
         if (state.showIds) {
             p.push();
             p.fill(0);
@@ -327,7 +322,6 @@ export class Shape
 				p.endShape();
 			}
 		}
-
 		// draw edge labels if requested
 		if( typeof this._drawEdgeLabels === 'function' ) this._drawEdgeLabels( S );
 
@@ -405,7 +399,7 @@ export class CurvyShape extends Shape
 		}
 	}
 
-	draw( S: number[] )
+	draw( S: number[], ppos = 0 )
 	{
 		p.fill( state.colmap[this.label][0], state.colmap[this.label][1], state.colmap[this.label][2] );
 		p.strokeWeight( 0.1 );
@@ -423,6 +417,18 @@ export class CurvyShape extends Shape
 			p.bezierVertex( a.x, a.y, b.x, b.y, c.x, c.y );
 		}
 		p.endShape( p.CLOSE );
+        if (state.showIds) {
+            p.push();
+            p.fill(0);
+            p.stroke(0);
+            p.textAlign(p.CENTER, p.CENTER);
+            const centroid = this.origPts.reduce((acc, pt) => acc.add(pt), p.createVector(0, 0)).div(this.origPts.length);
+            const tc = transPt(S, centroid);
+            p.translate(tc.x, tc.y);
+            p.scale(0.1, -0.1);
+            p.text(ppos, 0, 0);
+            p.pop();
+        }
 		if( typeof overlays !== 'undefined' && overlays[this.label] ) {
 			p.stroke(0);
 			p.strokeWeight( 0.1 );

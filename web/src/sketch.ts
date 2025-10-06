@@ -244,7 +244,6 @@ const sketch = (p: p5) => {
         shape_sel.position(10, 30);
         shape_sel.size(125, 25);
         shape_sel.option('Tile(1,1)');
-        shape_sel.option('Spectres');
         shape_sel.option('Hexagons');
         shape_sel.option('Turtles in Hats');
         shape_sel.option('Hats in Turtles');
@@ -257,8 +256,6 @@ const sketch = (p: p5) => {
                 sys = buildHatTurtleBase(true);
             } else if (s == 'Hats in Turtles') {
                 sys = buildHatTurtleBase(false);
-            } else if (s == 'Spectres') {
-                sys = buildSpectreBase(true);
             } else {
                 sys = buildSpectreBase(false);
             }
@@ -502,9 +499,11 @@ const sketch = (p: p5) => {
             if (!geom) return null;
             // Meta-like composite
             if (geom.geoms && Array.isArray(geom.geoms)) {
-                const out: any = { geoms: [], quad: geom.quad ? clonePtsArray(geom.quad) : undefined };
+                const out: { [key: string]: any } = { geoms: [], quad: geom.quad ? clonePtsArray(geom.quad) : undefined };
                 for (const child of geom.geoms) {
-                    out.geoms.push({ geom: cloneGeom(child.geom), xform: child.xform.slice() });
+                    if (out.geoms) {
+                        out.geoms.push({ geom: cloneGeom(child.geom), xform: child.xform.slice() });
+                    }
                 }
                 return out;
             }
