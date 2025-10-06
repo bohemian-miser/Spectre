@@ -11,3 +11,6 @@ package-lock.json
 
 # Build output
 dist/
+
+playwright-report/
+test-results/
