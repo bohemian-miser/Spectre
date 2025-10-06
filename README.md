@@ -47,3 +47,5 @@ I'm pretty sure I can make either an infinite line but haven't got a solid proof
 * Make 'Show all edge numbers' only turn on/off the edge labels, not the joiner edges
 * Add another checkbox for all joiner edges and put it with the joiner edges text
 * Fix hexagons and 0-edges they don't need the same treatment as the other shapes.
+* Colour choice for lines.
+* Download a template, edit as svg and re-upload.
