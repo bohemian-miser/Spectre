@@ -863,7 +863,7 @@ const sketch = (p: p5) => {
         });
 
         // Checkbox: show edge labels
-        const lbl_check = p.createCheckbox('Show all edge numbers', false) as any;
+        const lbl_check = p.createCheckbox('Show all', false) as any;
         lbl_check.position(10, 210);
 
         y_pos = 240;
@@ -940,15 +940,6 @@ const sketch = (p: p5) => {
                     state.selectedMajorEdges.clear();
                 }
             });
-            joinerEdgeCheckboxes.forEach((checkbox: any, index) => {
-                checkbox.checked(isChecked);
-                if (isChecked) {
-                    state.selectedJoinerEdges.add(edge_types[index].value);
-                } else {
-                    state.selectedJoinerEdges.clear();
-                }
-            });
-            updateJoinerEdgesLabel();
             refreshThumbnails();
             p.loop();
         });
@@ -964,7 +955,7 @@ const sketch = (p: p5) => {
         ];
 
         for (const config of checkboxConfigs) {
-            const checkbox = p.createCheckbox(config.label, state.config[config.key] as boolean) as any;
+            const checkbox = p.createCheckbox(config.label, state.config[config.key]) as any;
             checkbox.position(10, y_pos);
             checkbox.changed(() => {
                 state.config[config.key] = checkbox.checked();
