@@ -22,11 +22,11 @@
 //             ctx.closePath();
 //             const labelForFill = overrideLabel || geom.label;
 //             const col = colmap[labelForFill] || [200, 200, 200];
-//             if ((window as any).showBackgrounds) {
+//             if (state.showBackgrounds) {
 //                 ctx.fillStyle = `rgb(${col[0]},${col[1]},${col[2]})`;
 //                 ctx.fill();
 //             }
-//             if ((window as any).showOutlines) {
+//             if (state.showOutlines) {
 //                 ctx.strokeStyle = 'black';
 //                 ctx.lineWidth = 1;
 //                 ctx.stroke();

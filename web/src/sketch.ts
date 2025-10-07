@@ -8,11 +8,6 @@ import { findPerfectMatchings } from './analysis';
 
 p5.disableFriendlyErrors = true;
 
-(window as any).showOutlines = true;
-(window as any).showBackgrounds = true;
-(window as any).showLines = true;
-
-
 const sketch = (p: p5) => {
     (window as any).p = p; // Make p5 instance globally available for modules
     let to_screen = [20, 0, 0, 0, -20, 0];
@@ -349,18 +344,18 @@ const sketch = (p: p5) => {
             ctx.closePath();
             const labelForFill = overrideLabel || geom.label;
             const col = colmap[labelForFill] || [200, 200, 200];
-            if ((window as any).showBackgrounds) {
+            if (state.showBackgrounds) {
                 ctx.fillStyle = `rgb(${col[0]},${col[1]},${col[2]})`;
                 ctx.fill();
             }
-            if ((window as any).showOutlines) {
+            if (state.showOutlines) {
                 ctx.strokeStyle = 'black';
                 ctx.lineWidth = 1;
                 ctx.stroke();
             }
             // draw overlays if present
             const overlayKey = overrideLabel || geom.label;
-            if (typeof overlays !== 'undefined' && overlays[overlayKey] && (window as any).showLines) {
+            if (typeof overlays !== 'undefined' && overlays[overlayKey] && state.showLines) {
                 ctx.strokeStyle = 'black';
                 ctx.lineWidth = 2;
                 for (let stroke of overlays[overlayKey]) {
@@ -958,28 +953,29 @@ const sketch = (p: p5) => {
             p.loop();
         });
 
-        const showOutlinesCheck = p.createCheckbox('Show Outlines', true) as any;
+        // Initialize the checkboxes using the default state values to ensure they are in sync.
+        const showOutlinesCheck = p.createCheckbox('Show Outlines', state.showOutlines) as any;
         showOutlinesCheck.position(10, y_pos);
         showOutlinesCheck.changed(() => {
-            (window as any).showOutlines = showOutlinesCheck.checked() as boolean;
+            state.showOutlines = showOutlinesCheck.checked() as boolean;
             refreshThumbnails();
             p.loop();
         });
         y_pos += 20;
 
-        const showBackgroundsCheck = p.createCheckbox('Show Backgrounds', true) as any;
+        const showBackgroundsCheck = p.createCheckbox('Show Backgrounds', state.showBackgrounds) as any;
         showBackgroundsCheck.position(10, y_pos);
         showBackgroundsCheck.changed(() => {
-            (window as any).showBackgrounds = showBackgroundsCheck.checked() as boolean;
+            state.showBackgrounds = showBackgroundsCheck.checked() as boolean;
             refreshThumbnails();
             p.loop();
         });
         y_pos += 20;
 
-        const showLinesCheck = p.createCheckbox('Show Lines', true) as any;
+        const showLinesCheck = p.createCheckbox('Show Lines', state.showLines) as any;
         showLinesCheck.position(10, y_pos);
         showLinesCheck.changed(() => {
-            (window as any).showLines = showLinesCheck.checked() as boolean;
+            state.showLines = showLinesCheck.checked() as boolean;
             refreshThumbnails();
             p.loop();
         });

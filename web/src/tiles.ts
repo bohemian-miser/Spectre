@@ -280,12 +280,12 @@ export class Shape
 
 	draw( S: number[], ppos = 0 )
 	{
-        if( (window as any).showBackgrounds ) {
+        if( state.showBackgrounds ) {
             p.fill( state.colmap[this.label][0], state.colmap[this.label][1], state.colmap[this.label][2] );
         } else {
             p.noFill();
         }
-        if( (window as any).showOutlines ) {
+        if( state.showOutlines ) {
             p.stroke( 0 );
             p.strokeWeight( 0.1 ) ; // / lw_scale );
         } else {
@@ -309,7 +309,7 @@ export class Shape
             p.text(ppos, 0, 0);
             p.pop();
         }
-		if( typeof overlays !== 'undefined' && overlays[this.label] && (window as any).showLines ) {
+		if( typeof overlays !== 'undefined' && overlays[this.label] && state.showLines ) {
 			p.stroke(0);
 			p.strokeWeight( 0.1 );
 			p.noFill();
