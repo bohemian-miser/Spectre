@@ -140,18 +140,23 @@ export function getEdgeDotMidpoints(tileLabel: string, selectedEdges: Set<number
         const sub = parseInt(lab.replace('-', '').substring(2, 3));
 
         if (selectedEdges.has(major)) {
-            if (major === 0) {
+            if (state.shape === 'Hexagons') {
                 if (sub === 0) {
-                    // Special case for major edge 0: find vertex between 0.0 and 0.1
-                    // The vertex is the one at the end of the 0.0 edge.
-                    points.push(basePts[(i + 1) % basePts.length]);
-                }
-            } else {
-                if (sub === 0) {
-                    // Standard case: find midpoint of the .0 edge
                     const a = basePts[i];
                     const b = basePts[(i + 1) % basePts.length];
                     points.push(p.createVector((a.x + b.x) / 2, (a.y + b.y) / 2));
+                }
+            } else {
+                if (major === 0) {
+                    if (sub === 0) {
+                        points.push(basePts[(i + 1) % basePts.length]);
+                    }
+                } else {
+                    if (sub === 0) {
+                        const a = basePts[i];
+                        const b = basePts[(i + 1) % basePts.length];
+                        points.push(p.createVector((a.x + b.x) / 2, (a.y + b.y) / 2));
+                    }
                 }
             }
         }
