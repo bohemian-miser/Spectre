@@ -34,6 +34,9 @@ You can have \[a fixed number | an infinite number\] of infinite line/s and \[a 
 
 I'm pretty sure I can make either an infinite line but haven't got a solid proof yet. I think I'd need to rework the generator to do a kind of substitution thing instead of the standard spectre algorithm and then I could show that you make a long line/circuit, and when you substitue all the tiles for the next superset you maintain all the paths (like a standard infinite line proof, like the hilbert curve).
 
+## Lingo
+* 'Thumbs' - The editable tiles at the top of the page. Short for 'Thumbnails'.
+
 ## TODO list
 
 * Do everything in shaders so it's nippy af.
@@ -49,3 +52,5 @@ I'm pretty sure I can make either an infinite line but haven't got a solid proof
 * Fix hexagons and 0-edges they don't need the same treatment as the other shapes.
 * Colour choice for lines.
 * Download a template, edit as svg and re-upload.
+* analysis time in bottom
+* graph showing the lines between thumbs

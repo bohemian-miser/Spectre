@@ -1023,7 +1023,13 @@ const sketch = (p: p5) => {
 
         // Analyze circuits and get color map before drawing, only if needed
         if (state.isCircuitAnalysisDirty) {
-            (window as any).circuitColorMap = analyzeAndColor(sys[tile_sel.value() as string], p);
+            const startTime = p.millis();
+            const tile = sys[tile_sel.value() as string];
+            (window as any).circuitColorMap = analyzeAndColor(tile, p);
+            const endTime = p.millis();
+            state.analysisTime = endTime - startTime;
+            state.tileCount = tile.count();
+            state.timePerTile = state.analysisTime / state.tileCount;
             state.isCircuitAnalysisDirty = false; // Reset the flag
         }
 
@@ -1074,6 +1080,14 @@ const sketch = (p: p5) => {
             p.fill(255, 220);
             p.rect(5, 5, 135, y_pos + 5);
         }
+
+        // Display stats
+        p.fill(0);
+        p.noStroke();
+        p.textAlign(p.RIGHT, p.BOTTOM);
+        p.text(`Analysis Time: ${state.analysisTime.toFixed(2)} ms`, p.width - 10, p.height - 30);
+        p.text(`Time Per Tile: ${state.timePerTile.toFixed(4)} ms`, p.width - 10, p.height - 10);
+
         p.noLoop();
     };
 

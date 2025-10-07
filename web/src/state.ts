@@ -17,7 +17,10 @@ export var state = {
     tile: 'Delta',
     customColors: {} as { [key: string]: string },
     p: null,
-    colmap: {} as { [key: string]: number[] }
+    colmap: {} as { [key: string]: number[] },
+    analysisTime: 0,
+    timePerTile: 0,
+    tileCount: 0,
 };
 
 export type AppState = typeof state;

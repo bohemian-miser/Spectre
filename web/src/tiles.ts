@@ -278,6 +278,10 @@ export class Shape
 		}
 	}
 
+	count(): number {
+        return 1;
+    }
+
 	draw( S: number[], ppos = 0 )
 	{
         if( state.config.showBackgrounds ) {
@@ -481,6 +485,14 @@ export class Meta
 	{
 		this.geoms.push( { geom : g, xform: T, pos } );
 	}
+
+    count(): number {
+        let total = 0;
+        for (const child of this.geoms) {
+            total += child.geom.count();
+        }
+        return total;
+    }
 
 	draw( S: number[], ppos = 0 ) 
 	{
