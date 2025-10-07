@@ -8,6 +8,8 @@ import { findPerfectMatchings } from './analysis';
 
 p5.disableFriendlyErrors = true;
 
+const maxThumbWidth = 504; // 64 * 3
+
 const sketch = (p: p5) => {
     (window as any).p = p; // Make p5 instance globally available for modules
     let to_screen = [20, 0, 0, 0, -20, 0];
@@ -425,7 +427,7 @@ const sketch = (p: p5) => {
                         const k = labList.length;
                         const step = Math.max(1, Math.floor(n / k));
                         const thumbSize = thumbHeight; // Use thumbHeight for vertical scaling of font and inset
-                        const fontPx = Math.max(8, Math.floor(10 * (thumbSize / 192))); // scale font with thumbSize
+                        const fontPx = Math.max(1, Math.floor(35 * (thumbSize / maxThumbWidth))); // scale font with thumbSize
                         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
                         ctx.lineWidth = 2;
                         for (let j = 0; j < k; ++j) {
@@ -462,7 +464,7 @@ const sketch = (p: p5) => {
                                 const dot = nx * (centroid.x - mx) + ny * (centroid.y - my);
                                 if (dot < 0) { nx = -nx; ny = -ny; }
                                 const nmag = Math.sqrt(nx * nx + ny * ny) || 1;
-                                const inset = Math.max(4, Math.floor(6 * (thumbSize / 192)));
+                                const inset = Math.max(4, Math.floor(6 * (thumbSize / maxThumbWidth)));
                                 const px = mx + (nx / nmag) * inset;
                                 const py = my + (ny / nmag) * inset;
                             
@@ -627,7 +629,10 @@ const sketch = (p: p5) => {
                     const toCenter = ttrans(-shapeCenterX, -shapeCenterY);
                     const scaler = [scale, 0, 0, 0, -scale, 0]; // Flip Y-axis
                     const place = ttrans(thumbWidth / 2, thumbHeight / 2);
-                    S_thumb = mul(place, mul(scaler, toCenter));
+                    
+                    const pad = ttrans(0, (thumbHeight * (1 - padding)));
+                    S_thumb =  mul( pad,mul(place, mul(scaler,  toCenter)));
+
                 } else {
                     // Fallback for shapes with no points
                     S_thumb = [thumbScale, 0, thumbWidth / 2, 0, -thumbScale, thumbHeight / 2];
@@ -755,7 +760,7 @@ const sketch = (p: p5) => {
             const availableWidth = p.windowWidth - leftPanelWidth - (gap * (cols + 1));
             
             // Calculate new thumbnail width, constrained to a max size
-            const maxThumbWidth = 192; // 64 * 3
+            
             const newThumbWidth = Math.max(32, Math.min(maxThumbWidth, availableWidth / cols));
 
             // Update global sizing variables if they have changed
