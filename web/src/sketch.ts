@@ -13,7 +13,6 @@ p5.disableFriendlyErrors = true;
 (window as any).showLines = true;
 
 
-// let lw_scale = 1;
 const sketch = (p: p5) => {
     (window as any).p = p; // Make p5 instance globally available for modules
     let to_screen = [20, 0, 0, 0, -20, 0];
@@ -986,7 +985,7 @@ const sketch = (p: p5) => {
         });
         y_pos += 20;
 
-        const showIdsCheck = p.createCheckbox('Show IDs', true) as any;
+        const showIdsCheck = p.createCheckbox('Show IDs', state.showIds) as any;
         showIdsCheck.position(10, y_pos);
         showIdsCheck.changed(() => {
             state.showIds = showIdsCheck.checked() as boolean;
@@ -994,7 +993,7 @@ const sketch = (p: p5) => {
         });
         y_pos += 20;
 
-        const showQuadsCheck = p.createCheckbox('Show Quads', true) as any;
+        const showQuadsCheck = p.createCheckbox('Show Quads', state.showQuads) as any;
         showQuadsCheck.position(10, y_pos);
         showQuadsCheck.changed(() => {
             state.showQuads = showQuadsCheck.checked() as boolean;
@@ -1002,7 +1001,7 @@ const sketch = (p: p5) => {
         });
         y_pos += 20;
 
-        const showEdgeDotsCheck = p.createCheckbox('Show Edge Dots', true) as any;
+        const showEdgeDotsCheck = p.createCheckbox('Show Edge Dots', state.showEdgeDots) as any;
         showEdgeDotsCheck.position(10, y_pos);
         showEdgeDotsCheck.changed(() => {
             state.showEdgeDots = showEdgeDotsCheck.checked() as boolean;
