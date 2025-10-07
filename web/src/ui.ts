@@ -22,11 +22,11 @@
 //             ctx.closePath();
 //             const labelForFill = overrideLabel || geom.label;
 //             const col = colmap[labelForFill] || [200, 200, 200];
-//             if (state.showBackgrounds) {
+//             if (state.config.showBackgrounds) {
 //                 ctx.fillStyle = `rgb(${col[0]},${col[1]},${col[2]})`;
 //                 ctx.fill();
 //             }
-//             if (state.showOutlines) {
+//             if (state.config.showOutlines) {
 //                 ctx.strokeStyle = 'black';
 //                 ctx.lineWidth = 1;
 //                 ctx.stroke();
@@ -167,24 +167,24 @@
 // //         refreshCallback();
 // //     });
 
-// //     const showOutlinesCheck = p.createCheckbox('Show Outlines', state.showOutlines);
+// //     const showOutlinesCheck = p.createCheckbox('Show Outlines', state.config.showOutlines);
 // //     showOutlinesCheck.parent(controlPanel);
 // //     showOutlinesCheck.changed(() => {
-// //         state.showOutlines = showOutlinesCheck.checked() as boolean;
+// //         state.config.showOutlines = showOutlinesCheck.checked() as boolean;
 // //         refreshCallback();
 // //     });
 
-// //     const showBackgroundsCheck = p.createCheckbox('Show Backgrounds', state.showBackgrounds);
+// //     const showBackgroundsCheck = p.createCheckbox('Show Backgrounds', state.config.showBackgrounds);
 // //     showBackgroundsCheck.parent(controlPanel);
 // //     showBackgroundsCheck.changed(() => {
-// //         state.showBackgrounds = showBackgroundsCheck.checked() as boolean;
+// //         state.config.showBackgrounds = showBackgroundsCheck.checked() as boolean;
 // //         refreshCallback();
 // //     });
 
-// //     const showLinesCheck = p.createCheckbox('Show Lines', state.showLines);
+// //     const showLinesCheck = p.createCheckbox('Show Lines', state.config.showLines);
 // //     showLinesCheck.parent(controlPanel);
 // //     showLinesCheck.changed(() => {
-// //         state.showLines = showLinesCheck.checked() as boolean;
+// //         state.config.showLines = showLinesCheck.checked() as boolean;
 // //         refreshCallback();
 // //     });
 

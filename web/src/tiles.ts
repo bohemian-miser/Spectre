@@ -189,7 +189,7 @@ export class Shape
             const major = parseInt(lab.replace('-', '').charAt(0));
             const sub = parseInt(lab.replace('-', '').substring(2,3));
 
-			if (state.showEdgeDots && state.selectedJoinerEdges.has(major) && sub === 0) {
+			if (state.config.showEdgeDots && state.selectedJoinerEdges.has(major) && sub === 0) {
                 const a = basePts[i];
                 const b = basePts[(i+1) % basePts.length];
                 const ma = transPt( S, pt( (a.x + b.x)/2, (a.y + b.y)/2 ) );
@@ -280,12 +280,12 @@ export class Shape
 
 	draw( S: number[], ppos = 0 )
 	{
-        if( state.showBackgrounds ) {
+        if( state.config.showBackgrounds ) {
             p.fill( state.colmap[this.label][0], state.colmap[this.label][1], state.colmap[this.label][2] );
         } else {
             p.noFill();
         }
-        if( state.showOutlines ) {
+        if( state.config.showOutlines ) {
             p.stroke( 0 );
             p.strokeWeight( 0.1 ) ; // / lw_scale );
         } else {
@@ -297,7 +297,7 @@ export class Shape
             p.vertex( tp.x, tp.y );
         }
         p.endShape( p.CLOSE );
-        if (state.showIds) {
+        if (state.config.showIds) {
             p.push();
             p.fill(0);
             p.stroke(0);
@@ -309,7 +309,7 @@ export class Shape
             p.text(ppos, 0, 0);
             p.pop();
         }
-		if( typeof overlays !== 'undefined' && overlays[this.label] && state.showLines ) {
+		if( typeof overlays !== 'undefined' && overlays[this.label] && state.config.showLines ) {
 			p.stroke(0);
 			p.strokeWeight( 0.1 );
 			p.noFill();
@@ -417,7 +417,7 @@ export class CurvyShape extends Shape
 			p.bezierVertex( a.x, a.y, b.x, b.y, c.x, c.y );
 		}
 		p.endShape( p.CLOSE );
-        if (state.showIds) {
+        if (state.config.showIds) {
             p.push();
             p.fill(0);
             p.stroke(0);
@@ -489,7 +489,7 @@ export class Meta
 			g.geom.draw( mul( S, g.xform ), ppos * m + g.pos );
 		}
 
-        if (this.geoms.length > 2 && state.showQuads) {
+        if (this.geoms.length > 2 && state.config.showQuads) {
             p.push();
             p.noFill();
 

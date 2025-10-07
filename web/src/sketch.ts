@@ -344,18 +344,18 @@ const sketch = (p: p5) => {
             ctx.closePath();
             const labelForFill = overrideLabel || geom.label;
             const col = colmap[labelForFill] || [200, 200, 200];
-            if (state.showBackgrounds) {
+            if (state.config.showBackgrounds) {
                 ctx.fillStyle = `rgb(${col[0]},${col[1]},${col[2]})`;
                 ctx.fill();
             }
-            if (state.showOutlines) {
+            if (state.config.showOutlines) {
                 ctx.strokeStyle = 'black';
                 ctx.lineWidth = 1;
                 ctx.stroke();
             }
             // draw overlays if present
             const overlayKey = overrideLabel || geom.label;
-            if (typeof overlays !== 'undefined' && overlays[overlayKey] && state.showLines) {
+            if (typeof overlays !== 'undefined' && overlays[overlayKey] && state.config.showLines) {
                 ctx.strokeStyle = 'black';
                 ctx.lineWidth = 2;
                 for (let stroke of overlays[overlayKey]) {
@@ -954,56 +954,30 @@ const sketch = (p: p5) => {
         });
 
         // Initialize the checkboxes using the default state values to ensure they are in sync.
-        const showOutlinesCheck = p.createCheckbox('Show Outlines', state.showOutlines) as any;
-        showOutlinesCheck.position(10, y_pos);
-        showOutlinesCheck.changed(() => {
-            state.showOutlines = showOutlinesCheck.checked() as boolean;
-            refreshThumbnails();
-            p.loop();
-        });
-        y_pos += 20;
+        const checkboxConfigs: { label: string; key: keyof typeof state.config; refresh: boolean }[] = [
+            { label: 'Show Outlines', key: 'showOutlines', refresh: true },
+            { label: 'Show Backgrounds', key: 'showBackgrounds', refresh: true },
+            { label: 'Show Lines', key: 'showLines', refresh: true },
+            { label: 'Show IDs', key: 'showIds', refresh: false },
+            { label: 'Show Quads', key: 'showQuads', refresh: false },
+            { label: 'Show Edge Dots', key: 'showEdgeDots', refresh: false },
+        ];
 
-        const showBackgroundsCheck = p.createCheckbox('Show Backgrounds', state.showBackgrounds) as any;
-        showBackgroundsCheck.position(10, y_pos);
-        showBackgroundsCheck.changed(() => {
-            state.showBackgrounds = showBackgroundsCheck.checked() as boolean;
-            refreshThumbnails();
-            p.loop();
-        });
-        y_pos += 20;
+        for (const config of checkboxConfigs) {
+            const checkbox = p.createCheckbox(config.label, state.config[config.key] as boolean) as any;
+            checkbox.position(10, y_pos);
+            checkbox.changed(() => {
+                state.config[config.key] = checkbox.checked();
+                if (config.refresh) {
+                    refreshThumbnails();
+                }
+                p.loop();
+            });
+            y_pos += 20;
+        }
 
-        const showLinesCheck = p.createCheckbox('Show Lines', state.showLines) as any;
-        showLinesCheck.position(10, y_pos);
-        showLinesCheck.changed(() => {
-            state.showLines = showLinesCheck.checked() as boolean;
-            refreshThumbnails();
-            p.loop();
-        });
+        
         y_pos += 20;
-
-        const showIdsCheck = p.createCheckbox('Show IDs', state.showIds) as any;
-        showIdsCheck.position(10, y_pos);
-        showIdsCheck.changed(() => {
-            state.showIds = showIdsCheck.checked() as boolean;
-            p.loop();
-        });
-        y_pos += 20;
-
-        const showQuadsCheck = p.createCheckbox('Show Quads', state.showQuads) as any;
-        showQuadsCheck.position(10, y_pos);
-        showQuadsCheck.changed(() => {
-            state.showQuads = showQuadsCheck.checked() as boolean;
-            p.loop();
-        });
-        y_pos += 20;
-
-        const showEdgeDotsCheck = p.createCheckbox('Show Edge Dots', state.showEdgeDots) as any;
-        showEdgeDotsCheck.position(10, y_pos);
-        showEdgeDotsCheck.changed(() => {
-            state.showEdgeDots = showEdgeDotsCheck.checked() as boolean;
-            p.loop();
-        });
-        y_pos += 40;
 
 
         function updateJoinerEdgesLabel() {
