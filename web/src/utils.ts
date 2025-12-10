@@ -52,3 +52,15 @@ export function transPt( M: number[], P: p5.Vector )
 {
 	return pt(M[0]*P.x + M[1]*P.y + M[2], M[3]*P.x + M[4]*P.y + M[5]);
 }
+
+export function getRainbowColor(t: number): string {
+	// Map t (0..1) to hue (0..300)
+	const h = t * 300;
+	// Adjust lightness to counteract sRGB luminance differences
+	// Yellow (60) is bright, Blue (240) is dark.
+	// We darken Yellow and lighten Blue to aim for constant perceived lightness.
+	// Cosine peak at 240 (Blue) -> Lightest
+	// Cosine trough at 60 (Yellow) -> Darkest
+	const l = 50 + 15 * Math.cos((h - 240) * (Math.PI / 180));
+	return `hsl(${h}, 100%, ${l}%)`;
+}
