@@ -951,7 +951,7 @@ const sketch = (p: p5) => {
         });
 
         // Initialize the checkboxes using the default state values to ensure they are in sync.
-        const checkboxConfigs: { label: string; key: keyof typeof state.config; refresh: boolean; reanalyze?: boolean }[] = [
+        const checkboxConfigs: { label: string; key: keyof typeof state.config; refresh: boolean; reanalyze?: boolean; onChange?: (val: boolean) => void }[] = [
             { label: 'Show Outlines', key: 'showOutlines', refresh: true },
             { label: 'Show Backgrounds', key: 'showBackgrounds', refresh: true },
             { label: 'Show Lines', key: 'showLines', refresh: true },
@@ -959,18 +959,33 @@ const sketch = (p: p5) => {
             { label: 'Show Quads', key: 'showQuads', refresh: false },
             { label: 'Show Edge Dots', key: 'showEdgeDots', refresh: false },
             { label: 'Rainbow Lines', key: 'rainbowLines', refresh: false, reanalyze: true },
+            { 
+                label: 'Show Palette', 
+                key: 'showPalette', 
+                refresh: false, 
+                onChange: (val) => {
+                    const disp = val ? 'grid' : 'none';
+                    const dispCustom = val ? 'block' : 'none'; // customDiv is a block (div)
+                    paletteDiv.style('display', disp);
+                    customDiv.style('display', dispCustom);
+                }
+            },
         ];
 
         for (const config of checkboxConfigs) {
             const checkbox = p.createCheckbox(config.label, state.config[config.key]) as any;
             checkbox.position(10, y_pos);
             checkbox.changed(() => {
-                state.config[config.key] = checkbox.checked();
+                const val = checkbox.checked();
+                state.config[config.key] = val;
                 if (config.refresh) {
                     refreshThumbnails();
                 }
                 if (config.reanalyze) {
                     state.isCircuitAnalysisDirty = true;
+                }
+                if (config.onChange) {
+                    config.onChange(val);
                 }
                 p.loop();
             });

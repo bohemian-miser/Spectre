@@ -9,6 +9,7 @@ export var state = {
         showQuads: false,
         showEdgeDots: false,
         rainbowLines: true,
+        showPalette: true,
     },
     suppressLocalCircuitRendering: false,
     isCircuitAnalysisDirty: true,
