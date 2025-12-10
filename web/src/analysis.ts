@@ -115,7 +115,12 @@ function processCircuits(edges: Edge[]): { circuits: Map<number, Edge[][]>, open
     const circuits: Map<number, Edge[][]> = new Map();
     const openPaths: Edge[][] = [];
 
-    for (const startNode of adj.keys()) {
+    // Prioritize endpoints (degree 1) to ensure we traverse full lines
+    const startNodes = Array.from(adj.keys()).sort((a, b) => {
+        return (adj.get(a)!.length || 0) - (adj.get(b)!.length || 0);
+    });
+
+    for (const startNode of startNodes) {
         if (visited.has(startNode)) continue;
 
         const pathKeys: string[] = [];
