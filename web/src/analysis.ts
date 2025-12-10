@@ -193,7 +193,7 @@ function processCircuits(edges: Edge[]): { circuits: Map<number, Edge[][]>, open
 
 
 // Generate colors for circuits
-function generateColorMap(analysis: { circuits: Map<number, Edge[][]>, openPaths: Edge[][] }): Map<string, string> {
+function generateColorMap(analysis: { circuits: Map<number, Edge[][]>, openPaths: Edge[][] }): { edgeColors: Map<string, string>, circuitColors: Map<number, string> } {
     const colorMap: Map<string, string> = new Map();
     const circuitColors: Map<number, string> = new Map();
     let hue = 0;
@@ -222,13 +222,28 @@ function generateColorMap(analysis: { circuits: Map<number, Edge[][]>, openPaths
         }
     }
 
-    return colorMap;
+    return { edgeColors: colorMap, circuitColors };
 }
 
 // Main analysis function
-export function analyzeAndColor(rootTile: any, p: p5): Map<string, string> {
+export function analyzeAndColor(rootTile: any, p: p5): { colorMap: Map<string, string>, stats: { circuits: Map<number, number>, lines: Map<number, number>, circuitColors: Map<number, string> } } {
     const allEdges: Edge[] = [];
     collectEdges(rootTile, ident, allEdges, p);
     const analysis = processCircuits(allEdges);
-    return generateColorMap(analysis);
+
+    // Compute stats
+    const circuitStats = new Map<number, number>();
+    for (const [len, list] of analysis.circuits) {
+        circuitStats.set(len, list.length);
+    }
+    
+    const lineStats = new Map<number, number>();
+    for (const path of analysis.openPaths) {
+        const len = path.length;
+        lineStats.set(len, (lineStats.get(len) || 0) + 1);
+    }
+
+    const { edgeColors, circuitColors } = generateColorMap(analysis);
+
+    return { colorMap: edgeColors, stats: { circuits: circuitStats, lines: lineStats, circuitColors } };
 }

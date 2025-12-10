@@ -21,6 +21,11 @@ export var state = {
     analysisTime: 0,
     timePerTile: 0,
     tileCount: 0,
+    circuitStats: {
+        circuits: new Map<number, number>(),
+        lines: new Map<number, number>(),
+        circuitColors: new Map<number, string>()
+    },
 };
 
 export type AppState = typeof state;

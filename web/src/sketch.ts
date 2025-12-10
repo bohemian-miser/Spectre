@@ -1009,7 +1009,7 @@ const sketch = (p: p5) => {
             stream.push(`<svg viewBox="0 0 ${p.width} ${p.height}" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">`);
             stream.push(`<g transform="translate(${p.width / 2},${p.height / 2})">`);
 
-            sys[tile_sel.value() as string].streamSVG(to_screen, stream);
+            sys[tile_sel.value() as string].streamSVG(to_screen, stream, ident);
 
             stream.push('</g>');
             stream.push('</svg>');
@@ -1025,7 +1025,9 @@ const sketch = (p: p5) => {
         if (state.isCircuitAnalysisDirty) {
             const startTime = p.millis();
             const tile = sys[tile_sel.value() as string];
-            (window as any).circuitColorMap = analyzeAndColor(tile, p);
+            const result = analyzeAndColor(tile, p);
+            (window as any).circuitColorMap = result.colorMap;
+            state.circuitStats = result.stats;
             const endTime = p.millis();
             state.analysisTime = endTime - startTime;
             state.tileCount = tile.count();
@@ -1081,12 +1083,81 @@ const sketch = (p: p5) => {
             p.rect(5, 5, 135, y_pos + 5);
         }
 
-        // Display stats
+        // Display stats (Bottom Left)
         p.fill(0);
         p.noStroke();
-        p.textAlign(p.RIGHT, p.BOTTOM);
-        p.text(`Analysis Time: ${state.analysisTime.toFixed(2)} ms`, p.width - 10, p.height - 30);
-        p.text(`Time Per Tile: ${state.timePerTile.toFixed(4)} ms`, p.width - 10, p.height - 10);
+        p.textAlign(p.LEFT, p.BOTTOM);
+        p.text(`Analysis Time: ${state.analysisTime.toFixed(2)} ms`, 10, p.height - 30);
+        p.text(`Time Per Tile: ${state.timePerTile.toFixed(4)} ms`, 10, p.height - 10);
+
+        // Display circuit stats (Bottom Right, two columns)
+        p.textAlign(p.LEFT, p.TOP);
+        p.textSize(12);
+        
+        const rightMargin = 20;
+        const colWidth = 60;
+        const startX = p.width - (colWidth * 2) - rightMargin;
+
+        const sortedCircuitLens = Array.from(state.circuitStats.circuits.keys()).sort((a,b) => a-b);
+        const sortedLineLens = Array.from(state.circuitStats.lines.keys()).sort((a,b) => a-b);
+
+        // Calculate total height to position from bottom
+        let totalHeight = 20 + 20; // Header + "Circuits" label
+        if (sortedCircuitLens.length === 0) totalHeight += 20;
+        else totalHeight += sortedCircuitLens.length * 16;
+        
+        totalHeight += 10 + 20; // Gap + "Lines" label
+        if (sortedLineLens.length === 0) totalHeight += 20;
+        else totalHeight += sortedLineLens.length * 16;
+
+        let statY = p.height - totalHeight - 10;
+
+        // Header
+        p.fill(0);
+        p.text("Len", startX, statY);
+        p.text("Count", startX + colWidth, statY);
+        statY += 20;
+
+        // Circuits
+        p.fill(0);
+        p.text("Circuits", startX, statY);
+        statY += 20;
+
+        if (sortedCircuitLens.length === 0) {
+            p.fill(100);
+            p.text("-", startX, statY);
+            p.text("-", startX + colWidth, statY);
+            statY += 20;
+        } else {
+            for (const len of sortedCircuitLens) {
+                const colorStr = state.circuitStats.circuitColors.get(len) || '#000';
+                p.fill(colorStr);
+                p.text(len.toString(), startX, statY);
+                p.text(state.circuitStats.circuits.get(len)!.toString(), startX + colWidth, statY);
+                statY += 16;
+            }
+        }
+
+        statY += 10; // Gap
+
+        // Lines
+        p.fill(0);
+        p.text("Lines", startX, statY);
+        statY += 20;
+
+        if (sortedLineLens.length === 0) {
+            p.fill(100);
+            p.text("-", startX, statY);
+            p.text("-", startX + colWidth, statY);
+            statY += 20;
+        } else {
+            p.fill('#808080'); // Grey for lines
+            for (const len of sortedLineLens) {
+                p.text(len.toString(), startX, statY);
+                p.text(state.circuitStats.lines.get(len)!.toString(), startX + colWidth, statY);
+                statY += 16;
+            }
+        }
 
         p.noLoop();
     };

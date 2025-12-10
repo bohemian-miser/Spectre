@@ -359,23 +359,119 @@ export class Shape
         }
 	}
 
-	streamSVG( S: number[], stream: string[] )
+	streamSVG( S: number[], stream: string[], S_key?: number[] )
 	{
-		var s = '<polygon points="';
-		var at_start = true;
-		for( let pt of this.pts ) {
-			const sp = transPt( S, pt );
-			if( at_start ) {
-				at_start = false;
-			} else {
-				s = s + ' ';
+		if (state.config.showBackgrounds || state.config.showOutlines) {
+			var s = '<polygon points="';
+			var at_start = true;
+			for( let pt of this.pts ) {
+				const sp = transPt( S, pt );
+				if( at_start ) {
+					at_start = false;
+				} else {
+					s = s + ' ';
+				}
+				s = s + `${sp.x},${sp.y}`;
 			}
-			s = s + `${sp.x},${sp.y}`;
-		}
-		const col = state.colmap[this.label];
+			const col = state.colmap[this.label];
 
-		s = s + `" stroke="black" stroke-weight="0.1" fill="rgb(${col[0]},${col[1]},${col[2]})" />`;
-		stream.push( s );
+			let fill = 'none';
+			if (state.config.showBackgrounds) {
+				fill = `rgb(${col[0]},${col[1]},${col[2]})`;
+			}
+
+			let stroke = 'none';
+			let stroke_width = '0';
+			if (state.config.showOutlines) {
+				stroke = 'black';
+				stroke_width = '0.1';
+			}
+
+			s = s + `" stroke="${stroke}" stroke-width="${stroke_width}" fill="${fill}" />`;
+			stream.push( s );
+		}
+
+		if( typeof overlays !== 'undefined' && overlays[this.label] && state.config.showLines ) {
+			for( let st of overlays[this.label] ) {
+				let s = '<polyline points="';
+				let at_start = true;
+				for( let i = 0; i < st.length; ++i ) {
+					const pt = transPt( S, st[i] );
+					if( at_start ) {
+						at_start = false;
+					} else {
+						s = s + ' ';
+					}
+					s = s + `${pt.x},${pt.y}`;
+				}
+				s = s + `" stroke="black" stroke-width="0.1" fill="none" />`;
+				stream.push(s);
+			}
+		}
+
+		// Draw edge dots
+		if (state.config.showEdgeDots && (state.selectedMajorEdges.size > 0 || state.selectedJoinerEdges.size > 0)) {
+			const labels = getEdgeLabelsForShape(this.label);
+			if (labels && labels.length > 0) {
+				const basePts = (this.origPts && this.origPts.length) ? this.origPts : this.pts;
+				for (let i = 0; i < basePts.length; ++i) {
+					const lab = labels[i] || '';
+					const major = parseInt(lab.replace('-', '').charAt(0));
+					const sub = parseInt(lab.replace('-', '').substring(2, 3));
+
+					if (state.selectedJoinerEdges.has(major) && sub === 0) {
+						const a = basePts[i];
+						const b = basePts[(i + 1) % basePts.length];
+						const ma = transPt(S, pt((a.x + b.x) / 2, (a.y + b.y) / 2));
+						const lead = lab && lab.length ? lab.charAt(0) : '';
+						const leadColors: { [key: string]: number[] } = {
+							'-': [218, 143, 143],
+							'0': [143, 187, 218],
+							'1': [255, 191, 135],
+							'2': [150, 208, 150],
+							'3': [235, 147, 148],
+							'4': [202, 179, 222],
+							'5': [198, 171, 165],
+							'6': [241, 187, 225],
+							'7': [191, 191, 191],
+							'8': [222, 222, 145],
+							'9': [139, 223, 231]
+						};
+						const ec = leadColors.hasOwnProperty(lead) ? leadColors[lead] : [0, 0, 0];
+						
+						stream.push(`<circle cx="${ma.x}" cy="${ma.y}" r="0.15" fill="rgb(${ec[0]},${ec[1]},${ec[2]})" stroke="black" stroke-width="0.05" />`);
+					}
+				}
+			}
+		}
+
+        // draw selected joiner edges
+        if (state.selectedJoinerEdges.size > 0) {
+            const Sk = S_key || S;
+            const midpoints = getEdgeDotMidpoints(this.label, state.selectedJoinerEdges);
+            if (midpoints.length > 1) {
+                const matchings = findPerfectMatchings(midpoints.map(m => ({x: m.x, y: m.y})));
+                const slider = document.getElementById(`slider-${this.label}`) as HTMLInputElement;
+                if (slider) {
+                    const index = parseInt(slider.value, 10);
+                    if (matchings[index]) {
+                        const matching = matchings[index];
+                        for (const pair of matching) {
+                            const a_k = transPt(Sk, p.createVector(pair[0].x, pair[0].y));
+                            const b_k = transPt(Sk, p.createVector(pair[1].x, pair[1].y));
+                            const edgeKey = edgeToKey([[a_k.x, a_k.y], [b_k.x, b_k.y]]);
+                            const color = (window as any).circuitColorMap.get(edgeKey) || '#808080';
+                            
+                            const a = transPt(S, p.createVector(pair[0].x, pair[0].y));
+                            const b = transPt(S, p.createVector(pair[1].x, pair[1].y));
+                            
+                            let s = `<line x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="${color}" stroke-width="0.1" />`;
+                            stream.push(s);
+                        }
+                    }
+                }
+            }
+        }
 	}
 }
 
@@ -453,23 +549,119 @@ export class CurvyShape extends Shape
 		}
 	}
 
-	streamSVG( S: number[], stream: string[] )
+	streamSVG( S: number[], stream: string[], S_key?: number[] )
 	{
-		const tp = transPt( S, this.pts[0] );
+		if (state.config.showBackgrounds || state.config.showOutlines) {
+			const tp = transPt( S, this.pts[0] );
 
-		var s = `<path d="M ${tp.x} ${tp.y}`;
-		
-		for( let idx = 1; idx < this.pts.length; idx += 3 ) {
-			const a = transPt( S, this.pts[idx] );
-			const b = transPt( S, this.pts[idx+1] );
-			const c = transPt( S, this.pts[idx+2] );
+			var s = `<path d="M ${tp.x} ${tp.y}`;
+			
+			for( let idx = 1; idx < this.pts.length; idx += 3 ) {
+				const a = transPt( S, this.pts[idx] );
+				const b = transPt( S, this.pts[idx+1] );
+				const c = transPt( S, this.pts[idx+2] );
 
-			s = s + ` C ${a.x} ${a.y} ${b.x} ${b.y} ${c.x} ${c.y}`;	
+				s = s + ` C ${a.x} ${a.y} ${b.x} ${b.y} ${c.x} ${c.y}`;	
+			}
+			const col = state.colmap[this.label];
+
+			let fill = 'none';
+			if (state.config.showBackgrounds) {
+				fill = `rgb(${col[0]},${col[1]},${col[2]})`;
+			}
+
+			let stroke = 'none';
+			let stroke_width = '0';
+			if (state.config.showOutlines) {
+				stroke = 'black';
+				stroke_width = '0.1';
+			}
+
+			s = s + `" stroke="${stroke}" stroke-width="${stroke_width}" fill="${fill}" />`;
+			stream.push( s );
 		}
-		const col = state.colmap[this.label];
 
-		s = s + `" stroke="black" stroke-weight="0.1" fill="rgb(${col[0]},${col[1]},${col[2]})" />`;
-		stream.push( s );
+		if( typeof overlays !== 'undefined' && overlays[this.label] && state.config.showLines ) {
+			for( let st of overlays[this.label] ) {
+				let s = '<polyline points="';
+				let at_start = true;
+				for( let i = 0; i < st.length; ++i ) {
+					const pt = transPt( S, st[i] );
+					if( at_start ) {
+						at_start = false;
+					} else {
+						s = s + ' ';
+					}
+					s = s + `${pt.x},${pt.y}`;
+				}
+				s = s + `" stroke="black" stroke-width="0.1" fill="none" />`;
+				stream.push(s);
+			}
+		}
+
+		// Draw edge dots
+		if (state.config.showEdgeDots && (state.selectedMajorEdges.size > 0 || state.selectedJoinerEdges.size > 0)) {
+			const labels = getEdgeLabelsForShape(this.label);
+			if (labels && labels.length > 0) {
+				const basePts = (this.origPts && this.origPts.length) ? this.origPts : this.pts;
+				for (let i = 0; i < basePts.length; ++i) {
+					const lab = labels[i] || '';
+					const major = parseInt(lab.replace('-', '').charAt(0));
+					const sub = parseInt(lab.replace('-', '').substring(2, 3));
+
+					if (state.selectedJoinerEdges.has(major) && sub === 0) {
+						const a = basePts[i];
+						const b = basePts[(i + 1) % basePts.length];
+						const ma = transPt(S, pt((a.x + b.x) / 2, (a.y + b.y) / 2));
+						const lead = lab && lab.length ? lab.charAt(0) : '';
+						const leadColors: { [key: string]: number[] } = {
+							'-': [218, 143, 143],
+							'0': [143, 187, 218],
+							'1': [255, 191, 135],
+							'2': [150, 208, 150],
+							'3': [235, 147, 148],
+							'4': [202, 179, 222],
+							'5': [198, 171, 165],
+							'6': [241, 187, 225],
+							'7': [191, 191, 191],
+							'8': [222, 222, 145],
+							'9': [139, 223, 231]
+						};
+						const ec = leadColors.hasOwnProperty(lead) ? leadColors[lead] : [0, 0, 0];
+						
+						stream.push(`<circle cx="${ma.x}" cy="${ma.y}" r="0.15" fill="rgb(${ec[0]},${ec[1]},${ec[2]})" stroke="black" stroke-width="0.05" />`);
+					}
+				}
+			}
+		}
+
+        // draw selected joiner edges
+        if (state.selectedJoinerEdges.size > 0) {
+            const Sk = S_key || S;
+            const midpoints = getEdgeDotMidpoints(this.label, state.selectedJoinerEdges);
+            if (midpoints.length > 1) {
+                const matchings = findPerfectMatchings(midpoints.map(m => ({x: m.x, y: m.y})));
+                const slider = document.getElementById(`slider-${this.label}`) as HTMLInputElement;
+                if (slider) {
+                    const index = parseInt(slider.value, 10);
+                    if (matchings[index]) {
+                        const matching = matchings[index];
+                        for (const pair of matching) {
+                            const a_k = transPt(Sk, p.createVector(pair[0].x, pair[0].y));
+                            const b_k = transPt(Sk, p.createVector(pair[1].x, pair[1].y));
+                            const edgeKey = edgeToKey([[a_k.x, a_k.y], [b_k.x, b_k.y]]);
+                            const color = (window as any).circuitColorMap.get(edgeKey) || '#808080';
+                            
+                            const a = transPt(S, p.createVector(pair[0].x, pair[0].y));
+                            const b = transPt(S, p.createVector(pair[1].x, pair[1].y));
+                            
+                            let s = `<line x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="${color}" stroke-width="0.1" />`;
+                            stream.push(s);
+                        }
+                    }
+                }
+            }
+        }
 	}
 }
 
@@ -546,10 +738,50 @@ export class Meta
 		}
 	}
 
-	streamSVG( S: number[], stream: string[] )
+	streamSVG( S: number[], stream: string[], S_key?: number[] )
 	{
+		const Sk = S_key || S;
 		for( let g of this.geoms ) {
-			g.geom.streamSVG( mul( S, g.xform ), stream );
+			g.geom.streamSVG( mul( S, g.xform ), stream, mul( Sk, g.xform ) );
+		}
+
+		if (this.geoms.length > 2 && state.config.showQuads) {
+			// Draw a thicker black line for the outline
+			let s = '<polygon points="';
+			let at_start = true;
+			for( let pt of this.quad ) {
+				const sp = transPt( S, pt );
+				if( at_start ) {
+					at_start = false;
+				} else {
+					s = s + ' ';
+				}
+				s = s + `${sp.x},${sp.y}`;
+			}
+			s = s + `" stroke="black" stroke-width="0.12" fill="none" />`;
+			stream.push(s);
+
+			// Draw the colored line on top
+			s = '<polygon points="';
+			at_start = true;
+			for( let pt of this.quad ) {
+				const sp = transPt( S, pt );
+				if( at_start ) {
+					at_start = false;
+				} else {
+					s = s + ' ';
+				}
+				s = s + `${sp.x},${sp.y}`;
+			}
+			const col = state.colmap[this.label];
+			s = s + `" stroke="rgb(${col[0]},${col[1]},${col[2]})" stroke-width="0.08" fill="none" />`;
+			stream.push(s);
+			
+			// Circles at vertices
+			for (const qp of this.quad) {
+				const tp = transPt(S, qp);
+				stream.push(`<circle cx="${tp.x}" cy="${tp.y}" r="0.05" stroke="rgb(${col[0]},${col[1]},${col[2]})" stroke-width="0.08" fill="none" />`);
+			}
 		}
 	}
 }
