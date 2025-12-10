@@ -3,7 +3,7 @@ import { Shape, CurvyShape, Meta, unique_edge_labels, getEdgeDotMidpoints, spect
 import { state } from './state';
 import { tile_names, colmap53, colmap_orig, colmap_mystics, colmap_pride } from './config';
 import { pt, mul, trot, ttrans, inv, transPt, ident, adjust_mat } from './utils';
-import { getEdgeDotCount, analyzeAndColor } from './analysis';
+import { getEdgeDotCount, analyzeAndColor, Edge } from './analysis';
 import { findPerfectMatchings } from './analysis';
 
 p5.disableFriendlyErrors = true;
@@ -1032,6 +1032,7 @@ const sketch = (p: p5) => {
             const tile = sys[tile_sel.value() as string];
             const result = analyzeAndColor(tile, p);
             (window as any).circuitColorMap = result.colorMap;
+            (window as any).circuitPaths = result.paths;
             state.circuitStats = result.stats;
             const endTime = p.millis();
             state.analysisTime = endTime - startTime;
@@ -1039,6 +1040,9 @@ const sketch = (p: p5) => {
             state.timePerTile = state.analysisTime / state.tileCount;
             state.isCircuitAnalysisDirty = false; // Reset the flag
         }
+
+        // Suppress local rendering of joiner edges if we are drawing global rainbow lines
+        state.suppressLocalCircuitRendering = state.config.rainbowLines;
 
         p.push();
         p.translate(p.width / 2, p.height / 2);
@@ -1078,6 +1082,52 @@ const sketch = (p: p5) => {
 
         // draw the currently selected tile only
         sys[tile_sel.value() as string].draw(ident);
+
+        // If rainbow lines are enabled, draw the full paths here
+        if (state.config.rainbowLines && (window as any).circuitPaths) {
+            const paths = (window as any).circuitPaths;
+            p.strokeWeight(0.1);
+            p.noFill();
+            
+            // Draw open paths with rainbow gradient
+            for (const path of paths.openPaths) {
+                const len = path.length;
+                p.beginShape();
+                // To do a gradient, we can't use beginShape/endShape with a single stroke.
+                // We need to draw segments.
+                for (let i = 0; i < len; i++) {
+                    const edge: Edge = path[i];
+                    // Gradient from Red (0) to Magenta (300)
+                    const h = len > 1 ? (i / (len - 1)) * 300 : 0;
+                    p.stroke(`hsl(${h}, 100%, 50%)`);
+                    
+                    // Draw the segment
+                    // We need to transform points to screen space since we are inside the push/pop
+                    // Actually we are already in the transformed space (p.applyMatrix above)
+                    // So we can draw directly using the coordinates from the edge (which are in world space)
+                    // Wait, analyzeAndColor returns edges in world space (ident transform).
+                    // Yes, sys[tile_sel].draw(ident) draws in world space, and p.applyMatrix handles the view transform.
+                    // So we can just draw the points.
+                    
+                    p.line(edge[0][0], edge[0][1], edge[1][0], edge[1][1]);
+                }
+            }
+
+            // Draw circuits with their assigned single color (from map)
+            // Or should we do something else? "colour each entry the same as in the graph"
+            // The graph logic in analysis.ts assigns a single color per circuit length.
+            // So we can iterate circuits and use the color map or recalculate.
+            // Using the color map is safer.
+            for (const [len, list] of paths.circuits.entries()) {
+                const colorStr = state.circuitStats.circuitColors.get(len) || '#000';
+                p.stroke(colorStr);
+                for (const circuit of list) {
+                    for (const edge of circuit) {
+                        p.line(edge[0][0], edge[0][1], edge[1][0], edge[1][1]);
+                    }
+                }
+            }
+        }
 
         p.pop();
 

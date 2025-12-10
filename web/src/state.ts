@@ -10,6 +10,7 @@ export var state = {
         showEdgeDots: false,
         rainbowLines: true,
     },
+    suppressLocalCircuitRendering: false,
     isCircuitAnalysisDirty: true,
     selectedMajorEdges: new Set<number>(),
     selectedJoinerEdges: new Set<number>(),

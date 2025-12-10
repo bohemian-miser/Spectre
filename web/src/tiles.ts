@@ -335,7 +335,7 @@ export class Shape
 		if( typeof this._drawEdgeLabels === 'function' ) this._drawEdgeLabels( S );
 
         // draw selected joiner edges
-        if (state.selectedJoinerEdges.size > 0) {
+        if (state.selectedJoinerEdges.size > 0 && !state.suppressLocalCircuitRendering) {
             const midpoints = getEdgeDotMidpoints(this.label, state.selectedJoinerEdges);
             if (midpoints.length > 1) {
                 const matchings = findPerfectMatchings(midpoints.map(m => ({x: m.x, y: m.y})));

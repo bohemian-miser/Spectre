@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 
 test('repro line count bug: only 1 continuous line should exist for Psi supertile', async ({ page }) => {
+  test.setTimeout(60000);
   await page.goto('/');
   await page.waitForFunction(() => (window as any).p !== undefined);
 
@@ -14,14 +15,7 @@ test('repro line count bug: only 1 continuous line should exist for Psi supertil
     // Joiner edges are the second set of checkboxes
     await page.getByLabel(edge, { exact: true }).nth(1).check();
   }
-
-  // Build Supertiles (4 iterations)
-  const buildBtn = page.getByText('Build Supertiles');
-  await buildBtn.click();
-  await buildBtn.click();
-  await buildBtn.click();
-  await buildBtn.click();
-
+  
   // Max out sliders for Pi and Theta
   await page.evaluate(() => {
     const labels = ['Pi', 'Theta'];
@@ -35,20 +29,26 @@ test('repro line count bug: only 1 continuous line should exist for Psi supertil
     (window as any).p.loop();
   });
 
-  await page.waitForTimeout(1000); // Wait for analysis
+  
+  // Build Supertiles (4 iterations)
+  const buildBtn = page.getByText('Build Supertiles');
+  for (let i = 0; i < 5; i++) {
+    buildBtn.click();
+    await page.waitForTimeout(1000); // Wait for analysis
 
-  // Check stats
-  const stats = await page.evaluate(() => {
-    const s = (window as any).state.circuitStats;
-    let totalLineCount = 0;
-    for (const count of s.lines.values()) {
-      totalLineCount += count;
-    }
-    return { totalLineCount };
-  });
+    // Check stats
+    const stats = await page.evaluate(() => {
+      const s = (window as any).state.circuitStats;
+      let totalLineCount = 0;
+      for (const count of s.lines.values()) {
+        totalLineCount += count;
+      }
+      return { totalLineCount };
+    });
 
-  console.log('Line Stats:', stats);
+    console.log('Line Stats:', stats);
 
-  // Expect exactly one line in total
-  expect(stats.totalLineCount).toBe(1);
+    // Expect exactly one line in total
+    expect(stats.totalLineCount).toBe(1);
+  }
 });

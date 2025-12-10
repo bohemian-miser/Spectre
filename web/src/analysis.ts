@@ -51,7 +51,7 @@ export function findPerfectMatchings(points: {x: number, y: number}[]): {x: numb
 // --- Circuit Analysis ---
 
 type Point = [number, number];
-type Edge = [Point, Point];
+export type Edge = [Point, Point];
 
 // Helper to create a canonical key for a point, rounding to avoid floating point issues
 function pointToKey(p: Point): string {
@@ -291,7 +291,7 @@ function generateColorMap(analysis: { circuits: Map<number, Edge[][]>, openPaths
 }
 
 // Main analysis function
-export function analyzeAndColor(rootTile: any, p: p5): { colorMap: Map<string, string>, stats: { circuits: Map<number, number>, lines: Map<number, number>, circuitColors: Map<number, string> } } {
+export function analyzeAndColor(rootTile: any, p: p5): { colorMap: Map<string, string>, stats: { circuits: Map<number, number>, lines: Map<number, number>, circuitColors: Map<number, string> }, paths: { circuits: Map<number, Edge[][]>, openPaths: Edge[][] } } {
     const allEdges: Edge[] = [];
     collectEdges(rootTile, ident, allEdges, p);
     
@@ -314,5 +314,5 @@ export function analyzeAndColor(rootTile: any, p: p5): { colorMap: Map<string, s
 
     const { edgeColors, circuitColors } = generateColorMap(analysis);
 
-    return { colorMap: edgeColors, stats: { circuits: circuitStats, lines: lineStats, circuitColors } };
+    return { colorMap: edgeColors, stats: { circuits: circuitStats, lines: lineStats, circuitColors }, paths: analysis };
 }
