@@ -725,7 +725,7 @@ const sketch = (p: p5) => {
 
             // initial render
             renderThumb();
-            miniCanvases[label] = { el: el.elt, ctx: ctx, S_thumb };
+            miniCanvases[label] = { el: el.elt, ctx: ctx, S_thumb, render: renderThumb };
         }
 
         function refreshThumbnails() {
@@ -746,10 +746,8 @@ const sketch = (p: p5) => {
 
             for (const name of miniNames) {
                 const mc = miniCanvases[name];
-                if (!mc) continue;
-                mc.ctx.clearRect(0, 0, thumbWidth, thumbHeight);
-                // draw from persistent snapshot only
-                drawGeomToContext(mc.ctx, (palette_sys && palette_sys[name]) ? palette_sys[name] : null, mc.S_thumb);
+                if (!mc || !mc.render) continue;
+                mc.render();
             }
         }
 
