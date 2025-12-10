@@ -2,8 +2,8 @@ import p5 from 'p5';
 import { Shape, CurvyShape, Meta, unique_edge_labels, getEdgeDotMidpoints, spectre_pts, hex_edge_labels, hex_pts, hat_pts, turtle_pts } from './tiles';
 import { state } from './state';
 import { tile_names, colmap53, colmap_orig, colmap_mystics, colmap_pride } from './config';
-import { pt, mul, trot, ttrans, inv, transPt, ident, adjust_mat } from './utils';
-import { getEdgeDotCount, analyzeAndColor, Edge } from './analysis';
+import { pt, mul, trot, ttrans, inv, transPt, ident, adjust_mat, getRainbowColor } from './utils';
+import { getEdgeDotCount, analyzeAndColor, Edge, getValidEdgeCombinations } from './analysis';
 import { findPerfectMatchings } from './analysis';
 
 p5.disableFriendlyErrors = true;
@@ -266,6 +266,7 @@ const sketch = (p: p5) => {
             state.isCircuitAnalysisDirty = true;
             // Rebuild and refresh thumbnails to match the new shape
             rebuildThumbnails();
+            updateJoinerDropdown();
             refreshThumbnails();
             p.loop();
         });
@@ -917,24 +918,46 @@ const sketch = (p: p5) => {
         joinerEdgesLabel.position(10, y_pos);
         y_pos += 20;
 
-        const joinerEdgeCheckboxes: p5.Element[] = [];
-        for (const edge_type of edge_types) {
-            const checkbox = p.createCheckbox(edge_type.label, false) as any;
-            checkbox.position(10, y_pos);
-            checkbox.changed(() => {
-                if (checkbox.checked()) {
-                    state.selectedJoinerEdges.add(edge_type.value);
-                } else {
-                    state.selectedJoinerEdges.delete(edge_type.value);
-                }
-                updateJoinerEdgesLabel();
+        const joinerPanel = p.createDiv('');
+        joinerPanel.position(10, y_pos);
+        // Reserve space for the dropdown
+        y_pos += 30;
+
+        function updateJoinerDropdown() {
+            joinerPanel.html('');
+            const sel = p.createSelect();
+            sel.parent(joinerPanel);
+            sel.size(125, 25);
+
+            const combos = getValidEdgeCombinations(miniNames);
+            
+            // Add 'None' option
+            sel.option('None', '[]');
+            
+            // Add valid combinations
+            for (const combo of combos) {
+                sel.option(combo.label, JSON.stringify(combo.edges));
+            }
+
+            // Check if current selection matches any option, if so select it?
+            // Or just default to None?
+            // Let's try to preserve selection if possible, or select None.
+            // For now, simpler to just let it reset or select the first matching.
+            
+            sel.changed(() => {
+                const val = sel.value();
+                state.selectedJoinerEdges.clear();
+                const edges: number[] = JSON.parse(val as string);
+                for (const e of edges) state.selectedJoinerEdges.add(e);
+                
                 state.isCircuitAnalysisDirty = true;
                 refreshThumbnails();
                 p.loop();
             });
-            joinerEdgeCheckboxes.push(checkbox);
-            y_pos += 20;
         }
+
+        // Call initially
+        updateJoinerDropdown();
 
         lbl_check.changed(() => {
             const isChecked = lbl_check.checked() as boolean;
@@ -995,18 +1018,6 @@ const sketch = (p: p5) => {
         
         y_pos += 20;
 
-
-        function updateJoinerEdgesLabel() {
-            let allEven = true;
-            for (const name of miniNames) {
-                const count = getEdgeDotCount(name, state.selectedJoinerEdges);
-                if (count % 2 !== 0) {
-                    allEven = false;
-                    break;
-                }
-            }
-            joinerEdgesLabel.html(`Joiner Edges ${allEven ? '&#9989;' : '&#10060;'}`);
-        }
         // Pan/zoom controls removed: drag to pan and scroll to zoom
 
         let save_button = p.createButton("Save PNG");
@@ -1112,9 +1123,8 @@ const sketch = (p: p5) => {
                 // We need to draw segments.
                 for (let i = 0; i < len; i++) {
                     const edge: Edge = path[i];
-                    // Gradient from Red (0) to Magenta (300)
-                    const h = len > 1 ? (i / (len - 1)) * 300 : 0;
-                    p.stroke(`hsl(${h}, 100%, 50%)`);
+                    const t = len > 1 ? i / (len - 1) : 0;
+                    p.stroke(getRainbowColor(t));
                     
                     // Draw the segment
                     // We need to transform points to screen space since we are inside the push/pop

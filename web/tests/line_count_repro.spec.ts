@@ -9,12 +9,15 @@ test('repro line count bug: only 1 continuous line should exist for Psi supertil
   const tileSelect = page.locator('select').nth(1);
   await tileSelect.selectOption('Psi');
 
-  // Select Joiner Edges 1, 2, 7 (Mystic), 8
-  const edgesToSelect = ['1', '2', '7 (Mystic)', '8'];
-  for (const edge of edgesToSelect) {
-    // Joiner edges are the second set of checkboxes
-    await page.getByLabel(edge, { exact: true }).nth(1).check();
-  }
+  // Select Joiner Edges 1, 2, 7 (Mystic), 8 via dropdown
+  // The dropdown contains valid combinations. "1, 2, 7(M), 8" should be one of them.
+  // There are multiple selects on the page. 
+  // 1. Shapes, 2. Category (Tile), 3. Colours, 4. Joiner Edges
+  const joinerSelect = page.locator('select').nth(3);
+  
+  // We select by label. The label format is comma separated, with 7(M) for 7.
+  // Edges 1, 2, 7, 8 -> "1, 2, 7(M), 8"
+  await joinerSelect.selectOption({ label: '1, 2, 7(M), 8' });
   
   // Max out sliders for Pi and Theta
   await page.evaluate(() => {

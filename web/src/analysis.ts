@@ -320,3 +320,41 @@ export function analyzeAndColor(rootTile: any, p: p5): { colorMap: Map<string, s
 
     return { colorMap: edgeColors, stats: { circuits: circuitStats, lines: lineStats, circuitColors }, paths: analysis };
 }
+
+// Find all subsets of edges that produce valid joiner configurations
+// A configuration is valid if every tile in the shape set has an even number of selected edge points.
+export function getValidEdgeCombinations(tileNames: string[]): { edges: number[], label: string }[] {
+    const edgeTypes = [0, 1, 2, 3, 4, 5, 6, 7, 8];
+    const combinations: { edges: number[], label: string }[] = [];
+
+    // Brute force all 2^9 subsets (512)
+    const numSubsets = 1 << edgeTypes.length;
+    for (let i = 1; i < numSubsets; i++) { // Skip empty set
+        const subset = new Set<number>();
+        const subsetArray: number[] = [];
+        for (let j = 0; j < edgeTypes.length; j++) {
+            if ((i >> j) & 1) {
+                subset.add(edgeTypes[j]);
+                subsetArray.push(edgeTypes[j]);
+            }
+        }
+
+        let allEven = true;
+        for (const tile of tileNames) {
+            const count = getEdgeDotCount(tile, subset);
+            if (count % 2 !== 0) {
+                allEven = false;
+                break;
+            }
+        }
+
+        if (allEven) {
+            // Sort subset for consistent labeling
+            subsetArray.sort((a,b) => a - b);
+            // Label is comma separated list of edges
+            const label = subsetArray.map(e => e === 7 ? '7(M)' : e.toString()).join(', ');
+            combinations.push({ edges: subsetArray, label });
+        }
+    }
+    return combinations;
+}
