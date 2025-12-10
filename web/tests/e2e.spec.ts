@@ -9,18 +9,18 @@ test('main canvas is rendered', async ({ page }) => {
 test('edge label checkboxes work correctly and labels appear/disappear', async ({ page }) => {
   await page.goto('/');
 
-  const showAllCheckbox = page.getByLabel('Show all edge numbers');
+  const showAllCheckbox = page.getByLabel('Show all', { exact: true });
   const edgeCheckboxes = page.getByLabel(/^[0-8]$|^7 \(Mystic\)$/);
 
   // Get a reference to a thumbnail canvas and the main canvas
   const thumbnailCanvas = page.locator('canvas[width="192"][height="135"]').first();
   const mainCanvas = page.locator('canvas').nth(1); // Assuming the main canvas is the second one
 
-  // 1. Check 'Show all edge numbers'
+  // 1. Check 'Show all'
   await showAllCheckbox.check();
 
   const count = await edgeCheckboxes.count();
-  expect(count).toBe(9);
+  expect(count).toBe(18);
 
   for (const checkbox of await edgeCheckboxes.all()) {
     await expect(checkbox).toBeChecked();

@@ -8,6 +8,7 @@ export var state = {
         showIds: false,
         showQuads: false,
         showEdgeDots: false,
+        rainbowLines: true,
     },
     isCircuitAnalysisDirty: true,
     selectedMajorEdges: new Set<number>(),

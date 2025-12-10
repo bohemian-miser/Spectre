@@ -12,6 +12,7 @@ const maxThumbWidth = 504; // 64 * 3
 
 const sketch = (p: p5) => {
     (window as any).p = p; // Make p5 instance globally available for modules
+    (window as any).state = state;
     let to_screen = [20, 0, 0, 0, -20, 0];
 
     let sys: any;
@@ -950,13 +951,14 @@ const sketch = (p: p5) => {
         });
 
         // Initialize the checkboxes using the default state values to ensure they are in sync.
-        const checkboxConfigs: { label: string; key: keyof typeof state.config; refresh: boolean }[] = [
+        const checkboxConfigs: { label: string; key: keyof typeof state.config; refresh: boolean; reanalyze?: boolean }[] = [
             { label: 'Show Outlines', key: 'showOutlines', refresh: true },
             { label: 'Show Backgrounds', key: 'showBackgrounds', refresh: true },
             { label: 'Show Lines', key: 'showLines', refresh: true },
             { label: 'Show IDs', key: 'showIds', refresh: false },
             { label: 'Show Quads', key: 'showQuads', refresh: false },
             { label: 'Show Edge Dots', key: 'showEdgeDots', refresh: false },
+            { label: 'Rainbow Lines', key: 'rainbowLines', refresh: false, reanalyze: true },
         ];
 
         for (const config of checkboxConfigs) {
@@ -966,6 +968,9 @@ const sketch = (p: p5) => {
                 state.config[config.key] = checkbox.checked();
                 if (config.refresh) {
                     refreshThumbnails();
+                }
+                if (config.reanalyze) {
+                    state.isCircuitAnalysisDirty = true;
                 }
                 p.loop();
             });

@@ -192,6 +192,59 @@ function processCircuits(edges: Edge[]): { circuits: Map<number, Edge[][]>, open
 }
 
 
+// Helper to weld close vertices to fix precision issues
+function weldEdges(edges: Edge[], epsilon: number = 0.05): Edge[] {
+    const flatPoints: Point[] = [];
+    for (const e of edges) {
+        flatPoints.push(e[0]);
+        flatPoints.push(e[1]);
+    }
+    
+    const count = flatPoints.length;
+    const representatives: Point[] = new Array(count).fill(null);
+    
+    // Sort points by X coordinate to optimize nearest neighbor search
+    const indices = Array.from({length: count}, (_, i) => i);
+    indices.sort((a, b) => flatPoints[a][0] - flatPoints[b][0]);
+    
+    const epsilonSq = epsilon * epsilon;
+
+    for (let i = 0; i < count; i++) {
+        const idx = indices[i];
+        if (representatives[idx]) continue;
+        
+        const p = flatPoints[idx];
+        representatives[idx] = p; // It represents itself
+        
+        // Look ahead for close points
+        for (let j = i + 1; j < count; j++) {
+            const neighborIdx = indices[j];
+            const neighbor = flatPoints[neighborIdx];
+            
+            // If x-distance is already greater than epsilon, no need to check further
+            if (neighbor[0] - p[0] > epsilon) break; 
+            
+            if (!representatives[neighborIdx]) {
+                const dy = neighbor[1] - p[1];
+                if ((neighbor[0] - p[0]) * (neighbor[0] - p[0]) + dy * dy < epsilonSq) {
+                    representatives[neighborIdx] = p;
+                }
+            }
+        }
+    }
+    
+    // Reconstruct edges with welded points
+    const newEdges: Edge[] = [];
+    for (let i = 0; i < edges.length; i++) {
+        newEdges.push([
+            representatives[i*2],
+            representatives[i*2+1]
+        ]);
+    }
+    
+    return newEdges;
+}
+
 // Generate colors for circuits
 function generateColorMap(analysis: { circuits: Map<number, Edge[][]>, openPaths: Edge[][] }): { edgeColors: Map<string, string>, circuitColors: Map<number, string> } {
     const colorMap: Map<string, string> = new Map();
@@ -215,10 +268,22 @@ function generateColorMap(analysis: { circuits: Map<number, Edge[][]>, openPaths
         }
     }
 
-    // Assign a default color for open paths
-    for (const path of analysis.openPaths) {
-        for (const edge of path) {
-            colorMap.set(edgeToKey(edge), '#808080'); // Grey
+    // Assign colors for open paths
+    if (state.config.rainbowLines) {
+        for (const path of analysis.openPaths) {
+            const len = path.length;
+            for (let i = 0; i < len; i++) {
+                const edge = path[i];
+                // Gradient from Red (0) to Magenta (300)
+                const h = len > 1 ? (i / (len - 1)) * 300 : 0; 
+                colorMap.set(edgeToKey(edge), `hsl(${h}, 100%, 50%)`);
+            }
+        }
+    } else {
+        for (const path of analysis.openPaths) {
+            for (const edge of path) {
+                colorMap.set(edgeToKey(edge), '#808080'); // Grey
+            }
         }
     }
 
@@ -229,7 +294,11 @@ function generateColorMap(analysis: { circuits: Map<number, Edge[][]>, openPaths
 export function analyzeAndColor(rootTile: any, p: p5): { colorMap: Map<string, string>, stats: { circuits: Map<number, number>, lines: Map<number, number>, circuitColors: Map<number, string> } } {
     const allEdges: Edge[] = [];
     collectEdges(rootTile, ident, allEdges, p);
-    const analysis = processCircuits(allEdges);
+    
+    // Weld edges to fix precision issues before processing
+    const weldedEdges = weldEdges(allEdges);
+    
+    const analysis = processCircuits(weldedEdges);
 
     // Compute stats
     const circuitStats = new Map<number, number>();
