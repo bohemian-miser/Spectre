@@ -660,11 +660,17 @@ const sketch = (p: p5) => {
                     if (matchings.length > 1) {
                         slider.style('visibility', 'visible');
                         slider.elt.max = (matchings.length - 1).toString();
+                        // Reset value if out of bounds
+                        if (parseInt(slider.value(), 10) >= matchings.length) {
+                            slider.value(0);
+                        }
                     } else {
                         slider.style('visibility', 'hidden');
+                        slider.value(0);
                     }
                 } else {
                     slider.style('visibility', 'hidden');
+                    slider.value(0);
                 }
             }
 
