@@ -1,7 +1,7 @@
 import { unique_edge_labels, hex_edge_labels } from './tiles';
 import { getEdgeDotMidpoints } from './tiles';
 import { state } from './state';
-import { mul, transPt, ident } from './utils';
+import { mul, transPt, ident, getRainbowColor } from './utils';
 import p5 from 'p5';
 
 function getEdgeLabelsForShape(tileLabel: string): readonly string[] {
@@ -279,9 +279,8 @@ function generateColorMap(analysis: { circuits: Map<number, Edge[][]>, openPaths
             const len = path.length;
             for (let i = 0; i < len; i++) {
                 const edge = path[i];
-                // Gradient from Red (0) to Magenta (300)
-                const h = len > 1 ? (i / (len - 1)) * 300 : 0; 
-                colorMap.set(edgeToKey(edge), `hsl(${h}, 100%, 50%)`);
+                const t = len > 1 ? i / (len - 1) : 0;
+                colorMap.set(edgeToKey(edge), getRainbowColor(t));
             }
         }
     } else {
