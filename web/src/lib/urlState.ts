@@ -38,9 +38,12 @@ export function stateToHash(state: ExplorerState, route: string = EXPLORER_ROUTE
   return query ? `${r}?${query}` : r;
 }
 
-/** Decode a state from any of `#/explorer?x=1`, `?x=1` or `x=1`. */
+/** Decode a state from any of `#/explorer?x=1`, `?x=1` or a bare `x=1`. */
 export function hashToState(hash: string): ExplorerState {
-  return queryToState(splitHash(hash).query);
+  const raw = hash.replace(/^[#?]/, '');
+  if (raw.includes('?')) return queryToState(raw.slice(raw.indexOf('?') + 1));
+  // A route-only hash (`#/dev`) carries no state; anything else is a query.
+  return queryToState(raw.startsWith('/') ? '' : raw);
 }
 
 /**

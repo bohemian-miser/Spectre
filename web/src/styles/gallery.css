@@ -1,0 +1,92 @@
+/* Layout for the stage-2 dev harness (`widgets.html`). Intentionally minimal —
+   the real pages arrive in stages 3–6 with their own shell. */
+
+.gallery {
+  max-width: 1500px;
+  margin: 0 auto;
+  padding: 16px;
+}
+.gallery-header h1 {
+  margin: 0 0 4px;
+  font-size: 20px;
+}
+.gallery-header code {
+  word-break: break-all;
+}
+.gallery-body {
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .gallery-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.gallery-sidebar {
+  position: sticky;
+  top: 12px;
+  max-height: calc(100vh - 24px);
+  overflow: auto;
+}
+.gallery-section {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px;
+  margin-bottom: 16px;
+}
+.gallery-section h2 {
+  margin: 0 0 2px;
+  font-size: 15px;
+}
+.gallery-section > p {
+  margin: 0 0 10px;
+  font-size: 12px;
+}
+.viewport {
+  height: 560px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--panel-2);
+}
+.viewport-short {
+  height: 340px;
+}
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.matching-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+}
+.level-stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.level-stepper button {
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--text);
+  cursor: pointer;
+}
+.level-stepper em {
+  font-style: normal;
+  font-size: 11px;
+  color: var(--muted);
+}
+.gallery-footer {
+  font-size: 11px;
+  padding: 8px 0 24px;
+}
