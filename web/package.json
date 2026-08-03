@@ -4,7 +4,11 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "playwright test",
+    "test": "vitest run",
+    "test:unit": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "typecheck": "tsc --noEmit",
     "dev": "vite --port 8081",
     "build": "vite build",
     "preview": "vite preview  --port 8081"
@@ -19,6 +23,7 @@
     "@playwright/test": "^1.55.1",
     "@types/p5": "^1.7.6",
     "typescript": "^5.9.3",
-    "vite": "^7.1.7"
+    "vite": "^7.1.7",
+    "vitest": "^3.2.7"
   }
 }
