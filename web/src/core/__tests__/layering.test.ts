@@ -12,10 +12,15 @@ import { join } from 'node:path';
 
 const CORE_DIR = new URL('..', import.meta.url).pathname;
 
+/** Strip block and line comments so prose about the rule is not mistaken for a violation. */
+function stripComments(text: string): string {
+  return text.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+}
+
 function coreSources(): { file: string; text: string }[] {
   return readdirSync(CORE_DIR)
     .filter((f) => f.endsWith('.ts'))
-    .map((f) => ({ file: f, text: readFileSync(join(CORE_DIR, f), 'utf8') }));
+    .map((f) => ({ file: f, text: stripComments(readFileSync(join(CORE_DIR, f), 'utf8')) }));
 }
 
 const FORBIDDEN_IMPORTS = /from\s+['"](p5|react|react-dom|react-router-dom|\.\.\/(components|pages|hooks|state|config|sketch|ui|tiles|analysis|utils))/;

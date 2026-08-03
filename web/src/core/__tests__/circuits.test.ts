@@ -11,6 +11,7 @@ import {
   weldSegments,
   type Segment,
 } from '../circuits';
+import { runAnalysis } from '../analysis-request';
 import { buildSystem, flatten } from '../tiles';
 import { leafOrder } from '../families';
 import { connectionCount } from '../edges';
@@ -145,6 +146,39 @@ describe('collectSegments', () => {
     expect(connectionCount('spectre', 'Gamma1', new Set([1, 5]))).toBe(2);
     expect(connectionCount('spectre', 'Gamma2', new Set([1, 5]))).toBe(0);
     expect(segs.length).toBe(1);
+  });
+});
+
+describe('runAnalysis (worker-facing entry point)', () => {
+  it('matches analyze() and returns clone-friendly plain data', () => {
+    const subset = [2, 5, 7, 8];
+    const matchingIndexByType = firstNonCrossing('spectre', subset);
+    const direct = analyze({
+      family: 'spectre',
+      instances: flatten(buildSystem('spectre', 2)['Delta']),
+      selected: new Set(subset),
+      matchingIndexByType,
+    });
+    const viaRequest = runAnalysis({
+      id: 7,
+      family: 'spectre',
+      rootTile: 'Delta',
+      level: 2,
+      subset,
+      matchingIndexByType,
+    });
+    expect(viaRequest.id).toBe(7);
+    expect(viaRequest.tileCount).toBe(71);
+    expect(viaRequest.circuits.length).toBe(direct.circuits.length);
+    expect(viaRequest.tails.length).toBe(direct.tails.length);
+    expect(viaRequest.junctionCount).toBe(direct.junctionCount);
+    expect(viaRequest.circuitSummary.reduce((n, s) => n + s.count, 0)).toBe(direct.circuits.length);
+    expect(viaRequest.tailSummary.reduce((n, s) => n + s.count, 0)).toBe(direct.tails.length);
+    expect(Array.isArray(viaRequest.segmentColors)).toBe(true);
+    expect(new Map(viaRequest.segmentColors)).toEqual(direct.segmentColor);
+    expect(new Map(viaRequest.circuitColors)).toEqual(direct.circuitColorByLength);
+    // structured-clone friendly: JSON round-trip preserves everything but Maps
+    expect(() => structuredClone(viaRequest)).not.toThrow();
   });
 });
 
