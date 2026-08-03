@@ -1,0 +1,347 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Spectre instanced rendering spike</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #10131a; }
+  canvas { display: block; width: 100vw; height: 100vh; }
+  #hud { position: fixed; top: 8px; left: 8px; color: #9fd; font: 12px monospace; white-space: pre; pointer-events: none; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hud"></div>
+<script>
+'use strict';
+// ---------------------------------------------------------------------------
+// Spectre tile outline (core SPECTRE_PTS, inlined — this page is standalone)
+// ---------------------------------------------------------------------------
+const S3 = 0.8660254037844386;
+const PTS = [
+  [0, 0], [1, 0], [1.5, -S3], [2.366025403784439, -0.36602540378443865],
+  [2.366025403784439, 0.6339745962155614], [3.366025403784439, 0.6339745962155614],
+  [3.866025403784439, 1.5], [3.0, 2.0], [2.133974596215561, 1.5],
+  [1.6339745962155614, 2.3660254037844393], [0.6339745962155614, 2.3660254037844393],
+  [-0.3660254037844386, 2.3660254037844393], [-0.866025403784439, 1.5], [0.0, 1.0],
+];
+
+// Ear-clipping triangulation (14-gon, done once at startup).
+function triangulate(pts) {
+  const n = pts.length;
+  const idx = Array.from({ length: n }, (_, i) => i);
+  const tris = [];
+  const area2 = (a, b, c) => (b[0]-a[0])*(c[1]-a[1]) - (b[1]-a[1])*(c[0]-a[0]);
+  // polygon orientation
+  let s = 0;
+  for (let i = 0; i < n; i++) { const p = pts[i], q = pts[(i+1)%n]; s += p[0]*q[1] - q[0]*p[1]; }
+  const ccw = s > 0;
+  const inTri = (p, a, b, c) => {
+    const d1 = area2(a, b, p), d2 = area2(b, c, p), d3 = area2(c, a, p);
+    const neg = (d1 < 0) || (d2 < 0) || (d3 < 0);
+    const pos = (d1 > 0) || (d2 > 0) || (d3 > 0);
+    return !(neg && pos);
+  };
+  let guard = 200;
+  while (idx.length > 3 && guard-- > 0) {
+    let clipped = false;
+    for (let i = 0; i < idx.length; i++) {
+      const ia = idx[(i - 1 + idx.length) % idx.length];
+      const ib = idx[i];
+      const ic = idx[(i + 1) % idx.length];
+      const a = pts[ia], b = pts[ib], c = pts[ic];
+      const conv = ccw ? area2(a, b, c) > 1e-12 : area2(a, b, c) < -1e-12;
+      if (!conv) continue;
+      let ok = true;
+      for (const j of idx) {
+        if (j === ia || j === ib || j === ic) continue;
+        if (inTri(pts[j], a, b, c)) { ok = false; break; }
+      }
+      if (!ok) continue;
+      tris.push(ia, ib, ic);
+      idx.splice(i, 1);
+      clipped = true;
+      break;
+    }
+    if (!clipped) break;
+  }
+  tris.push(idx[0], idx[1], idx[2]);
+  return tris;
+}
+const PALETTE = [
+  [0.86, 0.86, 0.86], [1.00, 0.95, 0.13], [1.00, 0.71, 0.30], [0.47, 0.82, 0.35],
+  [0.35, 0.65, 0.89], [0.62, 0.47, 0.84], [0.91, 0.42, 0.42], [0.55, 0.85, 0.80],
+  [0.94, 0.55, 0.75], [0.42, 0.46, 0.53],
+];
+
+// ---------------------------------------------------------------------------
+// GL setup
+// ---------------------------------------------------------------------------
+const canvas = document.getElementById('c');
+const hud = document.getElementById('hud');
+const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, powerPreference: 'high-performance' });
+window.__GL_OK = !!gl;
+
+function compile(type, src) {
+  const sh = gl.createShader(type);
+  gl.shaderSource(sh, src);
+  gl.compileShader(sh);
+  if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(sh));
+  return sh;
+}
+function program(vs, fs) {
+  const p = gl.createProgram();
+  gl.attachShader(p, compile(gl.VERTEX_SHADER, vs));
+  gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  return p;
+}
+
+const VS = `#version 300 es
+layout(location=0) in vec2 aVert;      // tile-local vertex
+layout(location=1) in vec2 aPos;       // per-instance world offset
+layout(location=2) in float aCode;     // rot k (0..11) | mirror<<4
+layout(location=3) in float aType;     // 0..9
+uniform vec4 uCam;                     // cx, cy, scale, aspect
+uniform vec3 uPalette[10];
+out vec3 vColor;
+void main() {
+  float code = aCode;
+  float mirror = floor(code / 16.0);
+  float k = code - mirror * 16.0;
+  float ang = k * 0.5235987755982988;   // 30 deg
+  float c = cos(ang), s = sin(ang);
+  vec2 v = aVert;
+  if (mirror > 0.5) v.x = -v.x;
+  vec2 r = vec2(c * v.x - s * v.y, s * v.x + c * v.y);
+  vec2 world = r + aPos;
+  vec2 screen = (world - uCam.xy) * uCam.z;
+  gl_Position = vec4(screen.x * uCam.w, -screen.y, 0.0, 1.0);
+  vColor = uPalette[int(aType)];
+}`;
+const FS = `#version 300 es
+precision mediump float;
+in vec3 vColor;
+out vec4 o;
+void main() { o = vec4(vColor, 1.0); }`;
+
+const VS_LINE = VS.replace('vColor = uPalette[int(aType)];', 'vColor = vec3(0.05);');
+
+const progFill = program(VS, FS);
+const progLine = program(VS_LINE, FS);
+
+// geometry buffers
+const verts = new Float32Array(PTS.flat());
+const tris = new Uint16Array(triangulate(PTS));
+const vboVerts = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, vboVerts);
+gl.bufferData(gl.ARRAY_BUFFER, verts, gl.STATIC_DRAW);
+const ibo = gl.createBuffer();
+gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
+gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, tris, gl.STATIC_DRAW);
+
+// instance buffers (filled after fetch)
+const vboPos = gl.createBuffer();
+const vboCode = gl.createBuffer();
+const vboType = gl.createBuffer();
+
+function makeVao(forLines) {
+  const vao = gl.createVertexArray();
+  gl.bindVertexArray(vao);
+  gl.bindBuffer(gl.ARRAY_BUFFER, vboVerts);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+  gl.bindBuffer(gl.ARRAY_BUFFER, vboPos);
+  gl.enableVertexAttribArray(1);
+  gl.vertexAttribPointer(1, 2, gl.FLOAT, false, 0, 0);
+  gl.vertexAttribDivisor(1, 1);
+  gl.bindBuffer(gl.ARRAY_BUFFER, vboCode);
+  gl.enableVertexAttribArray(2);
+  gl.vertexAttribPointer(2, 1, gl.UNSIGNED_BYTE, false, 0, 0);
+  gl.vertexAttribDivisor(2, 1);
+  gl.bindBuffer(gl.ARRAY_BUFFER, vboType);
+  gl.enableVertexAttribArray(3);
+  gl.vertexAttribPointer(3, 1, gl.UNSIGNED_BYTE, false, 0, 0);
+  gl.vertexAttribDivisor(3, 1);
+  if (!forLines) gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
+  gl.bindVertexArray(null);
+  return vao;
+}
+const vaoFill = makeVao(false);
+const vaoLine = makeVao(true);
+
+// camera
+const cam = { x: 0, y: 0, scale: 0.004 }; // scale = NDC units per world unit
+let instanceCount = 0;
+let drawCount = 0;
+let showOutline = true;
+
+function resize() {
+  canvas.width = window.innerWidth * (window.devicePixelRatio || 1);
+  canvas.height = window.innerHeight * (window.devicePixelRatio || 1);
+  gl.viewport(0, 0, canvas.width, canvas.height);
+}
+window.addEventListener('resize', resize);
+resize();
+
+function setUniforms(prog) {
+  gl.useProgram(prog);
+  const uCam = gl.getUniformLocation(prog, 'uCam');
+  gl.uniform4f(uCam, cam.x, cam.y, cam.scale, canvas.height / canvas.width);
+  const uPal = gl.getUniformLocation(prog, 'uPalette');
+  if (uPal) gl.uniform3fv(uPal, PALETTE.flat());
+}
+
+let frameCount = 0;
+function draw() {
+  gl.clearColor(0.06, 0.07, 0.10, 1);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  if (drawCount > 0) {
+    setUniforms(progFill);
+    gl.bindVertexArray(vaoFill);
+    gl.drawElementsInstanced(gl.TRIANGLES, tris.length, gl.UNSIGNED_SHORT, 0, drawCount);
+    if (showOutline) {
+      setUniforms(progLine);
+      gl.bindVertexArray(vaoLine);
+      gl.drawArraysInstanced(gl.LINE_LOOP, 0, PTS.length, drawCount);
+    }
+    gl.bindVertexArray(null);
+  }
+  frameCount++;
+}
+
+// pan/zoom
+let dragging = false, lastX = 0, lastY = 0;
+canvas.addEventListener('pointerdown', (e) => { dragging = true; lastX = e.clientX; lastY = e.clientY; });
+window.addEventListener('pointerup', () => (dragging = false));
+window.addEventListener('pointermove', (e) => {
+  if (!dragging) return;
+  const pxToWorld = 2 / (canvas.height * cam.scale) * (window.devicePixelRatio || 1);
+  cam.x -= (e.clientX - lastX) * pxToWorld;
+  cam.y -= (e.clientY - lastY) * pxToWorld;
+  lastX = e.clientX; lastY = e.clientY;
+});
+canvas.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  cam.scale *= Math.pow(1.0015, -e.deltaY);
+}, { passive: false });
+
+// ---------------------------------------------------------------------------
+// Data load + benchmark
+// ---------------------------------------------------------------------------
+async function loadTiles() {
+  const res = await fetch('tiles.bin');
+  const buf = await res.arrayBuffer();
+  const count = new Uint32Array(buf, 0, 1)[0];
+  const pos = new Float32Array(buf, 4, count * 2);
+  const code = new Uint8Array(buf, 4 + count * 8, count);
+  const type = new Uint8Array(buf, 4 + count * 9, count);
+  gl.bindBuffer(gl.ARRAY_BUFFER, vboPos);
+  gl.bufferData(gl.ARRAY_BUFFER, pos, gl.STATIC_DRAW);
+  gl.bindBuffer(gl.ARRAY_BUFFER, vboCode);
+  gl.bufferData(gl.ARRAY_BUFFER, code, gl.STATIC_DRAW);
+  gl.bindBuffer(gl.ARRAY_BUFFER, vboType);
+  gl.bufferData(gl.ARRAY_BUFFER, type, gl.STATIC_DRAW);
+  instanceCount = count;
+  drawCount = count;
+  window.__FIRST_POS = [pos[0], pos[1]];
+  return count;
+}
+
+function rendererInfo() {
+  const ext = gl.getExtension('WEBGL_debug_renderer_info');
+  return ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER);
+}
+
+// Benchmark: for each tier, animate camera (pan orbit + zoom breathing) for
+// `frames` rAF frames, report avg fps and frame-time percentiles.
+async function bench(tiers, allResults) {
+  const results = [];
+  for (const tier of tiers) {
+    // Adaptive frame count: SwiftShader crawls at 1M instances; a handful of
+    // frames is enough there (frame times are extremely stable in software).
+    const frames = Math.max(6, Math.min(24, Math.round(1.6e6 / tier.count)));
+    console.log('bench tier', tier.label, 'outline=', showOutline, 'frames=', frames, 't=', (performance.now()/1000).toFixed(0));
+    drawCount = Math.min(tier.count, instanceCount);
+    cam.scale = tier.scale;
+    const times = [];
+    let last = performance.now();
+    await new Promise((done) => {
+      let f = 0;
+      function step() {
+        const t = performance.now();
+        times.push(t - last);
+        last = t;
+        const ph = f / 60;
+        cam.x = Math.cos(ph) * 120;
+        cam.y = Math.sin(ph) * 120;
+        cam.scale = tier.scale * (1 + 0.3 * Math.sin(ph * 0.7));
+        draw();
+        if (++f >= frames) done(); else requestAnimationFrame(step);
+      }
+      requestAnimationFrame(step);
+    });
+    times.shift(); // first frame includes upload/compile warmup
+    times.sort((a, b) => a - b);
+    const avg = times.reduce((a, b) => a + b, 0) / times.length;
+    const row = {
+      label: tier.label,
+      instances: drawCount,
+      avgMs: +avg.toFixed(2),
+      fps: +(1000 / avg).toFixed(1),
+      p50: +times[Math.floor(times.length * 0.5)].toFixed(2),
+      p95: +times[Math.floor(times.length * 0.95)].toFixed(2),
+      outline: showOutline,
+    };
+    results.push(row);
+    allResults.push(row);
+    window.__PARTIAL = allResults.slice(); // timeout-safe incremental publish
+    console.log('tier done', JSON.stringify(row));
+  }
+  return results;
+}
+
+async function main() {
+  const count = await loadTiles();
+  hud.textContent = `loaded ${count.toLocaleString()} instances\nrenderer: ${rendererInfo()}`;
+  const params = new URLSearchParams(location.search);
+  if (params.has('draw')) drawCount = Math.min(instanceCount, +params.get('draw') || instanceCount);
+  if (params.has('focus')) {
+    // Center on the first instance (DFS order = spatially clustered) and zoom
+    // to tile scale, so a software-GL screenshot renders in bounded time.
+    const buf = new Float32Array(2);
+    gl.bindBuffer(gl.ARRAY_BUFFER, vboPos);
+    // positions were uploaded from tiles.bin; re-read first pair from fetch is
+    // gone — instead track it at load time:
+    cam.x = window.__FIRST_POS[0];
+    cam.y = window.__FIRST_POS[1];
+    cam.scale = +(params.get('scale') || 0.12);
+    if (buf.length === 0) console.log('');
+  }
+  window.__CAM = cam;
+
+  if (new URLSearchParams(location.search).has('bench')) {
+    const tiers = [
+      { label: '50k', count: 50_000, scale: 0.008 },
+      { label: '100k', count: 100_000, scale: 0.006 },
+      { label: '250k', count: 250_000, scale: 0.004 },
+      { label: '500k', count: 500_000, scale: 0.003 },
+      { label: '1.11M', count: 2_000_000, scale: 0.0018 },
+    ];
+    const all = [];
+    showOutline = true;
+    const withOutline = await bench(tiers, all);
+    showOutline = false;
+    const noOutline = await bench([tiers[2], tiers[4]], all);
+    window.__RESULTS = { renderer: String(rendererInfo()), withOutline, noOutline,
+      triangleCountPerInstance: tris.length / 3 };
+    hud.textContent += '\nBENCH DONE';
+  } else {
+    (function loop() { draw(); requestAnimationFrame(loop); })();
+  }
+}
+main().catch((e) => { hud.textContent = 'ERROR ' + e; window.__ERROR = String(e); });
+</script>
+</body>
+</html>

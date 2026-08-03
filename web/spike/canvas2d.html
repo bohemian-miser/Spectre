@@ -1,0 +1,92 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Spectre canvas2d fallback spike</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #10131a; }
+  canvas { display: block; width: 100vw; height: 100vh; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+'use strict';
+const S3 = 0.8660254037844386;
+const PTS = [
+  [0, 0], [1, 0], [1.5, -S3], [2.366025403784439, -0.36602540378443865],
+  [2.366025403784439, 0.6339745962155614], [3.366025403784439, 0.6339745962155614],
+  [3.866025403784439, 1.5], [3.0, 2.0], [2.133974596215561, 1.5],
+  [1.6339745962155614, 2.3660254037844393], [0.6339745962155614, 2.3660254037844393],
+  [-0.3660254037844386, 2.3660254037844393], [-0.866025403784439, 1.5], [0.0, 1.0],
+];
+const PALETTE = ['#dbdbdb','#fff221','#ffb54d','#78d159','#59a6e3','#9e78d6','#e86b6b','#8cd9cc','#f08cbf','#6b7587'];
+
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d', { alpha: false });
+canvas.width = 1280; canvas.height = 800;
+
+const tilePath = new Path2D();
+tilePath.moveTo(PTS[0][0], PTS[0][1]);
+for (let i = 1; i < PTS.length; i++) tilePath.lineTo(PTS[i][0], PTS[i][1]);
+tilePath.closePath();
+
+const COS = [], SIN = [];
+for (let k = 0; k < 12; k++) { COS.push(Math.cos(k * Math.PI / 6)); SIN.push(Math.sin(k * Math.PI / 6)); }
+
+let pos, code, type, count;
+
+function drawFrame(n, camX, camY, scale, outline) {
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = '#10131a';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  const cx = canvas.width / 2, cy = canvas.height / 2;
+  ctx.lineWidth = 0.08;
+  ctx.strokeStyle = '#0d0d0d';
+  for (let i = 0; i < n; i++) {
+    const k = code[i] & 15;
+    const mir = code[i] & 16 ? -1 : 1;
+    const a = COS[k] * mir, b = SIN[k] * mir, c2 = -SIN[k], d = COS[k];
+    const x = (pos[i * 2] - camX) * scale + cx;
+    const y = (pos[i * 2 + 1] - camY) * scale + cy;
+    ctx.setTransform(a * scale, b * scale, c2 * scale, d * scale, x, y);
+    ctx.fillStyle = PALETTE[type[i]];
+    ctx.fill(tilePath);
+    if (outline) ctx.stroke(tilePath);
+  }
+}
+
+async function main() {
+  const res = await fetch('tiles.bin');
+  const buf = await res.arrayBuffer();
+  count = new Uint32Array(buf, 0, 1)[0];
+  pos = new Float32Array(buf, 4, count * 2);
+  code = new Uint8Array(buf, 4 + count * 8, count);
+  type = new Uint8Array(buf, 4 + count * 9, count);
+
+  const tiers = [25_000, 50_000, 100_000, 250_000];
+  const results = [];
+  for (const outline of [true, false]) {
+    for (const n of tiers) {
+      console.log('canvas tier', n, 'outline=', outline);
+      const times = [];
+      for (let f = 0; f < 12; f++) {
+        const t0 = performance.now();
+        drawFrame(Math.min(n, count), Math.cos(f / 6) * 60, Math.sin(f / 6) * 60, 9, outline);
+        times.push(performance.now() - t0);
+        await new Promise((r) => requestAnimationFrame(r));
+      }
+      times.shift();
+      times.sort((a, b) => a - b);
+      const avg = times.reduce((a, b) => a + b, 0) / times.length;
+      results.push({ instances: Math.min(n, count), outline,
+        avgMs: +avg.toFixed(1), fps: +(1000 / avg).toFixed(1),
+        p50: +times[Math.floor(times.length / 2)].toFixed(1) });
+    }
+  }
+  window.__RESULTS = results;
+}
+main().catch((e) => { window.__ERROR = String(e); });
+</script>
+</body>
+</html>
