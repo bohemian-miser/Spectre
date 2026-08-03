@@ -1,0 +1,671 @@
+/* Circuits & stats page (DESIGN.md §7.3).
+   Imported from `pages/StatsPage.tsx` so it rides in the stats chunk only.
+   Tokens (--panel, --line, --muted, …) come from widgets.css; everything here
+   is either a stats-only token or a stats-only rule, and every colour has a
+   light-scheme counterpart so the page follows `color-scheme: dark light`. */
+
+:root {
+  /* One colour per edge selection, used by chips, charts and dots. */
+  --stats-sel-023678: #6ea8fe;
+  --stats-sel-2578: #74d69a;
+  --stats-sel-1278: #f0b74a;
+  --stats-sel-0356: #c39bf5;
+  --stats-sel-15: #f58aa2;
+  --stats-sel-0136: #4fd3e6;
+
+  --stats-grid: color-mix(in srgb, var(--line) 75%, transparent);
+  --stats-ink: var(--text);
+  --stats-card: var(--panel);
+  --stats-card-2: var(--panel-2);
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --stats-sel-023678: #2f6ed4;
+    --stats-sel-2578: #1c8b50;
+    --stats-sel-1278: #a96c07;
+    --stats-sel-0356: #7742c4;
+    --stats-sel-15: #c53a60;
+    --stats-sel-0136: #0c7c8e;
+  }
+}
+
+/* --- page frame --------------------------------------------------------- */
+
+/* The shell centres pages in a 720px prose column; the tables and charts here
+   need more room, so the page widens itself with symmetric negative margins
+   (never wider than the viewport, so nothing scrolls sideways). */
+.stats-page {
+  --stats-width: min(1060px, calc(100vw - 32px));
+  margin-inline: calc((100% - var(--stats-width)) / 2);
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.stats-page h1 {
+  font-size: clamp(26px, 4vw, 34px);
+  margin: 0 0 8px;
+}
+.stats-page h2 {
+  font-size: 19px;
+  margin: 0 0 8px;
+}
+.stats-page h3 {
+  font-size: 16px;
+  margin: 0 0 8px;
+}
+.stats-page h4 {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin: 18px 0 6px;
+}
+.stats-page p {
+  margin: 0 0 10px;
+}
+.stats-page code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.94em;
+}
+
+.stats-lede {
+  font-size: 15px;
+  max-width: 68ch;
+}
+
+/* --- stat tiles --------------------------------------------------------- */
+
+.stats-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+  margin: 0 0 14px;
+}
+.stats-tiles.is-wide {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+.stats-tile {
+  background: var(--stats-card-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+}
+.stats-tile dt {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+.stats-tile dd {
+  margin: 2px 0 0;
+  font-size: 22px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+.stats-tile-sub {
+  margin: 4px 0 0;
+  font-size: 11.5px;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+/* --- overview ----------------------------------------------------------- */
+
+.stats-caveat {
+  border-left: 3px solid var(--warn);
+  background: color-mix(in srgb, var(--warn) 8%, transparent);
+  padding: 10px 12px;
+  border-radius: 0 var(--radius) var(--radius) 0;
+  max-width: 78ch;
+}
+
+.stats-more {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 8px 12px;
+  background: var(--stats-card);
+}
+.stats-more summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 13px;
+}
+.stats-caveat-list {
+  margin: 10px 0 4px;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.stats-caveat-list li {
+  margin-bottom: 6px;
+}
+
+/* --- findings ----------------------------------------------------------- */
+
+.stats-findings {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.stats-card {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--stats-card);
+  padding: 16px 18px;
+}
+.stats-card p {
+  max-width: 78ch;
+}
+.stats-figure {
+  margin: 12px 0 4px;
+}
+.stats-figure figcaption {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 4px;
+  max-width: 78ch;
+}
+
+.stats-rowlinks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.stats-rowlink {
+  display: inline-flex;
+  margin: 1px 3px 1px 0;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--stats-card-2);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 12px;
+}
+.stats-rowlink:hover {
+  border-color: var(--accent);
+}
+.stats-sel-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  display: inline-block;
+  flex: none;
+}
+
+.stats-mini-table {
+  border-collapse: collapse;
+  font-size: 13px;
+  margin-top: 8px;
+  width: 100%;
+}
+.stats-mini-table caption {
+  text-align: left;
+  color: var(--muted);
+  font-size: 12px;
+  padding-bottom: 4px;
+}
+.stats-mini-table th,
+.stats-mini-table td {
+  border-bottom: 1px solid var(--line);
+  padding: 5px 8px;
+  text-align: left;
+  font-weight: 400;
+}
+.stats-mini-table thead th {
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.stats-mini-table .is-num,
+.stats-table .is-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- charts ------------------------------------------------------------- */
+
+.stats-chart {
+  display: block;
+  width: 100%;
+  height: auto;
+  background: var(--stats-card-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  /* Anything that overshoots the viewBox is clipped rather than painted over
+     the surrounding prose. */
+  overflow: hidden;
+}
+.stats-chart.is-figure {
+  background: transparent;
+  border-color: transparent;
+}
+
+.stats-grid {
+  stroke: var(--stats-grid);
+  stroke-width: 1;
+}
+.stats-axis {
+  stroke: var(--line);
+  stroke-width: 1.4;
+}
+.stats-tick {
+  fill: var(--muted);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+.stats-tick.is-strong {
+  fill: var(--text);
+  font-weight: 600;
+}
+.stats-axis-label {
+  fill: var(--muted);
+  font-size: 11px;
+}
+.stats-ref {
+  stroke: var(--muted);
+  stroke-width: 1;
+  stroke-dasharray: 5 4;
+  opacity: 0.55;
+}
+.stats-ref.is-mean {
+  stroke-dasharray: none;
+  opacity: 0.75;
+}
+.stats-ref-label {
+  fill: var(--muted);
+  font-size: 10.5px;
+}
+.stats-point {
+  fill-opacity: 0.8;
+  stroke: var(--bg);
+  stroke-width: 0.6;
+  cursor: pointer;
+}
+.stats-point:hover {
+  fill-opacity: 1;
+  stroke: var(--text);
+  stroke-width: 1.2;
+}
+.stats-point.is-selected {
+  fill-opacity: 1;
+  stroke: var(--text);
+  stroke-width: 2;
+}
+.stats-slope {
+  stroke-width: 2.2;
+  fill: none;
+}
+.stats-slope-dot {
+  stroke: var(--bg);
+  stroke-width: 1;
+}
+.stats-guide {
+  stroke: var(--muted);
+  stroke-width: 1;
+  stroke-dasharray: 3 4;
+  opacity: 0.5;
+}
+.stats-bar.is-grown {
+  fill-opacity: 0.28;
+}
+.stats-bar.is-frozen {
+  fill-opacity: 0.95;
+}
+.stats-mix-hit {
+  fill: transparent;
+}
+.stats-mix-row.is-clickable {
+  cursor: pointer;
+}
+.stats-mix-row.is-clickable:hover .stats-mix-hit,
+.stats-mix-row.is-active .stats-mix-hit {
+  fill: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.stats-hist-bar {
+  fill: var(--accent);
+  fill-opacity: 0.8;
+}
+.stats-hist-bar:hover {
+  fill-opacity: 1;
+}
+.stats-spectrum-rail {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+.stats-spectrum-tick {
+  stroke: var(--text);
+  stroke-width: 2;
+  opacity: 0.75;
+}
+.stats-spectrum-tick.is-new {
+  stroke: var(--accent);
+  opacity: 1;
+  stroke-width: 2.6;
+}
+.stats-empty {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* --- browse: controls --------------------------------------------------- */
+
+.stats-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--stats-card);
+  padding: 10px 12px;
+  margin-bottom: 10px;
+}
+.stats-control-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.stats-control-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+.stats-segmented {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.stats-seg {
+  border: none;
+  background: var(--stats-card-2);
+  color: var(--muted);
+  padding: 4px 12px;
+  cursor: pointer;
+}
+.stats-seg.is-on {
+  background: color-mix(in srgb, var(--accent) 22%, var(--panel-2));
+  color: var(--text);
+}
+.stats-sel-chip .stats-chip-count {
+  font-size: 10px;
+  color: var(--muted);
+  border-left: 1px solid var(--line);
+  padding-left: 5px;
+}
+.stats-clear {
+  color: var(--muted);
+}
+.stats-count {
+  margin-left: auto;
+  font-size: 12px;
+}
+
+/* --- browse: table ------------------------------------------------------ */
+
+.stats-table-scroll {
+  max-height: min(62vh, 620px);
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--stats-card);
+}
+.stats-table {
+  border-collapse: separate;
+  border-spacing: 0;
+  width: 100%;
+  /* Below this the seven columns stop being readable, so the wrapper scrolls
+     horizontally instead of squashing them. */
+  min-width: 620px;
+  font-size: 13px;
+}
+.stats-table-caption {
+  caption-side: top;
+  text-align: left;
+  color: var(--muted);
+  font-size: 12px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+}
+.stats-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--stats-card-2);
+  border-bottom: 1px solid var(--line);
+  padding: 0;
+  text-align: left;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.stats-table thead th.is-num .stats-sort {
+  justify-content: flex-end;
+}
+.stats-sort {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+}
+.stats-sort:hover {
+  color: var(--text);
+}
+.stats-sort-mark {
+  opacity: 0.3;
+  font-size: 9px;
+}
+.stats-sort-mark.is-active {
+  opacity: 1;
+  color: var(--accent);
+}
+
+.stats-row {
+  cursor: pointer;
+}
+.stats-row:nth-child(even) {
+  background: color-mix(in srgb, var(--panel-2) 45%, transparent);
+}
+.stats-row:hover {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+.stats-row.is-selected {
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+.stats-row th,
+.stats-row td {
+  padding: 4px 10px;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
+  vertical-align: middle;
+}
+.stats-row-head {
+  text-align: left;
+  font-weight: 400;
+  padding: 0 !important;
+}
+.stats-row-open {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 5px 10px;
+  border: none;
+  background: none;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+.stats-sel-name {
+  color: var(--muted);
+  font-size: 11px;
+  min-width: 46px;
+}
+.stats-combo {
+  letter-spacing: 0.06em;
+}
+.stats-cell-primary {
+  display: block;
+  font-variant-numeric: tabular-nums;
+}
+.stats-cell-secondary {
+  display: block;
+  font-size: 10.5px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.stats-empty-row {
+  padding: 20px 10px !important;
+  color: var(--muted);
+  text-align: center;
+}
+
+/* --- browse: detail ----------------------------------------------------- */
+
+.stats-detail {
+  margin-top: 14px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--stats-card);
+  padding: 14px 16px;
+}
+.stats-detail-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+.stats-detail-head h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 17px;
+}
+.stats-close {
+  border: 1px solid var(--line);
+  background: var(--stats-card-2);
+  color: var(--text);
+  border-radius: 6px;
+  width: 26px;
+  height: 26px;
+  cursor: pointer;
+  flex: none;
+}
+.stats-length-chips {
+  margin-bottom: 6px;
+}
+.stats-length-chips .length-chip {
+  cursor: default;
+  font-variant-numeric: tabular-nums;
+}
+.stats-length-chips .length-chip.is-new {
+  border-color: var(--accent);
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 18%, var(--panel-2));
+}
+.stats-note {
+  font-size: 12px;
+  max-width: 78ch;
+}
+.stats-detail-hint {
+  margin-top: 12px;
+  font-size: 13px;
+}
+
+.stats-explorer-links {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+}
+.stats-explorer-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--stats-card-2);
+  color: var(--text);
+  text-decoration: none;
+  font-variant-numeric: tabular-nums;
+}
+.stats-explorer-link:hover {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 15%, var(--panel-2));
+}
+
+/* --- load / error ------------------------------------------------------- */
+
+.stats-loading {
+  color: var(--muted);
+}
+.stats-error-panel {
+  border: 1px solid var(--warn);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--warn) 8%, transparent);
+  padding: 14px 16px;
+  max-width: 70ch;
+}
+.stats-retry {
+  padding: 5px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--stats-card-2);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.stats-provenance {
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+.stats-provenance h2 {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.stats-provenance p {
+  font-size: 12px;
+  max-width: 90ch;
+}
+
+/* --- narrow screens ----------------------------------------------------- */
+
+@media (max-width: 720px) {
+  .stats-page {
+    gap: 20px;
+  }
+  .stats-card {
+    padding: 12px 12px;
+  }
+  .stats-table {
+    font-size: 12px;
+  }
+  .stats-count {
+    margin-left: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stats-page * {
+    scroll-behavior: auto;
+  }
+}
