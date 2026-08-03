@@ -12,7 +12,7 @@ import {
   sortRows,
   sortValue,
 } from '../statsTable';
-import { extent, linearScale, logScale, logTicks, spreadLabels, ticksWithin } from '../scales';
+import { extent, logScale, logTicks, spreadLabels, ticksWithin } from '../scales';
 
 const data = parseStatsDataset(
   JSON.parse(
@@ -141,13 +141,6 @@ describe('nextSort', () => {
 });
 
 describe('scales', () => {
-  it('maps a linear domain onto a range', () => {
-    const s = linearScale([0, 10], [0, 100]);
-    expect(s(0)).toBe(0);
-    expect(s(5)).toBe(50);
-    expect(s(10)).toBe(100);
-  });
-
   it('maps decades evenly on a log scale and clamps non-positive values', () => {
     const s = logScale([1, 1000], [0, 300]);
     expect(s(1)).toBeCloseTo(0);

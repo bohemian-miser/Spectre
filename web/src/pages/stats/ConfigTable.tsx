@@ -259,7 +259,7 @@ export function ConfigTable(props: ConfigTableProps): JSX.Element {
                 <td className="is-num">
                   <span className="stats-cell-primary">{formatRatio(row.circuitRatio)}</span>
                   <span className="stats-cell-secondary">
-                    {row.circuitFree ? 'circuit-free' : 'circuits'}
+                    {row.circuitFree ? 'circuit-free' : ''}
                   </span>
                 </td>
               </tr>

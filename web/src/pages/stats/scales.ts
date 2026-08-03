@@ -19,16 +19,6 @@ function makeScale(
   return Object.assign(fn, { domain, range }) as Scale;
 }
 
-export function linearScale(
-  domain: readonly [number, number],
-  range: readonly [number, number],
-): Scale {
-  const [d0, d1] = domain;
-  const [r0, r1] = range;
-  const span = d1 - d0 || 1;
-  return makeScale((v) => r0 + ((v - d0) / span) * (r1 - r0), domain, range);
-}
-
 /** Log10 scale; values ≤ 0 clamp to the domain minimum (they have no log). */
 export function logScale(
   domain: readonly [number, number],

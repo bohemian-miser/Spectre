@@ -108,28 +108,26 @@ export function ConfigDetail(props: ConfigDetailProps): JSX.Element {
           value={active.circuits}
           other={other.circuits}
           otherLabel={otherLabel}
-          note={row.circuitRatio ? `${formatRatio(row.circuitRatio)} level 4 → 6` : undefined}
+          note={row.circuitRatio ? `${formatRatio(row.circuitRatio)} growth` : undefined}
         />
         <StatTile
           label="Tails"
           value={active.tails}
           other={other.tails}
           otherLabel={otherLabel}
-          note={row.tailRatio ? formatRatio(row.tailRatio) : undefined}
+          note={row.tailRatio ? `${formatRatio(row.tailRatio)} growth` : undefined}
         />
         <StatTile
-          label="Longest circuit"
+          label="Longest circuit (segments)"
           value={active.maxCircuit}
           other={other.maxCircuit}
           otherLabel={otherLabel}
-          note="segments"
         />
         <StatTile
-          label="Longest tail"
+          label="Longest tail (segments)"
           value={active.maxTail}
           other={other.maxTail}
           otherLabel={otherLabel}
-          note="segments"
         />
       </dl>
 

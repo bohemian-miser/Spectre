@@ -68,7 +68,7 @@ export function TailHistogram(props: {
           width={barW}
           height={Math.max(2, baseline - y(b.count))}
         >
-          <title>{`${formatCount(b.count)} tail${b.count === 1 ? '' : 's'} of ${formatCount(b.length)} segments`}</title>
+          <title>{`${formatCount(b.count)} tail${b.count === 1 ? '' : 's'} of ${formatCount(b.length)} segment${b.length === 1 ? '' : 's'}`}</title>
         </rect>
       ))}
 
