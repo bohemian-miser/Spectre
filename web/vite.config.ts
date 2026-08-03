@@ -20,6 +20,8 @@ export default defineConfig({
     rollupOptions: {
       input: {
         main: resolve(__dirname, 'index.html'),
+        tails: resolve(__dirname, 'tails.html'),
+        stats: resolve(__dirname, 'stats.html'),
         legacy: resolve(__dirname, 'legacy.html'),
         widgets: resolve(__dirname, 'widgets.html'),
       },

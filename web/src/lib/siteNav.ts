@@ -43,14 +43,14 @@ export const SITE_NAV: readonly NavItem[] = Object.freeze([
     id: 'tails',
     label: 'The Tails Problem',
     entry: 'tails.html',
-    status: 'planned',
+    status: 'ready',
     blurb: 'Why only eight sets of seams close up — and what happens when they do not.',
   },
   {
     id: 'stats',
     label: 'Circuits & Stats',
     entry: 'stats.html',
-    status: 'planned',
+    status: 'ready',
     blurb: 'Every analysed combination, its circuits, its wanderers.',
   },
   {

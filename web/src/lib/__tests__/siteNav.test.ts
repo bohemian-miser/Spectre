@@ -21,10 +21,8 @@ describe('siteNav', () => {
     expect(new Set(SITE_NAV.map((i) => i.id)).size).toBe(SITE_NAV.length);
   });
 
-  it('ships the explorer and the legacy app; the other pages are declared but planned', () => {
-    expect(readyNav().map((i) => i.id)).toEqual(['explorer', 'legacy']);
-    expect(navItem('tails')?.status).toBe('planned');
-    expect(navItem('stats')?.status).toBe('planned');
+  it('ships all four destinations', () => {
+    expect(readyNav().map((i) => i.id)).toEqual(['explorer', 'tails', 'stats', 'legacy']);
   });
 
   it('builds hrefs under the deploy base', () => {
