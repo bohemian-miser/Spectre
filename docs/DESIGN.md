@@ -149,8 +149,10 @@ Deleted in stage 6 (git history preserves them): `web/src/sketch.ts`,
 - **Valid subsets**: the kernel of the tiles×class count matrix over GF(2) —
   a *group* under symmetric difference. Spectre family: dimension 3, so 8
   subsets: `'', '15', '0136', '0356', '1278', '2578', '023678', '01235678'`.
-  The hexagon family has a **different, larger kernel** (16 elements per the
-  owner's analysis), so the core computes kernels per family (§3.8) instead
+  The hexagon family has a **different kernel** (8 elements per the Stage 1
+  brute-force computation: `'', '15', '128', '258', '01346', '03456',
+  '023468', '01234568'` — an earlier estimate of 16 did not survive
+  verification), so the core computes kernels per family (§3.8) instead
   of hardcoding; the 8 spectre subsets are a test fixture.
 - **Matchings & combination strings**: pairings of a tile's connection
   points. The old UI cycles `findPerfectMatchings` output with a slider; the
