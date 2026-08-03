@@ -13,14 +13,19 @@ test('edge label checkboxes work correctly and labels appear/disappear', async (
   const edgeCheckboxes = page.getByLabel(/^[0-8]$|^7 \(Mystic\)$/);
 
   // Get a reference to a thumbnail canvas and the main canvas
-  const thumbnailCanvas = page.locator('canvas[width="192"][height="135"]').first();
+  // The thumbnails are every canvas except p5's own main canvas; matching on
+  // that rather than hard-coded pixel dimensions, which drift with the layout.
+  const thumbnailCanvas = page.locator('canvas:not(.p5Canvas)').first();
   const mainCanvas = page.locator('canvas').nth(1); // Assuming the main canvas is the second one
 
   // 1. Check 'Show all'
   await showAllCheckbox.check();
 
+  // 9 "Major Edges" boxes (0-6, "7 (Mystic)", 8). This was 18 while the sidebar
+  // also rendered a matching "Joiner Edges" checkbox column; that column became
+  // a dropdown of valid combinations, leaving only the Major Edges set.
   const count = await edgeCheckboxes.count();
-  expect(count).toBe(18);
+  expect(count).toBe(9);
 
   for (const checkbox of await edgeCheckboxes.all()) {
     await expect(checkbox).toBeChecked();

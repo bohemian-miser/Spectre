@@ -9,6 +9,7 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "typecheck": "tsc --noEmit",
+    "typecheck:site": "tsc -p tsconfig.site.json --noEmit",
     "dev": "vite --port 8081",
     "build": "vite build",
     "preview": "vite preview  --port 8081"

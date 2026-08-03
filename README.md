@@ -6,9 +6,14 @@ Playing with the spectre tiling. Mostly vibe coded and plagerised from https://c
 
 Ignore the spectre dir, it was an attempt at doing this in python.
 
-run `python3 -m http.server --directory "./web/dist" 8000` to serve the pre-built version.
+The site has a few pages:
 
-It lets you draw on each of the 10 flavours of tile and has better navigation and you can change the colours.
+* **Explorer** (`/`) - the main thing. Build supertiles, pick which edges join up, and watch the circuits light up.
+* **The Tails Problem** (`/tails.html`) - an explainer for the edge-matching stuff and why some tiles end up with tails.
+* **Circuits & Stats** (`/stats.html`) - the census of every edge combination, with the numbers behind it.
+* **Legacy app** (`/legacy.html`) - the original p5 version. It lets you draw on each of the 10 flavours of tile and has better navigation and you can change the colours.
+
+run `cd web && npm run build && npm run preview` to serve the pre-built version (it needs the `/Spectre/` base path, so a plain static server at the root won't find the assets).
 
 I plan on integrating some cool edge stuff from my [blog](https://substack.com/@theharderthanobsidiantower/p-156511066)
 
@@ -26,7 +31,11 @@ To run the project in the `web` directory, follow these steps:
     ```
 3.  Start the development server:
     ```bash
-    npm start
+    npm run dev
+    ```
+4.  Run the tests:
+    ```bash
+    npm test
     ```
 
 ## Infinite numbers of Lines and circuits.

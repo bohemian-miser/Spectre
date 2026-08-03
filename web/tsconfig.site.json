@@ -1,0 +1,20 @@
+{
+  // Typecheck scoped to the new React site (core library, widget layer, pages
+  // and their entry points). The legacy p5 sources — sketch.ts, tiles.ts,
+  // utils.ts and the modules that pull them in — carry 32 pre-existing errors
+  // against @types/p5 and are deliberately out of scope, so this config can be
+  // run in CI as a blocking check while `npm run typecheck` stays whole-repo.
+  "extends": "./tsconfig.json",
+  "include": [
+    "src/core",
+    "src/lib",
+    "src/pages",
+    "src/components",
+    "src/hooks",
+    "src/workers",
+    "src/explorer-main.tsx",
+    "src/tails-main.tsx",
+    "src/stats-main.tsx",
+    "src/widgets-main.tsx"
+  ]
+}
