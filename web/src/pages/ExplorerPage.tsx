@@ -1,0 +1,715 @@
+/**
+ * `ExplorerPage` — the tiling explorer (DESIGN.md §7.1).
+ *
+ * A full rebuild of the old p5 app on the widget layer: family / root tile /
+ * level, the valid-subset picker, per-tile matching editors, the straight-line
+ * overlay tool, display + colour controls, worker-backed circuit analysis, and
+ * a scene that round-trips through the URL hash (§9).
+ *
+ * Two performance rules shape the code:
+ *  - the page never re-renders while panning. `PanZoom` owns the camera and
+ *    hands it to the renderer through its render prop, so a level-4 patch
+ *    (~4 400 `<use>` nodes, memoized inside `TilingView`) is reconciled by
+ *    reference and only the camera transform attribute changes;
+ *  - analysis is `useCircuitAnalysis`, which runs level ≥ 3 in the worker with
+ *    newest-request-wins cancellation, so slider scrubbing never blocks input.
+ */
+
+import { useCallback, useMemo, useRef, useState } from 'react';
+import {
+  DEFAULT_CONTRACTS,
+  FAMILIES,
+  FAMILY_DISPLAY_NAMES,
+  FLAG,
+  MAX_LEVEL,
+  TILE_NAMES,
+  familyMajors,
+  formatComboShareString,
+  leafOrder,
+  matchingIndicesToCombo,
+  metaEdges,
+  mul,
+  svgMatrixString,
+  type EdgeContract,
+  type TileFamilyId,
+  type TileTypeId,
+} from '../core';
+import {
+  CircuitLayer,
+  ColorSchemePicker,
+  DisplayToggles,
+  EdgeSubsetPicker,
+  MatchingSlider,
+  PanZoom,
+  SharePanel,
+  StatsSummary,
+  TilePalette,
+  TilingCanvas,
+  TilingView,
+  type EdgeRef,
+  type PanZoomApi,
+} from '../components';
+import { useCircuitAnalysis } from '../hooks/useCircuitAnalysis';
+import { useExplorerStore } from '../hooks/useExplorerState';
+import { hasFlag } from '../lib/explorerReducer';
+import { matchingVectorToRecord } from '../lib/matchingModel';
+import { buildTilingModel } from '../lib/tilingModel';
+import { overlayChordsD, pathBox, pathsOfLength } from '../lib/overlayPaths';
+import { EXPLORER_ROUTE } from '../lib/urlState';
+import { expandBox, roundCamera, transformBox } from '../lib/viewport';
+import { sceneFilename, serializeSceneSvg } from '../lib/exportScene';
+import { downloadBlob, downloadText, svgTextToPngBlob } from './sceneDownload';
+
+export type OverlayTool = 'cursor' | 'line' | 'erase';
+
+/** SVG renderer ceiling; above this the Canvas2D renderer takes over (§5.2). */
+const SVG_MAX_LEVEL = 4;
+/** Overlay chords are `<use>`d per instance; skip past this many tiles. */
+const OVERLAY_BUDGET = 6000;
+const OVERLAY_DEF_PREFIX = 'ex-ov';
+
+export interface ExplorerPageProps {
+  /** Mirror state into `location.hash` (default true; tests can opt out). */
+  readonly syncUrl?: boolean;
+  readonly route?: string;
+}
+
+export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
+  const route = props.route ?? EXPLORER_ROUTE;
+  const { state, dispatch } = useExplorerStore({ syncUrl: props.syncUrl ?? true, route });
+
+  const family = state.family;
+  const order = useMemo(() => leafOrder(family), [family]);
+  const selected = useMemo(() => new Set(state.subset), [state.subset]);
+  const curvy = hasFlag(state, FLAG.CURVY) && family !== 'hex';
+  const linesOn = hasFlag(state, FLAG.LINES);
+  const nonCrossingOnly = hasFlag(state, FLAG.NON_CROSSING_ONLY);
+
+  const [hoverEdge, setHoverEdge] = useState<EdgeRef | null>(null);
+  const [hoverMajor, setHoverMajor] = useState<number | null>(null);
+  const [highlightLength, setHighlightLength] = useState<number | null>(null);
+  const [, setExampleIndex] = useState(0);
+  const [tool, setTool] = useState<OverlayTool>('cursor');
+  const [exportStatus, setExportStatus] = useState<string | null>(null);
+
+  const highlightMajors = useMemo(() => {
+    const major = hoverEdge?.major ?? hoverMajor;
+    return major == null ? undefined : new Set([major]);
+  }, [hoverEdge, hoverMajor]);
+
+  // --- scene ---------------------------------------------------------------
+
+  const model = useMemo(
+    () =>
+      buildTilingModel({
+        family,
+        rootTile: state.rootTile,
+        level: state.level,
+        curvy,
+        stabilizeChirality: true,
+      }),
+    [family, state.rootTile, state.level, curvy],
+  );
+
+  const matchingRecord = useMemo(
+    () => matchingVectorToRecord(family, state.matching),
+    [family, state.matching],
+  );
+
+  const analysisInput = useMemo(
+    () =>
+      linesOn && state.subset.length
+        ? {
+            family,
+            rootTile: state.rootTile,
+            level: state.level,
+            subset: state.subset,
+            matchingIndexByType: matchingRecord,
+            contracts: state.contracts,
+            rainbowTails: hasFlag(state, FLAG.RAINBOW_TAILS),
+          }
+        : null,
+    [
+      linesOn,
+      family,
+      state.rootTile,
+      state.level,
+      state.subset,
+      matchingRecord,
+      state.contracts,
+      state.flags,
+    ],
+  );
+  const analysis = useCircuitAnalysis(analysisInput, { workerMinLevel: 3 });
+
+  // --- camera --------------------------------------------------------------
+
+  const panRef = useRef<PanZoomApi | null>(null);
+  const viewportRef = useRef<HTMLDivElement | null>(null);
+  const pinned = state.camera !== undefined;
+  const fitKey = `${family}:${state.rootTile}:${state.level}:${pinned ? 'pin' : 'fit'}`;
+
+  const focusExample = useCallback(
+    (length: number | null, index: number) => {
+      const api = panRef.current;
+      if (!api || length == null || !analysis.result) return;
+      const matches = pathsOfLength(analysis.result.circuits, length);
+      if (!matches.length) return;
+      const path = matches[((index % matches.length) + matches.length) % matches.length];
+      // Analysis runs in un-mirrored world space; the view may be mirrored (§3.4).
+      api.zoomToFit(expandBox(transformBox(model.viewTransform, pathBox(path)), 2), 48);
+    },
+    [analysis.result, model.viewTransform],
+  );
+
+  const onSelectLength = useCallback(
+    (length: number | null) => {
+      setHighlightLength(length);
+      setExampleIndex(0);
+      focusExample(length, 0);
+    },
+    [focusExample],
+  );
+
+  const nextExample = useCallback(() => {
+    setExampleIndex((i) => {
+      const next = i + 1;
+      focusExample(highlightLength, next);
+      return next;
+    });
+  }, [focusExample, highlightLength]);
+
+  // --- overlays (the straight-line tool, §6.5.7) ---------------------------
+
+  const overlayDefs = useMemo(() => {
+    const out: { type: TileTypeId; d: string }[] = [];
+    for (const [type, chords] of Object.entries(state.overlays)) {
+      if (!chords.length) continue;
+      const d = overlayChordsD(family, type as TileTypeId, chords, state.contracts);
+      if (d) out.push({ type: type as TileTypeId, d });
+    }
+    return out;
+  }, [state.overlays, family, state.contracts]);
+
+  const overlayUses = useMemo(() => {
+    if (!overlayDefs.length || model.instances.length > OVERLAY_BUDGET) return null;
+    const types = new Set(overlayDefs.map((o) => o.type));
+    return model.instances
+      .filter((inst) => types.has(inst.type))
+      .map((inst) => (
+        <use
+          key={`ov${inst.id}`}
+          href={`#${OVERLAY_DEF_PREFIX}-${inst.type}`}
+          xlinkHref={`#${OVERLAY_DEF_PREFIX}-${inst.type}`}
+          transform={svgMatrixString(mul(model.viewTransform, inst.xform))}
+        />
+      ));
+  }, [overlayDefs, model]);
+
+  const onChordDrawn = useCallback(
+    (_cellType: TileTypeId, from: EdgeRef, to: EdgeRef) => {
+      // Chord indices are per LEAF (`EdgeRef.tileType`), which differs from the
+      // palette cell only for the Gamma composite — refuse cross-leaf chords.
+      if (from.tileType !== to.tileType) return;
+      if (from.metaEdgeIndex < 0 || to.metaEdgeIndex < 0) return;
+      dispatch({
+        type: 'addChord',
+        tileType: from.tileType,
+        chord: [from.metaEdgeIndex, to.metaEdgeIndex],
+      });
+    },
+    [dispatch],
+  );
+
+  const onEraseAt = useCallback(
+    (edge: EdgeRef) => {
+      const chords = state.overlays[edge.tileType] ?? [];
+      const at = chords.findIndex(([a, b]) => a === edge.metaEdgeIndex || b === edge.metaEdgeIndex);
+      if (at >= 0) dispatch({ type: 'removeChord', tileType: edge.tileType, at });
+    },
+    [dispatch, state.overlays],
+  );
+
+  // --- share / export ------------------------------------------------------
+
+  const combo = useMemo(() => {
+    const digits = matchingIndicesToCombo(family, state.subset, state.matching);
+    return digits === null ? null : formatComboShareString(state.subset, digits);
+  }, [family, state.subset, state.matching]);
+
+  const liveSvg = useCallback(
+    (): SVGSVGElement | null =>
+      (viewportRef.current?.querySelector('svg.tiling-view') as SVGSVGElement | null) ?? null,
+    [],
+  );
+
+  const onDownloadSvg = useCallback(() => {
+    const svg = liveSvg();
+    if (!svg) {
+      setExportStatus('Nothing to export at this level.');
+      return;
+    }
+    const size = panRef.current?.size;
+    const text = serializeSceneSvg(svg, {
+      width: size?.width,
+      height: size?.height,
+      title: `${FAMILY_DISPLAY_NAMES[family]} — level ${state.level}`,
+    });
+    downloadText(
+      text,
+      `${sceneFilename(family, state.rootTile, state.level, state.subset)}.svg`,
+    );
+    setExportStatus('SVG downloaded');
+  }, [liveSvg, family, state.rootTile, state.level, state.subset]);
+
+  const onDownloadPng = useCallback(async () => {
+    const svg = liveSvg();
+    const size = panRef.current?.size;
+    if (!svg || !size) {
+      setExportStatus('Nothing to export at this level.');
+      return;
+    }
+    try {
+      const text = serializeSceneSvg(svg, { width: size.width, height: size.height });
+      const blob = await svgTextToPngBlob(text, size.width, size.height);
+      downloadBlob(blob, `${sceneFilename(family, state.rootTile, state.level, state.subset)}.png`);
+      setExportStatus('PNG downloaded');
+    } catch (err) {
+      setExportStatus(err instanceof Error ? err.message : 'PNG export failed');
+    }
+  }, [liveSvg, family, state.rootTile, state.level, state.subset]);
+
+  /** "Copy exact view" (§9.2): only an explicit pin puts `cam=` in the URL. */
+  const pinCamera = useCallback(() => {
+    if (state.camera !== undefined) {
+      dispatch({ type: 'setCamera', camera: undefined });
+      return;
+    }
+    const cam = panRef.current?.camera;
+    dispatch({ type: 'setCamera', camera: cam ? roundCamera(cam) : undefined });
+  }, [dispatch, state.camera]);
+
+  // --- contracts (advanced) ------------------------------------------------
+
+  const minorCounts = useMemo(() => {
+    const out: Record<number, number> = {};
+    for (const type of order) {
+      for (const seam of metaEdges(family, type)) {
+        out[seam.major] = Math.max(out[seam.major] ?? 1, seam.edgeIndices.length);
+      }
+    }
+    return out;
+  }, [family, order]);
+
+  const contractOf = useCallback(
+    (major: number): EdgeContract =>
+      state.contracts?.[major] ?? DEFAULT_CONTRACTS[major] ?? { minor: 0, t: 0.5 },
+    [state.contracts],
+  );
+
+  const majors = useMemo(() => familyMajors(family), [family]);
+  const tileCount = model.tileCount;
+  const heavy = state.level > SVG_MAX_LEVEL;
+
+  // --- render --------------------------------------------------------------
+
+  return (
+    <div className="explorer">
+      <aside className="explorer-sidebar" id="explorer-sidebar" aria-label="Explorer controls">
+        <fieldset>
+          <legend>Scene</legend>
+          <label className="control-row">
+            <span>Family</span>
+            <select
+              value={family}
+              aria-label="Tile family"
+              onChange={(e) =>
+                dispatch({ type: 'setFamily', family: e.target.value as TileFamilyId })
+              }
+            >
+              {FAMILIES.map((f) => (
+                <option key={f} value={f}>
+                  {FAMILY_DISPLAY_NAMES[f]}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="control-row">
+            <span>Root tile</span>
+            <select
+              value={state.rootTile}
+              aria-label="Root tile"
+              onChange={(e) =>
+                dispatch({ type: 'setRootTile', rootTile: e.target.value as TileTypeId })
+              }
+            >
+              {TILE_NAMES.map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <div className="control-row">
+            <span>Level</span>
+            <span className="level-stepper">
+              <button
+                type="button"
+                aria-label="Fewer supertiles"
+                disabled={state.level <= 0}
+                onClick={() => dispatch({ type: 'stepLevel', delta: -1 })}
+              >
+                −
+              </button>
+              <strong data-testid="level-value">{state.level}</strong>
+              <button
+                type="button"
+                aria-label="More supertiles"
+                disabled={state.level >= MAX_LEVEL}
+                onClick={() => dispatch({ type: 'stepLevel', delta: 1 })}
+              >
+                +
+              </button>
+              <em>{tileCount.toLocaleString()} tiles</em>
+            </span>
+          </div>
+          {heavy ? (
+            <p className="warning-badge" role="status">
+              Level {state.level} renders on canvas — interactivity is limited and analysis can take
+              a few seconds.
+            </p>
+          ) : null}
+        </fieldset>
+
+        <fieldset>
+          <legend>Edge rule</legend>
+          <EdgeSubsetPicker
+            family={family}
+            subset={state.subset}
+            highlightMajors={highlightMajors}
+            onSubsetChange={(subset) => dispatch({ type: 'setSubset', subset })}
+            onToggleMajor={(major) => dispatch({ type: 'toggleMajor', major })}
+            onHoverMajor={setHoverMajor}
+          />
+        </fieldset>
+
+        <fieldset className="explorer-matchings">
+          <legend>Matchings</legend>
+          <p className="combo-readout">
+            {combo ? (
+              <>
+                Combination string: <code>{combo}</code>
+              </>
+            ) : (
+              <span className="muted">
+                This matching set crosses itself, so it has no combination string.
+              </span>
+            )}
+          </p>
+          <label className="control-row">
+            <input
+              type="checkbox"
+              checked={nonCrossingOnly}
+              onChange={() => dispatch({ type: 'toggleFlag', flag: FLAG.NON_CROSSING_ONLY })}
+            />
+            <span>Non-crossing options only</span>
+          </label>
+          <div className="matching-grid">
+            {order.map((type, i) => (
+              <MatchingSlider
+                key={type}
+                family={family}
+                tileType={type}
+                selectedEdges={selected}
+                contracts={state.contracts}
+                value={state.matching[i] ?? 0}
+                nonCrossingOnly={nonCrossingOnly}
+                curvy={curvy}
+                colorScheme={state.colorScheme}
+                customColors={state.customColors}
+                tileSize={116}
+                onChange={(index) => dispatch({ type: 'setMatching', tileType: type, index })}
+              />
+            ))}
+          </div>
+          {state.subset.length === 0 ? (
+            <p className="muted">Pick an edge rule above to give the tiles connection points.</p>
+          ) : null}
+        </fieldset>
+
+        <fieldset className="explorer-overlays">
+          <legend>Overlay tools</legend>
+          <div className="tool-row" role="radiogroup" aria-label="Overlay tool">
+            {(['cursor', 'line', 'erase'] as const).map((t) => (
+              <button
+                key={t}
+                type="button"
+                role="radio"
+                aria-checked={tool === t}
+                className={tool === t ? 'is-active' : ''}
+                onClick={() => {
+                  setTool(t);
+                  setHoverEdge(null);
+                }}
+              >
+                {t === 'cursor' ? 'Cursor' : t === 'line' ? 'Straight line' : 'Eraser'}
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={() => dispatch({ type: 'clearOverlays' })}
+              disabled={overlayDefs.length === 0}
+            >
+              Clear
+            </button>
+          </div>
+          {tool === 'cursor' ? (
+            <p className="muted">
+              Pick “straight line”, then drag between two seams of a tile — the line repeats on
+              every copy of that tile in the tiling.
+            </p>
+          ) : (
+            <TilePalette
+              family={family}
+              selectedEdges={selected}
+              highlightMajors={highlightMajors}
+              overlaysByType={state.overlays}
+              contracts={state.contracts}
+              curvy={curvy}
+              colorScheme={state.colorScheme}
+              customColors={state.customColors}
+              tileSize={104}
+              interaction={tool === 'line' ? 'chord-draw' : 'edge-select'}
+              onEdgeHover={setHoverEdge}
+              onChordDrawn={tool === 'line' ? onChordDrawn : undefined}
+              onEdgeClick={tool === 'erase' ? onEraseAt : undefined}
+            />
+          )}
+        </fieldset>
+
+        <DisplayToggles
+          flags={state.flags}
+          onToggle={(flag) => dispatch({ type: 'toggleFlag', flag })}
+          // Curvy outlines are a spectre-family idea; the non-crossing filter
+          // belongs to (and is shown in) the matchings section.
+          hidden={
+            family === 'hex'
+              ? [FLAG.CURVY, FLAG.NON_CROSSING_ONLY]
+              : [FLAG.NON_CROSSING_ONLY]
+          }
+        />
+
+        <ColorSchemePicker
+          family={family}
+          colorScheme={state.colorScheme}
+          customColors={state.customColors}
+          onColorSchemeChange={(colorScheme) => dispatch({ type: 'setColorScheme', colorScheme })}
+          onCustomColorChange={(tileType, hex) =>
+            dispatch({ type: 'setCustomColor', tileType, hex })
+          }
+        />
+
+        <fieldset>
+          <legend>Share</legend>
+          <SharePanel
+            state={state}
+            route={route}
+            onDownloadSvg={onDownloadSvg}
+            onDownloadPng={onDownloadPng}
+            downloadsDisabled={heavy}
+            downloadsHint="Switch to level 4 or below to export the SVG scene."
+          >
+            <button type="button" onClick={pinCamera} className="share-pin">
+              {pinned ? 'Unpin view' : 'Pin current view'}
+            </button>
+          </SharePanel>
+          {exportStatus ? (
+            <p className="muted" role="status">
+              {exportStatus}
+            </p>
+          ) : null}
+        </fieldset>
+
+        <details className="explorer-advanced">
+          <summary>Advanced: seam contracts</summary>
+          <p className="muted">
+            Where a drawn line crosses each seam class. Moving a contract slides every dot and line
+            end on that class; the topology never changes.
+          </p>
+          {majors.map((major) => {
+            const c = contractOf(major);
+            const maxMinor = Math.max(1, minorCounts[major] ?? 1) - 1;
+            return (
+              <div className="contract-row" key={major} data-major={major}>
+                <span className="contract-name">class {major === 7 ? '7 (M)' : major}</span>
+                <label>
+                  minor
+                  <input
+                    type="number"
+                    min={0}
+                    max={maxMinor}
+                    value={c.minor}
+                    aria-label={`class ${major} contract minor`}
+                    onChange={(e) =>
+                      dispatch({
+                        type: 'setContract',
+                        major,
+                        contract: { minor: Number.parseInt(e.target.value, 10) || 0, t: c.t },
+                      })
+                    }
+                  />
+                </label>
+                <label>
+                  t
+                  <input
+                    type="range"
+                    min={0}
+                    max={1}
+                    step={0.05}
+                    value={c.t}
+                    aria-label={`class ${major} contract position`}
+                    onChange={(e) =>
+                      dispatch({
+                        type: 'setContract',
+                        major,
+                        contract: { minor: c.minor, t: Number.parseFloat(e.target.value) },
+                      })
+                    }
+                  />
+                </label>
+                <em>{c.t.toFixed(2)}</em>
+              </div>
+            );
+          })}
+          <button type="button" onClick={() => dispatch({ type: 'clearContracts' })}>
+            Reset contracts
+          </button>
+        </details>
+
+        <fieldset>
+          <legend>Analysis</legend>
+          {!linesOn ? (
+            <p className="muted">Turn “Circuit lines” on to analyse this patch.</p>
+          ) : null}
+          <StatsSummary
+            result={analysis.result}
+            running={analysis.running}
+            error={analysis.error}
+            highlightLength={highlightLength}
+            onSelectLength={onSelectLength}
+          />
+          {highlightLength != null ? (
+            <button type="button" onClick={nextExample}>
+              Next example of length {highlightLength}
+            </button>
+          ) : null}
+        </fieldset>
+      </aside>
+
+      <div className="explorer-viewport" ref={viewportRef}>
+        {!heavy ? (
+          <PanZoom
+            apiRef={panRef}
+            defaultCamera={state.camera}
+            fitBounds={pinned ? null : model.bounds}
+            fitKey={fitKey}
+            showControls
+            ariaLabel="Tiling viewport"
+          >
+            {(api) => (
+              <TilingView
+                family={family}
+                rootTile={state.rootTile}
+                level={state.level}
+                curvy={curvy}
+                camera={api.camera}
+                colorScheme={state.colorScheme}
+                customColors={state.customColors}
+                contracts={state.contracts}
+                selectedEdges={selected}
+                showBackgrounds={hasFlag(state, FLAG.BACKGROUNDS)}
+                showOutlines={hasFlag(state, FLAG.OUTLINES)}
+                showDots={hasFlag(state, FLAG.DOTS)}
+                markOddTiles
+                idPrefix="ex"
+              >
+                {overlayDefs.length ? (
+                  <g className="tiling-overlays" fill="none" stroke="currentColor" strokeWidth={0.14}>
+                    <defs>
+                      {overlayDefs.map((o) => (
+                        <path key={o.type} id={`${OVERLAY_DEF_PREFIX}-${o.type}`} d={o.d} />
+                      ))}
+                    </defs>
+                    {overlayUses}
+                  </g>
+                ) : null}
+                {analysis.result && linesOn ? (
+                  <g transform={svgMatrixString(model.viewTransform)}>
+                    <CircuitLayer
+                      circuits={analysis.result.circuits}
+                      tails={analysis.result.tails}
+                      circuitColorByLength={analysis.result.circuitColors}
+                      segmentColor={analysis.result.segmentColors}
+                      rainbowTails={hasFlag(state, FLAG.RAINBOW_TAILS)}
+                      highlightLength={highlightLength}
+                      tailEndMarkers={state.level <= 3}
+                      maxRecords={40000}
+                      strokeWidth={0.12}
+                    />
+                  </g>
+                ) : null}
+              </TilingView>
+            )}
+          </PanZoom>
+        ) : (
+          <PanZoom
+            apiRef={panRef}
+            defaultCamera={state.camera}
+            fitBounds={pinned ? null : model.bounds}
+            fitKey={fitKey}
+            showControls
+            ariaLabel="Tiling viewport"
+          >
+            {(api) => (
+              <TilingCanvas
+                family={family}
+                rootTile={state.rootTile}
+                level={state.level}
+                curvy={curvy}
+                camera={api.camera}
+                colorScheme={state.colorScheme}
+                customColors={state.customColors}
+                contracts={state.contracts}
+                selectedEdges={selected}
+                showBackgrounds={hasFlag(state, FLAG.BACKGROUNDS)}
+                showOutlines={hasFlag(state, FLAG.OUTLINES)}
+                showDots={hasFlag(state, FLAG.DOTS)}
+                circuits={linesOn ? analysis.result?.circuits : undefined}
+                tails={linesOn ? analysis.result?.tails : undefined}
+                circuitColorByLength={analysis.result?.circuitColors}
+                rainbowTails={hasFlag(state, FLAG.RAINBOW_TAILS)}
+              />
+            )}
+          </PanZoom>
+        )}
+
+        {analysis.running ? (
+          <div className="analysis-veil" role="status">
+            <span className="spinner" aria-hidden="true" />
+            Analysing {tileCount.toLocaleString()} tiles…
+          </div>
+        ) : null}
+
+        <div className="viewport-caption muted">
+          {FAMILY_DISPLAY_NAMES[family]} · {state.rootTile} · level {state.level} ·{' '}
+          {tileCount.toLocaleString()} tiles
+          {state.subset.length ? ` · rule ${state.subset.join('')}` : ' · no edge rule'}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default ExplorerPage;

@@ -54,14 +54,16 @@ web/
       index.ts                   public barrel export
       geom.ts                    Pt, Affine, mul/inv/trot/ttrans/transPt   [from utils.ts]
       families.ts                vertex tables, edge-label tables, families [from tiles.ts, config.ts]
-      edges.ts                   EdgeLabel parsing, meta-edge grouping, connection points
-                                 [from tiles.ts getEdgeDotMidpoints + label parsing]
+      edges.ts                   EdgeLabel parsing, meta-edge grouping, edge contracts,
+                                 connection points [from tiles.ts getEdgeDotMidpoints + label parsing]
       tiles.ts                   TileNode/TileSystem, buildBase*, buildSupertiles, flatten
                                  [from sketch.ts:73–233, tiles.ts Shape/Meta]
       outline.ts                 straight + curvy outline path generation   [from tiles.ts CurvyShape ctor]
-      matchings.ts               enumerateMatchings, nonCrossingMatchings   [from analysis.ts findPerfectMatchings]
+      matchings.ts               enumerateMatchings, nonCrossingMatchingIndices,
+                                 combo-string codec (§3.6)                  [from analysis.ts findPerfectMatchings]
       circuits.ts                segment collection, welding, trace, colors [from analysis.ts]
-      subsets.ts                 valid edge-subset enumeration + constants  [from analysis.ts getValidEdgeCombinations]
+      subsets.ts                 GF(2) count matrix, kernel basis, valid-subset group (§3.8)
+                                 [oracle port of analysis.ts getValidEdgeCombinations]
       colors.ts                  palettes, edge-class colors, rainbow        [from config.ts, utils.ts, tiles.ts leadColors]
       serialize.ts               ExplorerState <-> URL query codec (§9)
       stats.ts                   CSV parsing + row types for graph_analysis data (§10)
@@ -69,12 +71,13 @@ web/
     components/
       TileView.tsx               single-tile interactive widget (§6.1)
       TilePalette.tsx            grid of TileViews with synced highlighting (§6.2)
+      SeamView.tsx               two adjacent tiles sharing one seam (§6.3)
       TilingView.tsx             SVG renderer for expanded tilings (§5.1)
       TilingCanvas.tsx           Canvas2D renderer for level ≥ 5 (§5.2)
       PanZoom.tsx                shared wheel/drag/pinch camera controller (§5.4)
       CircuitLayer.tsx           SVG overlay of traced circuit/tail polylines
       controls/
-        EdgeSubsetPicker.tsx     dropdown of the valid subsets (§6.3)
+        EdgeSubsetPicker.tsx     dropdown of the valid subsets (§6.4)
         MatchingSlider.tsx       per-tile matching cycler with mini TileView
         DisplayToggles.tsx       backgrounds/outlines/lines/dots/labels/rainbow
         ColorSchemePicker.tsx    palette dropdown + custom color wells
@@ -83,7 +86,12 @@ web/
     pages/
       HomePage.tsx
       ExplorerPage.tsx           (§7.1)
-      ExplainerPage.tsx          (§7.2)
+      ExplainerPage.tsx          (§7.2; prose from docs/EXPLAINER_COPY.md)
+      explainer/
+        PuzzleConsole.tsx        512-subset console (beat 5)
+        MatrixExplorer.tsx       live GF(2) matrix widget (beat 6)
+        KernelGallery.tsx        8 valid-subset cards (beat 7)
+        ProfileCrossfade.tsx     circuits-vs-wanderers toggle (beat 9)
       StatsPage.tsx              (§7.3)
       DevGalleryPage.tsx         unlisted widget gallery at #/dev (manual QA)
     hooks/
@@ -125,16 +133,37 @@ Deleted in stage 6 (git history preserves them): `web/src/sketch.ts`,
   is the maximal run of consecutive labels sharing (sign, major, variant).
   Class 0 is the straight "η" edge with no negative version; class 7 is the
   Mystic-internal edge (only on Gamma1/Gamma2).
-- **Connection points**: one point per selected meta-edge, placed exactly as
-  `getEdgeDotMidpoints` (tiles.ts:112–165) does today: midpoint of the
-  `minor == 0` physical edge, **except** major 0 in non-hex families where the
-  point is the vertex `basePts[(i+1) % n]` after edge `0.0A` (that vertex is
-  shared by up to three tiles — the source of degree-3 junctions, §3.6).
-- **Valid subsets** (spectre family): kernel mod 2 of the tiles×class count
-  matrix: `'', '15', '0136', '0356', '1278', '2578', '023678', '01235678'`.
-- **Matchings**: pairings of a tile's connection points. The old UI cycles
-  `findPerfectMatchings` output with a slider; the notebook/CSVs index into
-  the **non-crossing** subset of matchings (§10.2).
+- **Edge contracts & connection points**: each edge class carries a
+  *contract* — an agreed crossing point on the meta-edge where drawn lines
+  punch through the seam. A contract is arbitrary (midpoint of the `.0` minor
+  edge, 3/5ths up the `.2` edge, …) but must be **identical on the `+` and
+  `−` versions** of the class so abutting tiles' points coincide; class 0
+  glues to itself, so its contract must additionally be **symmetric** about
+  the meta-edge center. The core models contracts explicitly (§3.3) with
+  defaults that reproduce today's `getEdgeDotMidpoints` (tiles.ts:112–165)
+  behavior exactly: midpoint of the `minor == 0` physical edge, except major
+  0 in non-hex families where the point is the vertex `basePts[(i+1) % n]`
+  after edge `0.0A` — the symmetric center of the two-edge η seam (that
+  vertex is shared by up to three tiles — the source of degree-3 junctions,
+  §3.6).
+- **Valid subsets**: the kernel of the tiles×class count matrix over GF(2) —
+  a *group* under symmetric difference. Spectre family: dimension 3, so 8
+  subsets: `'', '15', '0136', '0356', '1278', '2578', '023678', '01235678'`.
+  The hexagon family has a **different kernel** (8 elements per the Stage 1
+  brute-force computation: `'', '15', '128', '258', '01346', '03456',
+  '023468', '01234568'` — an earlier estimate of 16 did not survive
+  verification), so the core computes kernels per family (§3.8) instead
+  of hardcoding; the 8 spectre subsets are a test fixture.
+- **Matchings & combination strings**: pairings of a tile's connection
+  points. The old UI cycles `findPerfectMatchings` output with a slider; the
+  blog/notebook/CSVs use canonical **combination strings** —
+  `edge_selection` plus a 10-digit combo, one digit per leaf type in
+  `ALL_TILE_NAMES` order (e.g. `2578-0100101100`), each digit indexing that
+  tile's **non-crossing** matching options (§3.6, §10.2). The URL scheme is a
+  superset of this encoding (§9.2).
+- **Terminology**: prose/UI copy says *seam* for meta-edge and *wanderer*
+  for open path (matching `docs/EXPLAINER_COPY.md`); code identifiers stay
+  `MetaEdge` / `tails`.
 
 ---
 
@@ -223,20 +252,59 @@ export interface MetaEdge {
 }
 export function metaEdges(family: TileFamilyId, type: TileTypeId): readonly MetaEdge[];
 
-/** Connection point for one meta-edge — EXACT port of the placement rules in
- *  getEdgeDotMidpoints (tiles.ts:137–163). Returns tile-local coords. */
-export function connectionPoint(family: TileFamilyId, type: TileTypeId, edge: MetaEdge): Pt;
+/** EDGE CONTRACT: where the drawn line crosses a meta-edge of a given class.
+ *  Defined on the POSITIVE label orientation as (minor edge index, fraction t
+ *  along that physical edge in label direction). The core derives the
+ *  negative-side placement automatically as (same minor, 1 - t) measured
+ *  along the negative tile's own edge direction — because a `k.mA` edge glues
+ *  to the neighbour's `-k.mA` edge traversed in reverse, this mirror rule is
+ *  exactly the condition that makes the two tiles' points coincide. Users
+ *  configure ONE value per class; alignment is guaranteed by construction. */
+export interface EdgeContract { readonly minor: number; readonly t: number; } // t in [0,1]
+export type EdgeContracts = Readonly<Partial<Record<number, EdgeContract>>>;  // by major class
+
+/** Defaults reproduce getEdgeDotMidpoints exactly:
+ *  - every signed class: { minor: 0, t: 0.5 }  (midpoint of the .0 edge —
+ *    t=0.5 is self-mirror, which is why the old code could ignore signs);
+ *  - class 0 (self-gluing, no negative version): the meta-edge's arc-length
+ *    center, canonically { minor: 0, t: 1 } — the shared vertex of the
+ *    two-edge spectre η seam; plain edge midpoint in the hex family. */
+export const DEFAULT_CONTRACTS: EdgeContracts;
+
+/** Class 0 constraint: its seam matches ITSELF under the involution
+ *  (minor m, t) -> (M-1-m, 1-t)  [M = minors in the meta-edge], so a class-0
+ *  contract must be a fixed point of that map (the meta-edge center).
+ *  Throws (dev) / clamps to center (prod) on violation. */
+export function validateContracts(family: TileFamilyId, c: EdgeContracts): EdgeContracts;
+
+/** Connection point for one meta-edge at its class's contract position —
+ *  generalizes the placement rules of getEdgeDotMidpoints (tiles.ts:137–163),
+ *  which are the DEFAULT_CONTRACTS special case. Returns tile-local coords. */
+export function connectionPoint(
+  family: TileFamilyId, type: TileTypeId, edge: MetaEdge,
+  contracts?: EdgeContracts,                       // default DEFAULT_CONTRACTS
+): Pt;
 
 /** All connection points for the selected majors, in label-array order.
  *  ORDER IS LOAD-BEARING: matching indices (sliders, URLs) are defined
- *  against this order, which equals the old getEdgeDotMidpoints order. */
+ *  against this order, which equals the old getEdgeDotMidpoints order.
+ *  (Contracts move the points geometrically but never reorder them.) */
 export function connectionPoints(
   family: TileFamilyId, type: TileTypeId, selected: ReadonlySet<number>,
+  contracts?: EdgeContracts,
 ): readonly { edge: MetaEdge; pt: Pt }[];
 
 export function connectionCount(                       // ports analysis.getEdgeDotCount
   family: TileFamilyId, type: TileTypeId, selected: ReadonlySet<number>): number;
 ```
+
+Contracts flow through the stack: `CircuitInput.contracts` (§3.7),
+`TileView.contracts` / `TilingView.contracts` (§6), and the `ct` URL param
+(§9.2). Changing a contract slides every dot/line-endpoint along its seam —
+topology (matchings, circuits, tails) is unchanged; only geometry moves.
+Unit test: for each family and each signed class, build the two abutting
+edge parameterizations and assert `+`/`−` contract points coincide for
+t ∈ {0, 0.25, 0.5, 1} and each minor; assert class-0 symmetry validation.
 
 ### 3.4 `tiles.ts` — ports `sketch.ts:73–233` and `tiles.ts Shape/Meta` as data
 
@@ -274,6 +342,19 @@ export function buildSupertiles(sys: TileSystem): TileSystem;
 // verbatim port of sketch.ts:168–233 including t_rules, the reflection
 // R = [-1,0,0,0,1,0], super_rules table, and super_quad. 'null' child slots
 // skipped exactly as before (Gamma supertile has 7 children).
+//
+// MIRRORING: because every child transform is pre-multiplied by R, EACH
+// SUBSTITUTION LEVEL IS A MIRROR IMAGE OF THE PREVIOUS ONE. Consequences the
+// rest of the system must honor:
+//  - leaf world transforms have det < 0 at odd depths — renderers, normal
+//    computations and hit-testing must not assume a winding order (the
+//    centroid-based inward-normal trick from the old code is kept because it
+//    is orientation-agnostic);
+//  - any "compare iterations" UI (the explorer level stepper) must
+//    counter-mirror so the patch doesn't visually flip between levels.
+export function levelMirror(level: number): Affine;
+// R^level (IDENT for even, R for odd) — the compensating view transform;
+// TilingView/TilingCanvas apply it when `stabilizeChirality` is on (§5.1).
 
 export function buildSystem(family: TileFamilyId, level: number): TileSystem;
 // buildBase + level x buildSupertiles. Memoized per (family, level).
@@ -317,15 +398,39 @@ export function matchingCount(n: number): number;               // (n-1)!! close
 
 /** Matchings whose chords (drawn between the actual connection points) do not
  *  intersect. New code (geometry: segment-intersection test with endpoints
- *  excluded), needed for CSV combo mapping (§10.2) and as a UI filter.
+ *  excluded), needed for combo-string mapping and as a UI filter.
  *  Returns indices into enumerateMatchings order. */
 export function nonCrossingMatchingIndices(points: readonly Pt[]): readonly number[];
+
+// ---- Combination strings (the blog/notebook/CSV canonical encoding) ----
+// A combo is one digit per leaf type in leafOrder(family) — for spectre the
+// ALL_TILE_NAMES order Delta,Theta,Lambda,Xi,Pi,Sigma,Phi,Psi,Gamma2,Gamma1 —
+// where digit d selects that tile's d-th NON-CROSSING matching option
+// ("the string 1000000000 means the second option for Delta"). The CSVs
+// happen to be binary, but tiles can have >2 non-crossing options (the
+// notebook uses '0401001000'); digits are base-36 chars (0-9a-z) so up to 36
+// options per tile are representable — beyond that only the `m` URL encoding
+// (§9.2) applies.
+export function comboToMatchingIndices(          // combo digit -> full-matching index
+  family: TileFamilyId, subset: readonly number[], combo: string,
+  contracts?: EdgeContracts,
+): readonly number[];
+export function matchingIndicesToCombo(          // inverse; null if some selected
+  family: TileFamilyId, subset: readonly number[],   // matching is crossing or its
+  indices: readonly number[], contracts?: EdgeContracts, // non-crossing index >= 36
+): string | null;
+export function parseComboShareString(s: string):     // '2578-0100101100'
+  { subset: readonly number[]; combo: string } | null;
+export function formatComboShareString(subset: readonly number[], combo: string): string;
 ```
 
 Slider semantics: the explorer slider for tile T ranges over
-`0 .. matchingCount(connectionCount(...)) - 1`, same as the old
-`slider-${label}` DOM inputs, with an optional "non-crossing only" toggle that
-restricts the cycle to `nonCrossingMatchingIndices`.
+`0 .. matchingCount(connectionCount(...)) - 1` (full matching space), same as
+the old `slider-${label}` DOM inputs, with an optional "non-crossing only"
+toggle that restricts the cycle to `nonCrossingMatchingIndices`. The combo
+codec bridges the two index spaces; `matchingIndicesToCombo` is what lets the
+share panel emit blog-canonical strings whenever the current state is
+expressible in them.
 
 ### 3.7 `circuits.ts` — ports `analysis.ts` minus DOM coupling
 
@@ -337,6 +442,7 @@ export interface CircuitInput {
   instances: readonly TileInstance[];             // from flatten()
   selected: ReadonlySet<number>;                  // major classes
   matchingIndexByType: Readonly<Record<string, number>>;  // keyed by leaf TileTypeId
+  contracts?: EdgeContracts;                      // §3.3; default DEFAULT_CONTRACTS
 }
 
 /** Ports collectEdges (analysis.ts:70–100) with the DOM slider lookup replaced
@@ -388,21 +494,53 @@ distinct circuit length stepping 40° from 0 (`hsl(h,100%,50%)`); tails grey
 `#808080` or rainbow via `getRainbowColor` (utils.ts:56–66, ported to
 `colors.ts`) parameterized along the path.
 
-### 3.8 `subsets.ts` — ports `getValidEdgeCombinations` (analysis.ts:326–372)
+### 3.8 `subsets.ts` — linear algebra over GF(2) (supersedes `getValidEdgeCombinations`)
+
+The valid subsets are exactly the kernel of the tiles×edge-class count matrix
+mod 2, and they form a group under symmetric difference. The core computes
+this **per family from the matrix** — no hardcoded answer — because families
+differ: the spectre kernel has dimension 3 (8 subsets) while the hexagon
+family's kernel is larger (16 elements = dimension 4, per the owner's
+analysis; the stage-1 test pins the exact value).
 
 ```ts
-/** Brute-force enumeration over majors present in the family: subset valid iff
- *  every tile type has even connectionCount. Same as the old function but
- *  family-parameterized instead of reading global state. */
-export function validEdgeSubsets(family: TileFamilyId): readonly { edges: readonly number[]; label: string }[];
+export type Subset = number;   // bitmask over majors 0..8 (bit k = class k); doubles as
+                               // the group element representation — XOR is the group op.
 
-/** Known-good spectre answer, asserted equal to validEdgeSubsets('spectre')
- *  in a unit test (kernel of the count matrix mod 2): */
+/** Rows = leaf tile types (leafOrder(family)), cols = majors present in the
+ *  family; entry = connectionCount parity. Built from connectionCount only. */
+export function edgeCountMatrix(family: TileFamilyId): {
+  rows: readonly TileTypeId[]; cols: readonly number[];
+  bits: readonly (readonly (0 | 1)[])[];
+};
+
+/** GF(2) Gaussian elimination; returns a basis of the kernel as Subsets. */
+export function kernelBasis(m: ReturnType<typeof edgeCountMatrix>): readonly Subset[];
+
+/** The full group: span of the kernel basis (2^dim elements), sorted
+ *  canonically (by popcount, then numerically) for stable dropdown order. */
+export function validEdgeSubsets(family: TileFamilyId): readonly {
+  mask: Subset; edges: readonly number[]; label: string;   // '2, 5, 7(M), 8'
+}[];
+
+export const xorSubsets: (a: Subset, b: Subset) => Subset;  // symmetric difference
+export function subsetToString(s: Subset): string;          // 0b… -> '2578'
+export function subsetFromString(s: string): Subset;        // '2578' -> mask
+
+/** Brute-force port of getValidEdgeCombinations (analysis.ts:326–372),
+ *  family-parameterized. KEPT AS A TEST-ONLY ORACLE asserting it agrees with
+ *  the kernel-span computation for every family. */
+export function bruteForceValidSubsets(family: TileFamilyId): readonly Subset[];
+
+/** Known-good spectre answer — TEST FIXTURE, not a source of truth: */
 export const SPECTRE_VALID_SUBSETS: readonly string[] =
   ['', '15', '0136', '0356', '1278', '2578', '023678', '01235678'];
 ```
 
 Class 7 keeps its "(M)" Mystic marker in display labels (analysis.ts:367).
+The group structure is surfaced in the explainer (matrix explorer + kernel
+gallery beats, §7.2) and lets the UI offer "combine two rules" (XOR of two
+valid subsets is valid) as a discovery affordance.
 
 ### 3.9 `colors.ts`
 
@@ -448,7 +586,7 @@ export const DEFAULT_EXPLORER_STATE: ExplorerState;
 | `analysis.ts` weldEdges | `core/circuits.ts weldSegments` | verbatim |
 | `analysis.ts` processCircuits | `core/circuits.ts` tracer | **rewritten** (§3.7, junction-safe) |
 | `analysis.ts` generateColorMap, analyzeAndColor | `core/circuits.ts analyze` | p5 param removed |
-| `analysis.ts` getValidEdgeCombinations | `core/subsets.ts validEdgeSubsets` | family param |
+| `analysis.ts` getValidEdgeCombinations | `core/subsets.ts bruteForceValidSubsets` | test-only oracle; production path is kernel-span (§3.8) |
 | `config.ts` tile_names, colmaps | `core/families.ts`, `core/colors.ts` | verbatim |
 | `state.ts`, `sketch.ts` UI/pan/zoom/thumbnails, `ui.ts` | deleted | replaced by React |
 
@@ -471,8 +609,17 @@ vector construction, trig, or immediate-mode drawing (§1.1).
   black 0.1 world units when outlines on. Toggling backgrounds/outlines is a
   CSS-class flip on the container, not a re-render.
 - `CircuitLayer` renders `analyze()` output as `<polyline>`s (one per path,
-  colored per §3.7) above the tiles, plus connection dots
-  (`EDGE_CLASS_COLORS`, r=0.15, as in streamSVG tiles.ts:442) when dots on.
+  colored per §3.7) above the tiles, plus connection dots at **contract
+  positions** (§3.3) in `EDGE_CLASS_COLORS`, r=0.15 (as in streamSVG
+  tiles.ts:442) when dots on. Tail endpoints get a `.tail-end` marker class
+  (used by the explainer's sad-tile beat and a `markOddTiles` option that
+  pulses tiles with odd connection counts).
+- `stabilizeChirality?: boolean` (default true): applies
+  `levelMirror(level)` (§3.4) as the outer view transform so stepping the
+  supertile level does not visually mirror the scene — required because each
+  substitution level is a reflection of the previous. `TilingCanvas` honors
+  the same prop.
+- `contracts?: EdgeContracts` forwarded to dot/segment geometry.
 - Level 4 ≈ 4.4k tiles ⇒ ≈ 4.4k `<use>` + ≤ ~15k circuit polyline points:
   fine for static DOM; pan/zoom is a single transform update on two `<g>`
   roots (§5.4), so no per-frame re-render.
@@ -538,6 +685,8 @@ export interface TileViewProps {
   size?: number | string;                // css size; svg viewBox handles scale
   colorScheme?: ColorSchemeId;
   customColors?: Record<string, string>;
+  contracts?: EdgeContracts;             // §3.3; dots/chord endpoints/landing spots all
+                                         // render at contract positions (default = old behavior)
 
   // display layers
   selectedEdges?: ReadonlySet<number>;   // majors: draws connection dots (EDGE_CLASS_COLORS)
@@ -554,7 +703,7 @@ export interface TileViewProps {
   interaction?: 'none' | 'hover' | 'edge-select' | 'chord-draw';
   onEdgeHover?(edge: EdgeRef | null): void;
   onEdgeClick?(edge: EdgeRef): void;             // edge-select mode: toggle a major
-  onChordDrawn?(from: EdgeRef, to: EdgeRef): void; // chord-draw mode (§6.4)
+  onChordDrawn?(from: EdgeRef, to: EdgeRef): void; // chord-draw mode (§6.5)
   onMatchingCycle?(delta: 1 | -1): void;         // click chord area / arrow keys
 }
 ```
@@ -605,7 +754,34 @@ The "dots appear on every tile" behavior is deliberately *not* internal magic:
 Selecting an edge class anywhere means selecting it everywhere — the state
 model enforces the domain rule.
 
-### 6.3 Controls
+### 6.3 `SeamView` — two tiles shaking hands across one seam
+
+Purpose-built for the explainer's "seam handshake" beat and reusable anywhere
+the `+`/`−` pairing needs demonstrating (e.g. contract documentation).
+
+```tsx
+export interface SeamViewProps {
+  family: TileFamilyId;
+  tileA: TileTypeId;                   // e.g. 'Theta'
+  seamMajor: number;                   // e.g. 2 — SeamView computes a valid neighbour
+  tileB?: TileTypeId;                  //   type/pose, or the caller pins one
+  contracts?: EdgeContracts;
+  showLabels?: boolean;                // '2.0A/2.1A/2.2A' on A's side,
+                                       // '-2.2A/-2.1A/-2.0A' on B's side
+  showSharedDot?: boolean;             // single crossing-dot both tiles agree on,
+                                       // at the contract position
+  interaction?: 'none' | 'hover';      // hover lights the seam on BOTH tiles
+  onSeamHover?(hovering: boolean): void;
+}
+```
+
+Internally: two `TileView`s in one SVG, tile B posed by solving the seam
+gluing transform (reflection-free rigid motion mapping B's `-k` meta-edge
+polyline onto A's `+k` polyline reversed). The shared dot is *rendered once* —
+computed independently from each tile's contract and asserted coincident in
+dev builds; this doubles as a living test of the §3.3 mirror rule.
+
+### 6.4 Controls
 
 - `EdgeSubsetPicker`: dropdown listing `validEdgeSubsets(family)` with each
   option showing colored chips per major (EDGE_CLASS_COLORS) + the label
@@ -619,13 +795,14 @@ model enforces the domain rule.
   rainbow tails, curvy tiles — maps 1:1 to `flags` bits (§9.1).
 - `ColorSchemePicker`: 4 palettes + Custom with per-tile color wells
   (replaces the p5 color pickers; custom values go to the `cc` param).
-- `SharePanel`: "Copy link" (current URL), "Download SVG" (serializes the live
-  `TilingView` DOM — replaces `streamSVG`), "Download PNG" (draw same scene to
-  an offscreen canvas via `TilingCanvas`'s renderer).
+- `SharePanel`: "Copy link" (current URL), "Copy combination string" (the
+  canonical `2578-0100101100` form when representable, §3.6), "Download SVG"
+  (serializes the live `TilingView` DOM — replaces `streamSVG`), "Download
+  PNG" (draw same scene to an offscreen canvas via `TilingCanvas`'s renderer).
 - `StatsSummary`: circuit lengths with count chips in circuit colors, tail
   lengths, analysis time; chip click → highlight + `zoomToFit` first instance.
 
-### 6.4 Edge-drag interaction spec (chord-draw mode)
+### 6.5 Edge-drag interaction spec (chord-draw mode)
 
 Pointer-events based (mouse/touch/pen unified). All coordinates in tile-local
 space via `getScreenCTM().inverse()`.
@@ -680,12 +857,19 @@ Sidebar, top to bottom:
 2. Root tile select (TILE_NAMES; default Delta) + level stepper `0–6` with
    tile-count preview (replaces the "Build Supertiles" button — level is now
    declarative state, so URLs can encode it; `buildSystem` is memoized).
+   Stepping levels keeps the view chirality-stable via `levelMirror` (§3.4) —
+   without it every step would mirror the scene.
 3. `EdgeSubsetPicker`.
 4. Matching sliders: one `MatchingSlider` per leaf type with dots, laid out as
-   the palette (this replaces the old thumbnail strip).
+   the palette (this replaces the old thumbnail strip). A read-only combo
+   readout (e.g. `2578-0100101100`) tracks the sliders whenever the state is
+   combo-representable (§3.6) and is itself paste-able into the share panel.
 5. Overlay tools: cursor / straight-line (chord-draw on the mini tiles) /
    eraser; "clear overlays".
-6. `DisplayToggles`, `ColorSchemePicker`, `SharePanel`.
+6. `DisplayToggles`, `ColorSchemePicker`, `SharePanel` (copy link + copy
+   canonical combination string + SVG/PNG). An "Advanced" accordion exposes
+   per-class contract editors (minor stepper + t slider, §3.3) — moving a
+   contract slides every dot and line crossing on that seam class live.
 7. `StatsSummary` for the current render, including "unique circuit lengths"
    chips — clicking a chip zooms to an example (`zoomToFit` on the first
    circuit of that length) and pulses it; a "next example" button cycles
@@ -701,23 +885,31 @@ the exact scene.
 
 ### 7.2 Tails-problem explainer (`#/tails`)
 
-Long-form article (plain TSX sections — no MDX, keeps tooling simple) with
-interactive widgets keyed to narrative beats. Each beat is a numbered
-`<section id>` for anchor links.
+Long-form article; the prose lives in **`docs/EXPLAINER_COPY.md`** ("The Tile
+With the Tail") and is transcribed into plain TSX sections (no MDX — keeps
+tooling simple). The copy defines **9 widget slots**; each becomes a numbered
+`<section id>` for anchor links, implemented with §6 components plus the four
+explainer-local components listed in §1.3:
 
-| # | Beat | Widget (all from §6 — no bespoke rendering) |
+| # | Copy slot | Implementation |
 |---|---|---|
-| 1 | Meet the Spectre: one shape, 14 edges | `TileView` interaction='hover', showEdgeLabels; hover glows meta-edges |
-| 2 | Edges come in classes 0–8 | `TilePalette` interaction='hover' with synced `highlightMajors` — hovering class 2 on Delta lights class 2 on all 10 tiles |
-| 3 | Draw lines through tiles | `TileView` interaction='chord-draw' on Delta; chords accumulate; caption explains enter/exit through edges |
-| 4 | Assemble tiles — the dangling tail appears | `TilingView` level 1, hardcoded invalid subset `{2}`, rainbowTails on; tails counter; button "try subset {2,5}" shows fewer tails |
-| 5 | The parity puzzle | major-class checkbox row + live table: 10 leaf types × connection count, cell green when even; goal state "all even" celebrates. Backed by `connectionCount` only |
-| 6 | Counting mod 2 — the matrix | static styled table of the tiles×classes count-mod-2 matrix (computed at build time from `connectionCount`), prose walks through the kernel computation |
-| 7 | The 8 solutions | gallery: 8 cards, each a small level-2 `TilingView` (analysis precomputed in worker, lazily as cards scroll in) captioned with the subset; card click → explorer deep link `#/explorer?e=…` |
-| 8 | Beyond spectres | family switcher rendering beat-2's palette for hex/hat/turtle to show the same machinery |
+| 1 | Single-tile edge hover — lone Delta; hovering any of the 14 physical edges lights its full label and softly highlights the rest of the seam; sidebar tallies Delta's six seams (3, 2, −5, 1, −3, −6) | `TileView` interaction='hover', showEdgeLabels; `onEdgeHover` drives the seam-tally sidebar (majors from `metaEdges`) |
+| 2 | Seam handshake — Theta glued to a neighbour along a class-2 seam; labels shown from both sides (`2.0A/2.1A/2.2A` vs `-2.2A/-2.1A/-2.0A`); one shared crossing-dot on the `.0` edge both tiles agree on | `SeamView` (§6.3) tileA='Theta', seamMajor=2, showLabels, showSharedDot — the dot sits at the class-2 contract position |
+| 3 | First lines — patch of ~30 Spectres with class 1 selected; dots bloom, strokes draw themselves; camera lingers on a Pi joining its two 1-dots | `TilingView` level 2, subset `{1}`, `CircuitLayer` stroke-dash draw-in animation, `PanZoom.zoomToFit` on a Pi instance (`highlightInstance` prop) |
+| 4 | The sad tile — same patch, camera pans to a Delta; its single class-1 dot pulses red, line ends fray; Lambda, Xi, Sigma, Psi glow red too | same `TilingView` with `markOddTiles` (§5.1) + `.tail-end` markers; scripted `zoomToFit` on a Delta instance |
+| 5 | Puzzle console — nine toggle chips (0–8) over a live patch; instant redraw; tail-affected tile-type counter; explored-subset tracker (of all 512); confetti on a tail-free nonempty subset; no answers revealed | `PuzzleConsole` (explainer-local): chips + `TilingView` level 1–2 + `connectionCount` parity per type; explored-set persisted in `localStorage`; validity check via `subsets.ts` without displaying the kernel |
+| 6 | Matrix explorer — the mod-2 table live; hovering a column highlights those seams on a filmstrip of all ten tile types; clicking headers builds a subset, rows XOR live and flash red on odd sums; presets {5} and {1,5} | `MatrixExplorer` (explainer-local): `edgeCountMatrix('spectre')` + filmstrip of `TileView`s with synced `highlightMajors`; row parity via XOR of selected columns |
+| 7 | Kernel gallery — eight cards, one per valid subset, same patch under each rule; ∅ card blank; `{0,1,2,3,5,6,7,8}` card seethes; badges "4 never invited", "7 = Mystic seam" | `KernelGallery`: cards from `validEdgeSubsets('spectre')`, each a level-2 `TilingView` (worker-analyzed lazily on scroll-in); card click → explorer deep link `#/explorer?e=…` |
+| 8 | Matchmaker slider — a Psi under {1,5} with four dots, slider cycles its three perfect matchings; second slider for Theta under {2,5,7,8} | two `MatchingSlider`s (§6.4) with fixed presets, ghostMatchings on |
+| 9 | Circuits vs. wanderers — large patch under {2,5,7,8}, two preset matching profiles (e.g. the canonical `2578-0100101100`); profile A = small circuits colored by length, B = enormous rainbow paths; crossfade toggle with live circuit/wanderer counts | `ProfileCrossfade`: two precomputed `analyze()` results (worker), crossfading `CircuitLayer`s; profiles defined as combo share strings via `parseComboShareString` (§3.6) |
 
-Widgets in the article are lazy-mounted (IntersectionObserver) so the page
-stays light.
+A closing epilogue section (family switcher: the same palette machinery on
+hex/hat/turtle) links to the explorer and stats pages, per the copy's ending.
+Widgets are lazy-mounted (IntersectionObserver) so the page stays light.
+Note for beat 3: the copy's "~30 spectres with class 1 selected" intentionally
+previews the failure beat 4 reveals — 1 alone is *not* a valid subset; the
+implementation renders it with tails initially off-camera. Beat copy and
+implementation must be reconciled during stage 4 review (owner sign-off).
 
 ### 7.3 Circuits & stats (`#/stats`)
 
@@ -735,7 +927,7 @@ Data: `graph_analysis/lvl4.csv` + `lvl6.csv` (§10). Layout:
    `circuit_lengths` chips, tail-length histogram (from the `tail_lengths`
    dict), and **"Open in Explorer"** — builds an explorer URL with the row's
    `edge_selection` and the matching vector mapped from `combo` via
-   `comboToMatchingIndices` (§10.2). Until that mapping is verified, the
+   `comboToMatchingIndices` (§3.6). Until that mapping is verified, the
    button ships behind a "matchings approximate" tooltip (risk §12.1).
 4. **Finite vs infinite narrative strip:** short prose + two embedded level-2
    `TilingView` examples contrasting a few-circuit-types combo with a
@@ -795,6 +987,7 @@ export interface ExplorerState {
   flags: number;                      // display bitmask, see below
   colorScheme: ColorSchemeId;
   customColors?: Record<string, string>;   // only when colorScheme === 'custom'
+  contracts?: EdgeContracts;          // §3.3; absent = DEFAULT_CONTRACTS
   overlays: Readonly<Record<string, readonly Chord[]>>; // tileType -> chords
   camera?: { x: number; y: number; scale: number };
 }
@@ -804,7 +997,7 @@ export type Chord = readonly [metaEdgeIdxA: number, metaEdgeIdxB: number];
 
 ### 9.2 Wire format (query string inside the hash)
 
-`#/explorer?v=1&f=spectre&t=Delta&lv=2&e=2578&m=0.2.0.0.1.0.0.3.0.0&fl=23&cs=bright&ov=Delta:0-4,2-7;Xi:1-3&cam=12.50,-3.20,1.80`
+`#/explorer?v=1&f=spectre&t=Delta&lv=2&e=2578&c=0100101100&fl=23&cs=bright&ov=Delta:0-4,2-7;Xi:1-3&cam=12.50,-3.20,1.80`
 
 | param | meaning | encoding | default (omitted when default) |
 |---|---|---|---|
@@ -813,17 +1006,26 @@ export type Chord = readonly [metaEdgeIdxA: number, metaEdgeIdxB: number];
 | `t` | root tile | TileTypeId | `Delta` |
 | `lv` | supertile level | int 0–6 | `2` |
 | `e` | edge subset | concatenated sorted majors, e.g. `2578`; empty = none | none |
-| `m` | matching indices | dot-separated non-negative ints in `leafOrder(family)` order (10 for spectre/hat/turtle, 9 for hex); trailing zeros trimmed | all `0` |
+| `c` | **combination string** (preferred) | one base-36 digit per leaf in `leafOrder(family)` order (10 chars spectre/hat/turtle, 9 hex), digit = index into that tile's *non-crossing* matchings — byte-compatible with the blog/notebook/CSV combo format (`e=2578&c=0100101100` ≡ canonical `2578-0100101100`) | all `0` |
+| `m` | matching indices (fallback) | dot-separated non-negative ints in `leafOrder(family)` order, indexing the *full* matching enumeration; trailing zeros trimmed. Emitted only when the state is not `c`-representable (a selected matching is crossing, or its non-crossing index ≥ 36) | all `0` |
 | `fl` | display flags | decimal bitmask: 1 backgrounds, 2 outlines, 4 circuit lines, 8 dots, 16 rainbow tails, 32 edge labels, 64 curvy, 128 non-crossing-only | `23` (bg+outline+lines+rainbow) |
 | `cs` | color scheme | `bright\|fig53\|mystics\|pride\|custom` | `bright` |
 | `cc` | custom colors | only with `cs=custom`: `Tile:rrggbb` comma list, e.g. `cc=Delta:dcdcdc,Xi:fff200` | — |
+| `ct` | edge contracts | `;`-separated `major:minor@t` overrides of DEFAULT_CONTRACTS, t 2-decimal, e.g. `ct=2:2@0.60;5:1@0.40`; class 0 entries must be symmetric (§3.3) else dropped | none |
 | `ov` | overlays | `;`-separated `TileType:a-b[,a-b]*` with a,b = meta-edge indices | none |
 | `cam` | camera | `x,y,scale`, 2-decimal fixed | auto-fit |
 
 Rules:
-- Decoder is lenient: unknown params ignored; out-of-range `m` values clamped
-  to `matchingCount − 1`; malformed anything → that field's default (a shared
-  link never hard-crashes).
+- Decoder is lenient: unknown params ignored; out-of-range `m`/`c` values
+  clamped to the relevant matching count − 1; malformed anything → that
+  field's default (a shared link never hard-crashes).
+- `c` and `m` are alternates for the same state slice; if both appear, `c`
+  wins. The encoder prefers `c` (via `matchingIndicesToCombo`, §3.6) so that
+  shared URLs match the blog's canonical combination strings whenever
+  possible; `m` is the lossless superset for exotic states. The explorer's
+  share panel also shows the bare `2578-0100101100` string with a copy
+  button, and the URL decoder accepts it pasted into a `combo=` param on the
+  stats page (§9.3).
 - Encoder writes params in the table's order and omits defaults, keeping
   typical links < 120 chars.
 - URL updates are debounced 300 ms via `history.replaceState` (no history
@@ -871,14 +1073,15 @@ export function parseStatsCsv(raw: string): ComboRow[];
 // RFC4180-lite parser (fields with quoted commas) ~40 lines, unit-tested on
 // both files (270 rows each). circuit_lengths/tail_lengths are Python literals,
 // not JSON: convert with targeted regex (quote dict keys) then JSON.parse.
-
-/** CSV combo digit i = index into the NON-CROSSING matchings of leaf i
- *  (notebook: filter_non_crossing_combinations + "the string 1000000000 means
- *  the second option for Delta"). Map to explorer matching indices: */
-export function comboToMatchingIndices(
-  family: TileFamilyId, subset: readonly number[], combo: string,
-): readonly number[];   // digit d -> nonCrossingMatchingIndices(points)[d]
 ```
+
+Combo semantics (digit i = index into leaf i's NON-CROSSING matchings, per
+the notebook's `filter_non_crossing_combinations` and "the string 1000000000
+means the second option for Delta") are implemented once in
+`matchings.ts` — `comboToMatchingIndices` / `matchingIndicesToCombo` /
+`parseComboShareString` (§3.6); `stats.ts` and `serialize.ts` both consume
+that codec, so the stats page, the URL `c=` param, and the CSVs share one
+definition.
 
 **Verification task (stage 1 acceptance):** running `analyze` at level 4,
 subset `2578`, combo `0000000000` must reproduce lvl4.csv row 1:
@@ -904,9 +1107,22 @@ changes), ESLint layering rule.
 **Acceptance:**
 - `enumerateMatchings(n).length === (n-1)!!` for n = 2,4,6,8; order matches a
   fixture captured from old `findPerfectMatchings`.
-- `validEdgeSubsets('spectre')` labels == `SPECTRE_VALID_SUBSETS` (8 incl. '').
+- Kernel machinery: `validEdgeSubsets('spectre')` == `SPECTRE_VALID_SUBSETS`
+  fixture (8 subsets, kernel dim 3); `validEdgeSubsets('hex')` has 16
+  elements (dim 4 — pin the exact subsets as a new fixture once computed);
+  `bruteForceValidSubsets` agrees with kernel-span for all four families;
+  XOR of any two valid subsets is valid (group closure property test).
+- Contracts: `DEFAULT_CONTRACTS` reproduces a fixture of old
+  `getEdgeDotMidpoints` output for every (family, type, subset) sampled;
+  +/− contract points coincide under the mirror rule for arbitrary t;
+  class-0 symmetry validation rejects/clamps asymmetric contracts.
+- Combo codec: `comboToMatchingIndices` / `matchingIndicesToCombo` round-trip
+  for every CSV combo in lvl4.csv; `parseComboShareString('2578-0100101100')`
+  round-trips.
 - `countTiles(buildSystem('spectre', L).Delta)` == 1, 9, 71, 559, 4401 for
   L = 0..4 (and record L=5,6 values as fixtures).
+- Mirroring: leaf transforms at level L have `det < 0` iff L is odd
+  (spot-check), and `levelMirror(L)` composed on top restores `det > 0`.
 - `parseEdgeLabel` round-trips every label in both tables.
 - `curvyOutline`/affine-to-SVG fixtures match old `streamSVG` output numbers.
 - **Oracle test:** `analyze` at level 4 / subset 2578 / all-zero non-crossing
@@ -919,16 +1135,19 @@ changes), ESLint layering rule.
 
 ### Stage 2 — Widget layer
 
-**Creates:** `web/src/components/*` (TileView, TilePalette, TilingView,
-TilingCanvas, PanZoom, CircuitLayer, controls/*), `hooks/usePointerDrag.ts`,
-`pages/DevGalleryPage.tsx`, React/Vite wiring (`main.tsx`, `App.tsx`,
-`routes.tsx` with only `#/dev`, add react deps + plugin-react; old p5 entry
-kept building via its own entry until stage 6).
+**Creates:** `web/src/components/*` (TileView, TilePalette, SeamView,
+TilingView, TilingCanvas, PanZoom, CircuitLayer, controls/*),
+`hooks/usePointerDrag.ts`, `pages/DevGalleryPage.tsx`, React/Vite wiring
+(`main.tsx`, `App.tsx`, `routes.tsx` with only `#/dev`, add react deps +
+plugin-react; old p5 entry kept building via its own entry until stage 6).
 **Acceptance:** dev gallery demonstrates: hover glow + tooltip on all 4
 families; chord-draw gesture incl. touch (Playwright `hasTouch` project),
-snap/cancel/keyboard flows per §6.4; palette synced dots; TilingView level 3
-with circuits colored per length; TilingCanvas renders level 5; pan/zoom/pinch
-parity on both renderers; DOM contract of §6.1 asserted in component tests.
+snap/cancel/keyboard flows per §6.5; palette synced dots; SeamView handshake
+with coincident shared dot (incl. a non-default contract, e.g. class 2 at
+`2:2@0.60`); dots rendered at contract positions everywhere; TilingView
+level 3 with circuits colored per length and chirality-stable level stepping;
+TilingCanvas renders level 5; pan/zoom/pinch parity on both renderers; DOM
+contract of §6.1 asserted in component tests.
 **Must NOT touch:** `core/**` signatures (additive bugfix PRs allowed with
 tests), old p5 files, workflows.
 
@@ -937,8 +1156,11 @@ tests), old p5 files, workflows.
 **Creates:** `pages/ExplorerPage.tsx`, `hooks/useExplorerState.ts`,
 `hooks/useCircuitAnalysis.ts`, `controls/SharePanel` wiring, route `#/explorer`.
 **Acceptance:** every §7.1 control functional; URL round-trip property test
-(`decode(encode(s)) deepEquals s` for randomized states); paste of a full URL
-reproduces the scene; worker analysis with cancellation (slider scrubbing at
+(`decode(encode(s)) deepEquals s` for randomized states, asserting
+combo-representable states emit `c=` and exotic ones fall back to `m=`;
+contract overrides round-trip via `ct=`); paste of a full URL
+reproduces the scene; share panel emits the canonical combination string for
+CSV-representable states; worker analysis with cancellation (slider scrubbing at
 level 4 stays responsive, verified by Playwright trace); circuit-length chips
 zoom to examples; SVG + PNG download produce files matching the on-screen
 scene; straight-line overlay chords replicate across all instances.
@@ -947,12 +1169,16 @@ only), explainer/stats routes.
 
 ### Stage 4 — Tails-problem explainer
 
-**Creates:** `pages/ExplainerPage.tsx` + `pages/explainer/*` section
-components, route `#/tails`, prose content.
-**Acceptance:** all 8 beats of §7.2 present with working widgets; widgets
-lazy-mount; beat 5 puzzle turns green exactly on the 8 valid subsets; beat 7
-cards deep-link into the explorer with correct `e=` params; page scores ≥ 90
-Lighthouse accessibility; total route JS < 300 KB gz.
+**Creates:** `pages/ExplainerPage.tsx` + `pages/explainer/*`
+(PuzzleConsole, MatrixExplorer, KernelGallery, ProfileCrossfade), route
+`#/tails`, prose transcribed from `docs/EXPLAINER_COPY.md`.
+**Acceptance:** all 9 widget slots of §7.2 present and matching the copy's
+described behavior; widgets lazy-mount; beat-5 console confettis exactly on
+the 7 nonempty valid subsets and tracks explored subsets across reloads;
+beat-6 matrix rows XOR correctly against `edgeCountMatrix`; beat-9 crossfade
+uses the canonical `2578-0100101100` profile; beat 7 cards deep-link into the
+explorer with correct `e=` params; page scores ≥ 90 Lighthouse accessibility;
+total route JS < 300 KB gz.
 **Must NOT touch:** core, widget internals (may add optional props),
 explorer page.
 
@@ -1024,12 +1250,31 @@ all Playwright suites green; deploy from `main` serves the new site at
 8. **Curvy tiles + circuits.** Old app draws circuit chords as straight lines
    even on curvy tiles (chords connect midpoints of the *original* polygon
    edges via `origPts`). Keep identical behavior; connection points always
-   derive from straight-edge geometry.
+   derive from straight-edge geometry (contracts included).
 9. **Hex family Gamma.** Hex has a single `Gamma` leaf (9 leaf types, one
-   6-edge hexagon each) while other families have Gamma1/Gamma2 — `m` param
-   length and slider sets differ by family. Handled by `leafOrder(family)`;
-   tests cover both shapes of the vector.
-10. **Question for owner:** should the explorer's "advanced" free edge
+   6-edge hexagon each) while other families have Gamma1/Gamma2 — `m`/`c`
+   param length and slider sets differ by family. Handled by
+   `leafOrder(family)`; tests cover both shapes of the vector.
+10. **Contract mirror-rule fidelity (new machinery, low blast radius).** The
+    `+`/`−` alignment rule (same minor, t → 1−t) and the class-0 symmetry
+    constraint are derived from the label semantics, not ported code — if the
+    label pairing convention differs for some class (e.g. minors pair
+    reversed rather than index-matched on some seam), abutting dots won't
+    coincide. SeamView's dev-mode coincidence assertion (§6.3) and the §3.3
+    unit test catch this per class; defaults (t = 0.5, class-0 center) are
+    immune, so only *custom* contracts are at risk.
+11. **Hexagon kernel = 16 (owner-supplied, unverified here).** The kernel-
+    span code computes it either way; the stage-1 test initially asserts
+    size 16 per the owner's analysis. If `bruteForceValidSubsets('hex')`
+    disagrees, trust the brute force (it is the ported legacy behavior),
+    update the fixture, and flag the discrepancy to the owner. Same
+    procedure for hat/turtle families, whose kernels nobody has stated.
+12. **Combo digit order vs slider mapping.** The combo string's per-tile
+    digits assume the notebook's non-crossing option ordering; risk 1's
+    oracle test covers the stats path, and `matchingIndicesToCombo` (used by
+    the share panel/`c=` param) reuses the same codec, so a verified oracle
+    validates URL sharing too — they cannot silently diverge.
+13. **Question for owner:** should the explorer's "advanced" free edge
     selection (invalid subsets allowed, tails shown) be visible by default,
     or gated behind the explainer's "try to break it" links? Default: visible
     with warning badge.

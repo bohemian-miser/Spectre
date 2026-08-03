@@ -1,0 +1,175 @@
+/* Explorer page layout (DESIGN.md §7.1): sidebar + full-bleed viewport. */
+
+.explorer {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 340px minmax(0, 1fr);
+  gap: 12px;
+  padding: 12px;
+}
+
+.explorer-sidebar {
+  min-width: 0;
+  max-height: calc(100vh - 120px);
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-right: 4px;
+}
+
+.explorer-viewport {
+  position: relative;
+  min-height: 420px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--panel);
+  color: var(--text);
+}
+.explorer-viewport .panzoom {
+  height: 100%;
+}
+
+/* Mobile: the sidebar becomes a scrollable sheet under the viewport. */
+@media (max-width: 900px) {
+  .explorer {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .explorer-sidebar {
+    max-height: none;
+    order: 2;
+  }
+  .explorer-viewport {
+    order: 1;
+    height: 60vh;
+  }
+}
+
+/* Level stepper (also used by the dev gallery's own stylesheet). */
+.level-stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.level-stepper button {
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--text);
+  cursor: pointer;
+}
+.level-stepper em {
+  font-style: normal;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.explorer-matchings .matching-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 8px;
+}
+
+.combo-readout {
+  margin: 0 0 6px;
+  font-size: 12px;
+}
+.combo-readout code {
+  word-break: break-all;
+}
+
+.tool-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+.tool-row button {
+  padding: 4px 9px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--text);
+  cursor: pointer;
+}
+.tool-row button.is-active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.explorer-advanced {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  background: var(--panel);
+}
+.explorer-advanced summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.contract-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  margin: 4px 0;
+}
+.contract-row .contract-name {
+  min-width: 74px;
+  color: var(--muted);
+}
+.contract-row input[type='number'] {
+  width: 48px;
+}
+.contract-row input[type='range'] {
+  flex: 1 1 60px;
+  min-width: 60px;
+}
+
+.tiling-overlays {
+  color: var(--text);
+  pointer-events: none;
+}
+
+.analysis-veil {
+  position: absolute;
+  inset: auto 12px 12px auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--panel) 88%, transparent);
+  font-size: 12px;
+}
+.spinner {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid var(--line);
+  border-top-color: var(--accent);
+  animation: explorer-spin 800ms linear infinite;
+}
+@keyframes explorer-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.viewport-caption {
+  position: absolute;
+  left: 12px;
+  bottom: 10px;
+  font-size: 12px;
+  pointer-events: none;
+}
+
+.share-pin {
+  align-self: flex-start;
+}

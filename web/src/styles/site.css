@@ -1,0 +1,118 @@
+/* Site shell: nav + footer shared by every page entry (DESIGN.md §7.0).
+   Tokens come from widgets.css, which every entry imports first. */
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+.site {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+
+.site-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+
+.site-brand {
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  color: var(--text);
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.site-brand-mark {
+  color: var(--accent);
+}
+
+.site-nav {
+  flex: 1 1 auto;
+}
+.site-nav ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.site-nav-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: var(--radius);
+  color: var(--muted);
+  text-decoration: none;
+  border: 1px solid transparent;
+}
+.site-nav-link:hover {
+  color: var(--text);
+  background: var(--panel-2);
+}
+.site-nav-link.is-active {
+  color: var(--text);
+  border-color: var(--line);
+  background: var(--panel-2);
+}
+.site-nav-link.is-planned {
+  opacity: 0.55;
+  cursor: default;
+}
+.site-nav-link.is-planned:hover {
+  background: none;
+  color: var(--muted);
+}
+.site-nav-link em {
+  font-style: normal;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 1px 5px;
+}
+.site-repo {
+  border: 1px solid var(--line);
+}
+
+.site-main {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.site:not(.is-wide) .site-main {
+  width: min(720px, 100%);
+  margin: 0 auto;
+  padding: 24px 16px;
+}
+
+.site-footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 12px;
+}
+.site-footer a {
+  color: var(--muted);
+}
