@@ -1,13 +1,13 @@
 import { test, expect } from '@playwright/test';
 
 test('main canvas is rendered', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('legacy.html');
   const mainCanvas = page.locator('canvas').nth(1);
   await expect(mainCanvas).toBeVisible();
 });
 
 test('edge label checkboxes work correctly and labels appear/disappear', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('legacy.html');
 
   const showAllCheckbox = page.getByLabel('Show all', { exact: true });
   const edgeCheckboxes = page.getByLabel(/^[0-8]$|^7 \(Mystic\)$/);

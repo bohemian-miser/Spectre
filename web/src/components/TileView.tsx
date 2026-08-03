@@ -486,6 +486,9 @@ export function TileView(props: TileViewProps): JSX.Element {
             strokeOpacity={c.ghost ? 0.1 : 0.9}
             strokeWidth={c.ghost ? strokeUnit : strokeUnit * 1.8}
             strokeLinecap="round"
+            // Decorative: a chord drawn between two dots sits exactly where the
+            // user must press to start a chord-draw gesture (stage-3 bugfix).
+            pointerEvents="none"
           />
         ))}
       </g>
@@ -502,6 +505,7 @@ export function TileView(props: TileViewProps): JSX.Element {
             stroke="#0b6bcb"
             strokeWidth={strokeUnit * 1.6}
             strokeLinecap="round"
+            pointerEvents="none"
           />
         ))}
         {drag ? (

@@ -164,6 +164,33 @@ describe('TileView DOM contract (§6.1)', () => {
     expect(connectionCount('spectre', 'Delta', new Set([1])) % 2).toBe(1);
     expect(container.querySelector('.tile-shape.is-odd')).not.toBeNull();
   });
+
+  it('keeps decorative chords out of the hit-testing path', () => {
+    // Chords are drawn dot-to-dot, i.e. exactly where a chord-draw gesture has
+    // to press. Without pointer-events:none they swallow the pointerdown and
+    // the drag never starts (found while wiring the explorer's overlay tool).
+    const { container } = render(
+      <TileView
+        family="spectre"
+        tileType="Delta"
+        selectedEdges={SUBSET}
+        matchingIndex={0}
+        overlays={[[1, 2]]}
+        interaction="chord-draw"
+      />,
+    );
+    const decorative = [
+      ...container.querySelectorAll('.matching-chords line, .overlays .overlay-chord'),
+    ];
+    expect(decorative.length).toBeGreaterThan(0);
+    for (const node of decorative) {
+      expect(node.getAttribute('pointer-events')).toBe('none');
+    }
+    // The seam hit areas remain the only pointer targets.
+    expect(
+      container.querySelector('.meta-edge .edge-hit')?.getAttribute('pointer-events'),
+    ).toBe('stroke');
+  });
 });
 
 describe('TilingView', () => {

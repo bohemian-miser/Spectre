@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Spectre tiles — legacy p5 app</title>
+    <style>
+      /* Basic CSS to remove default margin/padding and center the canvas */
+      body {
+        margin: 0;
+        padding: 0;
+        background-color: #1a1a1a;
+      }
+      /* Fixed overlay, so the p5 sketch's own layout is untouched. */
+      .legacy-back {
+        position: fixed;
+        right: 8px;
+        top: 8px;
+        z-index: 9999;
+        font: 12px/1 system-ui, sans-serif;
+        color: #e7e9ee;
+        background: rgba(30, 33, 39, 0.9);
+        border: 1px solid #363b45;
+        border-radius: 6px;
+        padding: 6px 9px;
+        text-decoration: none;
+      }
+    </style>
+  </head>
+  <body>
+    <a class="legacy-back" href="./">← New explorer</a>
+
+    <!-- The p5 canvas will be attached here -->
+    <main></main>
+
+    <!-- Vite will automatically handle this TypeScript file -->
+    <script type="module" src="/src/sketch.ts"></script>
+  </body>
+</html>

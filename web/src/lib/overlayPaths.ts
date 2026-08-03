@@ -8,13 +8,20 @@
  */
 
 import {
+  DEFAULT_CONTRACTS,
   TAIL_COLOR,
   circuitHueColor,
+  connectionPoint,
+  metaEdges,
   pathLength,
   rainbow,
   segmentKey,
+  type Chord,
+  type EdgeContracts,
   type Path,
   type Pt,
+  type TileFamilyId,
+  type TileTypeId,
 } from '../core';
 import { boxOfPoints, unionBox, type Box, EMPTY_BOX } from './viewport';
 
@@ -211,6 +218,53 @@ export function lengthChips(
   return [...counts.entries()]
     .sort((a, b) => a[0] - b[0])
     .map(([length, count]) => ({ length, count, color: colors?.get(length) ?? fallback }));
+}
+
+// ---------------------------------------------------------------------------
+// User-drawn straight-line overlays (§6.5.7 "the explorer overlay tool")
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolve a tile's overlay chords to tile-local segments.
+ *
+ * Chords are stored as pairs of indices into `metaEdges(family, type)` order
+ * (§9.1), which is resolution- and selection-independent: a chord keeps meaning
+ * even when its edge classes are not currently selected, which is exactly why
+ * the endpoint is the class's *contract* position rather than a drawn dot.
+ * Added in stage 3 — the explorer draws these once per leaf type and `<use>`s
+ * the result on every instance.
+ */
+export function overlayChordSegments(
+  family: TileFamilyId,
+  type: TileTypeId,
+  chords: readonly Chord[],
+  contracts: EdgeContracts = DEFAULT_CONTRACTS,
+): readonly { readonly from: Pt; readonly to: Pt }[] {
+  if (!chords.length) return [];
+  const seams = metaEdges(family, type);
+  const out: { from: Pt; to: Pt }[] = [];
+  for (const [ai, bi] of chords) {
+    const a = seams[ai];
+    const b = seams[bi];
+    if (!a || !b || ai === bi) continue;
+    out.push({
+      from: connectionPoint(family, type, a, contracts),
+      to: connectionPoint(family, type, b, contracts),
+    });
+  }
+  return out;
+}
+
+/** The same chords as one SVG path (`M a L b M c L d …`), for `<defs>` reuse. */
+export function overlayChordsD(
+  family: TileFamilyId,
+  type: TileTypeId,
+  chords: readonly Chord[],
+  contracts: EdgeContracts = DEFAULT_CONTRACTS,
+): string {
+  return overlayChordSegments(family, type, chords, contracts)
+    .map((s) => `M ${s.from.x} ${s.from.y} L ${s.to.x} ${s.to.y}`)
+    .join(' ');
 }
 
 /** Same as {@link lengthChips} but from the worker's summary arrays. */

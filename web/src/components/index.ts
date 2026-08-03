@@ -5,6 +5,9 @@
  * p5 app files (`sketch.ts`, `tiles.ts`, `analysis.ts`, `state.ts`, `config.ts`).
  */
 
+export { AppShell } from './AppShell';
+export type { AppShellProps } from './AppShell';
+
 export { TileView, default as TileViewDefault } from './TileView';
 export type {
   TileViewProps,

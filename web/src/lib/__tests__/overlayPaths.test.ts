@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
+  DEFAULT_CONTRACTS,
   TAIL_COLOR,
   analyze,
   buildSystem,
+  connectionPoint,
   flatten,
+  metaEdges,
   pathLength,
   segmentKey,
   type CircuitAnalysis,
@@ -12,6 +15,8 @@ import {
   buildOverlayPaths,
   deriveCircuitColors,
   lengthChips,
+  overlayChordSegments,
+  overlayChordsD,
   pathToD,
   pathToPoints,
   pathsBox,
@@ -200,5 +205,44 @@ describe('summaries', () => {
     expect(summary.every((s) => s.length === pathLength(a.circuitsByLength.get(s.length)![0]))).toBe(
       true,
     );
+  });
+});
+
+/**
+ * Straight-line overlays (stage 3): chords are meta-edge index pairs, so they
+ * must resolve to the same points the tile widget draws its dots at — that is
+ * what makes a chord drawn on one tile line up across every instance.
+ */
+describe('overlay chords', () => {
+  it('resolves chords to the contract points of their meta-edges', () => {
+    const seams = metaEdges('spectre', 'Delta');
+    const segs = overlayChordSegments('spectre', 'Delta', [[0, 2]]);
+    expect(segs).toHaveLength(1);
+    expect(segs[0].from).toEqual(connectionPoint('spectre', 'Delta', seams[0]));
+    expect(segs[0].to).toEqual(connectionPoint('spectre', 'Delta', seams[2]));
+  });
+
+  it('ignores degenerate and out-of-range chords instead of throwing', () => {
+    expect(overlayChordSegments('spectre', 'Delta', [[1, 1]])).toHaveLength(0);
+    expect(overlayChordSegments('spectre', 'Delta', [[0, 99]])).toHaveLength(0);
+    expect(overlayChordsD('spectre', 'Delta', [])).toBe('');
+  });
+
+  it('emits one M/L pair per chord for <defs> reuse', () => {
+    const d = overlayChordsD('spectre', 'Delta', [
+      [0, 1],
+      [2, 3],
+    ]);
+    expect(d.match(/M /g)).toHaveLength(2);
+    expect(d.match(/ L /g)).toHaveLength(2);
+  });
+
+  it('follows a custom contract, so overlays track the dots they were drawn to', () => {
+    const base = overlayChordSegments('spectre', 'Delta', [[0, 2]]);
+    const moved = overlayChordSegments('spectre', 'Delta', [[0, 2]], {
+      ...DEFAULT_CONTRACTS,
+      [metaEdges('spectre', 'Delta')[0].major]: { minor: 0, t: 0.2 },
+    });
+    expect(moved[0].from).not.toEqual(base[0].from);
   });
 });

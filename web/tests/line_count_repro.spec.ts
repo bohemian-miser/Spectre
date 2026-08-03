@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 
 test('repro line count bug: only 1 continuous line should exist for Psi supertile', async ({ page }) => {
   test.setTimeout(60000);
-  await page.goto('/');
+  await page.goto('legacy.html');
   await page.waitForFunction(() => (window as any).p !== undefined);
 
   // Select 'Psi' tile

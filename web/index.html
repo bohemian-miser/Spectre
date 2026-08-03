@@ -2,22 +2,22 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>p5.js + TypeScript</title>
-    <style>
-      /* Basic CSS to remove default margin/padding and center the canvas */
-      body {
-        margin: 0;
-        padding: 0;
-        background-color: #1a1a1a;
-      }
-    </style>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Spectre tiles — Explorer</title>
+    <meta
+      name="description"
+      content="Interactive explorer for the Spectre aperiodic monotile: build supertiles, choose an edge rule, and watch the circuits and wanderers it draws."
+    />
+    <meta name="color-scheme" content="dark light" />
+    <meta property="og:title" content="Spectre tiles — Explorer" />
+    <meta
+      property="og:description"
+      content="Build supertiles, choose an edge rule, and watch the circuits and wanderers it draws."
+    />
+    <meta property="og:type" content="website" />
   </head>
   <body>
-    <!-- The p5 canvas will be attached here -->
-    <main></main>
-
-    <!-- Vite will automatically handle this TypeScript file -->
-    <script type="module" src="/src/sketch.ts"></script>
+    <div id="root"></div>
+    <script type="module" src="/src/explorer-main.tsx"></script>
   </body>
 </html>

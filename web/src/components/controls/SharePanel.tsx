@@ -1,10 +1,13 @@
 /**
- * `SharePanel` — copy the deep link and the blog-canonical combination string
- * (DESIGN.md §6.4). The SVG/PNG export buttons are wired in stage 3, when the
- * explorer owns a live `TilingView` reference.
+ * `SharePanel` — copy the deep link and the blog-canonical combination string,
+ * and download the current scene as SVG / PNG (DESIGN.md §6.4).
+ *
+ * The download buttons are *optional callbacks*: only a page that owns a live
+ * renderer can serialize one, so the widget stays free of DOM plumbing and
+ * simply hides the buttons when no handler is supplied (added in stage 3).
  */
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import {
   formatComboShareString,
   matchingIndicesToCombo,
@@ -18,6 +21,15 @@ export interface SharePanelProps {
   readonly baseUrl?: string;
   readonly route?: string;
   readonly className?: string;
+  /** Serialize the live scene to SVG. Button hidden when omitted. */
+  onDownloadSvg?(): void | Promise<void>;
+  /** Rasterise the live scene to PNG. Button hidden when omitted. */
+  onDownloadPng?(): void | Promise<void>;
+  /** Disable both downloads (e.g. the canvas renderer is active). */
+  readonly downloadsDisabled?: boolean;
+  readonly downloadsHint?: string;
+  /** Extra rows (the explorer adds its "include camera" checkbox here). */
+  readonly children?: ReactNode;
 }
 
 async function copy(text: string): Promise<boolean> {
@@ -30,7 +42,17 @@ async function copy(text: string): Promise<boolean> {
 }
 
 export function SharePanel(props: SharePanelProps): JSX.Element {
-  const { state, baseUrl, route, className } = props;
+  const {
+    state,
+    baseUrl,
+    route,
+    className,
+    onDownloadSvg,
+    onDownloadPng,
+    downloadsDisabled = false,
+    downloadsHint,
+    children,
+  } = props;
   const [copied, setCopied] = useState<string | null>(null);
 
   const base = baseUrl ?? (typeof window !== 'undefined' ? window.location.href : '');
@@ -60,6 +82,27 @@ export function SharePanel(props: SharePanelProps): JSX.Element {
       >
         Copy combination string
       </button>
+      {onDownloadSvg ? (
+        <button
+          type="button"
+          disabled={downloadsDisabled}
+          title={downloadsDisabled ? downloadsHint : 'Download the scene as SVG'}
+          onClick={() => void onDownloadSvg()}
+        >
+          Download SVG
+        </button>
+      ) : null}
+      {onDownloadPng ? (
+        <button
+          type="button"
+          disabled={downloadsDisabled}
+          title={downloadsDisabled ? downloadsHint : 'Download the scene as PNG'}
+          onClick={() => void onDownloadPng()}
+        >
+          Download PNG
+        </button>
+      ) : null}
+      {children}
       <code className="share-url">{url}</code>
       {combo ? <code className="share-combo">{combo}</code> : null}
       {copied ? (
