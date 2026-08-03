@@ -212,8 +212,8 @@ export function decodeExplorerState(q: URLSearchParams): ExplorerState {
     ? (tRaw as TileTypeId)
     : d.rootTile;
 
-  const lvRaw = q.get('lv');
-  const level = lvRaw === null ? d.level : clampInt(Number.parseInt(lvRaw, 10), 0, MAX_LEVEL);
+  const lvNum = Number.parseInt(q.get('lv') ?? '', 10);
+  const level = Number.isFinite(lvNum) ? clampInt(lvNum, 0, MAX_LEVEL) : d.level;
 
   const eRaw = q.get('e') ?? '';
   const subset = [
@@ -239,8 +239,8 @@ export function decodeExplorerState(q: URLSearchParams): ExplorerState {
   }
   matching = normalizeMatching(family, subset, matching);
 
-  const flRaw = q.get('fl');
-  const flags = flRaw === null ? d.flags : clampInt(Number.parseInt(flRaw, 10), 0, 255);
+  const flNum = Number.parseInt(q.get('fl') ?? '', 10);
+  const flags = Number.isFinite(flNum) ? clampInt(flNum, 0, 255) : d.flags;
 
   const csRaw = q.get('cs');
   const colorScheme = (COLOR_SCHEME_IDS as readonly string[]).includes(csRaw ?? '')

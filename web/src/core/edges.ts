@@ -232,7 +232,9 @@ export function validateContracts(
     if (!value || !Number.isFinite(major)) continue;
 
     const seams = allSeamsOfMajor(family, major);
-    const maxMinor = seams.length ? Math.min(...seams.map((s) => s.edgeIndices.length)) - 1 : 0;
+    // Use the widest seam of the class: partial seams (e.g. Gamma1's lone
+    // '2.2A', which continues onto Gamma2) must not shrink the usable range.
+    const maxMinor = seams.length ? Math.max(...seams.map((s) => s.edgeIndices.length)) - 1 : 0;
     let minor = Math.round(value.minor);
     if (!Number.isFinite(minor)) minor = 0;
     minor = Math.max(0, Math.min(maxMinor, minor));
@@ -264,6 +266,12 @@ function centerContract(seam: MetaEdge): EdgeContract {
   let minor = Math.floor(u);
   let t = u - minor;
   const M = seam.edgeIndices.length;
+  // Canonical form: a point that lands exactly on a vertex is expressed as the
+  // END of the previous edge (t = 1), matching DEFAULT_CONTRACTS[0].
+  if (t === 0 && minor > 0) {
+    minor -= 1;
+    t = 1;
+  }
   if (minor >= M) {
     minor = M - 1;
     t = 1;

@@ -13,6 +13,7 @@ export * from './tiles';
 export * from './outline';
 export * from './matchings';
 export * from './circuits';
+export * from './analysis-request';
 export * from './subsets';
 export * from './colors';
 export * from './serialize';
