@@ -1,0 +1,685 @@
+/* The tails-problem explainer (DESIGN.md §7.2).
+   Imported by `pages/ExplainerPage.tsx` — tokens come from widgets.css, layout
+   chrome from site.css. Everything here is scoped under `.tails`, except the
+   `.tails-*` figure primitives, which are only ever used inside it. */
+
+.tails {
+  --tails-measure: 68ch;
+  --tails-wide: 1080px;
+  font-size: 16px;
+  line-height: 1.65;
+}
+
+.tails p,
+.tails li {
+  color: var(--text);
+}
+
+.tails a {
+  color: var(--accent);
+}
+
+.tails code {
+  font-size: 0.92em;
+  padding: 0 3px;
+  border-radius: 4px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+}
+
+/* --- hero ---------------------------------------------------------------- */
+
+.tails-hero h1 {
+  font-size: clamp(30px, 6vw, 46px);
+  line-height: 1.12;
+  margin: 4px 0 8px;
+  letter-spacing: -0.01em;
+}
+
+.tails-kicker {
+  margin: 0;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.tails-lede {
+  font-size: 18px;
+  color: var(--muted);
+  font-style: italic;
+  margin: 0 0 20px;
+}
+
+.tails-hero-patch {
+  margin: 22px 0;
+}
+.tails-hero-patch .muted {
+  font-size: 13px;
+  margin: 6px 0 0;
+}
+
+.tails-toc {
+  margin: 26px 0 8px;
+  padding: 12px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+.tails-toc h2 {
+  margin: 0 0 6px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+.tails-toc ol {
+  margin: 0;
+  padding-left: 20px;
+  columns: 2;
+  column-gap: 24px;
+  font-size: 14px;
+}
+@media (max-width: 620px) {
+  .tails-toc ol {
+    columns: 1;
+  }
+}
+
+/* --- sections ------------------------------------------------------------ */
+
+.tails-section {
+  margin: 44px 0;
+  scroll-margin-top: 72px;
+}
+.tails-section h2 {
+  font-size: 26px;
+  line-height: 1.2;
+  margin: 0 0 12px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line);
+}
+.tails-section p {
+  max-width: var(--tails-measure);
+}
+
+.tails-kernel-list {
+  font-size: 17px;
+  text-align: center;
+  padding: 12px;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+
+.tails-questions {
+  max-width: var(--tails-measure);
+  padding-left: 20px;
+}
+.tails-questions li {
+  margin: 8px 0;
+}
+
+.tails-cta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 20px 0;
+}
+
+/* --- figure frame -------------------------------------------------------- */
+
+.tails-figure {
+  margin: 26px 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+.tails-figure.is-wide {
+  width: min(var(--tails-wide), calc(100vw - 28px));
+  margin-left: 50%;
+  transform: translateX(-50%);
+}
+.tails-figure-head h3 {
+  margin: 0;
+  font-size: 15px;
+  letter-spacing: 0.01em;
+}
+.tails-figure-hint {
+  margin: 4px 0 12px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.tails-figure figcaption {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* --- controls ------------------------------------------------------------ */
+
+.tails-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.tails-controls-label {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.tails-controls .edge-legend {
+  margin: 0;
+  border: none;
+  padding: 0;
+}
+
+.tails-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.tails-field-check {
+  cursor: pointer;
+}
+.tails-slider input[type='range'] {
+  width: min(240px, 45vw);
+}
+
+.tails-stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+.tails-stepper button {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--text);
+  cursor: pointer;
+  line-height: 1;
+}
+.tails-stepper button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.tails-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 13px;
+}
+.tails-chip:hover:not(:disabled) {
+  color: var(--text);
+}
+.tails-chip.is-on {
+  color: var(--text);
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 18%, var(--panel-2));
+}
+.tails-chip:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.tails-chip-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.5);
+}
+
+.tails-button {
+  padding: 5px 11px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 13px;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+}
+.tails-button.is-primary {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 22%, var(--panel-2));
+}
+
+/* --- readouts ------------------------------------------------------------ */
+
+.tails-readouts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0;
+}
+.tails-readout {
+  display: flex;
+  flex-direction: column;
+  min-width: 84px;
+  padding: 5px 9px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+}
+.tails-readout-label {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: lowercase;
+}
+.tails-readout-value {
+  font-variant-numeric: tabular-nums;
+  font-size: 15px;
+}
+.tails-readout.is-good .tails-readout-value {
+  color: var(--ok);
+}
+.tails-readout.is-bad .tails-readout-value {
+  color: #ff8f7a;
+}
+
+.tails-note {
+  margin: 10px 0;
+  padding: 8px 11px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  font-size: 13px;
+  max-width: var(--tails-measure);
+}
+.tails-note.is-solved {
+  border-color: var(--ok);
+  color: var(--ok);
+}
+.tails-note.is-sad {
+  border-color: #ff8f7a;
+  color: #ff8f7a;
+}
+
+.tails-details {
+  margin: 10px 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 8px 11px;
+  background: var(--panel);
+}
+.tails-details summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 13px;
+}
+.tails-details p {
+  font-size: 14px;
+}
+
+/* --- layout primitives --------------------------------------------------- */
+
+.tails-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(220px, 0.85fr);
+  gap: 16px;
+  align-items: start;
+}
+.tails-split.is-wide-main {
+  grid-template-columns: minmax(0, 1.6fr) minmax(200px, 0.6fr);
+}
+.tails-split-aside h4 {
+  margin: 0 0 6px;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+.tails-split-aside p {
+  font-size: 13px;
+}
+
+.tails-duo {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+.tails-duo-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  text-align: center;
+}
+.tails-duo-cell h4 {
+  margin: 0;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+.tails-duo-cell p {
+  font-size: 13px;
+}
+
+@media (max-width: 720px) {
+  .tails-split,
+  .tails-split.is-wide-main {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.tails-inline-tile {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-top: 10px;
+}
+.tails-inline-tile p {
+  margin: 0;
+  font-size: 12px;
+}
+
+/* --- seam tally ---------------------------------------------------------- */
+
+.tails-seam-list {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.tails-seam {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 7px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  cursor: default;
+  font-size: 13px;
+}
+.tails-seam.is-hovered {
+  border-color: var(--accent);
+  background: var(--panel-2);
+}
+.tails-seam strong {
+  min-width: 34px;
+  font-variant-numeric: tabular-nums;
+}
+.tails-seam em {
+  color: var(--muted);
+  font-style: normal;
+  font-size: 11px;
+}
+.tails-seam-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  border: 1px solid rgba(0, 0, 0, 0.5);
+}
+
+/* --- patches ------------------------------------------------------------- */
+
+.tails-patch-viewport {
+  position: relative;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel-2);
+  overflow: hidden;
+}
+.tails-patch-viewport > svg.tiling-view {
+  width: 100%;
+  height: 100%;
+}
+.tails-patch-veil {
+  position: absolute;
+  right: 8px;
+  top: 8px;
+  margin: 0;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* --- fingerprints -------------------------------------------------------- */
+
+.tails-fingerprint {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  border-top: 1px solid var(--line);
+}
+.tails-fingerprint-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 110px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.tails-fingerprint-types {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.tails-badge {
+  font-size: 11px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+.tails-badge.is-odd {
+  border-color: #ff8f7a;
+  color: #ff8f7a;
+  background: color-mix(in srgb, #ff8f7a 14%, transparent);
+}
+.tails-badge.is-even {
+  opacity: 0.45;
+}
+
+/* --- matrix -------------------------------------------------------------- */
+
+.tails-table-scroll {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.tails-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+}
+.tails-table caption {
+  caption-side: bottom;
+  padding: 6px 8px;
+  font-size: 12px;
+  text-align: left;
+}
+.tails-table th,
+.tails-table td {
+  padding: 4px 8px;
+  text-align: center;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+.tails-table thead th {
+  border-bottom-width: 2px;
+  border-bottom-style: solid;
+}
+.tails-table thead th button {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--text);
+  cursor: pointer;
+}
+.tails-table thead th.is-selected button {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 22%, var(--panel-2));
+}
+.tails-table tbody th {
+  text-align: left;
+  color: var(--muted);
+  font-weight: 500;
+}
+.tails-table td.is-selected {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--text);
+}
+.tails-table td.is-hovered {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+.tails-table td:not(.is-selected) {
+  color: var(--muted);
+}
+.tails-parity-cell {
+  font-weight: 700;
+}
+.tails-parity-cell.is-odd {
+  color: #ff8f7a;
+}
+.tails-parity-cell.is-even {
+  color: var(--ok);
+}
+.tails-table tbody tr.is-odd th {
+  color: #ff8f7a;
+}
+
+/* --- tile strip ---------------------------------------------------------- */
+
+.tails-strip {
+  margin-top: 12px;
+}
+.tails-parity {
+  font-size: 11px;
+  color: var(--muted);
+}
+.tails-parity.is-odd {
+  color: #ff8f7a;
+}
+
+/* --- kernel gallery ------------------------------------------------------ */
+
+.tails-gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+}
+.tails-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel-2);
+}
+.tails-card.is-picked {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent) inset;
+}
+.tails-card.is-result {
+  border-color: var(--ok);
+  box-shadow: 0 0 0 1px var(--ok) inset;
+}
+.tails-card header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+}
+.tails-card-title {
+  border: none;
+  background: none;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 650;
+  cursor: pointer;
+  padding: 0;
+}
+.tails-card-badge {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 1px 6px;
+}
+.tails-card footer {
+  font-size: 12px;
+}
+
+/* --- crossfade ----------------------------------------------------------- */
+
+.tails-crossfade {
+  position: relative;
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.tails-crossfade-layer {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 420ms ease;
+}
+.tails-crossfade-layer.is-active {
+  opacity: 1;
+  pointer-events: auto;
+}
+.tails-crossfade-layer .tails-patch,
+.tails-crossfade-layer .tails-patch-viewport {
+  height: 100%;
+}
+
+/* --- puzzle console ------------------------------------------------------ */
+
+.tails-console .edge-legend-chips {
+  gap: 5px;
+}
+.tails-found {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 6px 0;
+  padding: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tails-crossfade-layer {
+    transition: none;
+  }
+  .tails .tile-view .tile-shape.is-odd {
+    animation: none;
+    stroke: #ff3b30;
+  }
+}

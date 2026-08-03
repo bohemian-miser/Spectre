@@ -26,11 +26,11 @@ describe('AppShell', () => {
     const legacy = container.querySelector('a[data-nav-id="legacy"]');
     expect(legacy?.getAttribute('href')).toBe('/Spectre/legacy.html');
 
-    // Planned pages must not be links (a 404 is worse than a "soon" badge).
-    expect(container.querySelector('a[data-nav-id="tails"]')).toBeNull();
-    expect(container.querySelector('[data-nav-id="tails"]')?.getAttribute('aria-disabled')).toBe(
-      'true',
-    );
+    // All four destinations are live links now that tails/stats shipped.
+    const tails = container.querySelector('a[data-nav-id="tails"]');
+    expect(tails?.getAttribute('href')).toBe('/Spectre/tails.html');
+    const stats = container.querySelector('a[data-nav-id="stats"]');
+    expect(stats?.getAttribute('href')).toBe('/Spectre/stats.html');
   });
 
   it('marks the active entry and keeps the repo + paper links', () => {
