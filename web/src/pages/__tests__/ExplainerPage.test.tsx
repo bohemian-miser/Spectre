@@ -163,18 +163,36 @@ describe('ExplainerPage', () => {
     expect(anatomy.querySelector('.tails-seam.is-hovered')).not.toBeNull();
   });
 
-  it('pins the class-0 contract to the seam centre', async () => {
+  it('gives every class a full-seam notched slider and pins class 0 to the centre', async () => {
     const { container } = await renderPage();
     const fig = container.querySelector('figure#fig-contract') as HTMLElement;
 
-    const slider = () => fig.querySelector('input[type="range"]') as HTMLInputElement;
-    expect(slider().disabled).toBe(false);
+    // One slider per class on offer, each spanning ALL its minors.
+    const sliders = [...fig.querySelectorAll<HTMLInputElement>('input[type="range"]')];
+    expect(sliders).toHaveLength(4);
+    const two = fig.querySelector('.contract-slider[data-major="2"]') as HTMLElement;
+    expect((two.querySelector('input') as HTMLInputElement).max).toBe('3');
+    // A notch per vertex the seam crosses: 3 physical edges → 2 internal vertices.
+    expect(two.querySelectorAll('.contract-notch')).toHaveLength(2);
 
+    // Class 2 starts active; the others are greyed out.
+    expect(two.classList.contains('is-inactive')).toBe(false);
+    expect(
+      fig.querySelector('.contract-slider[data-major="5"]')?.classList.contains('is-inactive'),
+    ).toBe(true);
+
+    // Class 0 glues to itself: always disabled, pinned to the seam centre.
+    const zeroInput = fig.querySelector(
+      '.contract-slider[data-major="0"] input',
+    ) as HTMLInputElement;
+    expect(zeroInput.disabled).toBe(true);
+    expect(Number.parseFloat(zeroInput.value)).toBeCloseTo(Number.parseFloat(zeroInput.max) / 2);
+
+    // Selecting class 0 surfaces the symmetric-only note.
     const zero = [...fig.querySelectorAll('.tails-chip')].find(
       (c) => c.textContent === 'class 0',
     ) as Element;
     fireEvent.click(zero);
-    expect(slider().disabled).toBe(true);
     expect(fig.textContent).toContain('symmetric contracts only');
   });
 });

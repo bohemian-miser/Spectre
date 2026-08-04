@@ -386,3 +386,49 @@ button {
 .error {
   color: #ff6b6b;
 }
+
+/* Seam-contract slider: track spans the whole seam, notches mark the vertices
+   between physical edges. Inactive classes grey out; class 0 is pinned. */
+.contract-slider {
+  --csl-thumb-r: 8px;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex: 1 1 140px;
+  min-width: 120px;
+}
+.contract-slider input[type='range'] {
+  width: 100%;
+  position: relative;
+  z-index: 1;
+  background: transparent;
+}
+.contract-slider-track {
+  position: absolute;
+  left: var(--csl-thumb-r);
+  right: var(--csl-thumb-r);
+  top: 50%;
+  height: 14px;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+.contract-notch {
+  position: absolute;
+  top: 0;
+  width: 2px;
+  height: 100%;
+  transform: translateX(-1px);
+  border-radius: 1px;
+  background: currentColor;
+  opacity: 0.55;
+}
+.contract-slider.is-inactive {
+  opacity: 0.35;
+  filter: grayscale(1);
+}
+.contract-slider.is-pinned input {
+  cursor: not-allowed;
+}
+.contract-slider.is-pinned .contract-notch {
+  opacity: 0.35;
+}

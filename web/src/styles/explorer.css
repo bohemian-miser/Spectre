@@ -123,12 +123,15 @@
   min-width: 74px;
   color: var(--muted);
 }
-.contract-row input[type='number'] {
-  width: 48px;
+.contract-row.is-inactive .contract-name,
+.contract-row.is-inactive em {
+  opacity: 0.5;
 }
-.contract-row input[type='range'] {
-  flex: 1 1 60px;
-  min-width: 60px;
+.contract-row em {
+  min-width: 52px;
+  text-align: right;
+  font-style: normal;
+  color: var(--muted);
 }
 
 .tiling-overlays {

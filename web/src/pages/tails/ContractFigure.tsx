@@ -1,7 +1,10 @@
 /**
- * Beat 3 — "edge contract slider": drag the crossing point anywhere along a
+ * Beat 3 — "edge contract sliders": drag the crossing point anywhere along a
  * seam and both tiles follow it, because the `−` side measures the same
- * contract from the other end. Class 0 glues to itself, so its handle is
+ * contract from the other end. Every class on offer gets its own slider; each
+ * track spans the WHOLE seam (all minors) with a notch at every vertex the
+ * seam crosses. The class driving the seam view is highlighted; the others
+ * are greyed out until engaged. Class 0 glues to itself, so its handle is
  * pinned to the seam's centre of symmetry.
  *
  * The shared-dot error readout stays at zero throughout: that is the contract
@@ -9,7 +12,7 @@
  */
 
 import { useMemo, useState } from 'react';
-import { SeamView, TileView } from '../../components';
+import { ContractSlider, SeamView, TileView } from '../../components';
 import { poseSeam } from '../../lib/seam';
 import { edgeClassColor } from '../../lib/palette';
 import type { EdgeContracts } from '../../core';
@@ -27,11 +30,13 @@ const CLASSES_ON_OFFER = [2, 5, 7, 0];
 
 export function ContractFigure(): JSX.Element {
   const [major, setMajor] = useState(2);
-  const [u, setU] = useState(0.5);
+  const [positions, setPositions] = useState<Record<number, number>>({});
 
   const minorCount = useMemo(() => seamMinorCount(major), [major]);
   const locked = major === 0;
-  const position = locked ? minorCount / 2 : Math.min(u, minorCount);
+  const uOf = (m: number, mc: number): number =>
+    m === 0 ? mc / 2 : Math.min(positions[m] ?? 0.5, mc);
+  const position = uOf(major, minorCount);
 
   const contracts: EdgeContracts = useMemo(
     () => ({ [major]: contractAt(position, minorCount) }),
@@ -48,39 +53,40 @@ export function ContractFigure(): JSX.Element {
     <div className="tails-split">
       <div className="tails-split-main">
         <FigureControls label="Contract controls">
-          {CLASSES_ON_OFFER.map((m) => (
-            <Chip
-              key={m}
-              on={m === major}
-              label={`class ${m}`}
-              swatch={edgeClassColor(m)}
-              onClick={() => {
-                setMajor(m);
-                setU(0.5);
-              }}
-            />
-          ))}
-          <label className="tails-field tails-slider">
-            <span>crossing at</span>
-            <input
-              type="range"
-              min={0}
-              max={minorCount}
-              step={0.05}
-              value={position}
-              disabled={locked}
-              aria-label="Crossing point along the seam"
-              title={
-                locked
-                  ? '0 meets itself — symmetric contracts only'
-                  : 'Slide the crossing point along the seam'
-              }
-              onChange={(e) => setU(Number.parseFloat(e.target.value))}
-            />
-            <code>
-              {contract.minor}.{Math.round(contract.t * 100)}%
-            </code>
-          </label>
+          <div className="tails-contract-rows">
+            {CLASSES_ON_OFFER.map((m) => {
+              const mc = seamMinorCount(m);
+              const isActive = m === major;
+              const pinnedRow = m === 0;
+              const c = contractAt(uOf(m, mc), mc);
+              return (
+                <div className={`tails-contract-row${isActive ? ' is-active' : ''}`} key={m}>
+                  <Chip
+                    on={isActive}
+                    label={`class ${m}`}
+                    swatch={edgeClassColor(m)}
+                    onClick={() => setMajor(m)}
+                  />
+                  <ContractSlider
+                    major={m}
+                    minorCount={mc}
+                    value={c}
+                    active={isActive}
+                    pinned={pinnedRow}
+                    ariaLabel={`Crossing point along the class ${m} seam`}
+                    onEngage={() => setMajor(m)}
+                    onChange={(next) => {
+                      setPositions((p) => ({ ...p, [m]: next.minor + next.t }));
+                      setMajor(m);
+                    }}
+                  />
+                  <code>
+                    {pinnedRow ? 'centre' : `${c.minor}.${Math.round(c.t * 100)}%`}
+                  </code>
+                </div>
+              );
+            })}
+          </div>
         </FigureControls>
 
         <SeamView
@@ -105,12 +111,17 @@ export function ContractFigure(): JSX.Element {
         ) : (
           <p className="muted">
             The seam is {minorCount} physical edge{minorCount === 1 ? '' : 's'} long, so the contract
-            lives anywhere in <code>[0, {minorCount}]</code>. The <code>−</code> side measures the
-            same distance from the other end, which is what makes the two dots coincide.
+            lives anywhere in <code>[0, {minorCount}]</code> — the notches are the vertices where one
+            edge hands over to the next. The <code>−</code> side measures the same distance from the
+            other end, which is what makes the two dots coincide.
           </p>
         )}
         <div className="tails-readouts">
           <Readout label="seam" value={`${host} · class ${major}`} />
+          <Readout
+            label="crossing at"
+            value={locked ? 'centre' : `${contract.minor}.${Math.round(contract.t * 100)}%`}
+          />
           <Readout
             label="shared-dot error"
             value={pose ? pose.sharedDotError.toExponential(1) : '—'}
