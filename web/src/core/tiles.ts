@@ -153,7 +153,13 @@ export function buildBase(family: TileFamilyId): TileSystem {
   }
 }
 
-const T_RULES: readonly (readonly [number, number, number])[] = [
+/**
+ * The 7 placement rules `[angleDeg, fromQuadIdx, toQuadIdx]` that
+ * `buildSupertiles` chains into the shared child transforms `Ts[1..7]`.
+ * Exported (additively) for the exact-arithmetic twin in `exact.ts`, which
+ * re-derives the same transforms over Z[zeta12] integers.
+ */
+export const T_RULES: readonly (readonly [number, number, number])[] = [
   [60, 3, 1],
   [0, 2, 0],
   [60, 3, 1],
@@ -163,7 +169,13 @@ const T_RULES: readonly (readonly [number, number, number])[] = [
   [-120, 3, 3],
 ];
 
-const SUPER_RULES: Readonly<Record<string, readonly string[]>> = {
+/**
+ * Child types per parent type, by slot 0..7 (`'null'` = no child in that
+ * slot — only Gamma's slot 2). Exported (additively) for the un-rooted
+ * ancestor-chain engine in `unrooted.ts`, which grows the hierarchy upward
+ * and needs "which parents can hold a child of type X at slot s".
+ */
+export const SUPER_RULES: Readonly<Record<string, readonly string[]>> = {
   Gamma: ['Pi', 'Delta', 'null', 'Theta', 'Sigma', 'Xi', 'Phi', 'Gamma'],
   Delta: ['Xi', 'Delta', 'Xi', 'Phi', 'Sigma', 'Pi', 'Phi', 'Gamma'],
   Theta: ['Psi', 'Delta', 'Pi', 'Phi', 'Sigma', 'Pi', 'Phi', 'Gamma'],
