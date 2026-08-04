@@ -11,6 +11,18 @@
  * single `drawArraysInstanced` call. Per frame: 1 draw call, +1 for the leaf
  * outline pass once zoomed past `OUTLINE_FADE_*` (like the spike's).
  *
+ * STRAND LINES (stage 3, part 1) are a third pass built the same way: the
+ * ten per-leaf-type chord sets of `chords.ts` live in one RGBA32F table, and
+ * the pass is a single `drawArraysInstanced(LINES, 0, vertsPerInstance,
+ * count)` — vertex-pulled by `(gl_VertexID, typeByte)`, padding texels pushed
+ * outside the clip volume. So the whole frame stays at 1–3 draw calls no
+ * matter how many tiles are on screen.
+ *
+ * The line pass runs ONLY at a leaf cut (`cutLevel === 0`). At an aggregate
+ * cut there are no leaf instances on the GPU at all — each instance stands
+ * for thousands of tiles — so there is nothing honest to draw a chord on;
+ * `MapRenderStats.chordsDrawn` reports 0 and the HUD says lines are hidden.
+ *
  * Camera precision: the shader only ever sees `pos` (origin-relative f32)
  * plus a small origin-relative camera offset — never absolute world
  * coordinates (§ "Layout/precision" in the stage-2 scope).
@@ -20,11 +32,13 @@ import {
   LEAF_ORDER,
   TILE_NAMES,
   TILE_PALETTES,
+  type Rgb,
   type ViewportCut,
 } from '../../core';
 import { originRelativeCenter, type MapCamera } from './camera';
+import type { LeafChordTable } from './chords';
 import { GLYPH_LEVEL, buildGlyphMeshes, buildLeafMesh, glyphFitForCut } from './glyphs';
-import type { MapRenderStats, MapRenderer } from './rendererTypes';
+import type { MapRenderStats, MapRenderStyle, MapRenderer } from './rendererTypes';
 
 /** Leaf outlines fade in between these zooms (CSS px per world unit). */
 export const OUTLINE_FADE_START = 5;
@@ -107,6 +121,30 @@ ${DECODE_GLSL}
   vColor = uPalette[t];
 }`;
 
+/**
+ * Strand-line pass: vertex-pull the tile-local chord endpoint for this
+ * (vertexId, leaf type) from the RGBA32F chord table, then run the SAME
+ * instance decode as the fill pass so the chord rides its tile exactly.
+ * A padding texel (`valid == 0`) is thrown outside the clip volume, which
+ * discards the whole `LINES` primitive.
+ */
+const VS_CHORD = `#version 300 es
+layout(location=1) in vec2 aPos;
+layout(location=2) in float aCode;
+layout(location=3) in float aType;
+uniform sampler2D uChordTex;
+uniform vec4 uView;
+void main() {
+  int t = int(aType + 0.5);
+  vec4 g = texelFetch(uChordTex, ivec2(gl_VertexID, t), 0);
+  if (g.z < 0.5) {
+    gl_Position = vec4(4.0, 4.0, 0.0, 1.0); // outside NDC ⇒ primitive clipped
+    return;
+  }
+  vec2 v = g.xy;
+${DECODE_GLSL}
+}`;
+
 const FS_COLOR = `#version 300 es
 precision mediump float;
 in vec3 vColor;
@@ -121,6 +159,21 @@ void main() { o = uLine; }`;
 
 const BG: readonly [number, number, number] = [0.055, 0.066, 0.094];
 
+/**
+ * Default strand colour — ONE flat ink, no circuit colouring (that is stage 3
+ * part 2). Dark, because every entry of every tile palette is light, so a dark
+ * chord reads on all nine flavours; a page that turns fills off (the Explorer,
+ * "backgrounds" unchecked) passes {@link LIGHT_LINE_COLOR} instead.
+ */
+export const DEFAULT_LINE_COLOR: readonly [number, number, number, number] = [
+  0.04, 0.05, 0.09, 0.95,
+];
+
+/** Strand colour for dark backgrounds (fills off). */
+export const LIGHT_LINE_COLOR: readonly [number, number, number, number] = [
+  0.96, 0.98, 1.0, 0.95,
+];
+
 function paletteVec(names: readonly string[]): Float32Array {
   const table = TILE_PALETTES.bright;
   const out = new Float32Array(names.length * 3);
@@ -130,6 +183,18 @@ function paletteVec(names: readonly string[]): Float32Array {
     out[i * 3 + 1] = rgb[1] / 255;
     out[i * 3 + 2] = rgb[2] / 255;
   });
+  return out;
+}
+
+/** Pack an explicit style palette (0..255 per channel) into a GL uniform. */
+export function packPalette(colors: readonly Rgb[], slots: number): Float32Array {
+  const out = new Float32Array(slots * 3);
+  for (let i = 0; i < slots; i++) {
+    const rgb = colors[i] ?? [200, 200, 200];
+    out[i * 3] = rgb[0] / 255;
+    out[i * 3 + 1] = rgb[1] / 255;
+    out[i * 3 + 2] = rgb[2] / 255;
+  }
   return out;
 }
 
@@ -181,10 +246,12 @@ export function createWebGLRenderer(
   let progLeaf: WebGLProgram;
   let progLine: WebGLProgram;
   let progGlyph: WebGLProgram;
+  let progChord: WebGLProgram;
   try {
     progLeaf = link(VS_LEAF, FS_COLOR);
     progLine = link(VS_LEAF_LINE, FS_LINE);
     progGlyph = link(VS_GLYPH, FS_COLOR);
+    progChord = link(VS_CHORD, FS_LINE);
   } catch {
     return null; // context exists but shaders failed — let the caller fall back
   }
@@ -237,8 +304,15 @@ export function createWebGLRenderer(
   bindInstanceAttrs(false);
   G.bindVertexArray(null);
 
+  // The glyph and chord passes both vertex-pull their geometry from a texture,
+  // so they need only the three per-instance attributes (no vertex buffer).
   const vaoGlyph = G.createVertexArray();
   G.bindVertexArray(vaoGlyph);
+  bindInstanceAttrs(true);
+  G.bindVertexArray(null);
+
+  const vaoChord = G.createVertexArray();
+  G.bindVertexArray(vaoChord);
   bindInstanceAttrs(true);
   G.bindVertexArray(null);
 
@@ -273,9 +347,45 @@ export function createWebGLRenderer(
     glyphVertCount = pad;
   };
 
+  // --- strand chord table (uploaded on demand) -------------------------------
+  let chordTex: WebGLTexture | null = null;
+  let chordVerts = 0;
+  let chordsPerTile = 0;
+
+  const uploadChords = (table: LeafChordTable | null): void => {
+    chordVerts = 0;
+    chordsPerTile = 0;
+    if (!table || table.vertsPerInstance === 0) return;
+    if (!chordTex) chordTex = G.createTexture();
+    G.activeTexture(G.TEXTURE0);
+    G.bindTexture(G.TEXTURE_2D, chordTex);
+    G.texParameteri(G.TEXTURE_2D, G.TEXTURE_MIN_FILTER, G.NEAREST);
+    G.texParameteri(G.TEXTURE_2D, G.TEXTURE_MAG_FILTER, G.NEAREST);
+    G.texParameteri(G.TEXTURE_2D, G.TEXTURE_WRAP_S, G.CLAMP_TO_EDGE);
+    G.texParameteri(G.TEXTURE_2D, G.TEXTURE_WRAP_T, G.CLAMP_TO_EDGE);
+    G.texImage2D(
+      G.TEXTURE_2D,
+      0,
+      G.RGBA32F,
+      table.vertsPerInstance,
+      table.rows,
+      0,
+      G.RGBA,
+      G.FLOAT,
+      table.data,
+    );
+    chordVerts = table.vertsPerInstance;
+    chordsPerTile = table.maxChords;
+  };
+
   // --- uniforms ---------------------------------------------------------------
-  const leafPalette = paletteVec(LEAF_ORDER);
-  const aggPalette = paletteVec(TILE_NAMES);
+  const defaultLeafPalette = paletteVec(LEAF_ORDER);
+  const defaultAggPalette = paletteVec(TILE_NAMES);
+  let leafPalette = defaultLeafPalette;
+  let aggPalette = defaultAggPalette;
+  let showFills = true;
+  let showOutlines = true;
+  let lineColor = DEFAULT_LINE_COLOR;
   const loc = (p: WebGLProgram, name: string): WebGLUniformLocation | null =>
     G.getUniformLocation(p, name);
   const uLeafView = loc(progLeaf, 'uView');
@@ -287,6 +397,9 @@ export function createWebGLRenderer(
   const uGlyphTexLoc = loc(progGlyph, 'uGlyphTex');
   const uFitLin = loc(progGlyph, 'uFitLin');
   const uFitOff = loc(progGlyph, 'uFitOff');
+  const uChordView = loc(progChord, 'uView');
+  const uChordColor = loc(progChord, 'uLine');
+  const uChordTexLoc = loc(progChord, 'uChordTex');
 
   // --- state ------------------------------------------------------------------
   let count = 0;
@@ -316,9 +429,27 @@ export function createWebGLRenderer(
     if (cutLevel > 0) ensureGlyphTexture();
   };
 
+  const setChords = (table: LeafChordTable | null): void => {
+    if (disposed || contextLost) return;
+    uploadChords(table);
+  };
+
+  const setStyle = (style: MapRenderStyle | null): void => {
+    leafPalette = style?.leafColors
+      ? packPalette(style.leafColors, LEAF_ORDER.length)
+      : defaultLeafPalette;
+    aggPalette = style?.aggColors
+      ? packPalette(style.aggColors, TILE_NAMES.length)
+      : defaultAggPalette;
+    showFills = style?.showFills ?? true;
+    showOutlines = style?.showOutlines ?? true;
+    lineColor = style?.lineColor ?? DEFAULT_LINE_COLOR;
+  };
+
   const render = (cam: MapCamera, cssW: number, cssH: number, dpr: number): MapRenderStats => {
     const t0 = performance.now();
     let drawCalls = 0;
+    let chordsDrawn = 0;
     if (!disposed && !contextLost) {
       const bw = Math.max(1, Math.round(cssW * dpr));
       const bh = Math.max(1, Math.round(cssH * dpr));
@@ -351,14 +482,16 @@ export function createWebGLRenderer(
           G.drawArraysInstanced(G.TRIANGLES, 0, glyphVertCount, count);
           drawCalls++;
         } else {
-          G.useProgram(progLeaf);
-          G.uniform4f(uLeafView, vx, vy, kx, ky);
-          G.uniform3fv(uLeafPal, leafPalette);
-          G.bindVertexArray(vaoLeaf);
-          G.drawElementsInstanced(G.TRIANGLES, leaf.tris.length, G.UNSIGNED_SHORT, 0, count);
-          drawCalls++;
+          if (showFills) {
+            G.useProgram(progLeaf);
+            G.uniform4f(uLeafView, vx, vy, kx, ky);
+            G.uniform3fv(uLeafPal, leafPalette);
+            G.bindVertexArray(vaoLeaf);
+            G.drawElementsInstanced(G.TRIANGLES, leaf.tris.length, G.UNSIGNED_SHORT, 0, count);
+            drawCalls++;
+          }
 
-          const alpha = outlineAlphaForScale(cam.scale);
+          const alpha = showOutlines ? outlineAlphaForScale(cam.scale) : 0;
           if (alpha > 0.02) {
             G.useProgram(progLine);
             G.uniform4f(uLineView, vx, vy, kx, ky);
@@ -369,6 +502,24 @@ export function createWebGLRenderer(
             G.drawArraysInstanced(G.LINE_LOOP, 0, leaf.verts.length / 2, count);
             G.disable(G.BLEND);
             drawCalls++;
+          }
+
+          // Strand lines: leaf cuts only (see the module note). One extra
+          // instanced call for every chord of every visible tile.
+          if (chordVerts > 0 && chordTex) {
+            G.useProgram(progChord);
+            G.uniform4f(uChordView, vx, vy, kx, ky);
+            G.uniform4f(uChordColor, lineColor[0], lineColor[1], lineColor[2], lineColor[3]);
+            G.activeTexture(G.TEXTURE0);
+            G.bindTexture(G.TEXTURE_2D, chordTex);
+            G.uniform1i(uChordTexLoc, 0);
+            G.enable(G.BLEND);
+            G.blendFunc(G.SRC_ALPHA, G.ONE_MINUS_SRC_ALPHA);
+            G.bindVertexArray(vaoChord);
+            G.drawArraysInstanced(G.LINES, 0, chordVerts, count);
+            G.disable(G.BLEND);
+            drawCalls++;
+            chordsDrawn = count * chordsPerTile;
           }
         }
         G.bindVertexArray(null);
@@ -381,12 +532,15 @@ export function createWebGLRenderer(
       drawCalls,
       drawMs: performance.now() - t0,
       capped: false,
+      chordsDrawn,
     };
   };
 
   return {
     mode: 'webgl2',
     setCut,
+    setChords,
+    setStyle,
     render,
     dispose(): void {
       disposed = true;
@@ -399,10 +553,13 @@ export function createWebGLRenderer(
       G.deleteVertexArray(vaoLeaf);
       G.deleteVertexArray(vaoLine);
       G.deleteVertexArray(vaoGlyph);
+      G.deleteVertexArray(vaoChord);
       if (glyphTex) G.deleteTexture(glyphTex);
+      if (chordTex) G.deleteTexture(chordTex);
       G.deleteProgram(progLeaf);
       G.deleteProgram(progLine);
       G.deleteProgram(progGlyph);
+      G.deleteProgram(progChord);
     },
   };
 }

@@ -11,6 +11,7 @@ import {
   type ExplorerState,
 } from '../../core';
 import {
+  explorerMode,
   explorerReducer,
   hasFlag,
   maxMatchingIndex,
@@ -208,5 +209,33 @@ describe('identity', () => {
   it('reset returns the shared default', () => {
     const s = run(base, { type: 'setLevel', level: 4 }, { type: 'reset' });
     expect(s).toBe(DEFAULT_EXPLORER_STATE);
+  });
+});
+
+describe('renderer mode', () => {
+  it('sets and clears infinite mode, keeping rooted canonical (no key)', () => {
+    const inf = run(base, { type: 'setMode', mode: 'infinite' });
+    expect(inf.mode).toBe('infinite');
+    expect(explorerMode(inf)).toBe('infinite');
+    const back = run(inf, { type: 'setMode', mode: 'rooted' });
+    expect('mode' in back).toBe(false);
+    expect(explorerMode(back)).toBe('rooted');
+    expect(run(inf, { type: 'setMode', mode: 'infinite' })).toBe(inf); // bail-out
+  });
+
+  it('refuses infinite mode for families the un-rooted engine cannot generate', () => {
+    const hex = run(base, { type: 'setFamily', family: 'hex' });
+    const tried = run(hex, { type: 'setMode', mode: 'infinite' });
+    expect(tried.mode).toBeUndefined();
+    expect(explorerMode(tried)).toBe('rooted');
+  });
+
+  it('drops infinite mode when the family changes away from spectre', () => {
+    const inf = run(base, { type: 'setMode', mode: 'infinite' });
+    const hex = run(inf, { type: 'setFamily', family: 'hex' });
+    expect('mode' in hex).toBe(false);
+    // and comes back only when explicitly re-selected
+    const spectre = run(hex, { type: 'setFamily', family: 'spectre' });
+    expect(spectre.mode).toBeUndefined();
   });
 });

@@ -4,6 +4,11 @@
  * ~25–50k tiles). Same `MapRenderer` contract as the WebGL2 path: one shared
  * `Path2D` per shape, `setTransform` + `fill` per instance, instances grouped
  * by type byte so fill style changes at most 10 times per frame.
+ *
+ * Strand lines follow the same "one path per leaf type, `<use>`d per instance"
+ * shape: `chords.ts` hands over tile-local segments, this file bakes one
+ * `Path2D` per leaf type and strokes it under each instance's transform. Like
+ * the WebGL path they are drawn ONLY at a leaf cut (`cutLevel === 0`).
  */
 
 import {
@@ -17,12 +22,15 @@ import {
   rgbToCss,
   type Affine,
   type Pt,
+  type Rgb,
+  type Segment,
   type ViewportCut,
 } from '../../core';
 import { originRelativeCenter, type MapCamera } from './camera';
+import type { LeafChordTable } from './chords';
 import { GLYPH_LEVEL, buildGlyphMeshes, glyphFitForCut } from './glyphs';
-import type { MapRenderStats, MapRenderer } from './rendererTypes';
-import { OUTLINE_FADE_START, outlineAlphaForScale } from './webglRenderer';
+import type { MapRenderStats, MapRenderStyle, MapRenderer } from './rendererTypes';
+import { DEFAULT_LINE_COLOR, OUTLINE_FADE_START, outlineAlphaForScale } from './webglRenderer';
 
 /** Hard instance ceiling for the software path (≈ the report's 50k budget). */
 export const CANVAS2D_MAX_INSTANCES = 50_000;
@@ -61,6 +69,22 @@ function pathOf(pts: readonly Pt[]): Path2D {
   return p;
 }
 
+/** One open path holding every chord of a leaf type (`M a L b M c L d …`). */
+function chordPathOf(segments: readonly Segment[]): Path2D | null {
+  if (!segments.length) return null;
+  const p = new Path2D();
+  for (const [a, b] of segments) {
+    p.moveTo(a.x, a.y);
+    p.lineTo(b.x, b.y);
+  }
+  return p;
+}
+
+function cssRgba(c: readonly [number, number, number, number]): string {
+  const ch = (v: number): number => Math.max(0, Math.min(255, Math.round(v * 255)));
+  return `rgba(${ch(c[0])}, ${ch(c[1])}, ${ch(c[2])}, ${c[3].toFixed(3)})`;
+}
+
 /** Returns null when a 2D context cannot be created either. */
 export function createCanvas2dRenderer(canvas: HTMLCanvasElement): MapRenderer | null {
   let ctx: CanvasRenderingContext2D | null = null;
@@ -76,12 +100,40 @@ export function createCanvas2dRenderer(canvas: HTMLCanvasElement): MapRenderer |
   const leafPath = pathOf(SPECTRE_PTS);
   let glyphPaths: Path2D[] | null = null;
 
-  const leafColors = LEAF_ORDER.map((t) => rgbToCss(TILE_PALETTES.bright[t] ?? [200, 200, 200]));
-  const aggColors = TILE_NAMES.map((t) => rgbToCss(TILE_PALETTES.bright[t] ?? [200, 200, 200]));
+  const defaultLeafColors = LEAF_ORDER.map((t) =>
+    rgbToCss(TILE_PALETTES.bright[t] ?? [200, 200, 200]),
+  );
+  const defaultAggColors = TILE_NAMES.map((t) =>
+    rgbToCss(TILE_PALETTES.bright[t] ?? [200, 200, 200]),
+  );
+  let leafColors = defaultLeafColors;
+  let aggColors = defaultAggColors;
+  let showFills = true;
+  let showOutlines = true;
+  let lineCss = cssRgba(DEFAULT_LINE_COLOR);
 
   let cutRef: ViewportCut | null = null;
   let byType: Map<number, number[]> = new Map();
   let capped = false;
+  let chordPaths: (Path2D | null)[] | null = null;
+  let chordCounts: readonly number[] = [];
+
+  const cssPalette = (colors: readonly Rgb[] | undefined, fallback: readonly string[]): string[] =>
+    colors ? fallback.map((f, i) => (colors[i] ? rgbToCss(colors[i]) : f)) : [...fallback];
+
+  const setChords = (table: LeafChordTable | null): void => {
+    const live = table && table.vertsPerInstance > 0 ? table : null;
+    chordPaths = live ? live.segments.map(chordPathOf) : null;
+    chordCounts = live ? live.segments.map((s) => s.length) : [];
+  };
+
+  const setStyle = (style: MapRenderStyle | null): void => {
+    leafColors = cssPalette(style?.leafColors, defaultLeafColors);
+    aggColors = cssPalette(style?.aggColors, defaultAggColors);
+    showFills = style?.showFills ?? true;
+    showOutlines = style?.showOutlines ?? true;
+    lineCss = cssRgba(style?.lineColor ?? DEFAULT_LINE_COLOR);
+  };
 
   const setCut = (cut: ViewportCut): void => {
     cutRef = cut;
@@ -111,17 +163,23 @@ export function createCanvas2dRenderer(canvas: HTMLCanvasElement): MapRenderer |
     C.fillRect(0, 0, bw, bh);
 
     let drawn = 0;
+    let chordsDrawn = 0;
     const cut = cutRef;
     if (cut && cut.count > 0) {
       const aggregate = cut.cutLevel > 0;
       const fit = aggregate ? glyphFitForCut(cut.cutLevel) : undefined;
       const outline =
+        showOutlines &&
         !aggregate &&
         cam.scale > OUTLINE_FADE_START &&
         Math.min(cut.count, CANVAS2D_MAX_INSTANCES) <= OUTLINE_MAX_INSTANCES;
       const strokeAlpha = outlineAlphaForScale(cam.scale);
 
       for (const [typeByte, list] of byType) {
+        if (!showFills) {
+          drawn += list.length;
+          continue;
+        }
         const path = aggregate
           ? (glyphPaths as Path2D[])[typeByte - AGGREGATE_TYPE_BASE]
           : leafPath;
@@ -142,6 +200,30 @@ export function createCanvas2dRenderer(canvas: HTMLCanvasElement): MapRenderer |
           C.setTransform(dpr * m[0], dpr * m[3], dpr * m[1], dpr * m[4], dpr * m[2], dpr * m[5]);
           C.fill(path);
           drawn++;
+        }
+      }
+
+      // Strand lines — leaf cuts only, same rule as the WebGL2 path.
+      if (!aggregate && chordPaths) {
+        C.lineWidth = 0.09;
+        C.strokeStyle = lineCss;
+        for (const [typeByte, list] of byType) {
+          const path = chordPaths[typeByte];
+          if (!path) continue;
+          for (const i of list) {
+            const m = instanceScreenTransform(
+              cam,
+              cssW,
+              cssH,
+              cut.origin,
+              cut.pos[i * 2],
+              cut.pos[i * 2 + 1],
+              cut.code[i],
+            );
+            C.setTransform(dpr * m[0], dpr * m[3], dpr * m[1], dpr * m[4], dpr * m[2], dpr * m[5]);
+            C.stroke(path);
+            chordsDrawn += chordCounts[typeByte] ?? 0;
+          }
         }
       }
 
@@ -173,15 +255,19 @@ export function createCanvas2dRenderer(canvas: HTMLCanvasElement): MapRenderer |
       drawCalls: drawn, // one fill per instance — reported for honesty
       drawMs: performance.now() - t0,
       capped,
+      chordsDrawn,
     };
   };
 
   return {
     mode: 'canvas2d',
     setCut,
+    setChords,
+    setStyle,
     render,
     dispose(): void {
       cutRef = null;
+      chordPaths = null;
       byType.clear();
     },
   };

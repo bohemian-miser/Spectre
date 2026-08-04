@@ -228,6 +228,87 @@ describe('MapPage', () => {
     expect(hudNumber(container, 'hud-instances')).toBeGreaterThan(0);
   });
 
+  it('draws strand lines as a third instanced pass when they are switched on', async () => {
+    // Lines default OFF, so the map opens as bare tiles (2 calls at this zoom).
+    const gl = makeFakeGl();
+    stubContexts(gl, null);
+    const { container } = render(<MapPage forceSyncClient />);
+    await settle();
+    expect(container.querySelector('[data-testid="hud-lines"]')?.textContent).toBe('lines: off');
+    expect(container.querySelector('[data-testid="hud-draw-ms"]')?.textContent).toContain(
+      '2 calls',
+    );
+
+    const toggle = container.querySelector(
+      'input[aria-label="Show strand lines"]',
+    ) as HTMLInputElement;
+    fireEvent.click(toggle);
+    await settle();
+
+    // Third draw call, and the HUD reports real chords for the default rule.
+    expect(container.querySelector('[data-testid="hud-draw-ms"]')?.textContent).toContain(
+      '3 calls',
+    );
+    const lines = container.querySelector('[data-testid="hud-lines"]')?.textContent ?? '';
+    expect(lines).toMatch(/lines: [\d,]+ chords \(\d+\/tile\)/u);
+    expect(Number((lines.match(/[\d,]+/) ?? ['0'])[0].replace(/,/g, ''))).toBeGreaterThan(0);
+    // …and the chord table went to the GPU as a float texture.
+    expect(gl.texImage2D).toHaveBeenCalled();
+  });
+
+  it('hides lines (honestly) at an aggregate LOD cut', async () => {
+    window.history.replaceState(
+      null,
+      '',
+      '/map.html#/map?seed=1&cx=0&cy=0&z=0.05&budget=50000&ln=1&e=2578&c=0100101100',
+    );
+    const gl = makeFakeGl();
+    stubContexts(gl, null);
+    const { container } = render(<MapPage forceSyncClient />);
+    await settle();
+
+    expect(container.querySelector('[data-testid="hud-cut"]')?.textContent).toContain('glyphs');
+    expect(container.querySelector('[data-testid="hud-lines"]')?.textContent).toContain(
+      'hidden (aggregate LOD',
+    );
+    expect(container.querySelector('[data-testid="hud-draw-ms"]')?.textContent).toContain(
+      '1 call',
+    );
+  });
+
+  it('mirrors the strand rule into the hash and reads it back', async () => {
+    window.history.replaceState(
+      null,
+      '',
+      '/map.html#/map?seed=1&cx=0&cy=0&z=36&budget=100000&ln=1&e=023678&c=0001000010',
+    );
+    const gl = makeFakeGl();
+    stubContexts(gl, null);
+    const { container } = render(<MapPage forceSyncClient />);
+    await settle();
+
+    expect(
+      (container.querySelector('input[aria-label="Show strand lines"]') as HTMLInputElement)
+        .checked,
+    ).toBe(true);
+    expect(
+      (container.querySelector('input[aria-label="Combination string"]') as HTMLInputElement).value,
+    ).toBe('0001000010');
+    expect(container.querySelector('[data-testid="hud-draw-ms"]')?.textContent).toContain(
+      '3 calls',
+    );
+
+    fireEvent.change(
+      container.querySelector('input[aria-label="Combination string"]') as HTMLInputElement,
+      { target: { value: '1410001000' } },
+    );
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 500));
+    });
+    expect(window.location.hash).toContain('c=1410001000');
+    expect(window.location.hash).toContain('ln=1');
+  });
+
   it('applies external hash changes (back/forward) to seed and camera', async () => {
     const gl = makeFakeGl();
     stubContexts(gl, null);

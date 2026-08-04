@@ -74,11 +74,68 @@
   font-size: 13px;
 }
 
+/* Strand-line controls. Collapsed by default so the header keeps a stable
+   height — .map-viewport's height is a fixed calc(), so anything that grows
+   above it must be bounded. */
+.map-lines {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  padding: 6px 10px;
+  font-size: 13px;
+}
+.map-lines > summary {
+  cursor: pointer;
+  user-select: none;
+}
+.map-lines-body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px 18px;
+  padding-top: 8px;
+}
+.map-lines-body .control-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+}
+.map-lines-body .edge-subset-picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.map-lines-body .edge-subset-picker p {
+  margin: 0;
+}
+.map-lines-body select,
+.map-lines-body input[type='text'] {
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 4px 8px;
+  font: inherit;
+}
+.map-combo-input {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  letter-spacing: 1px;
+  width: 13ch;
+}
+.map-lines-help {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 12px;
+}
+
 .map-viewport {
   position: relative;
   /* Deterministic height (mirrors .explorer-viewport): never derived from
-     the canvas bitmap. */
-  height: calc(100vh - 260px);
+     the canvas bitmap. Constant allows for the header + the collapsed
+     strand-line panel. */
+  height: calc(100vh - 305px);
   min-height: 420px;
   min-width: 0;
   overflow: hidden;

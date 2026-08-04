@@ -12,3 +12,5 @@ web/test-results/
 
 # Local agent/tooling state (session worktrees, settings)
 .claude/
+# Scratch verification scripts written by browser-check runs
+web/.verify-*

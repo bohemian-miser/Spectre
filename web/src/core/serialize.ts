@@ -26,6 +26,29 @@ export interface Camera {
   readonly scale: number;
 }
 
+/**
+ * How the Explorer draws the scene.
+ *  - `rooted` (default): materialize a level-N patch from a root tile — the
+ *    only mode where circuit analysis is possible, because analysis needs a
+ *    finite patch to weld and trace.
+ *  - `infinite`: the un-rooted engine (`core/unrooted.ts`) rendered through
+ *    the Infinite Map's WebGL2 viewport. No root, no patch, no analysis —
+ *    just tiles and the local strand lines, at any depth.
+ *
+ * The engine implements the SPECTRE family only, so `infinite` is offered
+ * only while `family === 'spectre'`.
+ */
+export type ExplorerMode = 'rooted' | 'infinite';
+
+export const EXPLORER_MODES: readonly ExplorerMode[] = ['rooted', 'infinite'];
+
+/** Families the un-rooted engine can actually generate. */
+export const INFINITE_MODE_FAMILIES: readonly TileFamilyId[] = ['spectre'];
+
+export function supportsInfiniteMode(family: TileFamilyId): boolean {
+  return INFINITE_MODE_FAMILIES.includes(family);
+}
+
 export interface ExplorerState {
   readonly family: TileFamilyId;
   readonly rootTile: TileTypeId;
@@ -40,6 +63,12 @@ export interface ExplorerState {
   readonly contracts?: EdgeContracts;
   readonly overlays: Readonly<Record<string, readonly Chord[]>>;
   readonly camera?: Camera;
+  /**
+   * Renderer mode (`md=` in the URL). OPTIONAL and omitted when `rooted`, so
+   * the default state still encodes to exactly `v=1` and every pre-existing
+   * link decodes unchanged. Read it as `state.mode ?? 'rooted'`.
+   */
+  readonly mode?: ExplorerMode;
 }
 
 /** Display flag bits (§9.2 `fl`). */
@@ -203,6 +232,8 @@ export function encodeExplorerState(s: ExplorerState): URLSearchParams {
   if (s.camera) {
     q.set('cam', `${s.camera.x.toFixed(2)},${s.camera.y.toFixed(2)},${s.camera.scale.toFixed(2)}`);
   }
+  // Additive: only a non-default mode appears, and only where it is real.
+  if (s.mode === 'infinite' && supportsInfiniteMode(s.family)) q.set('md', 'infinite');
   return q;
 }
 
@@ -271,6 +302,12 @@ export function decodeExplorerState(q: URLSearchParams): ExplorerState {
     }
   }
 
+  // Unknown / unsupported modes fall back to rooted rather than failing, and
+  // `md=infinite` is dropped for families the un-rooted engine cannot draw.
+  const mdRaw = q.get('md');
+  const mode: ExplorerMode | undefined =
+    mdRaw === 'infinite' && supportsInfiniteMode(family) ? 'infinite' : undefined;
+
   const state: ExplorerState = {
     family,
     rootTile,
@@ -283,6 +320,7 @@ export function decodeExplorerState(q: URLSearchParams): ExplorerState {
     ...(customColors && Object.keys(customColors).length ? { customColors } : {}),
     ...(contracts ? { contracts } : {}),
     ...(camera ? { camera } : {}),
+    ...(mode ? { mode } : {}),
   };
   return state;
 }
