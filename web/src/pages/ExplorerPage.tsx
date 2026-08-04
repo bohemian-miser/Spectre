@@ -37,6 +37,7 @@ import {
 import {
   CircuitLayer,
   ColorSchemePicker,
+  ContractSlider,
   DisplayToggles,
   EdgeSubsetPicker,
   MatchingSlider,
@@ -49,6 +50,7 @@ import {
   type EdgeRef,
   type PanZoomApi,
 } from '../components';
+import { edgeClassColor } from '../lib/palette';
 import { useCircuitAnalysis } from '../hooks/useCircuitAnalysis';
 import { useExplorerStore } from '../hooks/useExplorerState';
 import { hasFlag } from '../lib/explorerReducer';
@@ -535,51 +537,33 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
         <details className="explorer-advanced">
           <summary>Advanced: seam contracts</summary>
           <p className="muted">
-            Where a drawn line crosses each seam class. Moving a contract slides every dot and line
-            end on that class; the topology never changes.
+            Where a drawn line crosses each seam class. Each slider spans the whole seam — notches
+            mark the vertices between its physical edges — and moving a contract slides every dot
+            and line end on that class; the topology never changes. Greyed classes are not part of
+            the current edge rule.
           </p>
           {majors.map((major) => {
             const c = contractOf(major);
-            const maxMinor = Math.max(1, minorCounts[major] ?? 1) - 1;
+            const minorCount = Math.max(1, minorCounts[major] ?? 1);
+            const activeClass = state.subset.includes(major);
+            const pinned = major === 0;
             return (
-              <div className="contract-row" key={major} data-major={major}>
+              <div
+                className={`contract-row${activeClass ? '' : ' is-inactive'}`}
+                key={major}
+                data-major={major}
+                style={{ color: edgeClassColor(major) }}
+              >
                 <span className="contract-name">class {major === 7 ? '7 (M)' : major}</span>
-                <label>
-                  minor
-                  <input
-                    type="number"
-                    min={0}
-                    max={maxMinor}
-                    value={c.minor}
-                    aria-label={`class ${major} contract minor`}
-                    onChange={(e) =>
-                      dispatch({
-                        type: 'setContract',
-                        major,
-                        contract: { minor: Number.parseInt(e.target.value, 10) || 0, t: c.t },
-                      })
-                    }
-                  />
-                </label>
-                <label>
-                  t
-                  <input
-                    type="range"
-                    min={0}
-                    max={1}
-                    step={0.05}
-                    value={c.t}
-                    aria-label={`class ${major} contract position`}
-                    onChange={(e) =>
-                      dispatch({
-                        type: 'setContract',
-                        major,
-                        contract: { minor: c.minor, t: Number.parseFloat(e.target.value) },
-                      })
-                    }
-                  />
-                </label>
-                <em>{c.t.toFixed(2)}</em>
+                <ContractSlider
+                  major={major}
+                  minorCount={minorCount}
+                  value={c}
+                  active={activeClass}
+                  pinned={pinned}
+                  onChange={(contract) => dispatch({ type: 'setContract', major, contract })}
+                />
+                <em>{pinned ? 'centre' : `${c.minor}.${Math.round(c.t * 100)}%`}</em>
               </div>
             );
           })}

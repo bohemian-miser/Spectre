@@ -21,6 +21,9 @@
 
 .explorer-viewport {
   position: relative;
+  /* Deterministic height (mirrors the sidebar cap): the viewport must never
+     size itself from its own canvas, or resize feedback loops the layout. */
+  height: calc(100vh - 120px);
   min-height: 420px;
   min-width: 0;
   border: 1px solid var(--line);
@@ -123,12 +126,15 @@
   min-width: 74px;
   color: var(--muted);
 }
-.contract-row input[type='number'] {
-  width: 48px;
+.contract-row.is-inactive .contract-name,
+.contract-row.is-inactive em {
+  opacity: 0.5;
 }
-.contract-row input[type='range'] {
-  flex: 1 1 60px;
-  min-width: 60px;
+.contract-row em {
+  min-width: 52px;
+  text-align: right;
+  font-style: normal;
+  color: var(--muted);
 }
 
 .tiling-overlays {

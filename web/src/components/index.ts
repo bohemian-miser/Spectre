@@ -54,3 +54,6 @@ export type { StatsSummaryProps } from './controls/StatsSummary';
 
 export { SharePanel } from './controls/SharePanel';
 export type { SharePanelProps } from './controls/SharePanel';
+
+export { ContractSlider, contractToU, uToContract } from './controls/ContractSlider';
+export type { ContractSliderProps } from './controls/ContractSlider';
