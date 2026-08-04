@@ -125,10 +125,13 @@ export function TilingCanvas(props: TilingCanvasProps): JSX.Element {
     if (!ctx) return;
 
     const dpr = Math.min(2, (typeof devicePixelRatio === 'number' ? devicePixelRatio : 1) || 1);
-    canvas.width = Math.round(size.width * dpr);
-    canvas.height = Math.round(size.height * dpr);
-    canvas.style.width = `${size.width}px`;
-    canvas.style.height = `${size.height}px`;
+    // Only touch the bitmap when it actually changed: resizing clears the
+    // canvas and can re-trigger observers. CSS (absolute inset:0) owns the
+    // element's layout size, so no style writes here.
+    const bitmapW = Math.round(size.width * dpr);
+    const bitmapH = Math.round(size.height * dpr);
+    if (canvas.width !== bitmapW) canvas.width = bitmapW;
+    if (canvas.height !== bitmapH) canvas.height = bitmapH;
 
     let frame = 0;
     const draw = (): void => {

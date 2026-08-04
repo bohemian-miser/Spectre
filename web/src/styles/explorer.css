@@ -21,6 +21,9 @@
 
 .explorer-viewport {
   position: relative;
+  /* Deterministic height (mirrors the sidebar cap): the viewport must never
+     size itself from its own canvas, or resize feedback loops the layout. */
+  height: calc(100vh - 120px);
   min-height: 420px;
   min-width: 0;
   border: 1px solid var(--line);

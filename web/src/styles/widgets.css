@@ -152,6 +152,18 @@ body {
 .tiling-view,
 .tiling-canvas {
   display: block;
+  position: relative;
+  overflow: hidden;
+  width: 100%;
+  height: 100%;
+}
+/* The bitmap lives OUT of flow: an in-flow (inline) canvas adds a baseline
+   gap that re-triggers the host's ResizeObserver — a slow, unbounded
+   grow-remeasure-redraw loop at the heavy levels. */
+.tiling-canvas canvas {
+  display: block;
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
 }
