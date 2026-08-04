@@ -13,11 +13,13 @@ import {
   leafOrder,
   matchingCount,
   subsetToEdges,
+  supportsInfiniteMode,
   type Camera,
   type Chord,
   type ColorSchemeId,
   type EdgeContract,
   type EdgeContracts,
+  type ExplorerMode,
   type ExplorerState,
   type TileFamilyId,
   type TileTypeId,
@@ -52,7 +54,8 @@ export type ExplorerAction =
   | { readonly type: 'addChord'; readonly tileType: TileTypeId; readonly chord: Chord }
   | { readonly type: 'removeChord'; readonly tileType: TileTypeId; readonly at: number }
   | { readonly type: 'clearOverlays'; readonly tileType?: TileTypeId }
-  | { readonly type: 'setCamera'; readonly camera: Camera | undefined };
+  | { readonly type: 'setCamera'; readonly camera: Camera | undefined }
+  | { readonly type: 'setMode'; readonly mode: ExplorerMode };
 
 function clampInt(v: number, lo: number, hi: number): number {
   if (!Number.isFinite(v)) return lo;
@@ -118,12 +121,21 @@ export function explorerReducer(state: ExplorerState, action: ExplorerAction): E
       if (action.family === state.family) return state;
       // The hex family has one Gamma leaf instead of Gamma1/Gamma2, so the
       // vector changes length (DESIGN.md §12.9).
-      return {
+      const next: ExplorerState = {
         ...state,
         family: action.family,
         matching: normalizeMatchingVector(action.family, state.subset, state.matching),
         overlays: {},
       };
+      // The un-rooted engine only generates spectre; leaving `infinite` set
+      // for another family would be a lie, so drop back to rooted.
+      return supportsInfiniteMode(action.family) ? next : stripMode(next);
+    }
+
+    case 'setMode': {
+      if (action.mode !== 'infinite') return stripMode(state);
+      if (!supportsInfiniteMode(state.family)) return stripMode(state);
+      return state.mode === 'infinite' ? state : { ...state, mode: 'infinite' };
     }
 
     case 'setRootTile':
@@ -282,6 +294,18 @@ export function explorerReducer(state: ExplorerState, action: ExplorerAction): E
 function stripContracts(state: ExplorerState): ExplorerState {
   const { contracts: _c, ...rest } = state;
   return rest as ExplorerState;
+}
+
+/** Remove the optional `mode` key entirely (canonical "rooted"). */
+function stripMode(state: ExplorerState): ExplorerState {
+  if (state.mode === undefined) return state;
+  const { mode: _m, ...rest } = state;
+  return rest as ExplorerState;
+}
+
+/** Effective mode, honouring the engine's family restriction. */
+export function explorerMode(state: ExplorerState): ExplorerMode {
+  return state.mode === 'infinite' && supportsInfiniteMode(state.family) ? 'infinite' : 'rooted';
 }
 
 /** Convenience selector: `subset` as a Set for the core APIs. */

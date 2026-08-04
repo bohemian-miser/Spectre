@@ -4,14 +4,17 @@ import {
   DEFAULT_EXPLORER_STATE,
   DEFAULT_FLAGS,
   FLAG,
+  MAX_LEVEL,
   decodeExplorerQuery,
   decodeExplorerState,
   encodeExplorerQuery,
   encodeExplorerState,
   normalizeExplorerState,
+  supportsInfiniteMode,
+  EXPLORER_MODES,
   type ExplorerState,
 } from '../serialize';
-import { leafOrder } from '../families';
+import { FAMILIES, leafOrder } from '../families';
 import { enumerateMatchings, nonCrossingForTile } from '../matchings';
 import { connectionCount } from '../edges';
 import { subsetToEdges, validEdgeSubsets } from '../subsets';
@@ -77,7 +80,7 @@ describe('explorer state codec', () => {
     );
     expect(decoded.family).toBe('spectre');
     expect(decoded.rootTile).toBe('Delta');
-    expect(decoded.level).toBe(6); // clamped, not crashed
+    expect(decoded.level).toBe(MAX_LEVEL); // clamped, not crashed
     expect(decoded.subset).toEqual([]);
     expect(decoded.flags).toBe(DEFAULT_FLAGS);
     expect(decoded.colorScheme).toBe('bright');
@@ -144,5 +147,58 @@ describe('explorer state codec', () => {
       const params = encodeExplorerState(state);
       expect(decodeExplorerState(params), params.toString()).toEqual(state);
     }
+  });
+});
+
+/**
+ * Renderer mode (`md=`) — ADDITIVE: the default state still encodes to exactly
+ * `v=1`, every pre-existing link decodes unchanged, and `infinite` only
+ * survives for families the un-rooted engine can actually generate.
+ */
+describe('explorer mode in the URL', () => {
+  it('is absent from the default state and from rooted states', () => {
+    expect(DEFAULT_EXPLORER_STATE.mode).toBeUndefined();
+    expect(encodeExplorerQuery(DEFAULT_EXPLORER_STATE)).toBe(`v=${CODEC_VERSION}`);
+    expect(encodeExplorerQuery({ ...DEFAULT_EXPLORER_STATE, mode: 'rooted' })).toBe(
+      `v=${CODEC_VERSION}`,
+    );
+    expect(decodeExplorerQuery('v=1').mode).toBeUndefined();
+  });
+
+  it('round-trips infinite mode', () => {
+    const state: ExplorerState = {
+      ...DEFAULT_EXPLORER_STATE,
+      level: 8,
+      subset: [2, 5, 7, 8],
+      mode: 'infinite',
+    };
+    const query = encodeExplorerQuery(state);
+    expect(query).toContain('md=infinite');
+    const back = decodeExplorerQuery(query);
+    expect(back.mode).toBe('infinite');
+    expect(back.level).toBe(8);
+    expect(normalizeExplorerState(state)).toEqual(back);
+    // Canonical: encode ∘ decode ∘ encode is a fixed point.
+    expect(encodeExplorerQuery(back)).toBe(query);
+  });
+
+  it('refuses infinite mode for families the engine cannot generate', () => {
+    expect(supportsInfiniteMode('spectre')).toBe(true);
+    for (const f of FAMILIES.filter((x) => x !== 'spectre')) {
+      expect(supportsInfiniteMode(f)).toBe(false);
+      const encoded = encodeExplorerQuery({
+        ...DEFAULT_EXPLORER_STATE,
+        family: f,
+        mode: 'infinite',
+      });
+      expect(encoded).not.toContain('md=');
+      expect(decodeExplorerQuery(`v=1&f=${f}&md=infinite`).mode).toBeUndefined();
+    }
+    expect(EXPLORER_MODES).toEqual(['rooted', 'infinite']);
+  });
+
+  it('falls back to rooted for junk modes', () => {
+    expect(decodeExplorerQuery('v=1&md=teleport').mode).toBeUndefined();
+    expect(decodeExplorerQuery('v=1&md=').mode).toBeUndefined();
   });
 });

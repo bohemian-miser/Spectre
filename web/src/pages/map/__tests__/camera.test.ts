@@ -17,7 +17,11 @@ import {
   viewRectFor,
   worldToScreen,
   zoomAt,
+  levelForScale,
+  scaleForLevel,
+  tilesAtLevel,
 } from '../camera';
+import { SPECTRE_TILE_AREA, SUBSTITUTION_GROWTH } from '../../../core';
 
 const W = 1280;
 const H = 800;
@@ -142,5 +146,44 @@ describe('origin re-anchoring precision (the GPU never sees huge coordinates)', 
     expect(off.y).toBeCloseTo(-200, 6);
     // f32 narrowing of the SMALL offset is harmless (< 1e-4 world units).
     expect(Math.abs(Math.fround(off.x) - off.x)).toBeLessThan(1e-4);
+  });
+});
+
+/**
+ * Rooted "level" <-> un-rooted zoom — the Explorer's infinite-mode level
+ * control. The contract: level L parks the camera where the viewport covers
+ * about as many tiles as a rooted level-L patch holds, so one level step is
+ * exactly one substitution step.
+ */
+describe('level <-> zoom (infinite mode level control)', () => {
+  const W = 1200;
+  const H = 800;
+
+  it('round-trips level → scale → level', () => {
+    for (let level = 0; level <= 9; level++) {
+      expect(levelForScale(scaleForLevel(level, W, H), W, H)).toBeCloseTo(level, 6);
+    }
+  });
+
+  it('covers the same tile count a rooted patch of that level holds', () => {
+    for (const level of [0, 3, 6, 9]) {
+      const s = scaleForLevel(level, W, H);
+      const tilesInView = (W / s) * (H / s) / SPECTRE_TILE_AREA;
+      expect(tilesInView / tilesAtLevel(level)).toBeCloseTo(1, 6);
+    }
+  });
+
+  it('one level step is one substitution step (×sqrt(7.873) ≈ 2.806 zoom)', () => {
+    for (let level = 0; level < 9; level++) {
+      const ratio = scaleForLevel(level, W, H) / scaleForLevel(level + 1, W, H);
+      expect(ratio).toBeCloseTo(Math.sqrt(SUBSTITUTION_GROWTH), 6);
+    }
+    expect(Math.sqrt(SUBSTITUTION_GROWTH)).toBeCloseTo(2.8059, 3);
+  });
+
+  it('stays inside the camera clamp and survives degenerate sizes', () => {
+    expect(scaleForLevel(0, 0, 0)).toBeLessThanOrEqual(MAX_SCALE);
+    expect(scaleForLevel(31, W, H)).toBeGreaterThanOrEqual(MIN_SCALE);
+    expect(levelForScale(MAX_SCALE, W, H)).toBeGreaterThanOrEqual(0);
   });
 });

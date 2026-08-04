@@ -15,22 +15,27 @@
  *    newest-request-wins cancellation, so slider scrubbing never blocks input.
  */
 
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   DEFAULT_CONTRACTS,
   FAMILIES,
   FAMILY_DISPLAY_NAMES,
   FLAG,
   MAX_LEVEL,
+  SUBSTITUTION_GROWTH,
   TILE_NAMES,
+  TILE_PALETTES,
   familyMajors,
   formatComboShareString,
+  hexToRgb,
   leafOrder,
   matchingIndicesToCombo,
   metaEdges,
   mul,
+  supportsInfiniteMode,
   svgMatrixString,
   type EdgeContract,
+  type Rgb,
   type TileFamilyId,
   type TileTypeId,
 } from '../core';
@@ -53,7 +58,7 @@ import {
 import { edgeClassColor } from '../lib/palette';
 import { useCircuitAnalysis } from '../hooks/useCircuitAnalysis';
 import { useExplorerStore } from '../hooks/useExplorerState';
-import { hasFlag } from '../lib/explorerReducer';
+import { explorerMode, hasFlag } from '../lib/explorerReducer';
 import { matchingVectorToRecord } from '../lib/matchingModel';
 import { buildTilingModel } from '../lib/tilingModel';
 import { overlayChordsD, pathBox, pathsOfLength } from '../lib/overlayPaths';
@@ -61,14 +66,39 @@ import { EXPLORER_ROUTE } from '../lib/urlState';
 import { expandBox, roundCamera, transformBox } from '../lib/viewport';
 import { sceneFilename, serializeSceneSvg } from '../lib/exportScene';
 import { downloadBlob, downloadText, svgTextToPngBlob } from './sceneDownload';
+import { createCamera, levelForScale, scaleForLevel } from './map/camera';
+import { buildLeafChordTable } from './map/chords';
+import {
+  InfiniteCanvas,
+  type InfiniteCanvasApi,
+  type InfiniteCanvasStatus,
+} from './map/InfiniteCanvas';
+import type { MapRenderStyle } from './map/rendererTypes';
+import { DEFAULT_LINE_COLOR, LIGHT_LINE_COLOR } from './map/webglRenderer';
+import '../styles/map.css';
 
 export type OverlayTool = 'cursor' | 'line' | 'erase';
 
 /** SVG renderer ceiling; above this the Canvas2D renderer takes over (§5.2). */
 const SVG_MAX_LEVEL = 4;
+/**
+ * Deepest level the rooted view will actually flatten. Tiles grow ≈7.87× per
+ * level (level 7 ≈ 2.1M, level 8 ≈ 17M), so this is where materializing stops
+ * being something a browser tab survives.
+ */
+const ROOTED_MATERIALIZE_MAX = 7;
 /** Overlay chords are `<use>`d per instance; skip past this many tiles. */
 const OVERLAY_BUDGET = 6000;
 const OVERLAY_DEF_PREFIX = 'ex-ov';
+/**
+ * World seed for the Explorer's infinite mode. Fixed on purpose: the Explorer
+ * is about a CONFIGURATION (rule + matchings), not about which of the 2^32
+ * plane-fillings you happen to be standing in. The Infinite Map page owns the
+ * seed control.
+ */
+const INFINITE_SEED = 1;
+/** Instance budget for the embedded un-rooted view (the map's default). */
+const INFINITE_BUDGET = 100_000;
 
 export interface ExplorerPageProps {
   /** Mirror state into `location.hash` (default true; tests can opt out). */
@@ -86,6 +116,9 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
   const curvy = hasFlag(state, FLAG.CURVY) && family !== 'hex';
   const linesOn = hasFlag(state, FLAG.LINES);
   const nonCrossingOnly = hasFlag(state, FLAG.NON_CROSSING_ONLY);
+  const mode = explorerMode(state);
+  const infinite = mode === 'infinite';
+  const infiniteAvailable = supportsInfiniteMode(family);
 
   const [hoverEdge, setHoverEdge] = useState<EdgeRef | null>(null);
   const [hoverMajor, setHoverMajor] = useState<number | null>(null);
@@ -101,16 +134,27 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
 
   // --- scene ---------------------------------------------------------------
 
+  // The rooted view materializes every tile, so it has a practical ceiling
+  // well below MAX_LEVEL (level 8 is ~17M tiles). Past it the scene is built
+  // at the ceiling and the page says so; depth beyond that belongs to the
+  // un-rooted engine, which never materializes a patch at all.
+  const renderLevel = Math.min(state.level, ROOTED_MATERIALIZE_MAX);
+  const beyondRooted = !infinite && state.level > ROOTED_MATERIALIZE_MAX;
+
+  // In infinite mode NOTHING is materialized: the un-rooted engine expands the
+  // viewport lazily. The model is pinned to level 0 (one tile) purely so the
+  // rooted code paths keep a valid, cheap object.
+  const modelLevel = infinite ? 0 : renderLevel;
   const model = useMemo(
     () =>
       buildTilingModel({
         family,
         rootTile: state.rootTile,
-        level: state.level,
+        level: modelLevel,
         curvy,
         stabilizeChirality: true,
       }),
-    [family, state.rootTile, state.level, curvy],
+    [family, state.rootTile, modelLevel, curvy],
   );
 
   const matchingRecord = useMemo(
@@ -118,9 +162,12 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
     [family, state.matching],
   );
 
+  // Circuit analysis needs a finite, rooted patch to weld and trace, so it is
+  // simply UNAVAILABLE in infinite mode (see the panel note) — the input goes
+  // null and the worker is never asked.
   const analysisInput = useMemo(
     () =>
-      linesOn && state.subset.length
+      !infinite && linesOn && state.subset.length
         ? {
             family,
             rootTile: state.rootTile,
@@ -132,6 +179,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
           }
         : null,
     [
+      infinite,
       linesOn,
       family,
       state.rootTile,
@@ -143,6 +191,90 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
     ],
   );
   const analysis = useCircuitAnalysis(analysisInput, { workerMinLevel: 3 });
+
+  // --- infinite mode ---------------------------------------------------------
+
+  const infiniteApiRef = useRef<InfiniteCanvasApi | null>(null);
+  const infiniteStatusRef = useRef<InfiniteCanvasStatus | null>(null);
+  const infiniteHudSubRef = useRef<((s: InfiniteCanvasStatus) => void) | null>(null);
+  const pendingLevelRef = useRef<number | null>(null);
+
+  /** Strand chords: local geometry, identical to what the rooted view draws. */
+  const infiniteChords = useMemo(
+    () =>
+      infinite && linesOn && state.subset.length
+        ? buildLeafChordTable(state.subset, state.matching, state.contracts)
+        : null,
+    [infinite, linesOn, state.subset, state.matching, state.contracts],
+  );
+
+  const infiniteStyle = useMemo<MapRenderStyle>(() => {
+    const table =
+      state.colorScheme === 'custom'
+        ? null
+        : TILE_PALETTES[state.colorScheme] ?? TILE_PALETTES.bright;
+    const colorOf = (type: string): Rgb => {
+      if (state.colorScheme === 'custom') {
+        const hex = state.customColors?.[type];
+        const rgb = hex ? hexToRgb(hex) : null;
+        return rgb ?? TILE_PALETTES.bright[type] ?? [200, 200, 200];
+      }
+      return table?.[type] ?? [200, 200, 200];
+    };
+    const fills = hasFlag(state, FLAG.BACKGROUNDS);
+    return {
+      leafColors: leafOrder('spectre').map(colorOf),
+      aggColors: TILE_NAMES.map(colorOf),
+      showFills: fills,
+      showOutlines: hasFlag(state, FLAG.OUTLINES),
+      // Flat ink, contrasting with whatever is behind it (no circuit colours).
+      lineColor: fills ? DEFAULT_LINE_COLOR : LIGHT_LINE_COLOR,
+    };
+  }, [state.colorScheme, state.customColors, state.flags]);
+
+  /**
+   * Level → zoom. The rooted level control means "show a patch of 7.873^L
+   * tiles"; the un-rooted view has no patch, so the honest translation is the
+   * observable consequence: put the camera where the viewport COVERS that many
+   * tiles. One level step is exactly one substitution step (×2.806 zoom).
+   * Free panning/zooming does not write back — the live depth is reported
+   * separately from the engine's own LOD cut, which cannot be faked.
+   */
+  const applyLevelZoom = useCallback((level: number): boolean => {
+    const api = infiniteApiRef.current;
+    if (!api) return false;
+    const { width, height } = api.getSize();
+    if (width <= 0 || height <= 0) return false;
+    api.setCamera({ scale: scaleForLevel(level, width, height) });
+    return true;
+  }, []);
+
+  useEffect(() => {
+    if (!infinite) {
+      pendingLevelRef.current = null;
+      return;
+    }
+    pendingLevelRef.current = state.level;
+    if (applyLevelZoom(state.level)) pendingLevelRef.current = null;
+  }, [infinite, state.level, applyLevelZoom]);
+
+  /**
+   * Status sink. Deliberately does NOT setState on the page: the Explorer
+   * must not re-render its sidebar (ten live matching editors) at frame rate
+   * while the user pans. The HUD subscribes for itself.
+   */
+  const onInfiniteStatus = useCallback(
+    (s: InfiniteCanvasStatus): void => {
+      infiniteStatusRef.current = s;
+      if (pendingLevelRef.current !== null && applyLevelZoom(pendingLevelRef.current)) {
+        pendingLevelRef.current = null;
+      }
+      infiniteHudSubRef.current?.(s);
+    },
+    [applyLevelZoom],
+  );
+
+  const initialInfiniteCamera = useRef(createCamera(0, 0, 36)).current;
 
   // --- camera --------------------------------------------------------------
 
@@ -311,7 +443,9 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
 
   const majors = useMemo(() => familyMajors(family), [family]);
   const tileCount = model.tileCount;
-  const heavy = state.level > SVG_MAX_LEVEL;
+  const heavy = !infinite && state.level > SVG_MAX_LEVEL;
+  /** Tiles a level-L patch holds — the count the infinite view targets. */
+  const levelTiles = Math.round(SUBSTITUTION_GROWTH ** state.level);
 
   // --- render --------------------------------------------------------------
 
@@ -337,11 +471,50 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
             </select>
           </label>
 
+          <div className="control-row mode-row" role="radiogroup" aria-label="Renderer mode">
+            <span>Mode</span>
+            <span className="mode-switch">
+              <button
+                type="button"
+                role="radio"
+                aria-checked={!infinite}
+                className={!infinite ? 'is-active' : ''}
+                onClick={() => dispatch({ type: 'setMode', mode: 'rooted' })}
+              >
+                Rooted patch
+              </button>
+              <button
+                type="button"
+                role="radio"
+                aria-checked={infinite}
+                className={infinite ? 'is-active' : ''}
+                disabled={!infiniteAvailable}
+                data-testid="mode-infinite"
+                onClick={() => dispatch({ type: 'setMode', mode: 'infinite' })}
+              >
+                Infinite
+              </button>
+            </span>
+          </div>
+          {!infiniteAvailable ? (
+            <p className="muted" role="note">
+              Infinite mode needs the un-rooted engine, which only generates{' '}
+              {FAMILY_DISPLAY_NAMES.spectre}. Switch the family back to use it.
+            </p>
+          ) : infinite ? (
+            <p className="muted" role="note">
+              No root and no patch: the plane is expanded around the camera on demand (world seed{' '}
+              {INFINITE_SEED} — the <a href={`${import.meta.env.BASE_URL}map.html`}>Infinite Map</a>{' '}
+              owns the seed control). Drag to pan, wheel to zoom.
+            </p>
+          ) : null}
+
           <label className="control-row">
             <span>Root tile</span>
             <select
               value={state.rootTile}
               aria-label="Root tile"
+              disabled={infinite}
               onChange={(e) =>
                 dispatch({ type: 'setRootTile', rootTile: e.target.value as TileTypeId })
               }
@@ -374,10 +547,35 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
               >
                 +
               </button>
-              <em>{tileCount.toLocaleString()} tiles</em>
+              <em>
+                {infinite
+                  ? `≈ ${levelTiles.toLocaleString()} tiles in view`
+                  : `${tileCount.toLocaleString()} tiles`}
+              </em>
             </span>
           </div>
-          {heavy ? (
+          {infinite ? (
+            <p className="muted" role="note">
+              In infinite mode the level control is a zoom preset: it parks the camera where the
+              viewport covers about as many tiles as a level-{state.level} patch holds (one step =
+              one substitution = ×2.81 zoom). Panning and wheel-zoom are free and do not change it.
+            </p>
+          ) : beyondRooted ? (
+            <p className="warning-badge" role="status">
+              Level {state.level} is past what this view can materialize, so it is drawing level{' '}
+              {ROOTED_MATERIALIZE_MAX}.{' '}
+              <button
+                type="button"
+                className="link-button"
+                data-testid="switch-to-infinite"
+                onClick={() => dispatch({ type: 'setMode', mode: 'infinite' })}
+              >
+                Switch to infinite mode
+              </button>{' '}
+              to go this deep without building the patch at all (or open the{' '}
+              <a href={`${import.meta.env.BASE_URL}map.html`}>Infinite Map</a>).
+            </p>
+          ) : heavy ? (
             <p className="warning-badge" role="status">
               Level {state.level} renders on canvas — interactivity is limited and analysis can take
               a few seconds.
@@ -572,28 +770,61 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
           </button>
         </details>
 
-        <fieldset>
+        {/* Not a `disabled` fieldset: the escape-hatch button must stay live. */}
+        <fieldset className={infinite ? 'is-unavailable' : undefined}>
           <legend>Analysis</legend>
-          {!linesOn ? (
-            <p className="muted">Turn “Circuit lines” on to analyse this patch.</p>
-          ) : null}
-          <StatsSummary
-            result={analysis.result}
-            running={analysis.running}
-            error={analysis.error}
-            highlightLength={highlightLength}
-            onSelectLength={onSelectLength}
-          />
-          {highlightLength != null ? (
-            <button type="button" onClick={nextExample}>
-              Next example of length {highlightLength}
-            </button>
-          ) : null}
+          {infinite ? (
+            <p className="warning-badge" role="status" data-testid="analysis-unavailable">
+              Circuit analysis needs a rooted patch — there is nothing finite here to weld and
+              trace.{' '}
+              <button
+                type="button"
+                className="link-button"
+                onClick={() => dispatch({ type: 'setMode', mode: 'rooted' })}
+              >
+                Switch to rooted mode
+              </button>{' '}
+              to analyse. The strand lines below the camera are still exact: they are local
+              geometry, which is why they work at any depth.
+            </p>
+          ) : (
+            <>
+              {!linesOn ? (
+                <p className="muted">Turn “Circuit lines” on to analyse this patch.</p>
+              ) : null}
+              <StatsSummary
+                result={analysis.result}
+                running={analysis.running}
+                error={analysis.error}
+                highlightLength={highlightLength}
+                onSelectLength={onSelectLength}
+              />
+              {highlightLength != null ? (
+                <button type="button" onClick={nextExample}>
+                  Next example of length {highlightLength}
+                </button>
+              ) : null}
+            </>
+          )}
         </fieldset>
       </aside>
 
       <div className="explorer-viewport" ref={viewportRef}>
-        {!heavy ? (
+        {infinite ? (
+          <InfiniteCanvas
+            className="map-viewport explorer-infinite"
+            ariaLabel="Infinite tiling viewport — drag to pan, wheel or pinch to zoom"
+            seed={INFINITE_SEED}
+            budget={INFINITE_BUDGET}
+            chords={infiniteChords}
+            style={infiniteStyle}
+            initialCamera={initialInfiniteCamera}
+            apiRef={infiniteApiRef}
+            onStatusChange={onInfiniteStatus}
+          >
+            <InfiniteHud subscribeRef={infiniteHudSubRef} linesOn={linesOn && !!infiniteChords} />
+          </InfiniteCanvas>
+        ) : !heavy ? (
           <PanZoom
             apiRef={panRef}
             defaultCamera={state.camera}
@@ -674,6 +905,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
                 tails={linesOn ? analysis.result?.tails : undefined}
                 circuitColorByLength={analysis.result?.circuitColors}
                 rainbowTails={hasFlag(state, FLAG.RAINBOW_TAILS)}
+                highlightLength={highlightLength}
               />
             )}
           </PanZoom>
@@ -687,11 +919,85 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
         ) : null}
 
         <div className="viewport-caption muted">
-          {FAMILY_DISPLAY_NAMES[family]} · {state.rootTile} · level {state.level} ·{' '}
-          {tileCount.toLocaleString()} tiles
+          {FAMILY_DISPLAY_NAMES[family]} ·{' '}
+          {infinite
+            ? `infinite plane · seed ${INFINITE_SEED} · level ${state.level} zoom`
+            : `${state.rootTile} · level ${state.level} · ${tileCount.toLocaleString()} tiles`}
           {state.subset.length ? ` · rule ${state.subset.join('')}` : ' · no edge rule'}
         </div>
       </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Infinite-mode HUD
+// ---------------------------------------------------------------------------
+
+/**
+ * Owns its own state so the un-rooted viewport's per-frame status never
+ * re-renders the Explorer page (which would reconcile ten live matching
+ * editors on every pan frame). The parent hands it a subscription slot.
+ */
+function InfiniteHud(props: {
+  readonly subscribeRef: React.MutableRefObject<((s: InfiniteCanvasStatus) => void) | null>;
+  readonly linesOn: boolean;
+}): JSX.Element {
+  const { subscribeRef, linesOn } = props;
+  const [status, setStatus] = useState<InfiniteCanvasStatus | null>(null);
+  const latest = useRef<InfiniteCanvasStatus | null>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    subscribeRef.current = (s) => {
+      latest.current = s;
+      if (timer.current) return; // trailing-edge throttle: ≤ 4 updates/s
+      timer.current = setTimeout(() => {
+        timer.current = null;
+        setStatus(latest.current);
+      }, 250);
+    };
+    return () => {
+      subscribeRef.current = null;
+      if (timer.current) clearTimeout(timer.current);
+      timer.current = null;
+    };
+  }, [subscribeRef]);
+
+  const cut = status?.cut ?? null;
+  const draw = status?.draw ?? null;
+  const aggregate = !!cut && cut.cutLevel > 0;
+  const depth =
+    draw && status && status.size.width > 0
+      ? levelForScale(draw.scale, status.size.width, status.size.height)
+      : null;
+
+  return (
+    <div className="map-hud" data-testid="explorer-infinite-hud" role="status">
+      <span>{status?.mode === 'pending' || !status ? 'starting…' : status.mode}</span>
+      <span data-testid="inf-instances">{(cut?.count ?? 0).toLocaleString('en-US')} instances</span>
+      <span>
+        {cut
+          ? cut.cutLevel === 0
+            ? 'LOD: individual tiles'
+            : `LOD: level-${cut.cutLevel} glyphs`
+          : 'LOD: —'}
+      </span>
+      <span data-testid="inf-depth">
+        {depth === null ? 'depth ~—' : `depth ~${depth.toFixed(1)} · chain ${cut?.ancestorLevel ?? '—'}`}
+      </span>
+      <span data-testid="inf-lines">
+        {!linesOn
+          ? 'lines: off'
+          : aggregate
+            ? 'lines: hidden (aggregate LOD)'
+            : `lines: ${(draw?.chordsDrawn ?? 0).toLocaleString('en-US')} chords`}
+      </span>
+      <span>
+        query {cut ? cut.queryMs.toFixed(1) : '—'} ms · draw {draw ? draw.drawMs.toFixed(1) : '—'} ms
+        {draw ? ` · ${draw.drawCalls} call${draw.drawCalls === 1 ? '' : 's'}` : ''}
+      </span>
+      {status?.error ? <span className="map-hud-error">query failed: {status.error}</span> : null}
     </div>
   );
 }

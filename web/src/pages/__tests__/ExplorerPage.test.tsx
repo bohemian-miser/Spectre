@@ -133,3 +133,81 @@ describe('ExplorerPage', () => {
     expect(container.querySelectorAll('.circuit-path').length).toBeGreaterThan(0);
   });
 });
+
+/**
+ * Infinite mode (BIGMAP stage 3): the un-rooted engine + map renderer embedded
+ * in the Explorer viewport. jsdom has no GL and no layout, so what is asserted
+ * here is the WIRING — mode in the URL, the rooted patch gone, analysis
+ * honestly unavailable, the family restriction — not pixels.
+ */
+describe('ExplorerPage — infinite mode', () => {
+  it('swaps the rooted patch for the un-rooted viewport', () => {
+    window.history.replaceState(null, '', '/#/explorer?v=1&lv=3&e=2578&md=infinite');
+    const { container } = render(<ExplorerPage />);
+
+    expect(container.querySelector('.explorer-infinite')).not.toBeNull();
+    expect(container.querySelector('[data-testid="explorer-infinite-hud"]')).not.toBeNull();
+    // No rooted patch is built at all.
+    expect(container.querySelector('svg.tiling-view')).toBeNull();
+    expect(container.querySelector('.tiling-canvas')).toBeNull();
+    // Root tile is meaningless without a root.
+    expect(container.querySelector('select[aria-label="Root tile"]')).toHaveProperty(
+      'disabled',
+      true,
+    );
+    expect(container.querySelector('.viewport-caption')?.textContent).toContain('infinite plane');
+  });
+
+  it('says analysis needs a rooted patch, and offers the way back', () => {
+    window.history.replaceState(null, '', '/#/explorer?v=1&e=2578&md=infinite');
+    const { container } = render(<ExplorerPage />);
+
+    const note = container.querySelector('[data-testid="analysis-unavailable"]');
+    expect(note?.textContent).toContain('needs a rooted patch');
+    expect(container.querySelector('.stats-summary')).toBeNull();
+
+    fireEvent.click(note?.querySelector('button') as Element);
+    expect(container.querySelector('.explorer-infinite')).toBeNull();
+    expect(container.querySelector('svg.tiling-view')).not.toBeNull();
+    expect(container.querySelector('.stats-summary')).not.toBeNull();
+  });
+
+  it('keeps the mode in the hash', async () => {
+    window.history.replaceState(null, '', '/#/explorer?v=1&e=2578');
+    const { container } = render(<ExplorerPage />);
+    fireEvent.click(container.querySelector('[data-testid="mode-infinite"]') as Element);
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 400));
+    });
+    expect(window.location.hash).toContain('md=infinite');
+  });
+
+  it('goes past the rooted materialize ceiling without clamping or building', () => {
+    // Level 9 is 133M tiles; the rooted view clamps to 7 and says so, while
+    // infinite mode simply zooms there. (Deliberately NOT exercising the
+    // rooted lv>7 path in jsdom: materializing a 2.1M-tile patch is what the
+    // ceiling exists to warn about.)
+    window.history.replaceState(null, '', '/#/explorer?v=1&lv=9&e=2578&md=infinite');
+    const { container } = render(<ExplorerPage />);
+    expect(container.querySelector('[data-testid="level-value"]')?.textContent).toBe('9');
+    expect(container.querySelector('.explorer-infinite')).not.toBeNull();
+    expect(container.querySelector('svg.tiling-view')).toBeNull();
+    expect(container.querySelector('.tiling-canvas')).toBeNull();
+    expect(container.querySelector('[data-testid="switch-to-infinite"]')).toBeNull();
+    expect(container.querySelector('#explorer-sidebar')?.textContent).toContain(
+      'zoom preset',
+    );
+  });
+
+  it('is unavailable for families the un-rooted engine cannot generate', () => {
+    window.history.replaceState(null, '', '/#/explorer?v=1&f=hex');
+    const { container } = render(<ExplorerPage />);
+    expect(container.querySelector('[data-testid="mode-infinite"]')).toHaveProperty(
+      'disabled',
+      true,
+    );
+    expect(container.querySelector('#explorer-sidebar')?.textContent).toContain(
+      'only generates',
+    );
+  });
+});

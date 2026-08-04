@@ -17,6 +17,9 @@ export default defineConfig({
   base: '/Spectre/',
   plugins: [react()],
   build: {
+    // Ship readable bundles: this is a maths playground, and being able to
+    // step through the tiling code in devtools is worth the extra bytes.
+    minify: false,
     rollupOptions: {
       input: {
         main: resolve(__dirname, 'index.html'),

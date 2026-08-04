@@ -14,7 +14,7 @@
  * every query result carries its own origin near the current view center.
  */
 
-import type { Pt, ViewRect } from '../../core';
+import { SPECTRE_TILE_AREA, SUBSTITUTION_GROWTH, type Pt, type ViewRect } from '../../core';
 
 export interface MapCamera {
   /** World x of the view center. */
@@ -139,4 +139,41 @@ export function originRelativeCenter(cam: MapCamera, origin: Pt): Pt {
  */
 export function visibleWorldArea(cam: MapCamera, width: number, height: number): number {
   return (width / cam.scale) * (height / cam.scale);
+}
+
+// ---------------------------------------------------------------------------
+// Rooted "level" <-> un-rooted zoom (the Explorer's infinite mode)
+// ---------------------------------------------------------------------------
+//
+// The rooted Explorer's level control means "show a patch of 7.873^L tiles,
+// fitted to the viewport". The un-rooted view has no patch to fit, so the
+// honest translation is the OBSERVABLE consequence of that control: put the
+// camera at the zoom where the viewport covers about as many tiles as a rooted
+// level-L patch holds. One level step is then exactly one substitution step —
+// a factor sqrt(7.873) ≈ 2.806 in zoom, the same ratio the rooted view's fit
+// changes by — and level 0 shows a single tile filling the viewport.
+//
+// Panning and wheel-zoom do NOT write back to the level: the control is a
+// "jump to this scale" action, and the live depth is reported separately from
+// the cut's own `ancestorLevel` / LOD cut, which cannot be faked.
+
+/** Tiles a rooted level-`level` patch contains (the growth-rate estimate). */
+export function tilesAtLevel(level: number): number {
+  return SUBSTITUTION_GROWTH ** Math.max(0, level);
+}
+
+/** Zoom (CSS px per world unit) whose viewport covers a level-`level` patch. */
+export function scaleForLevel(level: number, width: number, height: number): number {
+  const w = Math.max(1, width);
+  const h = Math.max(1, height);
+  const worldArea = tilesAtLevel(level) * SPECTRE_TILE_AREA;
+  return clampScale(Math.sqrt((w * h) / worldArea));
+}
+
+/** Inverse of {@link scaleForLevel} (fractional; the HUD rounds it). */
+export function levelForScale(scale: number, width: number, height: number): number {
+  const w = Math.max(1, width);
+  const h = Math.max(1, height);
+  const tiles = (w * h) / (Math.max(MIN_SCALE, scale) ** 2 * SPECTRE_TILE_AREA);
+  return Math.log(Math.max(1, tiles)) / Math.log(SUBSTITUTION_GROWTH);
 }

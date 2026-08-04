@@ -10,6 +10,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_EXPLORER_STATE,
+  MAX_LEVEL,
   comboToMatchingIndices,
   decodeExplorerState,
   matchingIndicesToCombo,
@@ -66,7 +67,7 @@ describe('explorerHref', () => {
   });
 
   it('clamps levels to the codec range', () => {
-    expect(explorerStateFor('15', '0000000100', 99).level).toBe(6);
+    expect(explorerStateFor('15', '0000000100', 99).level).toBe(MAX_LEVEL);
     expect(explorerStateFor('15', '0000000100', -3).level).toBe(0);
   });
 
