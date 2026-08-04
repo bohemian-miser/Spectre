@@ -66,6 +66,12 @@ export type OverlayTool = 'cursor' | 'line' | 'erase';
 
 /** SVG renderer ceiling; above this the Canvas2D renderer takes over (§5.2). */
 const SVG_MAX_LEVEL = 4;
+/**
+ * Deepest level the rooted view will actually flatten. Tiles grow ≈7.87× per
+ * level (level 7 ≈ 2.1M, level 8 ≈ 17M), so this is where materializing stops
+ * being something a browser tab survives.
+ */
+const ROOTED_MATERIALIZE_MAX = 7;
 /** Overlay chords are `<use>`d per instance; skip past this many tiles. */
 const OVERLAY_BUDGET = 6000;
 const OVERLAY_DEF_PREFIX = 'ex-ov';
@@ -101,16 +107,23 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
 
   // --- scene ---------------------------------------------------------------
 
+  // The rooted view materializes every tile, so it has a practical ceiling
+  // well below MAX_LEVEL (level 8 is ~17M tiles). Past it the scene is built
+  // at the ceiling and the page says so; depth beyond that belongs to the
+  // un-rooted engine, which never materializes a patch at all.
+  const renderLevel = Math.min(state.level, ROOTED_MATERIALIZE_MAX);
+  const beyondRooted = state.level > ROOTED_MATERIALIZE_MAX;
+
   const model = useMemo(
     () =>
       buildTilingModel({
         family,
         rootTile: state.rootTile,
-        level: state.level,
+        level: renderLevel,
         curvy,
         stabilizeChirality: true,
       }),
-    [family, state.rootTile, state.level, curvy],
+    [family, state.rootTile, renderLevel, curvy],
   );
 
   const matchingRecord = useMemo(
@@ -377,7 +390,14 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
               <em>{tileCount.toLocaleString()} tiles</em>
             </span>
           </div>
-          {heavy ? (
+          {beyondRooted ? (
+            <p className="warning-badge" role="status">
+              Level {state.level} is past what this view can materialize, so it is drawing level{' '}
+              {ROOTED_MATERIALIZE_MAX}. The{' '}
+              <a href={`${import.meta.env.BASE_URL}map.html`}>Infinite Map</a> goes deeper without
+              building the patch at all.
+            </p>
+          ) : heavy ? (
             <p className="warning-badge" role="status">
               Level {state.level} renders on canvas — interactivity is limited and analysis can take
               a few seconds.
@@ -674,6 +694,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
                 tails={linesOn ? analysis.result?.tails : undefined}
                 circuitColorByLength={analysis.result?.circuitColors}
                 rainbowTails={hasFlag(state, FLAG.RAINBOW_TAILS)}
+                highlightLength={highlightLength}
               />
             )}
           </PanZoom>

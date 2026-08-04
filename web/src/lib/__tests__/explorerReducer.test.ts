@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_EXPLORER_STATE,
   FLAG,
+  MAX_LEVEL,
   connectionCount,
   edgesToSubset,
   leafOrder,
@@ -143,8 +144,8 @@ describe('family switching', () => {
 });
 
 describe('level, flags, colours', () => {
-  it('clamps the level to 0..6', () => {
-    expect(run(base, { type: 'setLevel', level: 99 }).level).toBe(6);
+  it('clamps the level to 0..MAX_LEVEL', () => {
+    expect(run(base, { type: 'setLevel', level: 99 }).level).toBe(MAX_LEVEL);
     expect(run(base, { type: 'setLevel', level: -3 }).level).toBe(0);
     expect(run(base, { type: 'stepLevel', delta: -10 }).level).toBe(0);
   });

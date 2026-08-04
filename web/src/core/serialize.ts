@@ -68,7 +68,15 @@ export const DEFAULT_EXPLORER_STATE: ExplorerState = Object.freeze({
   overlays: Object.freeze({}) as Readonly<Record<string, readonly Chord[]>>,
 });
 
-export const MAX_LEVEL = 6;
+/**
+ * Ceiling for the *rooted* explorer, which materializes every tile of the
+ * patch. Past level 6 that is millions of tiles (≈7.87× per level), so the
+ * page warns before it commits; the Infinite Map's un-rooted engine is the
+ * route to arbitrary depth without materializing anything.
+ */
+export const MAX_LEVEL = 9;
+/** Above this the rooted patch is heavy enough to be worth warning about. */
+export const HEAVY_LEVEL = 6;
 
 function clampInt(v: number, lo: number, hi: number): number {
   if (!Number.isFinite(v)) return lo;

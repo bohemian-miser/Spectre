@@ -4,6 +4,7 @@ import {
   DEFAULT_EXPLORER_STATE,
   DEFAULT_FLAGS,
   FLAG,
+  MAX_LEVEL,
   decodeExplorerQuery,
   decodeExplorerState,
   encodeExplorerQuery,
@@ -77,7 +78,7 @@ describe('explorer state codec', () => {
     );
     expect(decoded.family).toBe('spectre');
     expect(decoded.rootTile).toBe('Delta');
-    expect(decoded.level).toBe(6); // clamped, not crashed
+    expect(decoded.level).toBe(MAX_LEVEL); // clamped, not crashed
     expect(decoded.subset).toEqual([]);
     expect(decoded.flags).toBe(DEFAULT_FLAGS);
     expect(decoded.colorScheme).toBe('bright');

@@ -43,6 +43,12 @@ export interface TilingCanvasProps {
   readonly tails?: readonly Path[];
   readonly circuitColorByLength?: ReadonlyMap<number, string> | readonly (readonly [number, string])[];
   readonly rainbowTails?: boolean;
+  /**
+   * Dim every strand whose length differs from this one, so picking a length
+   * in the stats readout isolates it here exactly as it does in the SVG
+   * `CircuitLayer` at the lighter levels.
+   */
+  readonly highlightLength?: number | null;
   readonly className?: string;
   readonly ariaLabel?: string;
 }
@@ -89,6 +95,7 @@ export function TilingCanvas(props: TilingCanvasProps): JSX.Element {
     tails,
     circuitColorByLength,
     rainbowTails = false,
+    highlightLength = null,
     className,
     ariaLabel,
   } = props;
@@ -172,10 +179,17 @@ export function TilingCanvas(props: TilingCanvasProps): JSX.Element {
         ctx.lineWidth = 0.12;
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
-        for (const rec of overlay) {
-          ctx.strokeStyle = rec.color;
-          ctx.stroke(new Path2D(rec.d));
+        // Dimmed strands first, so the highlighted length draws over them.
+        const dimmed = highlightLength != null;
+        for (const pass of dimmed ? [false, true] : [true]) {
+          ctx.globalAlpha = pass ? 1 : 0.12;
+          for (const rec of overlay) {
+            if (dimmed && (rec.length === highlightLength) !== pass) continue;
+            ctx.strokeStyle = rec.color;
+            ctx.stroke(new Path2D(rec.d));
+          }
         }
+        ctx.globalAlpha = 1;
       }
 
       ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -197,6 +211,7 @@ export function TilingCanvas(props: TilingCanvasProps): JSX.Element {
     selectedEdges,
     contracts,
     overlay,
+    highlightLength,
   ]);
 
   return (
