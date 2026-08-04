@@ -66,7 +66,9 @@ export function DevGalleryPage(): JSX.Element {
   const order = useMemo(() => leafOrder(family), [family]);
 
   const [hoverEdge, setHoverEdge] = useState<EdgeRef | null>(null);
-  const [highlightLength, setHighlightLength] = useState<number | null>(null);
+  const [highlightLengths, setHighlightLengths] = useState<ReadonlySet<number>>(
+    () => new Set<number>(),
+  );
   const [soloTileRaw, setSoloTile] = useState<TileTypeId>('Delta');
   // Gamma1/Gamma2 do not exist in the hex family (§12.9).
   const soloTile: TileTypeId =
@@ -232,8 +234,18 @@ export function DevGalleryPage(): JSX.Element {
               result={analysis.result}
               running={analysis.running}
               error={analysis.error}
-              highlightLength={highlightLength}
-              onSelectLength={setHighlightLength}
+              highlightLengths={highlightLengths}
+              onSelectLength={(length, additive) =>
+                setHighlightLengths((prev) => {
+                  if (additive) {
+                    const next = new Set(prev);
+                    if (!next.delete(length)) next.add(length);
+                    return next;
+                  }
+                  return prev.size === 1 && prev.has(length) ? new Set() : new Set([length]);
+                })
+              }
+              onClearLengths={() => setHighlightLengths(new Set())}
             />
           </fieldset>
         </aside>
@@ -275,7 +287,7 @@ export function DevGalleryPage(): JSX.Element {
                           circuitColorByLength={analysis.result.circuitColors}
                           segmentColor={analysis.result.segmentColors}
                           rainbowTails={hasFlag(state, FLAG.RAINBOW_TAILS)}
-                          highlightLength={highlightLength}
+                          highlightLengths={highlightLengths}
                           tailEndMarkers={state.level <= 3}
                           strokeWidth={0.12}
                         />

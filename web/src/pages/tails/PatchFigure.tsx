@@ -109,7 +109,6 @@ export function PatchFigure(props: PatchFigureProps): JSX.Element {
           tails={result.tails}
           circuitColorByLength={result.circuitColors}
           segmentColor={result.segmentColors}
-          highlightLength={null}
           tailEndMarkers={tailEndMarkers && level <= 3}
           strokeWidth={strokeWidth}
           maxRecords={40000}

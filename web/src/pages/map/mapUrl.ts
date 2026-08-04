@@ -15,10 +15,12 @@
 
 import {
   DEFAULT_INSTANCE_BUDGET,
+  DEFAULT_LINE_SCALE,
   INSTANCE_BUDGETS,
   MAX_INSTANCE_BUDGET,
   MIN_INSTANCE_BUDGET,
   clampInstanceBudget,
+  clampLineScale,
   edgesToSubset,
   subsetFromString,
   subsetToEdges,
@@ -50,6 +52,8 @@ export interface MapUrlState {
   readonly subset?: readonly number[];
   /** Combination string: one non-crossing matching digit per leaf. */
   readonly combo?: string;
+  /** Strand-line thickness multiplier (`lw=`), omitted at 1. */
+  readonly lineWidth?: number;
 }
 
 /**
@@ -82,6 +86,7 @@ export const DEFAULT_MAP_STATE: MapUrlState = {
   lines: false,
   subset: DEFAULT_SUBSET,
   combo: DEFAULT_COMBO,
+  lineWidth: DEFAULT_LINE_SCALE,
 };
 
 /** Keep only base-36 digits and pad/trim to `COMBO_LENGTH`. */
@@ -126,6 +131,8 @@ export function encodeMapQuery(state: MapUrlState): string {
   if (lines) q.set('ln', '1');
   if (lines || subset !== defaultSubset) q.set('e', subset);
   if (lines || combo !== DEFAULT_COMBO) q.set('c', combo);
+  const lw = clampLineScale(state.lineWidth ?? DEFAULT_LINE_SCALE);
+  if (lw !== DEFAULT_LINE_SCALE) q.set('lw', String(lw));
   return q.toString();
 }
 
@@ -142,6 +149,7 @@ export function decodeMapQuery(query: string): MapUrlState {
   const cy = num('cy');
   const z = num('z');
   const budget = num('budget');
+  const lwRaw = num('lw');
   const lnRaw = q.get('ln');
   const eRaw = q.get('e');
   const cRaw = q.get('c');
@@ -154,6 +162,7 @@ export function decodeMapQuery(query: string): MapUrlState {
     lines: lnRaw === null ? DEFAULT_MAP_STATE.lines : lnRaw === '1' || lnRaw === 'true',
     subset: eRaw === null ? DEFAULT_MAP_STATE.subset : subsetToEdges(subsetFromString(eRaw)),
     combo: cRaw === null ? DEFAULT_MAP_STATE.combo : normalizeCombo(cRaw),
+    lineWidth: lwRaw === null ? DEFAULT_LINE_SCALE : clampLineScale(lwRaw),
   };
 }
 

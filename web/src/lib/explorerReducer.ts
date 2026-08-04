@@ -9,8 +9,10 @@
 import {
   DEFAULT_EXPLORER_STATE,
   DEFAULT_INSTANCE_BUDGET,
+  DEFAULT_LINE_SCALE,
   MAX_LEVEL,
   clampInstanceBudget,
+  clampLineScale,
   connectionCount,
   leafOrder,
   matchingCount,
@@ -58,7 +60,8 @@ export type ExplorerAction =
   | { readonly type: 'clearOverlays'; readonly tileType?: TileTypeId }
   | { readonly type: 'setCamera'; readonly camera: Camera | undefined }
   | { readonly type: 'setMode'; readonly mode: ExplorerMode }
-  | { readonly type: 'setBudget'; readonly budget: number };
+  | { readonly type: 'setBudget'; readonly budget: number }
+  | { readonly type: 'setLineWidth'; readonly lineWidth: number };
 
 function clampInt(v: number, lo: number, hi: number): number {
   if (!Number.isFinite(v)) return lo;
@@ -146,6 +149,11 @@ export function explorerReducer(state: ExplorerState, action: ExplorerAction): E
     case 'setBudget': {
       const budget = clampInstanceBudget(action.budget);
       return budget === explorerBudget(state) ? state : { ...state, budget };
+    }
+
+    case 'setLineWidth': {
+      const lineWidth = clampLineScale(action.lineWidth);
+      return lineWidth === explorerLineWidth(state) ? state : { ...state, lineWidth };
     }
 
     case 'setRootTile':
@@ -321,6 +329,11 @@ export function explorerMode(state: ExplorerState): ExplorerMode {
 /** Effective instance budget for infinite mode. */
 export function explorerBudget(state: ExplorerState): number {
   return state.budget === undefined ? DEFAULT_INSTANCE_BUDGET : clampInstanceBudget(state.budget);
+}
+
+/** Effective strand-line thickness multiplier. */
+export function explorerLineWidth(state: ExplorerState): number {
+  return state.lineWidth === undefined ? DEFAULT_LINE_SCALE : clampLineScale(state.lineWidth);
 }
 
 /** Convenience selector: `subset` as a Set for the core APIs. */

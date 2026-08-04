@@ -30,7 +30,12 @@ import { originRelativeCenter, type MapCamera } from './camera';
 import type { LeafChordTable } from './chords';
 import { GLYPH_LEVEL, buildGlyphMeshes, glyphFitForCut } from './glyphs';
 import type { MapRenderStats, MapRenderStyle, MapRenderer } from './rendererTypes';
-import { DEFAULT_LINE_COLOR, OUTLINE_FADE_START, outlineAlphaForScale } from './webglRenderer';
+import {
+  BASE_LINE_PX,
+  DEFAULT_LINE_COLOR,
+  OUTLINE_FADE_START,
+  outlineAlphaForScale,
+} from './webglRenderer';
 
 /** Hard instance ceiling for the software path (≈ the report's 50k budget). */
 export const CANVAS2D_MAX_INSTANCES = 50_000;
@@ -111,6 +116,7 @@ export function createCanvas2dRenderer(canvas: HTMLCanvasElement): MapRenderer |
   let showFills = true;
   let showOutlines = true;
   let lineCss = cssRgba(DEFAULT_LINE_COLOR);
+  let lineScale = 1;
 
   let cutRef: ViewportCut | null = null;
   let byType: Map<number, number[]> = new Map();
@@ -133,6 +139,7 @@ export function createCanvas2dRenderer(canvas: HTMLCanvasElement): MapRenderer |
     showFills = style?.showFills ?? true;
     showOutlines = style?.showOutlines ?? true;
     lineCss = cssRgba(style?.lineColor ?? DEFAULT_LINE_COLOR);
+    lineScale = style?.lineScale ?? 1;
   };
 
   const setCut = (cut: ViewportCut): void => {
@@ -205,7 +212,10 @@ export function createCanvas2dRenderer(canvas: HTMLCanvasElement): MapRenderer |
 
       // Strand lines — leaf cuts only, same rule as the WebGL2 path.
       if (!aggregate && chordPaths) {
-        C.lineWidth = 0.09;
+        // The instance transform carries the camera scale, so a constant width
+        // here would be world units and would thin out on zoom-out. Dividing
+        // by the scale pins it to CSS px, matching the WebGL2 path.
+        C.lineWidth = (BASE_LINE_PX * lineScale) / Math.max(1e-6, cam.scale);
         C.strokeStyle = lineCss;
         for (const [typeByte, list] of byType) {
           const path = chordPaths[typeByte];

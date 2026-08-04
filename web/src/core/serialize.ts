@@ -76,6 +76,33 @@ export interface ExplorerState {
    * active. Read it as `state.budget ?? DEFAULT_INSTANCE_BUDGET`.
    */
   readonly budget?: number;
+  /**
+   * Strand-line thickness MULTIPLIER (`lw=`), applied to the chord lines drawn
+   * on the tiles — not to tile outlines and not to the overlay tool. Additive:
+   * omitted at 1. Read it as `state.lineWidth ?? DEFAULT_LINE_SCALE`.
+   */
+  readonly lineWidth?: number;
+}
+
+/**
+ * Strand-line thickness is a MULTIPLIER, not an absolute width, because each
+ * renderer measures thickness in its own natural unit: the rooted SVG view
+ * strokes in world units (so lines scale with the tiles, and thin out as you
+ * zoom away), while the map's WebGL/Canvas2D views stroke in CSS pixels (so
+ * lines hold their weight at any zoom). One multiplier scales whichever of
+ * those a page happens to be using, and 1 reproduces the old fixed widths.
+ */
+export const DEFAULT_LINE_SCALE = 1;
+export const MIN_LINE_SCALE = 0.25;
+export const MAX_LINE_SCALE = 6;
+/** Presets for the stepper; the URL accepts any value in range. */
+export const LINE_SCALE_STEP = 0.25;
+
+export function clampLineScale(scale: number): number {
+  if (!Number.isFinite(scale)) return DEFAULT_LINE_SCALE;
+  // Two decimals keeps `lw=` short and the round-trip exact.
+  const snapped = Math.round(scale * 100) / 100;
+  return Math.min(MAX_LINE_SCALE, Math.max(MIN_LINE_SCALE, snapped));
 }
 
 /** Display flag bits (§9.2 `fl`). */
@@ -248,6 +275,12 @@ export function encodeExplorerState(s: ExplorerState): URLSearchParams {
     const b = clampInstanceBudget(s.budget);
     if (b !== DEFAULT_INSTANCE_BUDGET) q.set('bg', String(b));
   }
+  // Line thickness applies in both modes, so unlike `bg=` it does not ride on
+  // `md=` — only on being off its default.
+  if (s.lineWidth !== undefined) {
+    const lw = clampLineScale(s.lineWidth);
+    if (lw !== DEFAULT_LINE_SCALE) q.set('lw', String(lw));
+  }
   return q;
 }
 
@@ -328,6 +361,9 @@ export function decodeExplorerState(q: URLSearchParams): ExplorerState {
   const budget =
     mode === 'infinite' && Number.isFinite(bgRaw) ? clampInstanceBudget(bgRaw) : undefined;
 
+  const lwRaw = Number.parseFloat(q.get('lw') ?? '');
+  const lineWidth = Number.isFinite(lwRaw) ? clampLineScale(lwRaw) : undefined;
+
   const state: ExplorerState = {
     family,
     rootTile,
@@ -342,6 +378,7 @@ export function decodeExplorerState(q: URLSearchParams): ExplorerState {
     ...(camera ? { camera } : {}),
     ...(mode ? { mode } : {}),
     ...(budget !== undefined ? { budget } : {}),
+    ...(lineWidth !== undefined ? { lineWidth } : {}),
   };
   return state;
 }
