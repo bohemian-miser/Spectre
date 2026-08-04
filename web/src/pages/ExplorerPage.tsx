@@ -74,6 +74,7 @@ import {
   type InfiniteCanvasStatus,
 } from './map/InfiniteCanvas';
 import type { MapRenderStyle } from './map/rendererTypes';
+import { DEFAULT_LINE_COLOR, LIGHT_LINE_COLOR } from './map/webglRenderer';
 import '../styles/map.css';
 
 export type OverlayTool = 'cursor' | 'line' | 'erase';

@@ -338,8 +338,8 @@ export function MapPage(props: MapPageProps): JSX.Element {
           <p className="muted map-lines-help">
             One digit per leaf type (Delta, Theta, Lambda, Xi, Pi, Sigma, Phi, Psi, Gamma2,
             Gamma1) selecting that type&rsquo;s non-crossing matching — the same combination string
-            the stats page and the notebook CSVs use. Chords are drawn flat white: they are local
-            geometry, not analysed circuits.
+            the stats page and the notebook CSVs use. Chords are drawn in ONE flat ink: they are
+            local geometry, not analysed circuits, so nothing here is coloured by circuit length.
           </p>
           {noChords ? (
             <p className="warning-badge" role="status">
