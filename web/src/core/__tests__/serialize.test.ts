@@ -12,6 +12,10 @@ import {
   normalizeExplorerState,
   supportsInfiniteMode,
   EXPLORER_MODES,
+  DEFAULT_LINE_SCALE,
+  MAX_LINE_SCALE,
+  MIN_LINE_SCALE,
+  clampLineScale,
   type ExplorerState,
 } from '../serialize';
 import {
@@ -246,6 +250,52 @@ describe('instance budget in the URL', () => {
 
   it('leaves pre-budget links byte-identical', () => {
     // Canonical order: `md=` is written last, after the shared params.
+    for (const link of ['v=1', 'v=1&lv=4&e=2578&c=0100101100', 'v=1&lv=7&md=infinite']) {
+      expect(encodeExplorerQuery(decodeExplorerQuery(link))).toBe(link);
+    }
+  });
+});
+
+/**
+ * Strand-line thickness (`lw=`). Unlike `bg=` it is NOT tied to a mode — the
+ * rooted view strokes in world units and the map's views in CSS px, but the
+ * multiplier means the same thing to both.
+ */
+describe('line thickness in the URL', () => {
+  it('is omitted at the default', () => {
+    expect(DEFAULT_EXPLORER_STATE.lineWidth).toBeUndefined();
+    expect(encodeExplorerQuery({ ...DEFAULT_EXPLORER_STATE, lineWidth: DEFAULT_LINE_SCALE })).toBe(
+      `v=${CODEC_VERSION}`,
+    );
+    expect(decodeExplorerQuery('v=1').lineWidth).toBeUndefined();
+  });
+
+  it('round-trips canonically in either mode', () => {
+    for (const base of [
+      DEFAULT_EXPLORER_STATE,
+      { ...DEFAULT_EXPLORER_STATE, mode: 'infinite' as const },
+    ]) {
+      for (const lw of [0.25, 0.5, 1.5, 2, 3.75, 6]) {
+        const query = encodeExplorerQuery({ ...base, lineWidth: lw });
+        expect(query).toContain(`lw=${lw}`);
+        const back = decodeExplorerQuery(query);
+        expect(back.lineWidth).toBe(lw);
+        expect(encodeExplorerQuery(back)).toBe(query); // canonical
+      }
+    }
+  });
+
+  it('clamps out-of-range values and ignores junk', () => {
+    expect(decodeExplorerQuery('v=1&lw=999').lineWidth).toBe(MAX_LINE_SCALE);
+    expect(decodeExplorerQuery('v=1&lw=0').lineWidth).toBe(MIN_LINE_SCALE);
+    expect(decodeExplorerQuery('v=1&lw=-4').lineWidth).toBe(MIN_LINE_SCALE);
+    expect(decodeExplorerQuery('v=1&lw=fat').lineWidth).toBeUndefined();
+    expect(clampLineScale(Number.NaN)).toBe(DEFAULT_LINE_SCALE);
+    // Snapped to two decimals so the round-trip is exact.
+    expect(clampLineScale(1.23456)).toBe(1.23);
+  });
+
+  it('leaves pre-thickness links byte-identical', () => {
     for (const link of ['v=1', 'v=1&lv=4&e=2578&c=0100101100', 'v=1&lv=7&md=infinite']) {
       expect(encodeExplorerQuery(decodeExplorerQuery(link))).toBe(link);
     }

@@ -26,6 +26,12 @@ export interface MapRenderStyle {
   readonly showOutlines?: boolean;
   /** Strand line colour, 0..1 RGBA. */
   readonly lineColor?: readonly [number, number, number, number];
+  /**
+   * Strand line thickness MULTIPLIER over the renderer's base width (1 =
+   * unchanged). Applies to the chord lines only — never to the leaf outline
+   * pass, which stays hairline so it reads as tile structure rather than ink.
+   */
+  readonly lineScale?: number;
 }
 
 export interface MapRenderStats {

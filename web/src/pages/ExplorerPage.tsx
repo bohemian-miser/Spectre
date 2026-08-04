@@ -21,6 +21,9 @@ import {
   FAMILIES,
   FAMILY_DISPLAY_NAMES,
   FLAG,
+  LINE_SCALE_STEP,
+  MAX_LINE_SCALE,
+  MIN_LINE_SCALE,
   MAX_LEVEL,
   SUBSTITUTION_GROWTH,
   TILE_NAMES,
@@ -32,9 +35,11 @@ import {
   matchingIndicesToCombo,
   metaEdges,
   mul,
+  pathLength,
   supportsInfiniteMode,
   svgMatrixString,
   type EdgeContract,
+  type Path,
   type Rgb,
   type TileFamilyId,
   type TileTypeId,
@@ -58,12 +63,12 @@ import {
 import { edgeClassColor } from '../lib/palette';
 import { useCircuitAnalysis } from '../hooks/useCircuitAnalysis';
 import { useExplorerStore } from '../hooks/useExplorerState';
-import { explorerBudget, explorerMode, hasFlag } from '../lib/explorerReducer';
+import { explorerBudget, explorerLineWidth, explorerMode, hasFlag } from '../lib/explorerReducer';
 import { matchingVectorToRecord } from '../lib/matchingModel';
 import { buildTilingModel } from '../lib/tilingModel';
-import { overlayChordsD, pathBox, pathsOfLength } from '../lib/overlayPaths';
+import { overlayChordsD, pathsBox } from '../lib/overlayPaths';
 import { EXPLORER_ROUTE } from '../lib/urlState';
-import { expandBox, roundCamera, transformBox } from '../lib/viewport';
+import { expandBox, isEmptyBox, roundCamera, transformBox } from '../lib/viewport';
 import { sceneFilename, serializeSceneSvg } from '../lib/exportScene';
 import { downloadBlob, downloadText, svgTextToPngBlob } from './sceneDownload';
 import { createCamera, levelForScale, scaleForLevel } from './map/camera';
@@ -99,6 +104,18 @@ const OVERLAY_DEF_PREFIX = 'ex-ov';
  */
 const INFINITE_SEED = 1;
 /**
+ * Rooted-view strand width at scale 1, in WORLD units — so the lines scale
+ * with the tiles the way they always have. The map's views measure in CSS px
+ * instead; the multiplier is what the two have in common.
+ */
+const BASE_CIRCUIT_STROKE = 0.12;
+/**
+ * Breathing room when framing a circuit, as a FRACTION of the viewport per
+ * side — the unit `fitToBounds` actually wants. 0.08 leaves the shape 84% of
+ * the viewport.
+ */
+const FOCUS_PADDING = 0.08;
+/**
  * Budgets at or above this are worth a word of warning: the cost is the
  * single-threaded engine walk in the worker, not the GPU, so a fast graphics
  * card does not buy it back.
@@ -123,12 +140,15 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
   const nonCrossingOnly = hasFlag(state, FLAG.NON_CROSSING_ONLY);
   const mode = explorerMode(state);
   const budget = explorerBudget(state);
+  const lineWidth = explorerLineWidth(state);
   const infinite = mode === 'infinite';
   const infiniteAvailable = supportsInfiniteMode(family);
 
   const [hoverEdge, setHoverEdge] = useState<EdgeRef | null>(null);
   const [hoverMajor, setHoverMajor] = useState<number | null>(null);
-  const [highlightLength, setHighlightLength] = useState<number | null>(null);
+  const [highlightLengths, setHighlightLengths] = useState<ReadonlySet<number>>(
+    () => new Set<number>(),
+  );
   const [, setExampleIndex] = useState(0);
   const [tool, setTool] = useState<OverlayTool>('cursor');
   const [exportStatus, setExportStatus] = useState<string | null>(null);
@@ -235,8 +255,9 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
       showOutlines: hasFlag(state, FLAG.OUTLINES),
       // Flat ink, contrasting with whatever is behind it (no circuit colours).
       lineColor: fills ? DEFAULT_LINE_COLOR : LIGHT_LINE_COLOR,
+      lineScale: lineWidth,
     };
-  }, [state.colorScheme, state.customColors, state.flags]);
+  }, [state.colorScheme, state.customColors, state.flags, lineWidth]);
 
   /**
    * Level → zoom. The rooted level control means "show a patch of 7.873^L
@@ -289,35 +310,83 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
   const pinned = state.camera !== undefined;
   const fitKey = `${family}:${state.rootTile}:${state.level}:${pinned ? 'pin' : 'fit'}`;
 
-  const focusExample = useCallback(
-    (length: number | null, index: number) => {
+  /**
+   * Frame the given paths.
+   *
+   * Two things made the old call frame far too wide. `zoomToFit`'s padding is
+   * a FRACTION of the viewport (`fitToBounds` clamps it to 0.45), so passing
+   * `48` pinned it to the maximum and threw away 90% of the viewport — a ~10×
+   * zoom-out on every pick. And the margin was a flat 2 world units, which is
+   * invisible around a long circuit but swallows a short one. So: a real
+   * fraction, and a margin proportional to the shape's own size.
+   */
+  const focusPaths = useCallback(
+    (paths: readonly Path[]) => {
       const api = panRef.current;
-      if (!api || length == null || !analysis.result) return;
-      const matches = pathsOfLength(analysis.result.circuits, length);
-      if (!matches.length) return;
-      const path = matches[((index % matches.length) + matches.length) % matches.length];
+      if (!api || !paths.length) return;
       // Analysis runs in un-mirrored world space; the view may be mirrored (§3.4).
-      api.zoomToFit(expandBox(transformBox(model.viewTransform, pathBox(path)), 2), 48);
+      const box = transformBox(model.viewTransform, pathsBox(paths));
+      if (isEmptyBox(box)) return;
+      const span = Math.max(box.max.x - box.min.x, box.max.y - box.min.y);
+      api.zoomToFit(expandBox(box, Math.max(0.15, span * 0.06)), FOCUS_PADDING);
     },
-    [analysis.result, model.viewTransform],
+    [model.viewTransform],
   );
 
+  const focusExample = useCallback(
+    (lengths: ReadonlySet<number>, index: number) => {
+      if (!analysis.result || lengths.size === 0) return;
+      const matches = analysis.result.circuits.filter((p) => lengths.has(pathLength(p)));
+      if (!matches.length) return;
+      const path = matches[((index % matches.length) + matches.length) % matches.length];
+      focusPaths([path]);
+    },
+    [analysis.result, focusPaths],
+  );
+
+  /**
+   * Plain click isolates one length (clicking the active one clears it);
+   * shift/ctrl/meta-click toggles it into the selection so several lengths
+   * can be shown at once.
+   */
   const onSelectLength = useCallback(
-    (length: number | null) => {
-      setHighlightLength(length);
-      setExampleIndex(0);
-      focusExample(length, 0);
+    (length: number, additive: boolean) => {
+      setHighlightLengths((prev) => {
+        let next: Set<number>;
+        if (additive) {
+          next = new Set(prev);
+          if (!next.delete(length)) next.add(length);
+        } else {
+          next = prev.size === 1 && prev.has(length) ? new Set() : new Set([length]);
+        }
+        setExampleIndex(0);
+        // Adding to a multi-selection should not yank the camera off what the
+        // user is already looking at; only a fresh single pick reframes.
+        if (!additive && next.size === 1) focusExample(next, 0);
+        return next;
+      });
     },
     [focusExample],
   );
 
+  const clearLengths = useCallback(() => {
+    setHighlightLengths(new Set());
+    setExampleIndex(0);
+  }, []);
+
   const nextExample = useCallback(() => {
     setExampleIndex((i) => {
       const next = i + 1;
-      focusExample(highlightLength, next);
+      focusExample(highlightLengths, next);
       return next;
     });
-  }, [focusExample, highlightLength]);
+  }, [focusExample, highlightLengths]);
+
+  /** Frame every circuit of every selected length at once. */
+  const fitAllSelected = useCallback(() => {
+    if (!analysis.result) return;
+    focusPaths(analysis.result.circuits.filter((p) => highlightLengths.has(pathLength(p))));
+  }, [analysis.result, focusPaths, highlightLengths]);
 
   // --- overlays (the straight-line tool, §6.5.7) ---------------------------
 
@@ -733,6 +802,21 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
           }
         />
 
+        <label className="control-row line-width-row">
+          <span>Line weight</span>
+          <input
+            type="range"
+            aria-label="Strand line thickness"
+            data-testid="line-width"
+            min={MIN_LINE_SCALE}
+            max={MAX_LINE_SCALE}
+            step={LINE_SCALE_STEP}
+            value={lineWidth}
+            onChange={(e) => dispatch({ type: 'setLineWidth', lineWidth: Number(e.target.value) })}
+          />
+          <output>{lineWidth}×</output>
+        </label>
+
         <ColorSchemePicker
           family={family}
           colorScheme={state.colorScheme}
@@ -828,13 +912,19 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
                 result={analysis.result}
                 running={analysis.running}
                 error={analysis.error}
-                highlightLength={highlightLength}
+                highlightLengths={highlightLengths}
                 onSelectLength={onSelectLength}
+                onClearLengths={clearLengths}
               />
-              {highlightLength != null ? (
-                <button type="button" onClick={nextExample}>
-                  Next example of length {highlightLength}
-                </button>
+              {highlightLengths.size ? (
+                <div className="control-row length-focus">
+                  <button type="button" onClick={nextExample}>
+                    Next example
+                  </button>
+                  <button type="button" onClick={fitAllSelected}>
+                    Fit all {highlightLengths.size === 1 ? '' : `${highlightLengths.size} lengths`}
+                  </button>
+                </div>
               ) : null}
             </>
           )}
@@ -900,10 +990,10 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
                       circuitColorByLength={analysis.result.circuitColors}
                       segmentColor={analysis.result.segmentColors}
                       rainbowTails={hasFlag(state, FLAG.RAINBOW_TAILS)}
-                      highlightLength={highlightLength}
+                      highlightLengths={highlightLengths}
                       tailEndMarkers={state.level <= 3}
                       maxRecords={40000}
-                      strokeWidth={0.12}
+                      strokeWidth={BASE_CIRCUIT_STROKE * lineWidth}
                     />
                   </g>
                 ) : null}
@@ -937,7 +1027,8 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
                 tails={linesOn ? analysis.result?.tails : undefined}
                 circuitColorByLength={analysis.result?.circuitColors}
                 rainbowTails={hasFlag(state, FLAG.RAINBOW_TAILS)}
-                highlightLength={highlightLength}
+                highlightLengths={highlightLengths}
+                strokeWidth={BASE_CIRCUIT_STROKE * lineWidth}
               />
             )}
           </PanZoom>

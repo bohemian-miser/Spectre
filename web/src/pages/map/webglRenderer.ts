@@ -122,11 +122,20 @@ ${DECODE_GLSL}
 }`;
 
 /**
- * Strand-line pass: vertex-pull the tile-local chord endpoint for this
- * (vertexId, leaf type) from the RGBA32F chord table, then run the SAME
- * instance decode as the fill pass so the chord rides its tile exactly.
- * A padding texel (`valid == 0`) is thrown outside the clip volume, which
- * discards the whole `LINES` primitive.
+ * Strand-line pass: vertex-pull the tile-local chord endpoints for this
+ * (chord, leaf type) from the RGBA32F chord table, then run the SAME instance
+ * decode as the fill pass so the chord rides its tile exactly.
+ *
+ * Chords are drawn as TRIANGLES, not `LINES`, because `gl.lineWidth` above 1
+ * is not honoured by core WebGL2 on any mainstream driver — a hairline is all
+ * `LINES` can ever give. Each chord is expanded here into a quad: both
+ * endpoints are transformed to clip space, converted to pixels, and offset
+ * along the segment normal by `uHalfPx`, so thickness is exact in device
+ * pixels and independent of zoom (which is what makes it adjustable at all).
+ *
+ * Six vertices per chord, corners `[A- A+ B- B+]` indexed `0 1 2 / 2 1 3`.
+ * A padding texel (`valid == 0`) throws every corner outside the clip volume,
+ * discarding both triangles.
  */
 const VS_CHORD = `#version 300 es
 layout(location=1) in vec2 aPos;
@@ -134,15 +143,54 @@ layout(location=2) in float aCode;
 layout(location=3) in float aType;
 uniform sampler2D uChordTex;
 uniform vec4 uView;
+uniform vec2 uHalfRes; // device px per NDC unit: (width/2, height/2)
+uniform float uHalfPx; // half line width, device px
+
+vec2 decode(vec2 v, float code, vec2 pos) {
+  float mir = floor(code / 16.0);
+  float k = code - mir * 16.0;
+  float ang = k * 0.5235987755982988;
+  float c = cos(ang), s = sin(ang);
+  if (mir > 0.5) v.x = -v.x;
+  return vec2(c * v.x - s * v.y, s * v.x + c * v.y) + pos;
+}
+
 void main() {
+  int chord = gl_VertexID / 6;
+  int corner = gl_VertexID - chord * 6;
+  // 0 1 2 / 2 1 3 over corners [A-, A+, B-, B+].
+  int idx = corner == 0 ? 0 : corner == 1 ? 1 : corner == 2 ? 2 : corner == 3 ? 2 : corner == 4 ? 1 : 3;
   int t = int(aType + 0.5);
-  vec4 g = texelFetch(uChordTex, ivec2(gl_VertexID, t), 0);
-  if (g.z < 0.5) {
-    gl_Position = vec4(4.0, 4.0, 0.0, 1.0); // outside NDC ⇒ primitive clipped
+
+  vec4 ga = texelFetch(uChordTex, ivec2(chord * 2, t), 0);
+  vec4 gb = texelFetch(uChordTex, ivec2(chord * 2 + 1, t), 0);
+  if (ga.z < 0.5 || gb.z < 0.5) {
+    gl_Position = vec4(4.0, 4.0, 0.0, 1.0); // outside NDC ⇒ triangles clipped
     return;
   }
-  vec2 v = g.xy;
-${DECODE_GLSL}
+
+  vec2 wa = decode(ga.xy, aCode, aPos);
+  vec2 wb = decode(gb.xy, aCode, aPos);
+  vec2 ca = vec2((wa.x + uView.x) * uView.z, (wa.y + uView.y) * uView.w);
+  vec2 cb = vec2((wb.x + uView.x) * uView.z, (wb.y + uView.y) * uView.w);
+
+  vec2 pa = ca * uHalfRes;
+  vec2 pb = cb * uHalfRes;
+  vec2 delta = pb - pa;
+  float len = length(delta);
+  // A zero-length chord has no direction to offset along; +x keeps it a dot
+  // rather than a NaN that would take out the whole triangle.
+  vec2 dir = len > 1e-6 ? delta / len : vec2(1.0, 0.0);
+  vec2 nrm = vec2(-dir.y, dir.x);
+
+  vec2 base = (idx < 2) ? pa : pb;
+  float side = (idx == 0 || idx == 2) ? -1.0 : 1.0;
+  // Extend the ends by the half width so consecutive chords meet squarely
+  // instead of leaving a notch at every connection point.
+  vec2 cap = ((idx < 2) ? -dir : dir) * uHalfPx;
+  vec2 p = base + nrm * (side * uHalfPx) + cap;
+
+  gl_Position = vec4(p / uHalfRes, 0.0, 1.0);
 }`;
 
 const FS_COLOR = `#version 300 es
@@ -168,6 +216,13 @@ const BG: readonly [number, number, number] = [0.055, 0.066, 0.094];
 export const DEFAULT_LINE_COLOR: readonly [number, number, number, number] = [
   0.04, 0.05, 0.09, 0.95,
 ];
+
+/**
+ * Strand-line width at scale 1, in CSS px. Slightly over 1 so the default is a
+ * touch heavier than the old `LINES` hairline it replaces, which read as thin
+ * on HiDPI screens.
+ */
+export const BASE_LINE_PX = 1.4;
 
 /** Strand colour for dark backgrounds (fills off). */
 export const LIGHT_LINE_COLOR: readonly [number, number, number, number] = [
@@ -386,6 +441,7 @@ export function createWebGLRenderer(
   let showFills = true;
   let showOutlines = true;
   let lineColor = DEFAULT_LINE_COLOR;
+  let lineScale = 1;
   const loc = (p: WebGLProgram, name: string): WebGLUniformLocation | null =>
     G.getUniformLocation(p, name);
   const uLeafView = loc(progLeaf, 'uView');
@@ -400,6 +456,8 @@ export function createWebGLRenderer(
   const uChordView = loc(progChord, 'uView');
   const uChordColor = loc(progChord, 'uLine');
   const uChordTexLoc = loc(progChord, 'uChordTex');
+  const uChordHalfRes = loc(progChord, 'uHalfRes');
+  const uChordHalfPx = loc(progChord, 'uHalfPx');
 
   // --- state ------------------------------------------------------------------
   let count = 0;
@@ -444,6 +502,7 @@ export function createWebGLRenderer(
     showFills = style?.showFills ?? true;
     showOutlines = style?.showOutlines ?? true;
     lineColor = style?.lineColor ?? DEFAULT_LINE_COLOR;
+    lineScale = style?.lineScale ?? 1;
   };
 
   const render = (cam: MapCamera, cssW: number, cssH: number, dpr: number): MapRenderStats => {
@@ -510,13 +569,18 @@ export function createWebGLRenderer(
             G.useProgram(progChord);
             G.uniform4f(uChordView, vx, vy, kx, ky);
             G.uniform4f(uChordColor, lineColor[0], lineColor[1], lineColor[2], lineColor[3]);
+            G.uniform2f(uChordHalfRes, bw / 2, bh / 2);
+            // Width is authored in CSS px, so it must be scaled to device px to
+            // look the same weight on a HiDPI screen as on a 1x one.
+            G.uniform1f(uChordHalfPx, (BASE_LINE_PX * lineScale * dpr) / 2);
             G.activeTexture(G.TEXTURE0);
             G.bindTexture(G.TEXTURE_2D, chordTex);
             G.uniform1i(uChordTexLoc, 0);
             G.enable(G.BLEND);
             G.blendFunc(G.SRC_ALPHA, G.ONE_MINUS_SRC_ALPHA);
             G.bindVertexArray(vaoChord);
-            G.drawArraysInstanced(G.LINES, 0, chordVerts, count);
+            // Six verts per chord (two triangles), not two — see VS_CHORD.
+            G.drawArraysInstanced(G.TRIANGLES, 0, chordsPerTile * 6, count);
             G.disable(G.BLEND);
             drawCalls++;
             chordsDrawn = count * chordsPerTile;

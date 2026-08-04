@@ -25,6 +25,10 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  DEFAULT_LINE_SCALE,
+  LINE_SCALE_STEP,
+  MAX_LINE_SCALE,
+  MIN_LINE_SCALE,
   SUBSTITUTION_GROWTH,
   comboToMatchingIndices,
   edgesToSubset,
@@ -51,6 +55,7 @@ import {
 } from './map/mapUrl';
 import { CANVAS2D_MAX_INSTANCES } from './map/canvasRenderer';
 import type { MapRenderer } from './map/renderer';
+import type { MapRenderStyle } from './map/rendererTypes';
 import '../styles/map.css';
 
 export interface MapPageProps {
@@ -84,6 +89,7 @@ export function MapPage(props: MapPageProps): JSX.Element {
   const [seed, setSeed] = useState<number>(initial.seed);
   const [seedDraft, setSeedDraft] = useState<string>(String(initial.seed));
   const [budget, setBudget] = useState<number>(initial.budget);
+  const [lineWidth, setLineWidth] = useState<number>(initial.lineWidth ?? DEFAULT_LINE_SCALE);
   const [lines, setLines] = useState<boolean>(initial.lines ?? false);
   const [subset, setSubset] = useState<readonly number[]>(
     initial.subset ?? DEFAULT_MAP_STATE.subset ?? [],
@@ -105,8 +111,8 @@ export function MapPage(props: MapPageProps): JSX.Element {
   const statusRef = useRef(status);
   statusRef.current = status;
   const urlTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const worldRef = useRef({ seed, budget, lines, subset, combo });
-  worldRef.current = { seed, budget, lines, subset, combo };
+  const worldRef = useRef({ seed, budget, lines, subset, combo, lineWidth });
+  worldRef.current = { seed, budget, lines, subset, combo, lineWidth };
 
   // --- strand chords ----------------------------------------------------------
   const matching = useMemo(
@@ -118,6 +124,8 @@ export function MapPage(props: MapPageProps): JSX.Element {
     [lines, subset, matching],
   );
 
+  const renderStyle = useMemo<MapRenderStyle>(() => ({ lineScale: lineWidth }), [lineWidth]);
+
   // --- URL ---------------------------------------------------------------------
   const writeUrl = useCallback((): void => {
     if (!syncUrl || typeof window === 'undefined') return;
@@ -126,6 +134,7 @@ export function MapPage(props: MapPageProps): JSX.Element {
     const hash = mapStateToHash({
       seed: w.seed,
       budget: w.budget,
+      lineWidth: w.lineWidth,
       cx: cam.cx,
       cy: cam.cy,
       scale: cam.scale,
@@ -165,7 +174,7 @@ export function MapPage(props: MapPageProps): JSX.Element {
 
   useEffect(() => {
     writeUrlSoon();
-  }, [seed, budget, lines, subset, combo, writeUrlSoon]);
+  }, [seed, budget, lines, subset, combo, lineWidth, writeUrlSoon]);
 
   // --- back/forward: apply external hash changes --------------------------------
   useEffect(() => {
@@ -177,6 +186,7 @@ export function MapPage(props: MapPageProps): JSX.Element {
       const cur: MapUrlState = {
         seed: w.seed,
         budget: w.budget,
+        lineWidth: w.lineWidth,
         cx: cam.cx,
         cy: cam.cy,
         scale: cam.scale,
@@ -188,6 +198,7 @@ export function MapPage(props: MapPageProps): JSX.Element {
       setSeed(st.seed);
       setSeedDraft(String(st.seed));
       setBudget(st.budget);
+      setLineWidth(st.lineWidth ?? DEFAULT_LINE_SCALE);
       setLines(st.lines ?? false);
       setSubset(st.subset ?? []);
       setCombo(normalizeCombo(st.combo ?? ''));
@@ -289,6 +300,21 @@ export function MapPage(props: MapPageProps): JSX.Element {
               ))}
             </select>
           </label>
+          <label className="map-control">
+            <span>Line weight</span>
+            <input
+              type="range"
+              aria-label="Strand line thickness"
+              data-testid="map-line-width"
+              min={MIN_LINE_SCALE}
+              max={MAX_LINE_SCALE}
+              step={LINE_SCALE_STEP}
+              value={lineWidth}
+              disabled={!lines}
+              onChange={(e) => setLineWidth(Number(e.target.value))}
+            />
+            <output>{lineWidth}×</output>
+          </label>
           <button type="button" onClick={resetView}>
             Reset view
           </button>
@@ -360,6 +386,7 @@ export function MapPage(props: MapPageProps): JSX.Element {
         seed={seed}
         budget={budget}
         chords={chords}
+        style={renderStyle}
         initialCamera={initialCameraRef.current}
         apiRef={apiRef}
         onCameraChange={onCameraChange}

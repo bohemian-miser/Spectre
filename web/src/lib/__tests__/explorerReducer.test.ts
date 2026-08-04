@@ -2,10 +2,13 @@ import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_EXPLORER_STATE,
   DEFAULT_INSTANCE_BUDGET,
+  DEFAULT_LINE_SCALE,
   FLAG,
   MAX_INSTANCE_BUDGET,
+  MAX_LINE_SCALE,
   MAX_LEVEL,
   MIN_INSTANCE_BUDGET,
+  MIN_LINE_SCALE,
   connectionCount,
   edgesToSubset,
   leafOrder,
@@ -15,6 +18,7 @@ import {
 } from '../../core';
 import {
   explorerBudget,
+  explorerLineWidth,
   explorerMode,
   explorerReducer,
   hasFlag,
@@ -200,6 +204,29 @@ describe('overlays and contracts', () => {
     const s = run(base, { type: 'setCamera', camera: { x: 1, y: 2, scale: 3 } });
     expect(s.camera).toEqual({ x: 1, y: 2, scale: 3 });
     expect('camera' in run(s, { type: 'setCamera', camera: undefined })).toBe(false);
+  });
+});
+
+describe('line thickness', () => {
+  it('clamps to range and is a no-op at the current value', () => {
+    expect(explorerLineWidth(base)).toBe(DEFAULT_LINE_SCALE);
+    expect(run(base, { type: 'setLineWidth', lineWidth: DEFAULT_LINE_SCALE })).toBe(base);
+    expect(explorerLineWidth(run(base, { type: 'setLineWidth', lineWidth: 99 }))).toBe(
+      MAX_LINE_SCALE,
+    );
+    expect(explorerLineWidth(run(base, { type: 'setLineWidth', lineWidth: 0 }))).toBe(
+      MIN_LINE_SCALE,
+    );
+  });
+
+  it('is independent of the renderer mode', () => {
+    const s = run(
+      base,
+      { type: 'setLineWidth', lineWidth: 3 },
+      { type: 'setMode', mode: 'infinite' },
+      { type: 'setMode', mode: 'rooted' },
+    );
+    expect(explorerLineWidth(s)).toBe(3);
   });
 });
 

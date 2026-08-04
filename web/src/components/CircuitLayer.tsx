@@ -21,8 +21,11 @@ export interface CircuitLayerProps {
   readonly showTails?: boolean;
   /** World units. */
   readonly strokeWidth?: number;
-  /** Dim every path whose length differs (length-chip highlighting). */
-  readonly highlightLength?: number | null;
+  /**
+   * Dim every path whose length is not in this set (length-chip highlighting).
+   * Empty or absent means "no highlight" — everything draws at full strength.
+   */
+  readonly highlightLengths?: ReadonlySet<number> | null;
   /** Draw a marker at every open-path endpoint (the "fraying" beat). */
   readonly tailEndMarkers?: boolean;
   /** Truncation guard for very large levels. */
@@ -40,7 +43,7 @@ export function CircuitLayer(props: CircuitLayerProps): JSX.Element {
     showCircuits = true,
     showTails = true,
     strokeWidth = 0.12,
-    highlightLength = null,
+    highlightLengths = null,
     tailEndMarkers = false,
     maxRecords,
     className,
@@ -82,7 +85,7 @@ export function CircuitLayer(props: CircuitLayerProps): JSX.Element {
           strokeWidth={strokeWidth}
           strokeLinecap="round"
           strokeLinejoin="round"
-          opacity={highlightLength != null && r.length !== highlightLength ? 0.12 : 1}
+          opacity={highlightLengths?.size && !highlightLengths.has(r.length) ? 0.12 : 1}
         />
       ))}
       {ends.length ? (

@@ -44,11 +44,13 @@ export interface TilingCanvasProps {
   readonly circuitColorByLength?: ReadonlyMap<number, string> | readonly (readonly [number, string])[];
   readonly rainbowTails?: boolean;
   /**
-   * Dim every strand whose length differs from this one, so picking a length
-   * in the stats readout isolates it here exactly as it does in the SVG
-   * `CircuitLayer` at the lighter levels.
+   * Dim every strand whose length is not in this set, so picking lengths in
+   * the stats readout isolates them here exactly as it does in the SVG
+   * `CircuitLayer` at the lighter levels. Empty or absent = no highlight.
    */
-  readonly highlightLength?: number | null;
+  readonly highlightLengths?: ReadonlySet<number> | null;
+  /** Strand stroke width, world units (matches `CircuitLayer`). */
+  readonly strokeWidth?: number;
   readonly className?: string;
   readonly ariaLabel?: string;
 }
@@ -95,7 +97,8 @@ export function TilingCanvas(props: TilingCanvasProps): JSX.Element {
     tails,
     circuitColorByLength,
     rainbowTails = false,
-    highlightLength = null,
+    highlightLengths = null,
+    strokeWidth = 0.12,
     className,
     ariaLabel,
   } = props;
@@ -176,15 +179,15 @@ export function TilingCanvas(props: TilingCanvasProps): JSX.Element {
 
       if (overlay.length) {
         applyTransform(ctx, dpr, effectiveCamera, model.viewTransform);
-        ctx.lineWidth = 0.12;
+        ctx.lineWidth = strokeWidth;
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
         // Dimmed strands first, so the highlighted length draws over them.
-        const dimmed = highlightLength != null;
+        const dimmed = !!highlightLengths?.size;
         for (const pass of dimmed ? [false, true] : [true]) {
           ctx.globalAlpha = pass ? 1 : 0.12;
           for (const rec of overlay) {
-            if (dimmed && (rec.length === highlightLength) !== pass) continue;
+            if (dimmed && highlightLengths!.has(rec.length) !== pass) continue;
             ctx.strokeStyle = rec.color;
             ctx.stroke(new Path2D(rec.d));
           }
@@ -211,7 +214,8 @@ export function TilingCanvas(props: TilingCanvasProps): JSX.Element {
     selectedEdges,
     contracts,
     overlay,
-    highlightLength,
+    highlightLengths,
+    strokeWidth,
   ]);
 
   return (
