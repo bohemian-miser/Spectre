@@ -58,7 +58,7 @@ import {
 import { edgeClassColor } from '../lib/palette';
 import { useCircuitAnalysis } from '../hooks/useCircuitAnalysis';
 import { useExplorerStore } from '../hooks/useExplorerState';
-import { explorerMode, hasFlag } from '../lib/explorerReducer';
+import { explorerBudget, explorerMode, hasFlag } from '../lib/explorerReducer';
 import { matchingVectorToRecord } from '../lib/matchingModel';
 import { buildTilingModel } from '../lib/tilingModel';
 import { overlayChordsD, pathBox, pathsOfLength } from '../lib/overlayPaths';
@@ -74,6 +74,7 @@ import {
   type InfiniteCanvasStatus,
 } from './map/InfiniteCanvas';
 import type { MapRenderStyle } from './map/rendererTypes';
+import { MAP_BUDGETS, formatBudget } from './map/mapUrl';
 import { DEFAULT_LINE_COLOR, LIGHT_LINE_COLOR } from './map/webglRenderer';
 import '../styles/map.css';
 
@@ -97,8 +98,12 @@ const OVERLAY_DEF_PREFIX = 'ex-ov';
  * seed control.
  */
 const INFINITE_SEED = 1;
-/** Instance budget for the embedded un-rooted view (the map's default). */
-const INFINITE_BUDGET = 100_000;
+/**
+ * Budgets at or above this are worth a word of warning: the cost is the
+ * single-threaded engine walk in the worker, not the GPU, so a fast graphics
+ * card does not buy it back.
+ */
+const HEAVY_BUDGET = 2_000_000;
 
 export interface ExplorerPageProps {
   /** Mirror state into `location.hash` (default true; tests can opt out). */
@@ -117,6 +122,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
   const linesOn = hasFlag(state, FLAG.LINES);
   const nonCrossingOnly = hasFlag(state, FLAG.NON_CROSSING_ONLY);
   const mode = explorerMode(state);
+  const budget = explorerBudget(state);
   const infinite = mode === 'infinite';
   const infiniteAvailable = supportsInfiniteMode(family);
 
@@ -502,11 +508,37 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
               {FAMILY_DISPLAY_NAMES.spectre}. Switch the family back to use it.
             </p>
           ) : infinite ? (
-            <p className="muted" role="note">
-              No root and no patch: the plane is expanded around the camera on demand (world seed{' '}
-              {INFINITE_SEED} — the <a href={`${import.meta.env.BASE_URL}map.html`}>Infinite Map</a>{' '}
-              owns the seed control). Drag to pan, wheel to zoom.
-            </p>
+            <>
+              <p className="muted" role="note">
+                No root and no patch: the plane is expanded around the camera on demand (world seed{' '}
+                {INFINITE_SEED} — the{' '}
+                <a href={`${import.meta.env.BASE_URL}map.html`}>Infinite Map</a> owns the seed
+                control). Drag to pan, wheel to zoom.
+              </p>
+              <label className="control-row">
+                <span>Budget</span>
+                <select
+                  aria-label="Instance budget"
+                  data-testid="infinite-budget"
+                  value={budget}
+                  onChange={(e) => dispatch({ type: 'setBudget', budget: Number(e.target.value) })}
+                >
+                  {MAP_BUDGETS.map((b) => (
+                    <option key={b} value={b}>
+                      {formatBudget(b)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <p className="muted" role="note">
+                How many instances one query may emit. It only bites once the view holds more tiles
+                than that — then the engine draws supertile glyphs instead, and a bigger budget buys
+                back a level of real tiles.{' '}
+                {budget >= HEAVY_BUDGET
+                  ? 'At this size expect the query, not the frame, to be the wait: the engine walk is single-threaded on the CPU, so a fast GPU does not speed it up.'
+                  : 'Zoomed in, where every tile is already drawn, raising it changes nothing.'}
+              </p>
+            </>
           ) : null}
 
           <label className="control-row">
@@ -815,7 +847,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
             className="map-viewport explorer-infinite"
             ariaLabel="Infinite tiling viewport — drag to pan, wheel or pinch to zoom"
             seed={INFINITE_SEED}
-            budget={INFINITE_BUDGET}
+            budget={budget}
             chords={infiniteChords}
             style={infiniteStyle}
             initialCamera={initialInfiniteCamera}

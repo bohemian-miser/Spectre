@@ -8,7 +8,9 @@
 
 import {
   DEFAULT_EXPLORER_STATE,
+  DEFAULT_INSTANCE_BUDGET,
   MAX_LEVEL,
+  clampInstanceBudget,
   connectionCount,
   leafOrder,
   matchingCount,
@@ -55,7 +57,8 @@ export type ExplorerAction =
   | { readonly type: 'removeChord'; readonly tileType: TileTypeId; readonly at: number }
   | { readonly type: 'clearOverlays'; readonly tileType?: TileTypeId }
   | { readonly type: 'setCamera'; readonly camera: Camera | undefined }
-  | { readonly type: 'setMode'; readonly mode: ExplorerMode };
+  | { readonly type: 'setMode'; readonly mode: ExplorerMode }
+  | { readonly type: 'setBudget'; readonly budget: number };
 
 function clampInt(v: number, lo: number, hi: number): number {
   if (!Number.isFinite(v)) return lo;
@@ -136,6 +139,13 @@ export function explorerReducer(state: ExplorerState, action: ExplorerAction): E
       if (action.mode !== 'infinite') return stripMode(state);
       if (!supportsInfiniteMode(state.family)) return stripMode(state);
       return state.mode === 'infinite' ? state : { ...state, mode: 'infinite' };
+    }
+
+    // Kept across a hop back to rooted mode (where it is simply unused) so the
+    // choice survives toggling; the codec only writes it alongside `md`.
+    case 'setBudget': {
+      const budget = clampInstanceBudget(action.budget);
+      return budget === explorerBudget(state) ? state : { ...state, budget };
     }
 
     case 'setRootTile':
@@ -306,6 +316,11 @@ function stripMode(state: ExplorerState): ExplorerState {
 /** Effective mode, honouring the engine's family restriction. */
 export function explorerMode(state: ExplorerState): ExplorerMode {
   return state.mode === 'infinite' && supportsInfiniteMode(state.family) ? 'infinite' : 'rooted';
+}
+
+/** Effective instance budget for infinite mode. */
+export function explorerBudget(state: ExplorerState): number {
+  return state.budget === undefined ? DEFAULT_INSTANCE_BUDGET : clampInstanceBudget(state.budget);
 }
 
 /** Convenience selector: `subset` as a Set for the core APIs. */

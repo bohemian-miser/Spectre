@@ -14,6 +14,7 @@ import { FAMILIES, leafOrder, TILE_NAMES, type TileFamilyId, type TileTypeId } f
 import { comboToMatchingIndices, matchingIndicesToCombo } from './matchings';
 import { matchingCount } from './matchings';
 import { connectionCount } from './edges';
+import { DEFAULT_INSTANCE_BUDGET, clampInstanceBudget } from './unrooted';
 
 export const CODEC_VERSION = 1;
 
@@ -69,6 +70,12 @@ export interface ExplorerState {
    * link decodes unchanged. Read it as `state.mode ?? 'rooted'`.
    */
   readonly mode?: ExplorerMode;
+  /**
+   * Instance budget for infinite mode (`bg=`). Additive in the same way: only
+   * a non-default value is written, and only while the mode that uses it is
+   * active. Read it as `state.budget ?? DEFAULT_INSTANCE_BUDGET`.
+   */
+  readonly budget?: number;
 }
 
 /** Display flag bits (§9.2 `fl`). */
@@ -233,7 +240,14 @@ export function encodeExplorerState(s: ExplorerState): URLSearchParams {
     q.set('cam', `${s.camera.x.toFixed(2)},${s.camera.y.toFixed(2)},${s.camera.scale.toFixed(2)}`);
   }
   // Additive: only a non-default mode appears, and only where it is real.
-  if (s.mode === 'infinite' && supportsInfiniteMode(s.family)) q.set('md', 'infinite');
+  const infinite = s.mode === 'infinite' && supportsInfiniteMode(s.family);
+  if (infinite) q.set('md', 'infinite');
+  // The budget only means anything in infinite mode, so it rides along with it
+  // rather than cluttering every rooted link.
+  if (infinite && s.budget !== undefined) {
+    const b = clampInstanceBudget(s.budget);
+    if (b !== DEFAULT_INSTANCE_BUDGET) q.set('bg', String(b));
+  }
   return q;
 }
 
@@ -308,6 +322,12 @@ export function decodeExplorerState(q: URLSearchParams): ExplorerState {
   const mode: ExplorerMode | undefined =
     mdRaw === 'infinite' && supportsInfiniteMode(family) ? 'infinite' : undefined;
 
+  // Only meaningful alongside `md=infinite`; a stray `bg=` on a rooted link is
+  // dropped the same way a stray `md=` on a hex link is.
+  const bgRaw = Number.parseInt(q.get('bg') ?? '', 10);
+  const budget =
+    mode === 'infinite' && Number.isFinite(bgRaw) ? clampInstanceBudget(bgRaw) : undefined;
+
   const state: ExplorerState = {
     family,
     rootTile,
@@ -321,6 +341,7 @@ export function decodeExplorerState(q: URLSearchParams): ExplorerState {
     ...(contracts ? { contracts } : {}),
     ...(camera ? { camera } : {}),
     ...(mode ? { mode } : {}),
+    ...(budget !== undefined ? { budget } : {}),
   };
   return state;
 }

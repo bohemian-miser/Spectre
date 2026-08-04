@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_EXPLORER_STATE,
+  DEFAULT_INSTANCE_BUDGET,
   FLAG,
+  MAX_INSTANCE_BUDGET,
   MAX_LEVEL,
+  MIN_INSTANCE_BUDGET,
   connectionCount,
   edgesToSubset,
   leafOrder,
@@ -11,6 +14,7 @@ import {
   type ExplorerState,
 } from '../../core';
 import {
+  explorerBudget,
   explorerMode,
   explorerReducer,
   hasFlag,
@@ -196,6 +200,28 @@ describe('overlays and contracts', () => {
     const s = run(base, { type: 'setCamera', camera: { x: 1, y: 2, scale: 3 } });
     expect(s.camera).toEqual({ x: 1, y: 2, scale: 3 });
     expect('camera' in run(s, { type: 'setCamera', camera: undefined })).toBe(false);
+  });
+});
+
+describe('instance budget', () => {
+  it('clamps to the engine range and is a no-op at the current value', () => {
+    expect(explorerBudget(base)).toBe(DEFAULT_INSTANCE_BUDGET);
+    expect(run(base, { type: 'setBudget', budget: DEFAULT_INSTANCE_BUDGET })).toBe(base);
+    expect(explorerBudget(run(base, { type: 'setBudget', budget: 1e12 }))).toBe(
+      MAX_INSTANCE_BUDGET,
+    );
+    expect(explorerBudget(run(base, { type: 'setBudget', budget: 1 }))).toBe(MIN_INSTANCE_BUDGET);
+  });
+
+  it('survives a round trip through rooted mode', () => {
+    const s = run(
+      base,
+      { type: 'setMode', mode: 'infinite' },
+      { type: 'setBudget', budget: 5_000_000 },
+      { type: 'setMode', mode: 'rooted' },
+      { type: 'setMode', mode: 'infinite' },
+    );
+    expect(explorerBudget(s)).toBe(5_000_000);
   });
 });
 
