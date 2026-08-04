@@ -18,3 +18,5 @@ export * from './subsets';
 export * from './colors';
 export * from './serialize';
 export * from './stats';
+export * from './exact';
+export * from './unrooted';
