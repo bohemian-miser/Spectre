@@ -842,6 +842,30 @@ describe('viewport LOD policy and wire format', () => {
     expect(() => eng.query({ cx: 0, cy: 0, halfW: 10, halfH: 10 }, 0)).toThrow(/budget/);
   });
 
+  it('leaves no hole in a far view whose chain climbs past several dead levels', () => {
+    // Regression: seed 1 at z=0.02 held the same probe count from ancestor 13
+    // through 18 (each new ancestor extended away from the view) and only
+    // gained the missing subtree at 19. Count stability alone accepted level
+    // 13 and the map rendered a large empty wedge; the occupancy grid in the
+    // stabilization loop is what rejects it.
+    const eng = createUnrootedEngine(1);
+    const view = { cx: 0, cy: 0, halfW: 32_000, halfH: 15_000 };
+    const q = eng.query(view, 200_000);
+
+    const CELL = 500;
+    const nx = Math.ceil((2 * view.halfW) / CELL);
+    const ny = Math.ceil((2 * view.halfH) / CELL);
+    const grid = new Uint8Array(nx * ny);
+    for (let i = 0; i < q.count; ++i) {
+      const gx = Math.floor((q.pos[i * 2] + q.origin.x - (view.cx - view.halfW)) / CELL);
+      const gy = Math.floor((q.pos[i * 2 + 1] + q.origin.y - (view.cy - view.halfH)) / CELL);
+      if (gx >= 0 && gx < nx && gy >= 0 && gy < ny) grid[gy * nx + gx] = 1;
+    }
+    const empty = grid.reduce((n, v) => (v === 0 ? n + 1 : n), 0);
+    expect(empty).toBe(0);
+    expect(q.ancestorLevel).toBeGreaterThanOrEqual(19);
+  });
+
   it('a tile emitted by two different queries is exactly the same tile', () => {
     const eng = createUnrootedEngine(5);
     const a = eng.query({ cx: 0, cy: 0, halfW: 10, halfH: 10 }, 10_000, { emitExact: true });

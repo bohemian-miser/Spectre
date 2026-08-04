@@ -92,6 +92,24 @@ export const SPECTRE_TILE_AREA = (() => {
 const COVER_MARGIN_TILES = 8;
 const COVER_SHRINK = 0.2;
 
+/**
+ * Resolution of the occupancy grid used to prove the descent root actually
+ * covers the view (see `probeView`). Counting nodes is not enough on its own:
+ * a chain can climb several levels while every new ancestor extends *away*
+ * from the view, so consecutive probe counts agree while a whole region of
+ * the view is still outside the subtree. Sampling the view and demanding
+ * every cell be reached catches exactly that.
+ */
+const COVER_GRID_X = 48;
+const COVER_GRID_Y = 24;
+/**
+ * Levels below the emitted cut that the coverage probe runs at. Coarser is
+ * cheaper (~1/G per level) but inflates each node's AABB, which can paper
+ * over a real hole; +2 keeps probe nodes small against a grid cell while
+ * costing ~1/60th of the emission walk.
+ */
+const COVER_PROBE_LIFT = 2;
+
 const LEAF_INDEX = new Map<TileTypeId, number>(LEAF_ORDER.map((t, i) => [t, i]));
 const META_INDEX = new Map<TileTypeId, number>(TILE_NAMES.map((t, i) => [t, i]));
 const LOG_GROWTH = Math.log(SUBSTITUTION_GROWTH);
@@ -451,20 +469,42 @@ export function createUnrootedEngine(seed: number): UnrootedEngine {
   }
 
   /**
-   * Count nodes at `probeCut` (or leaves) whose bbox intersects `view`,
-   * descending from ancestor `level`. Used by the coverage-stabilization
-   * loop: descending from a higher ancestor always yields a superset, so
-   * equal probe counts prove no foreign supertile (and hence no foreign
-   * tile — every tile's ancestors' bboxes contain its own) can reach the
-   * view from outside the lower ancestor's subtree.
+   * Walk the nodes at `probeCut` (or leaves) whose bbox intersects `view`,
+   * descending from ancestor `level`, and report both how many there are and
+   * how much of the view they reach.
+   *
+   * Two facts drive the coverage-stabilization loop that calls this:
+   *  - descending from a higher ancestor always yields a superset, so equal
+   *    probe counts are *evidence* the lower ancestor is complete;
+   *  - but they are not proof. Successive ancestors can each extend away
+   *    from the view, leaving counts equal for several levels while part of
+   *    the view still lies outside the subtree entirely. The occupancy grid
+   *    catches that case directly: every cell of the view must be reached by
+   *    some node's AABB, or the descent root is too low.
    */
-  function probeCount(level: number, probeCut: number, view: ViewRect): number {
+  function probeView(
+    level: number,
+    probeCut: number,
+    view: ViewRect,
+  ): { count: number; uncovered: number } {
     const W = worldOfAncestor[level];
     const wMinX = view.cx - view.halfW;
     const wMaxX = view.cx + view.halfW;
     const wMinY = view.cy - view.halfH;
     const wMaxY = view.cy + view.halfH;
+    const cellW = (2 * view.halfW) / COVER_GRID_X;
+    const cellH = (2 * view.halfH) / COVER_GRID_Y;
+    const grid = new Uint8Array(COVER_GRID_X * COVER_GRID_Y);
     let count = 0;
+    const mark = (nMinX: number, nMaxX: number, nMinY: number, nMaxY: number): void => {
+      const gx0 = Math.max(0, Math.floor((nMinX - wMinX) / cellW));
+      const gx1 = Math.min(COVER_GRID_X - 1, Math.floor((nMaxX - wMinX) / cellW));
+      const gy0 = Math.max(0, Math.floor((nMinY - wMinY) / cellH));
+      const gy1 = Math.min(COVER_GRID_Y - 1, Math.floor((nMaxY - wMinY) / cellH));
+      for (let gy = gy0; gy <= gy1; ++gy) {
+        for (let gx = gx0; gx <= gx1; ++gx) grid[gy * COVER_GRID_X + gx] = 1;
+      }
+    };
     const walk = (
       node: TileNode,
       lvl: number,
@@ -492,16 +532,16 @@ export function createUnrootedEngine(seed: number): UnrootedEngine {
       const xt1 = l10 * bb.maxX;
       const yt0 = l11 * bb.minY;
       const yt1 = l11 * bb.maxY;
-      if (
-        Math.max(xs0 + ys0, xs0 + ys1, xs1 + ys0, xs1 + ys1) + tx < wMinX ||
-        Math.min(xs0 + ys0, xs0 + ys1, xs1 + ys0, xs1 + ys1) + tx > wMaxX ||
-        Math.max(xt0 + yt0, xt0 + yt1, xt1 + yt0, xt1 + yt1) + ty < wMinY ||
-        Math.min(xt0 + yt0, xt0 + yt1, xt1 + yt0, xt1 + yt1) + ty > wMaxY
-      ) {
+      const nMinX = Math.min(xs0 + ys0, xs0 + ys1, xs1 + ys0, xs1 + ys1) + tx;
+      const nMaxX = Math.max(xs0 + ys0, xs0 + ys1, xs1 + ys0, xs1 + ys1) + tx;
+      const nMinY = Math.min(xt0 + yt0, xt0 + yt1, xt1 + yt0, xt1 + yt1) + ty;
+      const nMaxY = Math.max(xt0 + yt0, xt0 + yt1, xt1 + yt0, xt1 + yt1) + ty;
+      if (nMaxX < wMinX || nMinX > wMaxX || nMaxY < wMinY || nMinY > wMaxY) {
         return;
       }
       if (node.kind === 'leaf' || (probeCut > 0 && lvl <= probeCut)) {
         count++;
+        mark(nMinX, nMaxX, nMinY, nMaxY);
         return;
       }
       const table = lvl >= 1 ? composeTable(lvl) : pairTable();
@@ -522,7 +562,9 @@ export function createUnrootedEngine(seed: number): UnrootedEngine {
       }
     };
     walk(nodeAt(level), level, W.k, W.m, W.t[0], W.t[1], W.t[2], W.t[3]);
-    return count;
+    let uncovered = 0;
+    for (let i = 0; i < grid.length; ++i) if (grid[i] === 0) uncovered += 1;
+    return { count, uncovered };
   }
 
   // Reusable scratch buffers (results are exact-size copies, so the scratch
@@ -546,16 +588,27 @@ export function createUnrootedEngine(seed: number): UnrootedEngine {
     } else {
       // Start at the bbox-fit level, then grow until a coarse probe proves the
       // emitted set complete: the fractal patch does not fill its bbox, so
-      // bbox containment alone is not coverage. Probing at `cut + 4` costs
-      // ~1/G^4 of the full expansion; the +3-level comparison window matches
-      // the growth-stability acceptance test.
+      // bbox containment alone is not coverage.
+      //
+      // Two conditions must hold together. Count stability across a 3-level
+      // window says a higher ancestor finds nothing new; the occupancy grid
+      // says the view is actually filled. Neither suffices alone — a chain
+      // whose next few ancestors all extend away from the view keeps its
+      // counts equal while leaving a hole in it (seed 1 at z=0.02 held the
+      // same count from level 13 to 18 and only closed at 19).
       ancestorLevel = coverageLevel(view);
       for (;;) {
         const upper = Math.min(ancestorLevel + 3, UNROOTED_MAX_LEVEL);
         ensureLevel(upper);
-        const probeCut = Math.min(ancestorLevel, cutEstimate + 4);
-        const lower = probeCount(ancestorLevel, probeCut, view);
-        if (lower > 0 && lower === probeCount(upper, probeCut, view)) break;
+        const probeCut = Math.min(ancestorLevel, cutEstimate + COVER_PROBE_LIFT);
+        const lower = probeView(ancestorLevel, probeCut, view);
+        if (
+          lower.count > 0 &&
+          lower.uncovered === 0 &&
+          lower.count === probeView(upper, probeCut, view).count
+        ) {
+          break;
+        }
         if (ancestorLevel >= UNROOTED_MAX_LEVEL) {
           throw new Error('viewport coverage did not stabilize within UNROOTED_MAX_LEVEL');
         }

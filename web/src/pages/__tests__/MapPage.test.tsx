@@ -1,0 +1,255 @@
+// @vitest-environment jsdom
+/**
+ * MapPage contract (BIGMAP stage 2): the page boots with the forceSync tiling
+ * client, feeds real engine cuts into whichever renderer the environment
+ * affords, and degrades gracefully — WebGL2 mock → instanced draw calls with
+ * the cut's exact instance count; 2D-only → Canvas2D fallback with the capped
+ * budget notice; neither → a static unsupported message. Deep links through
+ * the hash reproduce seed/budget. Geometry correctness is covered by the map unit
+ * suites and core's oracle tests; what can only break here is the wiring.
+ */
+import { act, cleanup, fireEvent, render } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import MapPage from '../MapPage';
+
+// ---------------------------------------------------------------------------
+// Environment shims (jsdom has no layout, no GL, no Path2D)
+// ---------------------------------------------------------------------------
+
+const RECT = {
+  x: 0,
+  y: 0,
+  top: 0,
+  left: 0,
+  right: 800,
+  bottom: 520,
+  width: 800,
+  height: 520,
+  toJSON: () => ({}),
+} as DOMRect;
+
+beforeEach(() => {
+  window.history.replaceState(null, '', '/map.html');
+  vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue(RECT);
+});
+
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+  delete (globalThis as Record<string, unknown>).Path2D;
+});
+
+/** Minimal WebGL2 stand-in: no-op calls, truthy statuses, recorded draws. */
+interface FakeGL {
+  drawElementsInstanced: ReturnType<typeof vi.fn>;
+  drawArraysInstanced: ReturnType<typeof vi.fn>;
+  bufferData: ReturnType<typeof vi.fn>;
+  [key: string]: unknown;
+}
+
+function makeFakeGl(): FakeGL {
+  const explicit: Record<string, unknown> = {
+    getShaderParameter: () => true,
+    getProgramParameter: () => true,
+    getShaderInfoLog: () => '',
+    getProgramInfoLog: () => '',
+    getUniformLocation: () => ({}),
+    getError: () => 0,
+    createShader: () => ({}),
+    createProgram: () => ({}),
+    createBuffer: () => ({}),
+    createTexture: () => ({}),
+    createVertexArray: () => ({}),
+    drawElementsInstanced: vi.fn(),
+    drawArraysInstanced: vi.fn(),
+    bufferData: vi.fn(),
+  };
+  return new Proxy(explicit, {
+    get(target, prop: string) {
+      if (prop in target) return target[prop];
+      if (/^[A-Z][A-Z0-9_]*$/.test(prop)) return 0x1f01; // any GL enum
+      const fn = vi.fn();
+      target[prop] = fn; // stable identity per method
+      return fn;
+    },
+  }) as unknown as FakeGL;
+}
+
+function stubContexts(gl: FakeGL | null, ctx2d: Record<string, unknown> | null): void {
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(((kind: string) => {
+    if (kind === 'webgl2') return gl as unknown as RenderingContext | null;
+    if (kind === '2d') return ctx2d as unknown as RenderingContext | null;
+    return null;
+  }) as never);
+}
+
+function make2dStub(): Record<string, unknown> {
+  return {
+    setTransform: vi.fn(),
+    clearRect: vi.fn(),
+    fillRect: vi.fn(),
+    fill: vi.fn(),
+    stroke: vi.fn(),
+    fillStyle: '',
+    strokeStyle: '',
+    lineWidth: 0,
+  };
+}
+
+class FakePath2D {
+  moveTo(): void {}
+  lineTo(): void {}
+  closePath(): void {}
+}
+
+/** Flush effects, the sync query promise, and a couple of rAF frames. */
+async function settle(): Promise<void> {
+  await act(async () => {
+    await new Promise((r) => setTimeout(r, 80));
+  });
+}
+
+const hudNumber = (container: HTMLElement, testId: string): number => {
+  const text = container.querySelector(`[data-testid="${testId}"]`)?.textContent ?? '';
+  return Number((text.match(/[\d,]+/) ?? ['0'])[0].replace(/,/g, ''));
+};
+
+// ---------------------------------------------------------------------------
+
+describe('MapPage', () => {
+  it('renders instanced draws through a WebGL2 context with the cut count', async () => {
+    const gl = makeFakeGl();
+    stubContexts(gl, null);
+    const { container } = render(<MapPage forceSyncClient />);
+    await settle();
+
+    expect(container.querySelector('[data-testid="hud-mode"]')?.textContent).toBe('webgl2');
+    const instances = hudNumber(container, 'hud-instances');
+    expect(instances).toBeGreaterThan(0);
+
+    // The engine cut is uploaded verbatim (3 instance buffers) and drawn as
+    // ONE instanced call whose instanceCount is exactly the cut count.
+    expect(gl.bufferData).toHaveBeenCalled();
+    expect(gl.drawElementsInstanced).toHaveBeenCalled();
+    const lastDraw = gl.drawElementsInstanced.mock.calls.at(-1) as unknown[];
+    expect(lastDraw[4]).toBe(instances);
+
+    // Default zoom (36 px/unit) is past the outline threshold → 2 draw calls.
+    expect(container.querySelector('[data-testid="hud-draw-ms"]')?.textContent).toContain(
+      '2 calls',
+    );
+    // Depth indicator reflects the engine's ancestor level.
+    expect(
+      container.querySelector('[data-testid="hud-depth"]')?.textContent,
+    ).toMatch(/depth ~\d+/u);
+    expect(container.querySelector('[data-testid="map-unsupported"]')).toBeNull();
+    expect(container.querySelector('[data-testid="map-fallback-note"]')).toBeNull();
+  });
+
+  it('draws far-zoom aggregates as glyphs in a single vertex-pulled call', async () => {
+    window.history.replaceState(null, '', '/map.html#/map?seed=1&cx=0&cy=0&z=0.05&budget=50000');
+    const gl = makeFakeGl();
+    stubContexts(gl, null);
+    const { container } = render(<MapPage forceSyncClient />);
+    await settle();
+
+    const instances = hudNumber(container, 'hud-instances');
+    expect(instances).toBeGreaterThan(0);
+    expect(container.querySelector('[data-testid="hud-cut"]')?.textContent).toContain('glyphs');
+    expect(gl.drawArraysInstanced).toHaveBeenCalled();
+    const lastDraw = gl.drawArraysInstanced.mock.calls.at(-1) as unknown[];
+    expect(lastDraw[3]).toBe(instances); // instanceCount
+    expect(container.querySelector('[data-testid="hud-draw-ms"]')?.textContent).toContain(
+      '1 call',
+    );
+  });
+
+  it('falls back to Canvas2D (with the cap notice) when WebGL2 is unavailable', async () => {
+    (globalThis as Record<string, unknown>).Path2D = FakePath2D;
+    const ctx2d = make2dStub();
+    stubContexts(null, ctx2d);
+    const { container } = render(<MapPage forceSyncClient />);
+    await settle();
+
+    expect(container.querySelector('[data-testid="hud-mode"]')?.textContent).toBe('canvas2d');
+    expect(hudNumber(container, 'hud-instances')).toBeGreaterThan(0);
+    const note = container.querySelector('[data-testid="map-fallback-note"]');
+    expect(note?.textContent).toContain('Canvas2D');
+    expect(note?.textContent).toContain('50,000');
+    expect(ctx2d.fill).toHaveBeenCalled();
+  });
+
+  it('shows a static message when neither context exists', async () => {
+    stubContexts(null, null);
+    const { container } = render(<MapPage forceSyncClient />);
+    await settle();
+
+    expect(container.querySelector('[data-testid="map-unsupported"]')?.textContent).toContain(
+      'WebGL2',
+    );
+    expect(container.querySelector('[data-testid="map-hud"]')).toBeNull();
+    // Controls stay usable (the page renders, no crash).
+    expect(container.querySelector('input[aria-label="World seed"]')).not.toBeNull();
+    expect(container.querySelector('select[aria-label="Instance budget"]')).not.toBeNull();
+  });
+
+  it('reproduces a deep link and mirrors reseeding back into the hash', async () => {
+    window.history.replaceState(
+      null,
+      '',
+      '/map.html#/map?seed=7&cx=120.5&cy=-33.25&z=12&budget=250000',
+    );
+    const gl = makeFakeGl();
+    stubContexts(gl, null);
+    const { container } = render(<MapPage forceSyncClient />);
+    await settle();
+
+    const seedInput = container.querySelector(
+      'input[aria-label="World seed"]',
+    ) as HTMLInputElement;
+    expect(seedInput.value).toBe('7');
+    const budgetSelect = container.querySelector(
+      'select[aria-label="Instance budget"]',
+    ) as HTMLSelectElement;
+    expect(budgetSelect.value).toBe('250000');
+    // The 250k+ caution note is visible.
+    expect(container.querySelector('.map-caution')).not.toBeNull();
+    expect(hudNumber(container, 'hud-instances')).toBeGreaterThan(0);
+
+    // Reseed → world regenerates and the hash follows (debounced).
+    fireEvent.change(seedInput, { target: { value: '42' } });
+    fireEvent.submit(seedInput.closest('form') as HTMLFormElement);
+    await settle();
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 450));
+    });
+    expect(window.location.hash).toContain('seed=42');
+    expect(window.location.hash).toContain('#/map');
+    expect(hudNumber(container, 'hud-instances')).toBeGreaterThan(0);
+  });
+
+  it('applies external hash changes (back/forward) to seed and camera', async () => {
+    const gl = makeFakeGl();
+    stubContexts(gl, null);
+    const { container } = render(<MapPage forceSyncClient />);
+    await settle();
+
+    await act(async () => {
+      window.location.hash = '#/map?seed=9&cx=50&cy=60&z=20&budget=100000';
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+      await new Promise((r) => setTimeout(r, 80));
+    });
+    const seedInput = container.querySelector(
+      'input[aria-label="World seed"]',
+    ) as HTMLInputElement;
+    expect(seedInput.value).toBe('9');
+    const api = (
+      window as unknown as {
+        __SPECTRE_MAP?: { getCamera(): { cx: number; cy: number; scale: number } };
+      }
+    ).__SPECTRE_MAP;
+    expect(api).toBeDefined();
+    expect(api?.getCamera().cx).toBeCloseTo(50, 6);
+    expect(api?.getCamera().scale).toBeCloseTo(20, 6);
+  });
+});

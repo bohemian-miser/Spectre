@@ -1,0 +1,153 @@
+/* The Infinite Map (BIGMAP stage 2).
+   Layout discipline — same rule as .explorer-viewport / .tiling-canvas in
+   explorer.css / widgets.css: the viewport has a DETERMINISTIC height and the
+   canvas lives OUT of flow (absolute, inset 0). The viewport must never size
+   itself from its own canvas, or resize feedback loops the layout. */
+
+.map-page {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+}
+
+.map-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+}
+.map-title h1 {
+  margin: 0 0 4px;
+  font-size: 24px;
+}
+.map-title p {
+  margin: 0;
+  max-width: 560px;
+}
+
+.map-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+}
+.map-control {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.map-control input,
+.map-control select {
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 6px 8px;
+  font: inherit;
+  min-width: 90px;
+}
+.map-controls button {
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 6px 12px;
+  font: inherit;
+  cursor: pointer;
+}
+.map-controls button:hover {
+  border-color: var(--accent);
+}
+
+.map-caution {
+  margin: 0;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-left: 3px solid #d99a2b;
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.map-viewport {
+  position: relative;
+  /* Deterministic height (mirrors .explorer-viewport): never derived from
+     the canvas bitmap. */
+  height: calc(100vh - 260px);
+  min-height: 420px;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #0e1118;
+  touch-action: none;
+  cursor: grab;
+}
+.map-viewport:active {
+  cursor: grabbing;
+}
+/* The bitmap lives OUT of flow (see widgets.css .tiling-canvas canvas). */
+.map-viewport canvas {
+  display: block;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.map-hud {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  background: rgba(8, 10, 16, 0.72);
+  color: #9fd6c8;
+  font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  pointer-events: none;
+  user-select: none;
+  max-width: min(360px, 80%);
+}
+
+.map-note,
+.map-warning {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  max-width: min(520px, 90%);
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  font-size: 13px;
+  pointer-events: none;
+}
+.map-note {
+  background: rgba(8, 10, 16, 0.72);
+  color: #d9c9a0;
+}
+.map-note + .map-note {
+  bottom: 52px;
+}
+.map-warning {
+  background: rgba(64, 18, 22, 0.88);
+  color: #ffd7d7;
+  pointer-events: auto;
+}
+
+.map-help {
+  margin: 0;
+  font-size: 13px;
+}
+
+@media (max-width: 900px) {
+  .map-viewport {
+    height: 62vh;
+  }
+}

@@ -15,6 +15,7 @@
     "src/explorer-main.tsx",
     "src/tails-main.tsx",
     "src/stats-main.tsx",
+    "src/map-main.tsx",
     "src/widgets-main.tsx"
   ]
 }
