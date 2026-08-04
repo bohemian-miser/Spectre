@@ -54,6 +54,13 @@ export const SITE_NAV: readonly NavItem[] = Object.freeze([
     blurb: 'Every analysed combination, its circuits, its wanderers.',
   },
   {
+    id: 'map',
+    label: 'Infinite Map',
+    entry: 'map.html',
+    status: 'ready',
+    blurb: 'Pan and zoom an endless spectre tiling, expanded on demand around the camera.',
+  },
+  {
     id: 'legacy',
     label: 'Legacy p5 app',
     entry: 'legacy.html',

@@ -21,16 +21,18 @@ describe('AppShell', () => {
     const ids = [...container.querySelectorAll('[data-nav-id]')].map((n) =>
       n.getAttribute('data-nav-id'),
     );
-    expect(ids).toEqual(['explorer', 'tails', 'stats', 'legacy']);
+    expect(ids).toEqual(['explorer', 'tails', 'stats', 'map', 'legacy']);
 
     const legacy = container.querySelector('a[data-nav-id="legacy"]');
     expect(legacy?.getAttribute('href')).toBe('/Spectre/legacy.html');
 
-    // All four destinations are live links now that tails/stats shipped.
+    // All five destinations are live links now that tails/stats/map shipped.
     const tails = container.querySelector('a[data-nav-id="tails"]');
     expect(tails?.getAttribute('href')).toBe('/Spectre/tails.html');
     const stats = container.querySelector('a[data-nav-id="stats"]');
     expect(stats?.getAttribute('href')).toBe('/Spectre/stats.html');
+    const map = container.querySelector('a[data-nav-id="map"]');
+    expect(map?.getAttribute('href')).toBe('/Spectre/map.html');
   });
 
   it('marks the active entry and keeps the repo + paper links', () => {

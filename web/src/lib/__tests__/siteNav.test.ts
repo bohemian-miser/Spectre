@@ -16,13 +16,13 @@ import {
 } from '../siteNav';
 
 describe('siteNav', () => {
-  it('lists the four destinations with unique ids', () => {
-    expect(SITE_NAV.map((i) => i.id)).toEqual(['explorer', 'tails', 'stats', 'legacy']);
+  it('lists the five destinations with unique ids', () => {
+    expect(SITE_NAV.map((i) => i.id)).toEqual(['explorer', 'tails', 'stats', 'map', 'legacy']);
     expect(new Set(SITE_NAV.map((i) => i.id)).size).toBe(SITE_NAV.length);
   });
 
-  it('ships all four destinations', () => {
-    expect(readyNav().map((i) => i.id)).toEqual(['explorer', 'tails', 'stats', 'legacy']);
+  it('ships all five destinations', () => {
+    expect(readyNav().map((i) => i.id)).toEqual(['explorer', 'tails', 'stats', 'map', 'legacy']);
   });
 
   it('builds hrefs under the deploy base', () => {
@@ -40,6 +40,7 @@ describe('siteNav', () => {
     expect(activeNavId('/')).toBe('explorer');
     expect(activeNavId('/Spectre/index.html')).toBe('explorer');
     expect(activeNavId('/Spectre/legacy.html')).toBe('legacy');
+    expect(activeNavId('/Spectre/map.html')).toBe('map');
     expect(activeNavId('/Spectre/widgets.html')).toBeNull();
   });
 
