@@ -66,6 +66,39 @@ export const SUBSTITUTION_GROWTH = 7.8730178;
  */
 export const UNROOTED_MAX_LEVEL = 32;
 
+/**
+ * Instance-budget presets for `query`.
+ *
+ * The budget picks the LOD cut, and one cut level is one substitution, so the
+ * useful steps are multiplicative — roughly ×8 in budget buys one more level of
+ * real tiles at far zoom. Below the cut it buys nothing at all: a viewport that
+ * already holds 28 k individual tiles emits exactly 28 k whatever you set here.
+ *
+ * Measured (seed 1, 1280×720, this container's CPU — the wall is the
+ * single-threaded walk in the worker, not the GPU):
+ *
+ *   z=2     any budget → 28,720 tiles, cut 0, ~10 ms   (budget irrelevant)
+ *   z=0.2   100 k → 41 k glyphs (cut 2), 12 ms
+ *           500 k → 319 k (cut 1), 112 ms
+ *           5 M   → 2.82 M individual tiles (cut 0), 776 ms
+ *   z=0.05  5 M   → 647 k (cut 2), 167 ms
+ *           10 M  → 5.08 M (cut 1), ~1.6 s
+ *
+ * `scratch*` below is sized at `2×budget` and never shrinks, so the top tier
+ * costs ~200 MB of resident typed arrays in the worker for the session.
+ */
+export const INSTANCE_BUDGETS: readonly number[] = [
+  50_000, 100_000, 250_000, 500_000, 1_000_000, 2_000_000, 5_000_000, 10_000_000,
+];
+export const DEFAULT_INSTANCE_BUDGET = 100_000;
+export const MIN_INSTANCE_BUDGET = 10_000;
+export const MAX_INSTANCE_BUDGET = 10_000_000;
+
+export function clampInstanceBudget(budget: number): number {
+  if (!Number.isFinite(budget)) return DEFAULT_INSTANCE_BUDGET;
+  return Math.min(MAX_INSTANCE_BUDGET, Math.max(MIN_INSTANCE_BUDGET, Math.round(budget)));
+}
+
 /** `type` byte values >= this are supertile aggregates: `128 + TILE_NAMES index`. */
 export const AGGREGATE_TYPE_BASE = 128;
 

@@ -14,6 +14,13 @@ import {
   EXPLORER_MODES,
   type ExplorerState,
 } from '../serialize';
+import {
+  DEFAULT_INSTANCE_BUDGET,
+  INSTANCE_BUDGETS,
+  MAX_INSTANCE_BUDGET,
+  MIN_INSTANCE_BUDGET,
+  clampInstanceBudget,
+} from '../unrooted';
 import { FAMILIES, leafOrder } from '../families';
 import { enumerateMatchings, nonCrossingForTile } from '../matchings';
 import { connectionCount } from '../edges';
@@ -200,5 +207,47 @@ describe('explorer mode in the URL', () => {
   it('falls back to rooted for junk modes', () => {
     expect(decodeExplorerQuery('v=1&md=teleport').mode).toBeUndefined();
     expect(decodeExplorerQuery('v=1&md=').mode).toBeUndefined();
+  });
+});
+
+/**
+ * Instance budget (`bg=`) — additive in the same way, and only meaningful
+ * alongside `md=infinite`.
+ */
+describe('instance budget in the URL', () => {
+  const infinite: ExplorerState = { ...DEFAULT_EXPLORER_STATE, mode: 'infinite' };
+
+  it('is omitted at the default and on rooted links', () => {
+    expect(encodeExplorerQuery({ ...infinite, budget: DEFAULT_INSTANCE_BUDGET })).toBe(
+      `v=${CODEC_VERSION}&md=infinite`,
+    );
+    // A budget with no infinite mode to spend it on never reaches the URL.
+    expect(
+      encodeExplorerQuery({ ...DEFAULT_EXPLORER_STATE, budget: MAX_INSTANCE_BUDGET }),
+    ).toBe(`v=${CODEC_VERSION}`);
+    expect(decodeExplorerQuery('v=1&bg=5000000').budget).toBeUndefined();
+  });
+
+  it('round-trips every offered preset', () => {
+    for (const b of INSTANCE_BUDGETS) {
+      const query = encodeExplorerQuery({ ...infinite, budget: b });
+      const back = decodeExplorerQuery(query);
+      expect(back.budget ?? DEFAULT_INSTANCE_BUDGET).toBe(b);
+      expect(encodeExplorerQuery(back)).toBe(query); // canonical
+    }
+  });
+
+  it('clamps out-of-range and junk values', () => {
+    expect(decodeExplorerQuery('v=1&md=infinite&bg=999999999').budget).toBe(MAX_INSTANCE_BUDGET);
+    expect(decodeExplorerQuery('v=1&md=infinite&bg=1').budget).toBe(MIN_INSTANCE_BUDGET);
+    expect(decodeExplorerQuery('v=1&md=infinite&bg=banana').budget).toBeUndefined();
+    expect(clampInstanceBudget(Number.NaN)).toBe(DEFAULT_INSTANCE_BUDGET);
+  });
+
+  it('leaves pre-budget links byte-identical', () => {
+    // Canonical order: `md=` is written last, after the shared params.
+    for (const link of ['v=1', 'v=1&lv=4&e=2578&c=0100101100', 'v=1&lv=7&md=infinite']) {
+      expect(encodeExplorerQuery(decodeExplorerQuery(link))).toBe(link);
+    }
   });
 });

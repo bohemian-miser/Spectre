@@ -10,6 +10,8 @@ import {
   DEFAULT_MAP_STATE,
   MAP_BUDGETS,
   MAP_ROUTE,
+  MAX_BUDGET,
+  MIN_BUDGET,
   clampBudget,
   decodeMapQuery,
   encodeMapQuery,
@@ -59,9 +61,9 @@ describe('map url codec', () => {
     expect(junk.cx).toBe(0);
     expect(junk.cy).toBe(0);
     expect(junk.scale).toBe(MIN_SCALE); // -5 clamps up
-    expect(junk.budget).toBe(1_000_000); // 1e99 clamps down
+    expect(junk.budget).toBe(MAX_BUDGET); // 1e99 clamps down
     expect(decodeMapQuery('z=1e12').scale).toBe(MAX_SCALE);
-    expect(clampBudget(1)).toBe(10_000);
+    expect(clampBudget(1)).toBe(MIN_BUDGET);
     expect(clampBudget(Number.NaN)).toBe(DEFAULT_MAP_STATE.budget);
   });
 

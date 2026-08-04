@@ -13,7 +13,17 @@
  * the stats page or a shared Explorer link means the same thing here.
  */
 
-import { edgesToSubset, subsetFromString, subsetToEdges, subsetToString } from '../../core';
+import {
+  DEFAULT_INSTANCE_BUDGET,
+  INSTANCE_BUDGETS,
+  MAX_INSTANCE_BUDGET,
+  MIN_INSTANCE_BUDGET,
+  clampInstanceBudget,
+  edgesToSubset,
+  subsetFromString,
+  subsetToEdges,
+  subsetToString,
+} from '../../core';
 import { DEFAULT_SCALE, clampScale } from './camera';
 
 /** Canonicalize an edge list (dedup + sort) through the bitmask form. */
@@ -42,11 +52,15 @@ export interface MapUrlState {
   readonly combo?: string;
 }
 
-/** Instance-budget presets offered by the selector. */
-export const MAP_BUDGETS: readonly number[] = [50_000, 100_000, 250_000, 500_000, 1_000_000];
-export const DEFAULT_BUDGET = 100_000;
-export const MIN_BUDGET = 10_000;
-export const MAX_BUDGET = 1_000_000;
+/**
+ * Instance-budget presets offered by the selector. These are the ENGINE's
+ * budgets (`core/unrooted.ts`) — the same ladder the Explorer's infinite mode
+ * offers, so a budget means the same thing on both pages.
+ */
+export const MAP_BUDGETS = INSTANCE_BUDGETS;
+export const DEFAULT_BUDGET = DEFAULT_INSTANCE_BUDGET;
+export const MIN_BUDGET = MIN_INSTANCE_BUDGET;
+export const MAX_BUDGET = MAX_INSTANCE_BUDGET;
 
 /**
  * Default strand rule. `2578` is a valid subset (every tile pairs up) and
@@ -89,9 +103,11 @@ function fmtScale(n: number): string {
   return String(Number(n.toPrecision(5)));
 }
 
-export function clampBudget(budget: number): number {
-  if (!Number.isFinite(budget)) return DEFAULT_BUDGET;
-  return Math.min(MAX_BUDGET, Math.max(MIN_BUDGET, Math.round(budget)));
+export const clampBudget = clampInstanceBudget;
+
+/** Selector label for a budget: `500k`, `1M`, `10M`. */
+export function formatBudget(b: number): string {
+  return b >= 1_000_000 ? `${b / 1_000_000}M` : `${Math.round(b / 1000)}k`;
 }
 
 export function encodeMapQuery(state: MapUrlState): string {

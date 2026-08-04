@@ -42,6 +42,7 @@ import {
   COMBO_LENGTH,
   DEFAULT_MAP_STATE,
   MAP_BUDGETS,
+  formatBudget,
   hashToMapState,
   mapStateToHash,
   normalizeCombo,
@@ -59,10 +60,6 @@ export interface MapPageProps {
   readonly forceSyncClient?: boolean;
   /** Test seam: replaces `createMapRenderer`. */
   readonly rendererFactory?: (canvas: HTMLCanvasElement) => MapRenderer | null;
-}
-
-function formatBudget(b: number): string {
-  return b >= 1_000_000 ? `${b / 1_000_000}M` : `${Math.round(b / 1000)}k`;
 }
 
 function formatZoom(scale: number): string {
@@ -352,8 +349,10 @@ export function MapPage(props: MapPageProps): JSX.Element {
 
       {budget >= 250_000 && (
         <p className="map-caution" role="note">
-          Budgets of 250k+ instances can tax integrated GPUs — expect slower frames while zoomed
-          out. The LOD cut keeps the map pannable either way.
+          Big budgets buy detail at far zoom — a level of real tiles instead of glyphs — and cost
+          query time, not frame time: the engine walk is single-threaded on the CPU, so a fast GPU
+          does not speed it up. The top tier can take a second or more per view change, and holds
+          ~200&nbsp;MB of scratch in the worker for the session.
         </p>
       )}
 
