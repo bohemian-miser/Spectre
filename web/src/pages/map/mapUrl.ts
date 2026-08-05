@@ -54,6 +54,8 @@ export interface MapUrlState {
   readonly combo?: string;
   /** Strand-line thickness multiplier (`lw=`), omitted at 1. */
   readonly lineWidth?: number;
+  /** Clip overlapping strands at the midpoint (`no=1`), omitted when off. */
+  readonly noOverlap?: boolean;
 }
 
 /**
@@ -87,6 +89,7 @@ export const DEFAULT_MAP_STATE: MapUrlState = {
   subset: DEFAULT_SUBSET,
   combo: DEFAULT_COMBO,
   lineWidth: DEFAULT_LINE_SCALE,
+  noOverlap: false,
 };
 
 /** Keep only base-36 digits and pad/trim to `COMBO_LENGTH`. */
@@ -133,6 +136,7 @@ export function encodeMapQuery(state: MapUrlState): string {
   if (lines || combo !== DEFAULT_COMBO) q.set('c', combo);
   const lw = clampLineScale(state.lineWidth ?? DEFAULT_LINE_SCALE);
   if (lw !== DEFAULT_LINE_SCALE) q.set('lw', String(lw));
+  if (state.noOverlap) q.set('no', '1');
   return q.toString();
 }
 
@@ -151,6 +155,7 @@ export function decodeMapQuery(query: string): MapUrlState {
   const budget = num('budget');
   const lwRaw = num('lw');
   const lnRaw = q.get('ln');
+  const noRaw = q.get('no');
   const eRaw = q.get('e');
   const cRaw = q.get('c');
   return {
@@ -163,6 +168,7 @@ export function decodeMapQuery(query: string): MapUrlState {
     subset: eRaw === null ? DEFAULT_MAP_STATE.subset : subsetToEdges(subsetFromString(eRaw)),
     combo: cRaw === null ? DEFAULT_MAP_STATE.combo : normalizeCombo(cRaw),
     lineWidth: lwRaw === null ? DEFAULT_LINE_SCALE : clampLineScale(lwRaw),
+    noOverlap: noRaw === '1' || noRaw === 'true',
   };
 }
 

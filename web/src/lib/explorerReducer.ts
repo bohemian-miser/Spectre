@@ -61,7 +61,8 @@ export type ExplorerAction =
   | { readonly type: 'setCamera'; readonly camera: Camera | undefined }
   | { readonly type: 'setMode'; readonly mode: ExplorerMode }
   | { readonly type: 'setBudget'; readonly budget: number }
-  | { readonly type: 'setLineWidth'; readonly lineWidth: number };
+  | { readonly type: 'setLineWidth'; readonly lineWidth: number }
+  | { readonly type: 'setNoOverlap'; readonly noOverlap: boolean };
 
 function clampInt(v: number, lo: number, hi: number): number {
   if (!Number.isFinite(v)) return lo;
@@ -154,6 +155,15 @@ export function explorerReducer(state: ExplorerState, action: ExplorerAction): E
     case 'setLineWidth': {
       const lineWidth = clampLineScale(action.lineWidth);
       return lineWidth === explorerLineWidth(state) ? state : { ...state, lineWidth };
+    }
+
+    case 'setNoOverlap': {
+      if (action.noOverlap === !!state.noOverlap) return state;
+      if (!action.noOverlap) {
+        const { noOverlap: _n, ...rest } = state;
+        return rest as ExplorerState;
+      }
+      return { ...state, noOverlap: true };
     }
 
     case 'setRootTile':

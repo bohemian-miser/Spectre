@@ -90,6 +90,7 @@ export function MapPage(props: MapPageProps): JSX.Element {
   const [seedDraft, setSeedDraft] = useState<string>(String(initial.seed));
   const [budget, setBudget] = useState<number>(initial.budget);
   const [lineWidth, setLineWidth] = useState<number>(initial.lineWidth ?? DEFAULT_LINE_SCALE);
+  const [noOverlap, setNoOverlap] = useState<boolean>(initial.noOverlap ?? false);
   const [lines, setLines] = useState<boolean>(initial.lines ?? false);
   const [subset, setSubset] = useState<readonly number[]>(
     initial.subset ?? DEFAULT_MAP_STATE.subset ?? [],
@@ -111,8 +112,8 @@ export function MapPage(props: MapPageProps): JSX.Element {
   const statusRef = useRef(status);
   statusRef.current = status;
   const urlTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const worldRef = useRef({ seed, budget, lines, subset, combo, lineWidth });
-  worldRef.current = { seed, budget, lines, subset, combo, lineWidth };
+  const worldRef = useRef({ seed, budget, lines, subset, combo, lineWidth, noOverlap });
+  worldRef.current = { seed, budget, lines, subset, combo, lineWidth, noOverlap };
 
   // --- strand chords ----------------------------------------------------------
   const matching = useMemo(
@@ -124,7 +125,10 @@ export function MapPage(props: MapPageProps): JSX.Element {
     [lines, subset, matching],
   );
 
-  const renderStyle = useMemo<MapRenderStyle>(() => ({ lineScale: lineWidth }), [lineWidth]);
+  const renderStyle = useMemo<MapRenderStyle>(
+    () => ({ lineScale: lineWidth, noOverlap }),
+    [lineWidth, noOverlap],
+  );
 
   // --- URL ---------------------------------------------------------------------
   const writeUrl = useCallback((): void => {
@@ -135,6 +139,7 @@ export function MapPage(props: MapPageProps): JSX.Element {
       seed: w.seed,
       budget: w.budget,
       lineWidth: w.lineWidth,
+      noOverlap: w.noOverlap,
       cx: cam.cx,
       cy: cam.cy,
       scale: cam.scale,
@@ -174,7 +179,7 @@ export function MapPage(props: MapPageProps): JSX.Element {
 
   useEffect(() => {
     writeUrlSoon();
-  }, [seed, budget, lines, subset, combo, lineWidth, writeUrlSoon]);
+  }, [seed, budget, lines, subset, combo, lineWidth, noOverlap, writeUrlSoon]);
 
   // --- back/forward: apply external hash changes --------------------------------
   useEffect(() => {
@@ -187,6 +192,7 @@ export function MapPage(props: MapPageProps): JSX.Element {
         seed: w.seed,
         budget: w.budget,
         lineWidth: w.lineWidth,
+        noOverlap: w.noOverlap,
         cx: cam.cx,
         cy: cam.cy,
         scale: cam.scale,
@@ -199,6 +205,7 @@ export function MapPage(props: MapPageProps): JSX.Element {
       setSeedDraft(String(st.seed));
       setBudget(st.budget);
       setLineWidth(st.lineWidth ?? DEFAULT_LINE_SCALE);
+      setNoOverlap(st.noOverlap ?? false);
       setLines(st.lines ?? false);
       setSubset(st.subset ?? []);
       setCombo(normalizeCombo(st.combo ?? ''));
@@ -303,7 +310,7 @@ export function MapPage(props: MapPageProps): JSX.Element {
           <label className="map-control">
             <span>Line weight</span>
             <input
-              type="range"
+              type="number"
               aria-label="Strand line thickness"
               data-testid="map-line-width"
               min={MIN_LINE_SCALE}
@@ -313,7 +320,17 @@ export function MapPage(props: MapPageProps): JSX.Element {
               disabled={!lines}
               onChange={(e) => setLineWidth(Number(e.target.value))}
             />
-            <output>{lineWidth}×</output>
+          </label>
+          <label className="map-control map-control-check">
+            <input
+              type="checkbox"
+              aria-label="Clip overlapping strands at the midpoint"
+              data-testid="map-no-overlap"
+              checked={noOverlap}
+              disabled={!lines}
+              onChange={(e) => setNoOverlap(e.target.checked)}
+            />
+            <span>Meet at midpoint</span>
           </label>
           <button type="button" onClick={resetView}>
             Reset view
