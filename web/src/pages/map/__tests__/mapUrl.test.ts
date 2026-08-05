@@ -151,8 +151,8 @@ describe('map line controls', () => {
     expect(encodeMapQuery(back)).toBe(q); // canonical
   });
 
-  it('clamps a junk weight and defaults the flag', () => {
-    expect(decodeMapQuery('lw=99').lineWidth).toBe(6);
+  it('takes any weight, floors junk, and defaults the flag', () => {
+    expect(decodeMapQuery('lw=99').lineWidth).toBe(99); // no ceiling
     expect(decodeMapQuery('lw=abc').lineWidth).toBe(1);
     expect(decodeMapQuery('').noOverlap).toBe(false);
   });

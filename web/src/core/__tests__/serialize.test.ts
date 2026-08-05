@@ -13,7 +13,6 @@ import {
   supportsInfiniteMode,
   EXPLORER_MODES,
   DEFAULT_LINE_SCALE,
-  MAX_LINE_SCALE,
   MIN_LINE_SCALE,
   clampLineScale,
   type ExplorerState,
@@ -275,7 +274,7 @@ describe('line thickness in the URL', () => {
       DEFAULT_EXPLORER_STATE,
       { ...DEFAULT_EXPLORER_STATE, mode: 'infinite' as const },
     ]) {
-      for (const lw of [0.25, 0.5, 1.5, 2, 3.75, 6]) {
+      for (const lw of [0.25, 0.5, 1.5, 2, 3.75, 6, 40]) {
         const query = encodeExplorerQuery({ ...base, lineWidth: lw });
         expect(query).toContain(`lw=${lw}`);
         const back = decodeExplorerQuery(query);
@@ -285,8 +284,16 @@ describe('line thickness in the URL', () => {
     }
   });
 
-  it('clamps out-of-range values and ignores junk', () => {
-    expect(decodeExplorerQuery('v=1&lw=999').lineWidth).toBe(MAX_LINE_SCALE);
+  it('has no ceiling — the number box takes any weight', () => {
+    // The whole point of a number box rather than a slider.
+    for (const lw of [8, 25, 400, 12_345.5]) {
+      expect(decodeExplorerQuery(`v=1&lw=${lw}`).lineWidth).toBe(lw);
+      const q = encodeExplorerQuery({ ...DEFAULT_EXPLORER_STATE, lineWidth: lw });
+      expect(encodeExplorerQuery(decodeExplorerQuery(q))).toBe(q); // still canonical
+    }
+  });
+
+  it('floors at the smallest drawable width and ignores junk', () => {
     expect(decodeExplorerQuery('v=1&lw=0').lineWidth).toBe(MIN_LINE_SCALE);
     expect(decodeExplorerQuery('v=1&lw=-4').lineWidth).toBe(MIN_LINE_SCALE);
     expect(decodeExplorerQuery('v=1&lw=fat').lineWidth).toBeUndefined();
