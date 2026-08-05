@@ -135,3 +135,25 @@ describe('map url codec — strand lines', () => {
     expect(COMBO_LENGTH).toBe(10);
   });
 });
+
+describe('map line controls', () => {
+  it('omits lw/no at their defaults and round-trips them otherwise', () => {
+    const base = { ...DEFAULT_MAP_STATE, lines: true };
+    expect(encodeMapQuery(base)).not.toContain('lw=');
+    expect(encodeMapQuery(base)).not.toContain('no=');
+
+    const q = encodeMapQuery({ ...base, lineWidth: 3.5, noOverlap: true });
+    expect(q).toContain('lw=3.5');
+    expect(q).toContain('no=1');
+    const back = decodeMapQuery(q);
+    expect(back.lineWidth).toBe(3.5);
+    expect(back.noOverlap).toBe(true);
+    expect(encodeMapQuery(back)).toBe(q); // canonical
+  });
+
+  it('clamps a junk weight and defaults the flag', () => {
+    expect(decodeMapQuery('lw=99').lineWidth).toBe(6);
+    expect(decodeMapQuery('lw=abc').lineWidth).toBe(1);
+    expect(decodeMapQuery('').noOverlap).toBe(false);
+  });
+});

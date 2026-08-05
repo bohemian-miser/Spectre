@@ -301,3 +301,39 @@ describe('line thickness in the URL', () => {
     }
   });
 });
+
+/** Midpoint clipping (`no=`) — a plain additive boolean. */
+describe('midpoint clipping in the URL', () => {
+  it('is omitted when off and round-trips when on', () => {
+    expect(DEFAULT_EXPLORER_STATE.noOverlap).toBeUndefined();
+    expect(encodeExplorerQuery(DEFAULT_EXPLORER_STATE)).toBe(`v=${CODEC_VERSION}`);
+    const on = encodeExplorerQuery({ ...DEFAULT_EXPLORER_STATE, noOverlap: true });
+    expect(on).toBe(`v=${CODEC_VERSION}&no=1`);
+    const back = decodeExplorerQuery(on);
+    expect(back.noOverlap).toBe(true);
+    expect(encodeExplorerQuery(back)).toBe(on); // canonical
+  });
+
+  it('treats anything but 1/true as off', () => {
+    expect(decodeExplorerQuery('v=1&no=0').noOverlap).toBeUndefined();
+    expect(decodeExplorerQuery('v=1&no=yes').noOverlap).toBeUndefined();
+    expect(decodeExplorerQuery('v=1&no=true').noOverlap).toBe(true);
+    expect(encodeExplorerQuery({ ...DEFAULT_EXPLORER_STATE, noOverlap: false })).toBe(
+      `v=${CODEC_VERSION}`,
+    );
+  });
+
+  it('combines with the other strand params without disturbing them', () => {
+    const q = encodeExplorerQuery({
+      ...DEFAULT_EXPLORER_STATE,
+      lineWidth: 4,
+      noOverlap: true,
+      mode: 'infinite',
+    });
+    const back = decodeExplorerQuery(q);
+    expect(back.lineWidth).toBe(4);
+    expect(back.noOverlap).toBe(true);
+    expect(back.mode).toBe('infinite');
+    expect(encodeExplorerQuery(back)).toBe(q);
+  });
+});

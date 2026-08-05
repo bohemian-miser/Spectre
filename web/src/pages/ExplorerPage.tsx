@@ -141,6 +141,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
   const mode = explorerMode(state);
   const budget = explorerBudget(state);
   const lineWidth = explorerLineWidth(state);
+  const noOverlap = !!state.noOverlap;
   const infinite = mode === 'infinite';
   const infiniteAvailable = supportsInfiniteMode(family);
 
@@ -256,8 +257,9 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
       // Flat ink, contrasting with whatever is behind it (no circuit colours).
       lineColor: fills ? DEFAULT_LINE_COLOR : LIGHT_LINE_COLOR,
       lineScale: lineWidth,
+      noOverlap,
     };
-  }, [state.colorScheme, state.customColors, state.flags, lineWidth]);
+  }, [state.colorScheme, state.customColors, state.flags, lineWidth, noOverlap]);
 
   /**
    * Level → zoom. The rooted level control means "show a patch of 7.873^L
@@ -805,7 +807,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
         <label className="control-row line-width-row">
           <span>Line weight</span>
           <input
-            type="range"
+            type="number"
             aria-label="Strand line thickness"
             data-testid="line-width"
             min={MIN_LINE_SCALE}
@@ -814,8 +816,27 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
             value={lineWidth}
             onChange={(e) => dispatch({ type: 'setLineWidth', lineWidth: Number(e.target.value) })}
           />
-          <output>{lineWidth}×</output>
+          <span className="muted">×</span>
         </label>
+
+        <label className="control-row">
+          <input
+            type="checkbox"
+            aria-label="Clip overlapping strands at the midpoint"
+            data-testid="no-overlap"
+            checked={noOverlap}
+            disabled={!infinite}
+            onChange={(e) => dispatch({ type: 'setNoOverlap', noOverlap: e.target.checked })}
+          />
+          <span>Meet at midpoint</span>
+        </label>
+        {!infinite ? (
+          <p className="muted" role="note">
+            Midpoint clipping is a GPU trick (a depth pre-pass over the strands), so it needs the
+            infinite view's WebGL renderer — the rooted patch draws SVG strokes, which simply
+            overlap.
+          </p>
+        ) : null}
 
         <ColorSchemePicker
           family={family}

@@ -145,6 +145,10 @@ uniform sampler2D uChordTex;
 uniform vec4 uView;
 uniform vec2 uHalfRes; // device px per NDC unit: (width/2, height/2)
 uniform float uHalfPx; // half line width, device px
+// Segment endpoints in px-from-centre, flat so the fragment stage gets the
+// exact same pair for every fragment of the quad.
+flat out vec2 vA;
+flat out vec2 vB;
 
 vec2 decode(vec2 v, float code, vec2 pos) {
   float mir = floor(code / 16.0);
@@ -165,6 +169,8 @@ void main() {
   vec4 ga = texelFetch(uChordTex, ivec2(chord * 2, t), 0);
   vec4 gb = texelFetch(uChordTex, ivec2(chord * 2 + 1, t), 0);
   if (ga.z < 0.5 || gb.z < 0.5) {
+    vA = vec2(0.0);
+    vB = vec2(0.0);
     gl_Position = vec4(4.0, 4.0, 0.0, 1.0); // outside NDC ⇒ triangles clipped
     return;
   }
@@ -183,6 +189,9 @@ void main() {
   vec2 dir = len > 1e-6 ? delta / len : vec2(1.0, 0.0);
   vec2 nrm = vec2(-dir.y, dir.x);
 
+  vA = pa;
+  vB = pb;
+
   vec2 base = (idx < 2) ? pa : pb;
   float side = (idx == 0 || idx == 2) ? -1.0 : 1.0;
   // Extend the ends by the half width so consecutive chords meet squarely
@@ -191,6 +200,105 @@ void main() {
   vec2 p = base + nrm * (side * uHalfPx) + cap;
 
   gl_Position = vec4(p / uHalfRes, 0.0, 1.0);
+}`;
+
+/**
+ * Strand fragment stage. Shades by true distance to the segment, which gives
+ * ROUND caps and joins for free: the quad is extended by a half width at each
+ * end, and everything past `uHalfPx` from the centreline is discarded.
+ *
+ * MIDPOINT MODE (`uField` bound, `uGapPx > 0`) is where the interesting part
+ * is. A first pass rasterizes the SAME chords into an R8 field with the blend
+ * equation set to MIN, so each pixel ends up holding the distance to the
+ * nearest centreline anywhere in the scene. This pass then asks two questions:
+ *
+ *   1. Is another strand nearer to me than my own centreline? Then this pixel
+ *      belongs to it — discard. That alone puts the boundary exactly at the
+ *      midpoint, but with one flat ink colour it is invisible: the UNION of
+ *      the strands is unchanged, so the picture is identical.
+ *   2. So also probe one gap-width further out, along the outward normal. At
+ *      that point my own distance would be `d + gap`; if the field says
+ *      something is nearer than that, a neighbour is closing in and I stop
+ *      here. Both strands do this, so they end up separated by a real gap
+ *      instead of fusing into a slab.
+ *
+ * The second test is what makes thick strands stay readable, and it is why
+ * the field has to be a texture we can SAMPLE AT ANOTHER PIXEL rather than a
+ * depth buffer we can only test against.
+ */
+const FS_CHORD = `#version 300 es
+precision highp float;
+flat in vec2 vA;
+flat in vec2 vB;
+uniform vec4 uLine;
+uniform vec2 uHalfRes;
+uniform float uHalfPx;
+uniform sampler2D uField;
+uniform float uFieldPx;  // distance the field encodes at 1.0
+uniform float uGapPx;    // 0 disables midpoint mode entirely
+out vec4 o;
+
+float ownDist(vec2 f) {
+  vec2 pa = f - vA;
+  vec2 ba = vB - vA;
+  float h = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-6), 0.0, 1.0);
+  return length(pa - ba * h);
+}
+
+void main() {
+  vec2 res = uHalfRes * 2.0;
+  vec2 f = gl_FragCoord.xy - uHalfRes;
+  vec2 pa = f - vA;
+  vec2 ba = vB - vA;
+  float h = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-6), 0.0, 1.0);
+  vec2 foot = pa - ba * h;
+  float d = length(foot);
+  if (d > uHalfPx) discard;
+
+  // Consecutive chords of one curve share a connection point exactly, so near
+  // an endpoint the neighbour in the field IS this curve's own continuation.
+  // Backing away from it would cut every strand into one dash per tile, so
+  // separation is only applied clear of this chord's own ends.
+  float segLen = length(ba);
+  float fromEnd = min(h, 1.0 - h) * segLen;
+  if (uGapPx > 0.0 && fromEnd > uHalfPx + uGapPx) {
+    // Quantization slack: the field is 8-bit over uFieldPx.
+    float eps = uFieldPx / 255.0 + 0.01;
+    float here = texture(uField, gl_FragCoord.xy / res).r * uFieldPx;
+    if (here < d - eps) discard; // a nearer strand owns this pixel
+
+    // Outward normal; on the centreline itself there is no side to back off
+    // from, so leave it alone.
+    if (d > 1e-4) {
+      vec2 n = foot / d;
+      vec2 probe = (gl_FragCoord.xy + n * uGapPx) / res;
+      float out1 = texture(uField, probe).r * uFieldPx;
+      if (out1 < d + uGapPx - eps) discard; // neighbour within a gap — stop
+    }
+  }
+
+  o = uLine;
+}`;
+
+/**
+ * Field pass: same geometry, but written as distance-to-centreline into an R8
+ * target under `blendEquation(MIN)`. No discard — the field must extend past
+ * the visible half width, because the colour pass probes a gap beyond it.
+ */
+const FS_FIELD = `#version 300 es
+precision highp float;
+flat in vec2 vA;
+flat in vec2 vB;
+uniform vec2 uHalfRes;
+uniform float uHalfPx;
+out vec4 o;
+void main() {
+  vec2 f = gl_FragCoord.xy - uHalfRes;
+  vec2 pa = f - vA;
+  vec2 ba = vB - vA;
+  float h = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-6), 0.0, 1.0);
+  float d = length(pa - ba * h);
+  o = vec4(clamp(d / max(uHalfPx, 1e-6), 0.0, 1.0), 0.0, 0.0, 1.0);
 }`;
 
 const FS_COLOR = `#version 300 es
@@ -302,11 +410,13 @@ export function createWebGLRenderer(
   let progLine: WebGLProgram;
   let progGlyph: WebGLProgram;
   let progChord: WebGLProgram;
+  let progField: WebGLProgram;
   try {
     progLeaf = link(VS_LEAF, FS_COLOR);
     progLine = link(VS_LEAF_LINE, FS_LINE);
     progGlyph = link(VS_GLYPH, FS_COLOR);
-    progChord = link(VS_CHORD, FS_LINE);
+    progChord = link(VS_CHORD, FS_CHORD);
+    progField = link(VS_CHORD, FS_FIELD);
   } catch {
     return null; // context exists but shaders failed — let the caller fall back
   }
@@ -442,6 +552,7 @@ export function createWebGLRenderer(
   let showOutlines = true;
   let lineColor = DEFAULT_LINE_COLOR;
   let lineScale = 1;
+  let noOverlap = false;
   const loc = (p: WebGLProgram, name: string): WebGLUniformLocation | null =>
     G.getUniformLocation(p, name);
   const uLeafView = loc(progLeaf, 'uView');
@@ -458,6 +569,40 @@ export function createWebGLRenderer(
   const uChordTexLoc = loc(progChord, 'uChordTex');
   const uChordHalfRes = loc(progChord, 'uHalfRes');
   const uChordHalfPx = loc(progChord, 'uHalfPx');
+  const uChordField = loc(progChord, 'uField');
+  const uChordFieldPx = loc(progChord, 'uFieldPx');
+  const uChordGapPx = loc(progChord, 'uGapPx');
+  const uFieldView = loc(progField, 'uView');
+  const uFieldTexLoc = loc(progField, 'uChordTex');
+  const uFieldHalfRes = loc(progField, 'uHalfRes');
+  const uFieldHalfPx = loc(progField, 'uHalfPx');
+
+  // --- midpoint-mode distance field ------------------------------------------
+  // One R8 (as RGBA8) target the size of the drawing buffer, rebuilt on resize.
+  let fieldFbo: WebGLFramebuffer | null = null;
+  let fieldTex: WebGLTexture | null = null;
+  let fieldW = 0;
+  let fieldH = 0;
+
+  const ensureField = (w: number, h: number): boolean => {
+    if (fieldFbo && fieldW === w && fieldH === h) return true;
+    if (!fieldFbo) fieldFbo = G.createFramebuffer();
+    if (!fieldTex) fieldTex = G.createTexture();
+    if (!fieldFbo || !fieldTex) return false;
+    G.bindTexture(G.TEXTURE_2D, fieldTex);
+    G.texImage2D(G.TEXTURE_2D, 0, G.RGBA8, w, h, 0, G.RGBA, G.UNSIGNED_BYTE, null);
+    G.texParameteri(G.TEXTURE_2D, G.TEXTURE_MIN_FILTER, G.NEAREST);
+    G.texParameteri(G.TEXTURE_2D, G.TEXTURE_MAG_FILTER, G.NEAREST);
+    G.texParameteri(G.TEXTURE_2D, G.TEXTURE_WRAP_S, G.CLAMP_TO_EDGE);
+    G.texParameteri(G.TEXTURE_2D, G.TEXTURE_WRAP_T, G.CLAMP_TO_EDGE);
+    G.bindFramebuffer(G.FRAMEBUFFER, fieldFbo);
+    G.framebufferTexture2D(G.FRAMEBUFFER, G.COLOR_ATTACHMENT0, G.TEXTURE_2D, fieldTex, 0);
+    const ok = G.checkFramebufferStatus(G.FRAMEBUFFER) === G.FRAMEBUFFER_COMPLETE;
+    G.bindFramebuffer(G.FRAMEBUFFER, null);
+    fieldW = ok ? w : 0;
+    fieldH = ok ? h : 0;
+    return ok;
+  };
 
   // --- state ------------------------------------------------------------------
   let count = 0;
@@ -503,6 +648,7 @@ export function createWebGLRenderer(
     showOutlines = style?.showOutlines ?? true;
     lineColor = style?.lineColor ?? DEFAULT_LINE_COLOR;
     lineScale = style?.lineScale ?? 1;
+    noOverlap = style?.noOverlap ?? false;
   };
 
   const render = (cam: MapCamera, cssW: number, cssH: number, dpr: number): MapRenderStats => {
@@ -566,21 +712,62 @@ export function createWebGLRenderer(
           // Strand lines: leaf cuts only (see the module note). One extra
           // instanced call for every chord of every visible tile.
           if (chordVerts > 0 && chordTex) {
+            const halfPx = (BASE_LINE_PX * lineScale * dpr) / 2;
+            // Gap scales with the stroke: enough to read at 6x, ~1px at 1x.
+            const gapPx = noOverlap ? Math.max(1, halfPx * 0.5) : 0;
+            const fieldPx = halfPx + gapPx + 1;
+            const chordVertCount = chordsPerTile * 6;
+            const useField = gapPx > 0 && ensureField(bw, bh);
+
+            if (useField) {
+              // Pass 1 — distance field. MIN blending leaves each pixel with
+              // the distance to the NEAREST centreline in the scene.
+              G.bindFramebuffer(G.FRAMEBUFFER, fieldFbo);
+              G.viewport(0, 0, bw, bh);
+              G.clearColor(1, 1, 1, 1);
+              G.clear(G.COLOR_BUFFER_BIT);
+              G.useProgram(progField);
+              G.uniform4f(uFieldView, vx, vy, kx, ky);
+              G.uniform2f(uFieldHalfRes, bw / 2, bh / 2);
+              G.uniform1f(uFieldHalfPx, fieldPx);
+              G.activeTexture(G.TEXTURE0);
+              G.bindTexture(G.TEXTURE_2D, chordTex);
+              G.uniform1i(uFieldTexLoc, 0);
+              G.enable(G.BLEND);
+              G.blendEquation(G.MIN);
+              G.bindVertexArray(vaoChord);
+              G.drawArraysInstanced(G.TRIANGLES, 0, chordVertCount, count);
+              G.blendEquation(G.FUNC_ADD);
+              G.disable(G.BLEND);
+              G.bindFramebuffer(G.FRAMEBUFFER, null);
+              G.viewport(0, 0, bw, bh);
+              drawCalls++;
+            }
+
+            // Pass 2 — the visible ink.
             G.useProgram(progChord);
             G.uniform4f(uChordView, vx, vy, kx, ky);
             G.uniform4f(uChordColor, lineColor[0], lineColor[1], lineColor[2], lineColor[3]);
             G.uniform2f(uChordHalfRes, bw / 2, bh / 2);
             // Width is authored in CSS px, so it must be scaled to device px to
             // look the same weight on a HiDPI screen as on a 1x one.
-            G.uniform1f(uChordHalfPx, (BASE_LINE_PX * lineScale * dpr) / 2);
+            G.uniform1f(uChordHalfPx, halfPx);
+            G.uniform1f(uChordFieldPx, fieldPx);
+            G.uniform1f(uChordGapPx, useField ? gapPx : 0);
             G.activeTexture(G.TEXTURE0);
             G.bindTexture(G.TEXTURE_2D, chordTex);
             G.uniform1i(uChordTexLoc, 0);
+            if (useField) {
+              G.activeTexture(G.TEXTURE1);
+              G.bindTexture(G.TEXTURE_2D, fieldTex);
+              G.uniform1i(uChordField, 1);
+              G.activeTexture(G.TEXTURE0);
+            }
             G.enable(G.BLEND);
             G.blendFunc(G.SRC_ALPHA, G.ONE_MINUS_SRC_ALPHA);
             G.bindVertexArray(vaoChord);
             // Six verts per chord (two triangles), not two — see VS_CHORD.
-            G.drawArraysInstanced(G.TRIANGLES, 0, chordsPerTile * 6, count);
+            G.drawArraysInstanced(G.TRIANGLES, 0, chordVertCount, count);
             G.disable(G.BLEND);
             drawCalls++;
             chordsDrawn = count * chordsPerTile;
@@ -620,10 +807,13 @@ export function createWebGLRenderer(
       G.deleteVertexArray(vaoChord);
       if (glyphTex) G.deleteTexture(glyphTex);
       if (chordTex) G.deleteTexture(chordTex);
+      if (fieldTex) G.deleteTexture(fieldTex);
+      if (fieldFbo) G.deleteFramebuffer(fieldFbo);
       G.deleteProgram(progLeaf);
       G.deleteProgram(progLine);
       G.deleteProgram(progGlyph);
       G.deleteProgram(progChord);
+      G.deleteProgram(progField);
     },
   };
 }

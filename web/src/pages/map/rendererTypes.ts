@@ -32,6 +32,13 @@ export interface MapRenderStyle {
    * pass, which stays hairline so it reads as tile structure rather than ink.
    */
   readonly lineScale?: number;
+  /**
+   * Clip overlapping strands at the midpoint between their centrelines rather
+   * than letting the thicker one pile on top. Costs one extra pass over the
+   * chords; WebGL2 only (the Canvas2D fallback has no depth buffer to do it
+   * with, and ignores this).
+   */
+  readonly noOverlap?: boolean;
 }
 
 export interface MapRenderStats {

@@ -82,6 +82,11 @@ export interface ExplorerState {
    * omitted at 1. Read it as `state.lineWidth ?? DEFAULT_LINE_SCALE`.
    */
   readonly lineWidth?: number;
+  /**
+   * Clip strands at the midpoint where they would overlap (`no=1`). Additive:
+   * omitted when off. Only the WebGL map views implement it.
+   */
+  readonly noOverlap?: boolean;
 }
 
 /**
@@ -281,6 +286,7 @@ export function encodeExplorerState(s: ExplorerState): URLSearchParams {
     const lw = clampLineScale(s.lineWidth);
     if (lw !== DEFAULT_LINE_SCALE) q.set('lw', String(lw));
   }
+  if (s.noOverlap) q.set('no', '1');
   return q;
 }
 
@@ -363,6 +369,8 @@ export function decodeExplorerState(q: URLSearchParams): ExplorerState {
 
   const lwRaw = Number.parseFloat(q.get('lw') ?? '');
   const lineWidth = Number.isFinite(lwRaw) ? clampLineScale(lwRaw) : undefined;
+  const noRaw = q.get('no');
+  const noOverlap = noRaw === '1' || noRaw === 'true' ? true : undefined;
 
   const state: ExplorerState = {
     family,
@@ -379,6 +387,7 @@ export function decodeExplorerState(q: URLSearchParams): ExplorerState {
     ...(mode ? { mode } : {}),
     ...(budget !== undefined ? { budget } : {}),
     ...(lineWidth !== undefined ? { lineWidth } : {}),
+    ...(noOverlap ? { noOverlap } : {}),
   };
   return state;
 }
