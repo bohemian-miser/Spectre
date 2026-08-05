@@ -4,11 +4,34 @@
  * can inject fakes).
  */
 
-import type { Rgb, ViewportCut } from '../../core';
+import type { Pt, Rgb, ViewportCut } from '../../core';
 import type { MapCamera } from './camera';
 import type { LeafChordTable } from './chords';
 
 export type RendererMode = 'webgl2' | 'canvas2d';
+
+/**
+ * One traced strand, ready to draw: a polyline in f32 coordinates RELATIVE TO
+ * `origin` (the same precision discipline the instance stream follows — the GPU
+ * never sees absolute world coordinates), plus the cumulative arc length at
+ * each point.
+ *
+ * The rainbow is a function of `arc / totalLength`, so it always spans the
+ * whole coloured line: growing the trail restretches the gradient without
+ * rewriting a single vertex, because `arc` is absolute and only `totalLength`
+ * moves. `version` changes exactly when the vertex data did, so a renderer can
+ * skip re-uploading between frames.
+ */
+export interface TrailGeometry {
+  readonly origin: Pt;
+  /** 2 floats per point, relative to `origin`. */
+  readonly xy: Float32Array;
+  /** Cumulative arc length per point, in world units. */
+  readonly arc: Float32Array;
+  readonly pointCount: number;
+  readonly totalLength: number;
+  readonly version: number;
+}
 
 /**
  * Appearance knobs the embedding page may override. Everything is optional;
@@ -39,6 +62,12 @@ export interface MapRenderStyle {
    * with, and ignores this).
    */
   readonly noOverlap?: boolean;
+  /**
+   * Traced-strand thickness MULTIPLIER over the strand width, so the rainbow
+   * reads as the same line the user tapped, only fatter (1.8 by default —
+   * enough to cover the ink underneath without hiding its neighbours).
+   */
+  readonly trailScale?: number;
 }
 
 export interface MapRenderStats {
@@ -57,6 +86,8 @@ export interface MapRenderStats {
    * claim lines that were not drawn.
    */
   readonly chordsDrawn: number;
+  /** Points of the traced strand rasterized this frame (0 when there is none). */
+  readonly trailPoints: number;
 }
 
 export interface MapRenderer {
@@ -65,6 +96,12 @@ export interface MapRenderer {
   setCut(cut: ViewportCut): void;
   /** Adopt a strand-chord table (null/empty disables the line pass). */
   setChords(table: LeafChordTable | null): void;
+  /**
+   * Adopt a traced strand (null clears it). Unlike the cut, this is NOT tied
+   * to the viewport: the trail is world-anchored, so it keeps drawing wherever
+   * the camera goes — including back where the walk started.
+   */
+  setTrail(trail: TrailGeometry | null): void;
   /** Override appearance (merged over the defaults). */
   setStyle(style: MapRenderStyle | null): void;
   /** Draw the current cut under `cam`. CSS-pixel size + devicePixelRatio. */

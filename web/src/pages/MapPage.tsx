@@ -13,6 +13,12 @@
  * therefore uncoloured: circuit identity/colour is stage 3 part 2 (the
  * hierarchical router), and the HUD never claims more than is drawn.
  *
+ * ONE strand can still be coloured, though, and by the same local argument:
+ * tap it and `InfiniteCanvas` follows it chord by chord across the tiles that
+ * are loaded, painting a rainbow over the length walked. That is a fact about
+ * geometry the walk has actually visited — not a claim about the circuit it
+ * belongs to, whose global identity still needs the router.
+ *
  * Layout discipline: the canvas is `position:absolute` inside the
  * deterministically-sized `.map-viewport` (see the lvl-5 feedback-loop fix in
  * `.tiling-canvas` / `.explorer-viewport`) — the viewport must NEVER size
@@ -53,6 +59,7 @@ import {
   type MapUrlState,
 } from './map/mapUrl';
 import { CANVAS2D_MAX_INSTANCES } from './map/canvasRenderer';
+import { describeWalk } from './map/strandWalk';
 import type { MapRenderer } from './map/renderer';
 import type { MapRenderStyle } from './map/rendererTypes';
 import '../styles/map.css';
@@ -91,6 +98,7 @@ export function MapPage(props: MapPageProps): JSX.Element {
   const [lineWidth, setLineWidth] = useState<number>(initial.lineWidth ?? DEFAULT_LINE_SCALE);
   const [noOverlap, setNoOverlap] = useState<boolean>(initial.noOverlap ?? false);
   const [lines, setLines] = useState<boolean>(initial.lines ?? false);
+  const [trace, setTrace] = useState<boolean>(initial.trace ?? true);
   const [subset, setSubset] = useState<readonly number[]>(
     initial.subset ?? DEFAULT_MAP_STATE.subset ?? [],
   );
@@ -101,6 +109,7 @@ export function MapPage(props: MapPageProps): JSX.Element {
     mode: 'pending',
     cut: null,
     draw: null,
+    trace: { active: false, status: null, points: 0, length: 0 },
     error: null,
     size: { width: 0, height: 0 },
   });
@@ -111,8 +120,8 @@ export function MapPage(props: MapPageProps): JSX.Element {
   const statusRef = useRef(status);
   statusRef.current = status;
   const urlTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const worldRef = useRef({ seed, budget, lines, subset, combo, lineWidth, noOverlap });
-  worldRef.current = { seed, budget, lines, subset, combo, lineWidth, noOverlap };
+  const worldRef = useRef({ seed, budget, lines, trace, subset, combo, lineWidth, noOverlap });
+  worldRef.current = { seed, budget, lines, trace, subset, combo, lineWidth, noOverlap };
 
   // --- strand chords ----------------------------------------------------------
   const matching = useMemo(
@@ -143,6 +152,7 @@ export function MapPage(props: MapPageProps): JSX.Element {
       cy: cam.cy,
       scale: cam.scale,
       lines: w.lines,
+      trace: w.trace,
       subset: w.subset,
       combo: w.combo,
     });
@@ -178,7 +188,7 @@ export function MapPage(props: MapPageProps): JSX.Element {
 
   useEffect(() => {
     writeUrlSoon();
-  }, [seed, budget, lines, subset, combo, lineWidth, noOverlap, writeUrlSoon]);
+  }, [seed, budget, lines, trace, subset, combo, lineWidth, noOverlap, writeUrlSoon]);
 
   // --- back/forward: apply external hash changes --------------------------------
   useEffect(() => {
@@ -196,6 +206,7 @@ export function MapPage(props: MapPageProps): JSX.Element {
         cy: cam.cy,
         scale: cam.scale,
         lines: w.lines,
+        trace: w.trace,
         subset: w.subset,
         combo: w.combo,
       };
@@ -206,6 +217,7 @@ export function MapPage(props: MapPageProps): JSX.Element {
       setLineWidth(st.lineWidth ?? DEFAULT_LINE_SCALE);
       setNoOverlap(st.noOverlap ?? false);
       setLines(st.lines ?? false);
+      setTrace(st.trace ?? true);
       setSubset(st.subset ?? []);
       setCombo(normalizeCombo(st.combo ?? ''));
       apiRef.current?.setCamera({ cx: st.cx, cy: st.cy, scale: st.scale });
@@ -354,6 +366,28 @@ export function MapPage(props: MapPageProps): JSX.Element {
             <span>Show lines</span>
           </label>
 
+          <div className="control-row">
+            <label className="control-row">
+              <input
+                type="checkbox"
+                aria-label="Tap a strand to colour it"
+                data-testid="map-trace"
+                checked={trace}
+                disabled={!lines}
+                onChange={(e) => setTrace(e.target.checked)}
+              />
+              <span>Tap to colour a strand</span>
+            </label>
+            <button
+              type="button"
+              data-testid="map-trace-clear"
+              disabled={!status.trace.active}
+              onClick={() => apiRef.current?.clearTrace()}
+            >
+              Clear
+            </button>
+          </div>
+
           <EdgeSubsetPicker
             family="spectre"
             subset={subset}
@@ -379,6 +413,12 @@ export function MapPage(props: MapPageProps): JSX.Element {
             the stats page and the notebook CSVs use. Chords are drawn in ONE flat ink: they are
             local geometry, not analysed circuits, so nothing here is coloured by circuit length.
           </p>
+          <p className="muted map-lines-help">
+            Tap or click a strand and it is followed onward in one direction, rainbow-coloured over
+            its whole length. It runs to the edge of the tiles currently loaded and then waits —
+            pan the way it is heading and it keeps going. The line is remembered in world
+            coordinates, so pan back and it is still there.
+          </p>
           {noChords ? (
             <p className="warning-badge" role="status">
               This rule gives no drawable chords — every leaf type has fewer than two connection
@@ -401,6 +441,7 @@ export function MapPage(props: MapPageProps): JSX.Element {
         seed={seed}
         budget={budget}
         chords={chords}
+        trace={lines && trace}
         style={renderStyle}
         initialCamera={initialCameraRef.current}
         apiRef={apiRef}
@@ -436,6 +477,13 @@ export function MapPage(props: MapPageProps): JSX.Element {
                 : aggregateCut
                   ? 'lines: hidden (aggregate LOD — zoom in for tiles)'
                   : `lines: ${(drawInfo?.chordsDrawn ?? 0).toLocaleString('en-US')} chords (${chordsPerTile}/tile)`}
+            </span>
+            <span data-testid="hud-trace">
+              {status.trace.active && status.trace.status
+                ? `traced: ${Math.round(status.trace.length).toLocaleString('en-US')} tiles long — ${describeWalk(status.trace.status)}`
+                : lines && trace
+                  ? 'traced: tap a strand'
+                  : 'traced: off'}
             </span>
             <span data-testid="hud-query-ms">
               query {hud ? hud.queryMs.toFixed(1) : '—'} ms

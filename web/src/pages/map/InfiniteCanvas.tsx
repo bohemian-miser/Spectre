@@ -5,9 +5,17 @@
  *
  * Owns: the canvas element, the camera (drag + inertia + wheel/pinch
  * zoom-to-cursor), the tiling worker client, the newest-wins query scheduler,
- * and the WebGL2/Canvas2D renderer lifecycle. Owns NO page chrome and NO URL
- * — the embedding page keeps those, receiving camera and status through
- * callbacks and driving the view through `apiRef`.
+ * the WebGL2/Canvas2D renderer lifecycle, and — when `trace` is on — the
+ * tapped strand. Owns NO page chrome and NO URL — the embedding page keeps
+ * those, receiving camera and status through callbacks and driving the view
+ * through `apiRef`.
+ *
+ * Tap-to-trace (`strandWalk.ts` does the geometry): a tap picks the strand
+ * under the pointer and colours it onward in ONE direction, as far as the
+ * tiles the engine has actually emitted. Then it waits. Every cut that lands
+ * with the walk's head near it resumes the walk, so panning is what feeds the
+ * line — and because the trail is kept in world coordinates rather than as
+ * viewport pixels, panning back shows exactly what was drawn.
  *
  * Layout discipline (unchanged from stage 2): the host is a
  * deterministically-sized container supplied by the caller's CSS class, and
@@ -23,14 +31,35 @@ import {
   type MutableRefObject,
   type ReactNode,
 } from 'react';
-import type { UnrootedQueryRequest, UnrootedQueryResponse } from '../../core';
+import type { UnrootedQueryRequest, UnrootedQueryResponse, ViewRect } from '../../core';
 import { useElementSize } from '../../hooks/useElementSize';
 import { createTilingClient, type TilingClient } from '../../workers/tilingClient';
-import { DEFAULT_SCALE, createCamera, panBy, viewRectFor, zoomAt, type MapCamera } from './camera';
+import {
+  DEFAULT_SCALE,
+  createCamera,
+  panBy,
+  screenToWorld,
+  viewRectFor,
+  zoomAt,
+  type MapCamera,
+} from './camera';
 import { CANVAS2D_MAX_INSTANCES } from './canvasRenderer';
 import type { LeafChordTable } from './chords';
 import { createQueryScheduler, type QueryScheduler } from './queryScheduler';
 import { createMapRenderer } from './renderer';
+import {
+  MAX_CHORD_REACH,
+  advanceWalk,
+  buildChordIndex,
+  hitTestChord,
+  isTerminal,
+  startTrail,
+  trailGeometry,
+  trailLength,
+  type ChordIndex,
+  type StrandTrail,
+  type WalkStatus,
+} from './strandWalk';
 import type {
   MapRenderStats,
   MapRenderStyle,
@@ -39,6 +68,17 @@ import type {
 } from './rendererTypes';
 
 export type InfiniteCanvasMode = 'pending' | RendererMode | 'unsupported';
+
+/**
+ * A pointer movement (CSS px) and duration under which a press counts as a
+ * TAP rather than the start of a pan. Generous on distance because a finger
+ * always slides a little.
+ */
+const TAP_SLOP_PX = 8;
+const TAP_MAX_MS = 700;
+
+/** Tap target for picking a strand, in CSS px — a fingertip, not a pixel. */
+const TAP_PICK_RADIUS_PX = 16;
 
 export interface InfiniteCutInfo {
   readonly count: number;
@@ -54,12 +94,30 @@ export interface InfiniteDrawInfo {
   readonly scale: number;
   readonly capped: boolean;
   readonly chordsDrawn: number;
+  readonly trailPoints: number;
 }
+
+/** State of the tapped strand: how far it has been coloured, and why it stopped. */
+export interface InfiniteTraceInfo {
+  readonly active: boolean;
+  readonly status: WalkStatus | null;
+  readonly points: number;
+  /** Coloured length in world units (a tile edge is 1). */
+  readonly length: number;
+}
+
+const NO_TRACE: InfiniteTraceInfo = Object.freeze({
+  active: false,
+  status: null,
+  points: 0,
+  length: 0,
+});
 
 export interface InfiniteCanvasStatus {
   readonly mode: InfiniteCanvasMode;
   readonly cut: InfiniteCutInfo | null;
   readonly draw: InfiniteDrawInfo | null;
+  readonly trace: InfiniteTraceInfo;
   readonly error: string | null;
   /** Viewport size in CSS px, so HUDs can report depth without measuring. */
   readonly size: { readonly width: number; readonly height: number };
@@ -73,6 +131,14 @@ export interface InfiniteCanvasApi {
   getStatus(): InfiniteCanvasStatus;
   /** True while a tiling query is outstanding. */
   isBusy(): boolean;
+  /**
+   * Start a trace at a viewport position (CSS px from the host's top-left) —
+   * what a tap does, exposed so pages and tests can drive it directly.
+   * Returns false when no strand was within reach.
+   */
+  traceAt(x: number, y: number): boolean;
+  /** Drop the traced strand. */
+  clearTrace(): void;
 }
 
 export interface InfiniteCanvasProps {
@@ -81,6 +147,12 @@ export interface InfiniteCanvasProps {
   /** Strand chords to draw, or null for tiles only. */
   readonly chords?: LeafChordTable | null;
   readonly style?: MapRenderStyle | null;
+  /**
+   * Tapping the canvas traces the strand under the pointer. Needs `chords`:
+   * without a strand rule there is no line to follow. Turning it off drops any
+   * trace in progress.
+   */
+  readonly trace?: boolean;
   /** Camera used on mount only; afterwards the component owns it. */
   readonly initialCamera?: MapCamera;
   onCameraChange?(cam: MapCamera): void;
@@ -103,6 +175,7 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
     budget,
     chords = null,
     style = null,
+    trace = false,
     onCameraChange,
     onStatusChange,
     forceSyncClient,
@@ -137,6 +210,7 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
     mode: 'pending',
     cut: null,
     draw: null,
+    trace: NO_TRACE,
     error: null,
     size: { width: 0, height: 0 },
   });
@@ -145,6 +219,19 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
   const inertiaRef = useRef(0);
   const pointersRef = useRef(new Map<number, { x: number; y: number }>());
   const velocityRef = useRef({ vx: 0, vy: 0, t: 0 });
+  const tapRef = useRef<{ id: number; x: number; y: number; t: number } | null>(null);
+
+  // --- traced strand ----------------------------------------------------------
+  const traceOnRef = useRef(trace);
+  traceOnRef.current = trace;
+  const trailRef = useRef<StrandTrail | null>(null);
+  // Rebuilt lazily from the newest cut — a walk that has nothing to do (or
+  // nowhere to go) must not pay for an index it will not read.
+  const indexRef = useRef<ChordIndex | null>(null);
+  const indexCutRef = useRef<unknown>(null);
+  /** The rect the newest cut was queried with: the region it covers in full. */
+  const coveredRef = useRef<ViewRect | null>(null);
+  const walkRafRef = useRef(0);
 
   // Callbacks live in refs so the client/scheduler effect never re-runs (and
   // never tears down the worker) just because a parent re-rendered.
@@ -174,6 +261,7 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
         scale: camRef.current.scale,
         capped: stats.capped,
         chordsDrawn: stats.chordsDrawn,
+        trailPoints: stats.trailPoints,
       },
     });
   }, [publish]);
@@ -182,6 +270,91 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
     if (rafRef.current) return;
     rafRef.current = requestAnimationFrame(draw);
   }, [draw]);
+
+  // --- traced strand -----------------------------------------------------------
+  const publishTrace = useCallback((): void => {
+    const trail = trailRef.current;
+    publish({
+      trace: trail
+        ? {
+            active: true,
+            status: trail.status,
+            points: trail.count,
+            length: trailLength(trail),
+          }
+        : NO_TRACE,
+    });
+  }, [publish]);
+
+  /** The newest cut's chord index, built on first use and cached per cut. */
+  const ensureIndex = useCallback((): ChordIndex | null => {
+    const cut = lastCutRef.current;
+    const table = chordsRef.current;
+    if (!cut || !table) return null;
+    if (indexCutRef.current !== cut) {
+      indexCutRef.current = cut;
+      indexRef.current = buildChordIndex(cut, table);
+    }
+    return indexRef.current;
+  }, []);
+
+  /**
+   * Walk as far as the tiles currently on screen allow, then stop and wait.
+   *
+   * `'walking'` means the step cap was reached with more to do, so another
+   * slice is queued for the next frame — that keeps a walk that crosses a
+   * whole wide viewport from blocking the one it is drawn in.
+   */
+  const runWalk = useCallback((): void => {
+    const trail = trailRef.current;
+    if (!trail || isTerminal(trail.status)) return;
+    const index = ensureIndex();
+    const cut = lastCutRef.current;
+    advanceWalk(trail, index, {
+      // A truncated cut has holes in it, so a missing chord there proves
+      // nothing about the strand — never call an end on one.
+      covered: cut && !cut.truncated ? coveredRef.current : null,
+    });
+    rendererRef.current?.setTrail(trailGeometry(trail));
+    publishTrace();
+    scheduleDraw();
+    if (trail.status === 'walking' && !walkRafRef.current) {
+      walkRafRef.current = requestAnimationFrame(() => {
+        walkRafRef.current = 0;
+        runWalk();
+      });
+    }
+  }, [ensureIndex, publishTrace, scheduleDraw]);
+
+  const clearTrace = useCallback((): void => {
+    if (walkRafRef.current) cancelAnimationFrame(walkRafRef.current);
+    walkRafRef.current = 0;
+    if (!trailRef.current) return;
+    trailRef.current = null;
+    rendererRef.current?.setTrail(null);
+    publishTrace();
+    scheduleDraw();
+  }, [publishTrace, scheduleDraw]);
+
+  /** Start a trace at a viewport position in CSS px. */
+  const traceAt = useCallback(
+    (x: number, y: number): boolean => {
+      const { width, height } = sizeRef.current;
+      if (width <= 0 || height <= 0) return false;
+      const index = ensureIndex();
+      if (!index) return false;
+      const cam = camRef.current;
+      const world = screenToWorld(cam, x, y, width, height);
+      const hit = hitTestChord(index, world, TAP_PICK_RADIUS_PX / cam.scale);
+      if (!hit) return false;
+      if (walkRafRef.current) cancelAnimationFrame(walkRafRef.current);
+      walkRafRef.current = 0;
+      trailRef.current = startTrail(hit);
+      runWalk();
+      return true;
+    },
+    [ensureIndex, runWalk],
+  );
 
   // --- queries ----------------------------------------------------------------
   const requestQuery = useCallback((): void => {
@@ -218,9 +391,10 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
         const res = await client.query(req);
         return { res, ms: performance.now() - t0 };
       },
-      onResult: ({ res, ms }) => {
+      onResult: ({ res, ms }, req) => {
         if (res.seed !== (worldRef.current.seed >>> 0)) return; // stale seed
         lastCutRef.current = res.cut;
+        coveredRef.current = req.view;
         rendererRef.current?.setCut(res.cut);
         publish({
           error: null,
@@ -233,6 +407,21 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
           },
         });
         scheduleDraw();
+        // Fresh tiles are exactly what a paused walk was waiting for. Skip the
+        // index build when the head is nowhere near them — panning the other
+        // way must not cost a rebuild per query.
+        const trail = trailRef.current;
+        if (trail && !isTerminal(trail.status)) {
+          const reach = 2 * MAX_CHORD_REACH;
+          const near =
+            Math.abs(trail.head.x - req.view.cx) <= req.view.halfW + reach &&
+            Math.abs(trail.head.y - req.view.cy) <= req.view.halfH + reach;
+          if (near) runWalk();
+          else if (trail.status !== 'frontier') {
+            trail.status = 'frontier';
+            publishTrace();
+          }
+        }
       },
       onError: (err) => {
         publish({ error: err instanceof Error ? err.message : String(err) });
@@ -251,8 +440,10 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
       rafRef.current = 0;
       if (inertiaRef.current) cancelAnimationFrame(inertiaRef.current);
       inertiaRef.current = 0;
+      if (walkRafRef.current) cancelAnimationFrame(walkRafRef.current);
+      walkRafRef.current = 0;
     };
-  }, [forceSyncClient, scheduleDraw, publish]);
+  }, [forceSyncClient, scheduleDraw, publish, runWalk, publishTrace]);
 
   // --- renderer creation (after the container has a real size) ----------------
   useEffect(() => {
@@ -281,6 +472,9 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
       renderer.setStyle(styleRef.current);
       renderer.setChords(chordsRef.current);
       if (lastCutRef.current) renderer.setCut(lastCutRef.current);
+      // A lost context takes the trail's buffers with it; the walk itself lives
+      // in world doubles on this side, so it survives and just re-uploads.
+      if (trailRef.current) renderer.setTrail(trailGeometry(trailRef.current));
       scheduleDraw();
       requestQuery();
     }
@@ -304,12 +498,26 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
     requestQuery();
   }, [seed, budget, requestQuery]);
 
+  // A trace belongs to one world: another seed is another tiling, and the line
+  // it followed does not exist there.
+  useEffect(() => {
+    clearTrace();
+  }, [seed, clearTrace]);
+
   // --- chords / style ----------------------------------------------------------
   useEffect(() => {
     chordsRef.current = chords ?? null;
+    indexCutRef.current = null; // the cached index was built for the old rule
     rendererRef.current?.setChords(chords ?? null);
+    // The traced line is the OLD rule's geometry; under a new one it would be
+    // a rainbow over nothing. Drop it rather than let it lie.
+    clearTrace();
     scheduleDraw();
-  }, [chords, scheduleDraw]);
+  }, [chords, clearTrace, scheduleDraw]);
+
+  useEffect(() => {
+    if (!trace) clearTrace();
+  }, [trace, clearTrace]);
 
   useEffect(() => {
     styleRef.current = style ?? null;
@@ -350,6 +558,12 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
       hostRef.current?.setPointerCapture(e.pointerId);
       pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
       velocityRef.current = { vx: 0, vy: 0, t: performance.now() };
+      // A press is a candidate tap until it moves, gains a second finger, or
+      // outstays its welcome.
+      tapRef.current =
+        pointersRef.current.size === 1
+          ? { id: e.pointerId, x: e.clientX, y: e.clientY, t: performance.now() }
+          : null;
     },
     [stopInertia],
   );
@@ -361,6 +575,13 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
       if (!entry) return;
       const host = hostRef.current;
       if (!host) return;
+      const tap = tapRef.current;
+      if (
+        tap &&
+        (Math.abs(e.clientX - tap.x) > TAP_SLOP_PX || Math.abs(e.clientY - tap.y) > TAP_SLOP_PX)
+      ) {
+        tapRef.current = null; // this is a drag, not a tap
+      }
       if (pointers.size === 1) {
         const dx = e.clientX - entry.x;
         const dy = e.clientY - entry.y;
@@ -410,9 +631,21 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
   const onPointerEnd = useCallback(
     (e: React.PointerEvent<HTMLDivElement>): void => {
       if (!pointersRef.current.delete(e.pointerId)) return;
+      const tap = tapRef.current;
+      tapRef.current = null;
+      if (
+        tap &&
+        tap.id === e.pointerId &&
+        e.type !== 'pointercancel' &&
+        performance.now() - tap.t <= TAP_MAX_MS &&
+        traceOnRef.current
+      ) {
+        const rect = hostRef.current?.getBoundingClientRect();
+        if (rect) traceAt(e.clientX - rect.left, e.clientY - rect.top);
+      }
       if (pointersRef.current.size === 0) maybeStartInertia();
     },
-    [maybeStartInertia],
+    [maybeStartInertia, traceAt],
   );
 
   useEffect(() => {
@@ -454,11 +687,13 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
       getSize: () => sizeRef.current,
       getStatus: () => statusRef.current,
       isBusy: () => schedulerRef.current?.inFlight ?? false,
+      traceAt,
+      clearTrace,
     };
     return () => {
       apiRef.current = null;
     };
-  }, [apiRef, onCameraChanged, stopInertia]);
+  }, [apiRef, onCameraChanged, stopInertia, traceAt, clearTrace]);
 
   return (
     <div

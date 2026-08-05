@@ -182,6 +182,40 @@ describe('ExplorerPage — infinite mode', () => {
     expect(window.location.hash).toContain('md=infinite');
   });
 
+  it('offers tap-to-trace in infinite mode only, and keeps the choice in the hash', async () => {
+    window.history.replaceState(null, '', '/#/explorer?v=1&e=2578&md=infinite');
+    const { container } = render(<ExplorerPage />);
+
+    const toggle = container.querySelector('[data-testid="trace-toggle"]') as HTMLInputElement;
+    expect(toggle.checked).toBe(true); // default ON — tapping is the gesture
+    expect(toggle.disabled).toBe(false);
+    expect(container.querySelector('[data-testid="trace-clear"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="inf-trace"]')?.textContent).toBe(
+      'traced: tap a strand',
+    );
+
+    fireEvent.click(toggle);
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 400));
+    });
+    expect(window.location.hash).toContain('tc=0');
+    expect(container.querySelector('[data-testid="inf-trace"]')?.textContent).toBe('traced: off');
+  });
+
+  it('explains that tracing belongs to the infinite view, not the rooted patch', () => {
+    window.history.replaceState(null, '', '/#/explorer?v=1&e=2578');
+    const { container } = render(<ExplorerPage />);
+
+    expect(container.querySelector('[data-testid="trace-toggle"]')).toHaveProperty(
+      'disabled',
+      true,
+    );
+    expect(container.querySelector('[data-testid="trace-clear"]')).toBeNull();
+    expect(container.querySelector('#explorer-sidebar')?.textContent).toContain(
+      'belongs to infinite mode',
+    );
+  });
+
   it('goes past the rooted materialize ceiling without clamping or building', () => {
     // Level 9 is 133M tiles; the rooted view clamps to 7 and says so, while
     // infinite mode simply zooms there. (Deliberately NOT exercising the

@@ -87,6 +87,13 @@ export interface ExplorerState {
    * omitted when off. Only the WebGL map views implement it.
    */
   readonly noOverlap?: boolean;
+  /**
+   * Tap a strand in infinite mode to colour it (`tc=0` when OFF). Additive the
+   * other way round from its neighbours — the default is ON, so only switching
+   * it off writes a parameter and every pre-existing link still decodes to the
+   * same state. Read it as `state.trace ?? true`.
+   */
+  readonly trace?: boolean;
 }
 
 /**
@@ -290,6 +297,7 @@ export function encodeExplorerState(s: ExplorerState): URLSearchParams {
     if (lw !== DEFAULT_LINE_SCALE) q.set('lw', String(lw));
   }
   if (s.noOverlap) q.set('no', '1');
+  if (s.trace === false) q.set('tc', '0');
   return q;
 }
 
@@ -374,6 +382,8 @@ export function decodeExplorerState(q: URLSearchParams): ExplorerState {
   const lineWidth = Number.isFinite(lwRaw) ? clampLineScale(lwRaw) : undefined;
   const noRaw = q.get('no');
   const noOverlap = noRaw === '1' || noRaw === 'true' ? true : undefined;
+  const tcRaw = q.get('tc');
+  const trace = tcRaw === '0' || tcRaw === 'false' ? false : undefined;
 
   const state: ExplorerState = {
     family,
@@ -391,6 +401,7 @@ export function decodeExplorerState(q: URLSearchParams): ExplorerState {
     ...(budget !== undefined ? { budget } : {}),
     ...(lineWidth !== undefined ? { lineWidth } : {}),
     ...(noOverlap ? { noOverlap } : {}),
+    ...(trace === false ? { trace } : {}),
   };
   return state;
 }

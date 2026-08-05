@@ -156,4 +156,19 @@ describe('map line controls', () => {
     expect(decodeMapQuery('lw=abc').lineWidth).toBe(1);
     expect(decodeMapQuery('').noOverlap).toBe(false);
   });
+
+  it('writes `tr=` only to switch tap-to-trace OFF', () => {
+    // Default ON, so a link that says nothing about it still traces — and
+    // links written before the feature existed encode byte-identically.
+    expect(DEFAULT_MAP_STATE.trace).toBe(true);
+    expect(decodeMapQuery('').trace).toBe(true);
+    expect(encodeMapQuery({ ...DEFAULT_MAP_STATE, lines: true })).not.toContain('tr=');
+
+    const off = encodeMapQuery({ ...DEFAULT_MAP_STATE, lines: true, trace: false });
+    expect(off).toContain('tr=0');
+    const back = decodeMapQuery(off);
+    expect(back.trace).toBe(false);
+    expect(encodeMapQuery(back)).toBe(off); // canonical
+    expect(decodeMapQuery('tr=1').trace).toBe(true);
+  });
 });

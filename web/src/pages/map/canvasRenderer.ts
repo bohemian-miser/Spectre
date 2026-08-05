@@ -9,6 +9,10 @@
  * shape: `chords.ts` hands over tile-local segments, this file bakes one
  * `Path2D` per leaf type and strokes it under each instance's transform. Like
  * the WebGL path they are drawn ONLY at a leaf cut (`cutLevel === 0`).
+ *
+ * The traced strand (`setTrail`) is the exception to all of that: it is one
+ * world-anchored polyline, independent of the cut, stroked directly in device
+ * pixels as a run of constant-colour rainbow bands.
  */
 
 import {
@@ -19,6 +23,7 @@ import {
   TILE_PALETTES,
   instanceAffine,
   mul,
+  rainbow,
   rgbToCss,
   type Affine,
   type Pt,
@@ -29,13 +34,27 @@ import {
 import { originRelativeCenter, type MapCamera } from './camera';
 import type { LeafChordTable } from './chords';
 import { GLYPH_LEVEL, buildGlyphMeshes, glyphFitForCut } from './glyphs';
-import type { MapRenderStats, MapRenderStyle, MapRenderer } from './rendererTypes';
+import type {
+  MapRenderStats,
+  MapRenderStyle,
+  MapRenderer,
+  TrailGeometry,
+} from './rendererTypes';
 import {
   BASE_LINE_PX,
   DEFAULT_LINE_COLOR,
+  DEFAULT_TRAIL_SCALE,
   OUTLINE_FADE_START,
   outlineAlphaForScale,
 } from './webglRenderer';
+
+/**
+ * Rainbow segments per frame. The 2D path pays a `strokeStyle` change and a
+ * `stroke()` per colour band, so a 200 k-point trail cannot be drawn one
+ * segment at a time; bands cover several points each and the gradient reads
+ * the same. (The WebGL path shades per fragment and needs no such trick.)
+ */
+const TRAIL_BANDS = 96;
 
 /** Hard instance ceiling for the software path (≈ the report's 50k budget). */
 export const CANVAS2D_MAX_INSTANCES = 50_000;
@@ -117,6 +136,8 @@ export function createCanvas2dRenderer(canvas: HTMLCanvasElement): MapRenderer |
   let showOutlines = true;
   let lineCss = cssRgba(DEFAULT_LINE_COLOR);
   let lineScale = 1;
+  let trailScale = DEFAULT_TRAIL_SCALE;
+  let trail: TrailGeometry | null = null;
 
   let cutRef: ViewportCut | null = null;
   let byType: Map<number, number[]> = new Map();
@@ -133,6 +154,10 @@ export function createCanvas2dRenderer(canvas: HTMLCanvasElement): MapRenderer |
     chordCounts = live ? live.segments.map((s) => s.length) : [];
   };
 
+  const setTrail = (next: TrailGeometry | null): void => {
+    trail = next && next.pointCount >= 2 ? next : null;
+  };
+
   const setStyle = (style: MapRenderStyle | null): void => {
     leafColors = cssPalette(style?.leafColors, defaultLeafColors);
     aggColors = cssPalette(style?.aggColors, defaultAggColors);
@@ -140,6 +165,7 @@ export function createCanvas2dRenderer(canvas: HTMLCanvasElement): MapRenderer |
     showOutlines = style?.showOutlines ?? true;
     lineCss = cssRgba(style?.lineColor ?? DEFAULT_LINE_COLOR);
     lineScale = style?.lineScale ?? 1;
+    trailScale = style?.trailScale ?? DEFAULT_TRAIL_SCALE;
   };
 
   const setCut = (cut: ViewportCut): void => {
@@ -259,6 +285,15 @@ export function createCanvas2dRenderer(canvas: HTMLCanvasElement): MapRenderer |
       C.setTransform(1, 0, 0, 1, 0, 0);
     }
 
+    // Traced strand — drawn straight in device pixels (no per-instance
+    // transform to ride) and NOT gated on the cut: it is world-anchored, so it
+    // stays put when the viewport leaves it and comes back.
+    let trailPoints = 0;
+    if (trail) {
+      C.setTransform(1, 0, 0, 1, 0, 0);
+      trailPoints = strokeTrail(C, trail, cam, bw, bh, dpr, BASE_LINE_PX * lineScale * trailScale);
+    }
+
     return {
       mode: 'canvas2d',
       instances: drawn,
@@ -266,6 +301,7 @@ export function createCanvas2dRenderer(canvas: HTMLCanvasElement): MapRenderer |
       drawMs: performance.now() - t0,
       capped,
       chordsDrawn,
+      trailPoints,
     };
   };
 
@@ -273,12 +309,77 @@ export function createCanvas2dRenderer(canvas: HTMLCanvasElement): MapRenderer |
     mode: 'canvas2d',
     setCut,
     setChords,
+    setTrail,
     setStyle,
     render,
     dispose(): void {
       cutRef = null;
       chordPaths = null;
+      trail = null;
       byType.clear();
     },
   };
+}
+
+/**
+ * Stroke the traced strand in {@link TRAIL_BANDS} constant-colour bands, each
+ * clipped to the viewport: a band's points are only joined while the segment
+ * could touch the canvas, so a 100 k-point trail seen through a keyhole costs
+ * one pass of arithmetic and a handful of short strokes rather than a
+ * 100 k-segment path.
+ *
+ * Returns the number of points walked, for the HUD.
+ */
+function strokeTrail(
+  C: CanvasRenderingContext2D,
+  trail: TrailGeometry,
+  cam: MapCamera,
+  bw: number,
+  bh: number,
+  dpr: number,
+  widthCssPx: number,
+): number {
+  const n = trail.pointCount;
+  const off = originRelativeCenter(cam, trail.origin);
+  const s = cam.scale * dpr;
+  const hx = bw / 2;
+  const hy = bh / 2;
+  // Generous margin so a segment that only crosses the corner still joins up.
+  const pad = Math.max(64, widthCssPx * dpr);
+  const total = Math.max(1e-6, trail.totalLength);
+
+  C.lineWidth = Math.max(1, widthCssPx * dpr);
+  C.lineCap = 'round';
+  C.lineJoin = 'round';
+
+  const bands = Math.min(TRAIL_BANDS, n - 1);
+  for (let b = 0; b < bands; b++) {
+    const from = Math.floor((b * (n - 1)) / bands);
+    const to = Math.floor(((b + 1) * (n - 1)) / bands); // inclusive: bands share a point
+    C.strokeStyle = rainbow(trail.arc[Math.floor((from + to) / 2)] / total);
+    C.beginPath();
+    let penDown = false;
+    let px = 0;
+    let py = 0;
+    let pIn = false;
+    for (let i = from; i <= to; i++) {
+      const x = (trail.xy[i * 2] - off.x) * s + hx;
+      const y = (trail.xy[i * 2 + 1] - off.y) * s + hy;
+      const inView = x >= -pad && x <= bw + pad && y >= -pad && y <= bh + pad;
+      if (i > from && (inView || pIn)) {
+        if (!penDown) {
+          C.moveTo(px, py);
+          penDown = true;
+        }
+        C.lineTo(x, y);
+      } else {
+        penDown = false;
+      }
+      px = x;
+      py = y;
+      pIn = inView;
+    }
+    C.stroke();
+  }
+  return n;
 }

@@ -8,7 +8,8 @@ Ignore the spectre dir, it was an attempt at doing this in python.
 
 The site has a few pages:
 
-* **Explorer** (`/`) - the main thing. Build supertiles, pick which edges join up, and watch the circuits light up.
+* **Explorer** (`/`) - the main thing. Build supertiles, pick which edges join up, and watch the circuits light up. Switch it to infinite mode and tap a strand to follow it — it colours the line in a rainbow as far as the tiles on screen go, and keeps going as you pan.
+* **Infinite Map** (`/map.html`) - one endless tiling per seed, expanded around the camera. Same tap-to-colour trick, plus the seed and instance-budget controls.
 * **The Tails Problem** (`/tails.html`) - an explainer for the edge-matching stuff and why some tiles end up with tails.
 * **Circuits & Stats** (`/stats.html`) - the census of every edge combination, with the numbers behind it.
 * **Legacy app** (`/legacy.html`) - the original p5 version. It lets you draw on each of the 10 flavours of tile and has better navigation and you can change the colours.
