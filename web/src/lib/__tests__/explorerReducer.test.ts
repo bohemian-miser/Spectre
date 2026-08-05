@@ -5,7 +5,6 @@ import {
   DEFAULT_LINE_SCALE,
   FLAG,
   MAX_INSTANCE_BUDGET,
-  MAX_LINE_SCALE,
   MAX_LEVEL,
   MIN_INSTANCE_BUDGET,
   MIN_LINE_SCALE,
@@ -208,13 +207,17 @@ describe('overlays and contracts', () => {
 });
 
 describe('line thickness', () => {
-  it('clamps to range and is a no-op at the current value', () => {
+  it('floors at the minimum, has no ceiling, and is a no-op at the current value', () => {
     expect(explorerLineWidth(base)).toBe(DEFAULT_LINE_SCALE);
     expect(run(base, { type: 'setLineWidth', lineWidth: DEFAULT_LINE_SCALE })).toBe(base);
-    expect(explorerLineWidth(run(base, { type: 'setLineWidth', lineWidth: 99 }))).toBe(
-      MAX_LINE_SCALE,
-    );
+    // No ceiling: a number box should accept whatever is typed.
+    for (const lw of [99, 500, 4321.5]) {
+      expect(explorerLineWidth(run(base, { type: 'setLineWidth', lineWidth: lw }))).toBe(lw);
+    }
     expect(explorerLineWidth(run(base, { type: 'setLineWidth', lineWidth: 0 }))).toBe(
+      MIN_LINE_SCALE,
+    );
+    expect(explorerLineWidth(run(base, { type: 'setLineWidth', lineWidth: -5 }))).toBe(
       MIN_LINE_SCALE,
     );
   });

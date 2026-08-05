@@ -22,7 +22,6 @@ import {
   FAMILY_DISPLAY_NAMES,
   FLAG,
   LINE_SCALE_STEP,
-  MAX_LINE_SCALE,
   MIN_LINE_SCALE,
   MAX_LEVEL,
   SUBSTITUTION_GROWTH,
@@ -811,7 +810,6 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
             aria-label="Strand line thickness"
             data-testid="line-width"
             min={MIN_LINE_SCALE}
-            max={MAX_LINE_SCALE}
             step={LINE_SCALE_STEP}
             value={lineWidth}
             onChange={(e) => dispatch({ type: 'setLineWidth', lineWidth: Number(e.target.value) })}

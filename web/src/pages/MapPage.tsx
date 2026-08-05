@@ -27,7 +27,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   DEFAULT_LINE_SCALE,
   LINE_SCALE_STEP,
-  MAX_LINE_SCALE,
   MIN_LINE_SCALE,
   SUBSTITUTION_GROWTH,
   comboToMatchingIndices,
@@ -314,7 +313,6 @@ export function MapPage(props: MapPageProps): JSX.Element {
               aria-label="Strand line thickness"
               data-testid="map-line-width"
               min={MIN_LINE_SCALE}
-              max={MAX_LINE_SCALE}
               step={LINE_SCALE_STEP}
               value={lineWidth}
               disabled={!lines}

@@ -96,18 +96,21 @@ export interface ExplorerState {
  * zoom away), while the map's WebGL/Canvas2D views stroke in CSS pixels (so
  * lines hold their weight at any zoom). One multiplier scales whichever of
  * those a page happens to be using, and 1 reproduces the old fixed widths.
+ *
+ * There is deliberately NO UPPER BOUND: the control is a number box precisely
+ * so any value can be typed. The only floor is the one arithmetic needs — a
+ * zero or negative width is not a thinner line, it is a degenerate one.
  */
 export const DEFAULT_LINE_SCALE = 1;
-export const MIN_LINE_SCALE = 0.25;
-export const MAX_LINE_SCALE = 6;
-/** Presets for the stepper; the URL accepts any value in range. */
+export const MIN_LINE_SCALE = 0.01;
+/** Arrow-key increment on the number box; typing is not restricted to it. */
 export const LINE_SCALE_STEP = 0.25;
 
 export function clampLineScale(scale: number): number {
   if (!Number.isFinite(scale)) return DEFAULT_LINE_SCALE;
   // Two decimals keeps `lw=` short and the round-trip exact.
   const snapped = Math.round(scale * 100) / 100;
-  return Math.min(MAX_LINE_SCALE, Math.max(MIN_LINE_SCALE, snapped));
+  return Math.max(MIN_LINE_SCALE, snapped);
 }
 
 /** Display flag bits (§9.2 `fl`). */
