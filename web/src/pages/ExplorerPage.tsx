@@ -62,7 +62,13 @@ import {
 import { edgeClassColor } from '../lib/palette';
 import { useCircuitAnalysis } from '../hooks/useCircuitAnalysis';
 import { useExplorerStore } from '../hooks/useExplorerState';
-import { explorerBudget, explorerLineWidth, explorerMode, hasFlag } from '../lib/explorerReducer';
+import {
+  explorerBudget,
+  explorerLineWidth,
+  explorerMode,
+  explorerTrace,
+  hasFlag,
+} from '../lib/explorerReducer';
 import { matchingVectorToRecord } from '../lib/matchingModel';
 import { buildTilingModel } from '../lib/tilingModel';
 import { overlayChordsD, pathsBox } from '../lib/overlayPaths';
@@ -72,6 +78,7 @@ import { sceneFilename, serializeSceneSvg } from '../lib/exportScene';
 import { downloadBlob, downloadText, svgTextToPngBlob } from './sceneDownload';
 import { createCamera, levelForScale, scaleForLevel } from './map/camera';
 import { buildLeafChordTable } from './map/chords';
+import { describeWalk } from './map/strandWalk';
 import {
   InfiniteCanvas,
   type InfiniteCanvasApi,
@@ -141,6 +148,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
   const budget = explorerBudget(state);
   const lineWidth = explorerLineWidth(state);
   const noOverlap = !!state.noOverlap;
+  const traceOn = explorerTrace(state);
   const infinite = mode === 'infinite';
   const infiniteAvailable = supportsInfiniteMode(family);
 
@@ -836,6 +844,35 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
           </p>
         ) : null}
 
+        <label className="control-row">
+          <input
+            type="checkbox"
+            aria-label="Tap a strand to colour it"
+            data-testid="trace-toggle"
+            checked={traceOn}
+            disabled={!infinite}
+            onChange={(e) => dispatch({ type: 'setTrace', trace: e.target.checked })}
+          />
+          <span>Tap to colour a strand</span>
+        </label>
+        {infinite ? (
+          <div className="control-row">
+            <button
+              type="button"
+              data-testid="trace-clear"
+              onClick={() => infiniteApiRef.current?.clearTrace()}
+            >
+              Clear traced strand
+            </button>
+          </div>
+        ) : (
+          <p className="muted" role="note">
+            Tracing follows a strand across tiles the un-rooted engine expands as you pan, so it
+            belongs to infinite mode. The rooted patch has an exact answer instead — Analysis
+            below traces every circuit in it at once.
+          </p>
+        )}
+
         <ColorSchemePicker
           family={family}
           colorScheme={state.colorScheme}
@@ -958,12 +995,17 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
             seed={INFINITE_SEED}
             budget={budget}
             chords={infiniteChords}
+            trace={traceOn && !!infiniteChords}
             style={infiniteStyle}
             initialCamera={initialInfiniteCamera}
             apiRef={infiniteApiRef}
             onStatusChange={onInfiniteStatus}
           >
-            <InfiniteHud subscribeRef={infiniteHudSubRef} linesOn={linesOn && !!infiniteChords} />
+            <InfiniteHud
+              subscribeRef={infiniteHudSubRef}
+              linesOn={linesOn && !!infiniteChords}
+              traceOn={traceOn && !!infiniteChords}
+            />
           </InfiniteCanvas>
         ) : !heavy ? (
           <PanZoom
@@ -1084,8 +1126,9 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
 function InfiniteHud(props: {
   readonly subscribeRef: React.MutableRefObject<((s: InfiniteCanvasStatus) => void) | null>;
   readonly linesOn: boolean;
+  readonly traceOn: boolean;
 }): JSX.Element {
-  const { subscribeRef, linesOn } = props;
+  const { subscribeRef, linesOn, traceOn } = props;
   const [status, setStatus] = useState<InfiniteCanvasStatus | null>(null);
   const latest = useRef<InfiniteCanvasStatus | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1108,6 +1151,7 @@ function InfiniteHud(props: {
 
   const cut = status?.cut ?? null;
   const draw = status?.draw ?? null;
+  const trace = status?.trace ?? null;
   const aggregate = !!cut && cut.cutLevel > 0;
   const depth =
     draw && status && status.size.width > 0
@@ -1134,6 +1178,13 @@ function InfiniteHud(props: {
           : aggregate
             ? 'lines: hidden (aggregate LOD)'
             : `lines: ${(draw?.chordsDrawn ?? 0).toLocaleString('en-US')} chords`}
+      </span>
+      <span data-testid="inf-trace">
+        {trace?.active && trace.status
+          ? `traced: ${Math.round(trace.length).toLocaleString('en-US')} tiles long — ${describeWalk(trace.status)}`
+          : traceOn
+            ? 'traced: tap a strand'
+            : 'traced: off'}
       </span>
       <span>
         query {cut ? cut.queryMs.toFixed(1) : '—'} ms · draw {draw ? draw.drawMs.toFixed(1) : '—'} ms

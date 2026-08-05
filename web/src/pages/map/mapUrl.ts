@@ -56,6 +56,11 @@ export interface MapUrlState {
   readonly lineWidth?: number;
   /** Clip overlapping strands at the midpoint (`no=1`), omitted when off. */
   readonly noOverlap?: boolean;
+  /**
+   * Tap a strand to colour it (`tr=0` when OFF). Default ON, so only switching
+   * it off writes a parameter — pre-existing links keep encoding unchanged.
+   */
+  readonly trace?: boolean;
 }
 
 /**
@@ -90,6 +95,7 @@ export const DEFAULT_MAP_STATE: MapUrlState = {
   combo: DEFAULT_COMBO,
   lineWidth: DEFAULT_LINE_SCALE,
   noOverlap: false,
+  trace: true,
 };
 
 /** Keep only base-36 digits and pad/trim to `COMBO_LENGTH`. */
@@ -137,6 +143,7 @@ export function encodeMapQuery(state: MapUrlState): string {
   const lw = clampLineScale(state.lineWidth ?? DEFAULT_LINE_SCALE);
   if (lw !== DEFAULT_LINE_SCALE) q.set('lw', String(lw));
   if (state.noOverlap) q.set('no', '1');
+  if (state.trace === false) q.set('tr', '0');
   return q.toString();
 }
 
@@ -156,6 +163,7 @@ export function decodeMapQuery(query: string): MapUrlState {
   const lwRaw = num('lw');
   const lnRaw = q.get('ln');
   const noRaw = q.get('no');
+  const trRaw = q.get('tr');
   const eRaw = q.get('e');
   const cRaw = q.get('c');
   return {
@@ -169,6 +177,7 @@ export function decodeMapQuery(query: string): MapUrlState {
     combo: cRaw === null ? DEFAULT_MAP_STATE.combo : normalizeCombo(cRaw),
     lineWidth: lwRaw === null ? DEFAULT_LINE_SCALE : clampLineScale(lwRaw),
     noOverlap: noRaw === '1' || noRaw === 'true',
+    trace: !(trRaw === '0' || trRaw === 'false'),
   };
 }
 

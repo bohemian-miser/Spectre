@@ -20,6 +20,7 @@ import {
   explorerLineWidth,
   explorerMode,
   explorerReducer,
+  explorerTrace,
   hasFlag,
   maxMatchingIndex,
   normalizeMatchingVector,
@@ -293,5 +294,23 @@ describe('renderer mode', () => {
     // and comes back only when explicitly re-selected
     const spectre = run(hex, { type: 'setFamily', family: 'spectre' });
     expect(spectre.mode).toBeUndefined();
+  });
+});
+
+describe('tap-to-trace', () => {
+  it('is on by default and stores only the OFF choice', () => {
+    expect(explorerTrace(base)).toBe(true);
+    expect('trace' in base).toBe(false);
+
+    const off = run(base, { type: 'setTrace', trace: false });
+    expect(off.trace).toBe(false);
+    expect(explorerTrace(off)).toBe(false);
+    expect(run(off, { type: 'setTrace', trace: false })).toBe(off); // bail-out
+
+    // Back on drops the key again, so the default state stays canonical.
+    const on = run(off, { type: 'setTrace', trace: true });
+    expect('trace' in on).toBe(false);
+    expect(explorerTrace(on)).toBe(true);
+    expect(run(base, { type: 'setTrace', trace: true })).toBe(base);
   });
 });

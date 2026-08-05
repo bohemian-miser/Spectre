@@ -309,6 +309,49 @@ describe('MapPage', () => {
     expect(window.location.hash).toContain('ln=1');
   });
 
+  it('offers tap-to-trace alongside the lines, and remembers switching it off', async () => {
+    window.history.replaceState(
+      null,
+      '',
+      '/map.html#/map?seed=1&cx=0&cy=0&z=36&budget=100000&ln=1&e=2578&c=0100101100',
+    );
+    const gl = makeFakeGl();
+    stubContexts(gl, null);
+    const { container } = render(<MapPage forceSyncClient />);
+    await settle();
+
+    const toggle = container.querySelector('[data-testid="map-trace"]') as HTMLInputElement;
+    expect(toggle.checked).toBe(true); // on by default: a tap is the whole gesture
+    expect(toggle.disabled).toBe(false);
+    expect(container.querySelector('[data-testid="hud-trace"]')?.textContent).toBe(
+      'traced: tap a strand',
+    );
+    // Nothing traced yet, so there is nothing to clear.
+    expect(container.querySelector('[data-testid="map-trace-clear"]')).toHaveProperty(
+      'disabled',
+      true,
+    );
+
+    fireEvent.click(toggle);
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 500));
+    });
+    expect(container.querySelector('[data-testid="hud-trace"]')?.textContent).toBe('traced: off');
+    expect(window.location.hash).toContain('tr=0');
+  });
+
+  it('has nothing to trace while the lines are off', async () => {
+    const gl = makeFakeGl();
+    stubContexts(gl, null);
+    const { container } = render(<MapPage forceSyncClient />);
+    await settle();
+
+    expect(container.querySelector('[data-testid="map-trace"]')).toHaveProperty('disabled', true);
+    expect(container.querySelector('[data-testid="hud-trace"]')?.textContent).toBe('traced: off');
+    // Default links stay byte-identical: the default is ON, so nothing is written.
+    expect(window.location.hash).not.toContain('tr=');
+  });
+
   it('applies external hash changes (back/forward) to seed and camera', async () => {
     const gl = makeFakeGl();
     stubContexts(gl, null);

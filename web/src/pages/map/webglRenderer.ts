@@ -23,6 +23,12 @@
  * for thousands of tiles — so there is nothing honest to draw a chord on;
  * `MapRenderStats.chordsDrawn` reports 0 and the HUD says lines are hidden.
  *
+ * THE TRACED STRAND (`setTrail`) is the one pass that is NOT tied to the cut.
+ * It is a world-anchored polyline the user grew by tapping, so it draws at
+ * every LOD and keeps its place when the viewport moves off it and back — one
+ * more `drawArraysInstanced`, one instance per segment, rainbow-shaded by
+ * arc length in the fragment stage.
+ *
  * Camera precision: the shader only ever sees `pos` (origin-relative f32)
  * plus a small origin-relative camera offset — never absolute world
  * coordinates (§ "Layout/precision" in the stage-2 scope).
@@ -38,7 +44,12 @@ import {
 import { originRelativeCenter, type MapCamera } from './camera';
 import type { LeafChordTable } from './chords';
 import { GLYPH_LEVEL, buildGlyphMeshes, buildLeafMesh, glyphFitForCut } from './glyphs';
-import type { MapRenderStats, MapRenderStyle, MapRenderer } from './rendererTypes';
+import type {
+  MapRenderStats,
+  MapRenderStyle,
+  MapRenderer,
+  TrailGeometry,
+} from './rendererTypes';
 
 /** Leaf outlines fade in between these zooms (CSS px per world unit). */
 export const OUTLINE_FADE_START = 5;
@@ -301,6 +312,98 @@ void main() {
   o = vec4(clamp(d / max(uHalfPx, 1e-6), 0.0, 1.0), 0.0, 0.0, 1.0);
 }`;
 
+/**
+ * Traced-strand pass. One polyline, drawn with the chord pass's quad
+ * expansion, but fed from a plain vertex buffer instead of the instance
+ * stream: segment `i` is instance `i`, and its two endpoints are the SAME
+ * buffer bound twice at a one-point offset (`aA` from texel i, `aB` from texel
+ * i + 1). So a trail of N points costs one buffer of N points and one
+ * `drawArraysInstanced(TRIANGLES, 0, 6, N - 1)` — appending a point never
+ * rewrites anything already there.
+ *
+ * `aSA`/`aSB` are the cumulative arc length at each endpoint; the fragment
+ * stage divides by `uTotalLen` to get the rainbow parameter, which is why
+ * growing the trail restretches the gradient over the whole line for free.
+ *
+ * The trail is world-anchored, so it uses its OWN `uView` (camera relative to
+ * the trail's anchor) rather than the cut's — that is what lets it stay put
+ * when the viewport moves off it and back.
+ */
+const VS_TRAIL = `#version 300 es
+layout(location=4) in vec2 aA;
+layout(location=5) in vec2 aB;
+layout(location=6) in float aSA;
+layout(location=7) in float aSB;
+uniform vec4 uView;
+uniform vec2 uHalfRes;
+uniform float uHalfPx;
+flat out vec2 vA;
+flat out vec2 vB;
+out float vS;
+
+void main() {
+  int corner = gl_VertexID;
+  // 0 1 2 / 2 1 3 over corners [A-, A+, B-, B+].
+  int idx = corner == 0 ? 0 : corner == 1 ? 1 : corner == 2 ? 2 : corner == 3 ? 2 : corner == 4 ? 1 : 3;
+
+  vec2 ca = vec2((aA.x + uView.x) * uView.z, (aA.y + uView.y) * uView.w);
+  vec2 cb = vec2((aB.x + uView.x) * uView.z, (aB.y + uView.y) * uView.w);
+  vec2 pa = ca * uHalfRes;
+  vec2 pb = cb * uHalfRes;
+  vec2 delta = pb - pa;
+  float len = length(delta);
+  vec2 dir = len > 1e-6 ? delta / len : vec2(1.0, 0.0);
+  vec2 nrm = vec2(-dir.y, dir.x);
+
+  vA = pa;
+  vB = pb;
+  vS = (idx < 2) ? aSA : aSB;
+
+  vec2 base = (idx < 2) ? pa : pb;
+  float side = (idx == 0 || idx == 2) ? -1.0 : 1.0;
+  // Extend past both ends by a half width so consecutive segments meet
+  // squarely and the round caps below fill the join.
+  vec2 cap = ((idx < 2) ? -dir : dir) * uHalfPx;
+  gl_Position = vec4((base + nrm * (side * uHalfPx) + cap) / uHalfRes, 0.0, 1.0);
+}`;
+
+/**
+ * Rainbow ink, shading by true distance to the segment for round caps/joins.
+ *
+ * The hue ramp is `core/colors.ts`'s `rainbow()` — hue 0..300° with a lightness
+ * lift around blue — so the traced strand matches the rainbow the rooted
+ * Explorer paints on tails, rather than inventing a second one.
+ */
+const FS_TRAIL = `#version 300 es
+precision highp float;
+flat in vec2 vA;
+flat in vec2 vB;
+in float vS;
+uniform vec2 uHalfRes;
+uniform float uHalfPx;
+uniform float uTotalLen;
+uniform float uAlpha;
+out vec4 o;
+
+vec3 hsl2rgb(float h, float s, float l) {
+  vec3 k = mod(vec3(0.0, 8.0, 4.0) + h * 12.0, 12.0);
+  float a = s * min(l, 1.0 - l);
+  return l - a * clamp(min(k - 3.0, 9.0 - k), -1.0, 1.0);
+}
+
+void main() {
+  vec2 f = gl_FragCoord.xy - uHalfRes;
+  vec2 pa = f - vA;
+  vec2 ba = vB - vA;
+  float h = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-6), 0.0, 1.0);
+  if (length(pa - ba * h) > uHalfPx) discard;
+
+  float t = clamp(vS / max(uTotalLen, 1e-6), 0.0, 1.0);
+  float deg = t * 300.0;
+  float l = 0.5 + 0.15 * cos(radians(deg - 240.0));
+  o = vec4(hsl2rgb(deg / 360.0, 1.0, l), uAlpha);
+}`;
+
 const FS_COLOR = `#version 300 es
 precision mediump float;
 in vec3 vColor;
@@ -336,6 +439,13 @@ export const BASE_LINE_PX = 1.4;
 export const LIGHT_LINE_COLOR: readonly [number, number, number, number] = [
   0.96, 0.98, 1.0, 0.95,
 ];
+
+/**
+ * Traced-strand thickness as a multiple of the strand width. Over 1 so the
+ * rainbow covers the flat ink it is painted over, but well under 2 so it never
+ * swallows the strands running alongside it.
+ */
+export const DEFAULT_TRAIL_SCALE = 1.8;
 
 function paletteVec(names: readonly string[]): Float32Array {
   const table = TILE_PALETTES.bright;
@@ -411,12 +521,14 @@ export function createWebGLRenderer(
   let progGlyph: WebGLProgram;
   let progChord: WebGLProgram;
   let progField: WebGLProgram;
+  let progTrail: WebGLProgram;
   try {
     progLeaf = link(VS_LEAF, FS_COLOR);
     progLine = link(VS_LEAF_LINE, FS_LINE);
     progGlyph = link(VS_GLYPH, FS_COLOR);
     progChord = link(VS_CHORD, FS_CHORD);
     progField = link(VS_CHORD, FS_FIELD);
+    progTrail = link(VS_TRAIL, FS_TRAIL);
   } catch {
     return null; // context exists but shaders failed — let the caller fall back
   }
@@ -479,6 +591,30 @@ export function createWebGLRenderer(
   const vaoChord = G.createVertexArray();
   G.bindVertexArray(vaoChord);
   bindInstanceAttrs(true);
+  G.bindVertexArray(null);
+
+  // --- traced strand --------------------------------------------------------
+  // Segment i reads points i and i+1, so ONE point buffer is bound twice at a
+  // one-point offset. Nothing is duplicated on the CPU and appending a point
+  // leaves every earlier vertex untouched.
+  const vboTrailXY = G.createBuffer();
+  const vboTrailS = G.createBuffer();
+  const vaoTrail = G.createVertexArray();
+  G.bindVertexArray(vaoTrail);
+  G.bindBuffer(G.ARRAY_BUFFER, vboTrailXY);
+  G.enableVertexAttribArray(4);
+  G.vertexAttribPointer(4, 2, G.FLOAT, false, 8, 0);
+  G.vertexAttribDivisor(4, 1);
+  G.enableVertexAttribArray(5);
+  G.vertexAttribPointer(5, 2, G.FLOAT, false, 8, 8);
+  G.vertexAttribDivisor(5, 1);
+  G.bindBuffer(G.ARRAY_BUFFER, vboTrailS);
+  G.enableVertexAttribArray(6);
+  G.vertexAttribPointer(6, 1, G.FLOAT, false, 4, 0);
+  G.vertexAttribDivisor(6, 1);
+  G.enableVertexAttribArray(7);
+  G.vertexAttribPointer(7, 1, G.FLOAT, false, 4, 4);
+  G.vertexAttribDivisor(7, 1);
   G.bindVertexArray(null);
 
   // --- glyph vertex-pull texture (lazy: first aggregate cut) -----------------
@@ -553,6 +689,7 @@ export function createWebGLRenderer(
   let lineColor = DEFAULT_LINE_COLOR;
   let lineScale = 1;
   let noOverlap = false;
+  let trailScale = DEFAULT_TRAIL_SCALE;
   const loc = (p: WebGLProgram, name: string): WebGLUniformLocation | null =>
     G.getUniformLocation(p, name);
   const uLeafView = loc(progLeaf, 'uView');
@@ -576,6 +713,11 @@ export function createWebGLRenderer(
   const uFieldTexLoc = loc(progField, 'uChordTex');
   const uFieldHalfRes = loc(progField, 'uHalfRes');
   const uFieldHalfPx = loc(progField, 'uHalfPx');
+  const uTrailView = loc(progTrail, 'uView');
+  const uTrailHalfRes = loc(progTrail, 'uHalfRes');
+  const uTrailHalfPx = loc(progTrail, 'uHalfPx');
+  const uTrailTotal = loc(progTrail, 'uTotalLen');
+  const uTrailAlpha = loc(progTrail, 'uAlpha');
 
   // --- midpoint-mode distance field ------------------------------------------
   // One R8 (as RGBA8) target the size of the drawing buffer, rebuilt on resize.
@@ -608,6 +750,8 @@ export function createWebGLRenderer(
   let count = 0;
   let cutLevel = 0;
   let origin = { x: 0, y: 0 };
+  let trail: TrailGeometry | null = null;
+  let trailUploaded = -1; // `TrailGeometry.version` currently on the GPU
   let disposed = false;
   let contextLost = false;
 
@@ -637,6 +781,23 @@ export function createWebGLRenderer(
     uploadChords(table);
   };
 
+  const setTrail = (next: TrailGeometry | null): void => {
+    if (disposed || contextLost) return;
+    trail = next && next.pointCount >= 2 ? next : null;
+    if (!trail) {
+      trailUploaded = -1;
+      return;
+    }
+    // Re-upload only when the vertex data actually changed — the trail grows
+    // at walk rate, not frame rate, and the camera moves without touching it.
+    if (trail.version === trailUploaded) return;
+    G.bindBuffer(G.ARRAY_BUFFER, vboTrailXY);
+    G.bufferData(G.ARRAY_BUFFER, trail.xy, G.DYNAMIC_DRAW);
+    G.bindBuffer(G.ARRAY_BUFFER, vboTrailS);
+    G.bufferData(G.ARRAY_BUFFER, trail.arc, G.DYNAMIC_DRAW);
+    trailUploaded = trail.version;
+  };
+
   const setStyle = (style: MapRenderStyle | null): void => {
     leafPalette = style?.leafColors
       ? packPalette(style.leafColors, LEAF_ORDER.length)
@@ -649,12 +810,14 @@ export function createWebGLRenderer(
     lineColor = style?.lineColor ?? DEFAULT_LINE_COLOR;
     lineScale = style?.lineScale ?? 1;
     noOverlap = style?.noOverlap ?? false;
+    trailScale = style?.trailScale ?? DEFAULT_TRAIL_SCALE;
   };
 
   const render = (cam: MapCamera, cssW: number, cssH: number, dpr: number): MapRenderStats => {
     const t0 = performance.now();
     let drawCalls = 0;
     let chordsDrawn = 0;
+    let trailPoints = 0;
     if (!disposed && !contextLost) {
       const bw = Math.max(1, Math.round(cssW * dpr));
       const bh = Math.max(1, Math.round(cssH * dpr));
@@ -773,9 +936,37 @@ export function createWebGLRenderer(
             chordsDrawn = count * chordsPerTile;
           }
         }
-        G.bindVertexArray(null);
-        G.finish(); // honest HUD timing (the page draws on demand, not in a loop)
       }
+
+      // Traced strand — on top of everything, and NOT gated on the cut: it is
+      // world-anchored geometry of its own, so it keeps drawing at aggregate
+      // LOD (where it reads as the shape of the whole walk) and while a query
+      // for a fresh viewport is still outstanding.
+      if (trail && trail.pointCount >= 2) {
+        const off = originRelativeCenter(cam, trail.origin);
+        G.useProgram(progTrail);
+        G.uniform4f(
+          uTrailView,
+          -off.x,
+          -off.y,
+          (2 * cam.scale * dpr) / bw,
+          (-2 * cam.scale * dpr) / bh,
+        );
+        G.uniform2f(uTrailHalfRes, bw / 2, bh / 2);
+        G.uniform1f(uTrailHalfPx, (BASE_LINE_PX * lineScale * trailScale * dpr) / 2);
+        G.uniform1f(uTrailTotal, trail.totalLength);
+        G.uniform1f(uTrailAlpha, 1);
+        G.enable(G.BLEND);
+        G.blendFunc(G.SRC_ALPHA, G.ONE_MINUS_SRC_ALPHA);
+        G.bindVertexArray(vaoTrail);
+        G.drawArraysInstanced(G.TRIANGLES, 0, 6, trail.pointCount - 1);
+        G.disable(G.BLEND);
+        drawCalls++;
+        trailPoints = trail.pointCount;
+      }
+
+      G.bindVertexArray(null);
+      G.finish(); // honest HUD timing (the page draws on demand, not in a loop)
     }
     return {
       mode: 'webgl2',
@@ -784,6 +975,7 @@ export function createWebGLRenderer(
       drawMs: performance.now() - t0,
       capped: false,
       chordsDrawn,
+      trailPoints,
     };
   };
 
@@ -791,6 +983,7 @@ export function createWebGLRenderer(
     mode: 'webgl2',
     setCut,
     setChords,
+    setTrail,
     setStyle,
     render,
     dispose(): void {
@@ -801,10 +994,13 @@ export function createWebGLRenderer(
       G.deleteBuffer(vboPos);
       G.deleteBuffer(vboCode);
       G.deleteBuffer(vboType);
+      G.deleteBuffer(vboTrailXY);
+      G.deleteBuffer(vboTrailS);
       G.deleteVertexArray(vaoLeaf);
       G.deleteVertexArray(vaoLine);
       G.deleteVertexArray(vaoGlyph);
       G.deleteVertexArray(vaoChord);
+      G.deleteVertexArray(vaoTrail);
       if (glyphTex) G.deleteTexture(glyphTex);
       if (chordTex) G.deleteTexture(chordTex);
       if (fieldTex) G.deleteTexture(fieldTex);
@@ -814,6 +1010,7 @@ export function createWebGLRenderer(
       G.deleteProgram(progGlyph);
       G.deleteProgram(progChord);
       G.deleteProgram(progField);
+      G.deleteProgram(progTrail);
     },
   };
 }

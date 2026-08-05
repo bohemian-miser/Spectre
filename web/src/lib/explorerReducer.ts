@@ -62,7 +62,8 @@ export type ExplorerAction =
   | { readonly type: 'setMode'; readonly mode: ExplorerMode }
   | { readonly type: 'setBudget'; readonly budget: number }
   | { readonly type: 'setLineWidth'; readonly lineWidth: number }
-  | { readonly type: 'setNoOverlap'; readonly noOverlap: boolean };
+  | { readonly type: 'setNoOverlap'; readonly noOverlap: boolean }
+  | { readonly type: 'setTrace'; readonly trace: boolean };
 
 function clampInt(v: number, lo: number, hi: number): number {
   if (!Number.isFinite(v)) return lo;
@@ -164,6 +165,17 @@ export function explorerReducer(state: ExplorerState, action: ExplorerAction): E
         return rest as ExplorerState;
       }
       return { ...state, noOverlap: true };
+    }
+
+    // Default-ON, so it is the FALSE value that has to be stored (the codec
+    // writes `tc=0` for it) and turning it back on drops the key again.
+    case 'setTrace': {
+      if (action.trace === explorerTrace(state)) return state;
+      if (action.trace) {
+        const { trace: _t, ...rest } = state;
+        return rest as ExplorerState;
+      }
+      return { ...state, trace: false };
     }
 
     case 'setRootTile':
@@ -344,6 +356,11 @@ export function explorerBudget(state: ExplorerState): number {
 /** Effective strand-line thickness multiplier. */
 export function explorerLineWidth(state: ExplorerState): number {
   return state.lineWidth === undefined ? DEFAULT_LINE_SCALE : clampLineScale(state.lineWidth);
+}
+
+/** Whether tapping a strand traces it (infinite mode only). Default ON. */
+export function explorerTrace(state: ExplorerState): boolean {
+  return state.trace !== false;
 }
 
 /** Convenience selector: `subset` as a Set for the core APIs. */

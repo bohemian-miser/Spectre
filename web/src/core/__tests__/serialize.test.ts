@@ -344,3 +344,37 @@ describe('midpoint clipping in the URL', () => {
     expect(encodeExplorerQuery(back)).toBe(q);
   });
 });
+
+/**
+ * Tap-to-trace (`tc=`) — additive the other way round from its neighbours: the
+ * default is ON, so only switching it OFF may write anything. That is what
+ * keeps every link written before the feature existed decoding unchanged.
+ */
+describe('tap-to-trace in the URL', () => {
+  it('writes nothing while on, and round-trips when off', () => {
+    expect(DEFAULT_EXPLORER_STATE.trace).toBeUndefined();
+    expect(encodeExplorerQuery(DEFAULT_EXPLORER_STATE)).toBe(`v=${CODEC_VERSION}`);
+    expect(encodeExplorerQuery({ ...DEFAULT_EXPLORER_STATE, trace: true })).toBe(
+      `v=${CODEC_VERSION}`,
+    );
+
+    const off = encodeExplorerQuery({ ...DEFAULT_EXPLORER_STATE, trace: false });
+    expect(off).toBe(`v=${CODEC_VERSION}&tc=0`);
+    const back = decodeExplorerQuery(off);
+    expect(back.trace).toBe(false);
+    expect(encodeExplorerQuery(back)).toBe(off); // canonical
+  });
+
+  it('treats anything but 0/false as on', () => {
+    expect(decodeExplorerQuery('v=1').trace).toBeUndefined();
+    expect(decodeExplorerQuery('v=1&tc=1').trace).toBeUndefined();
+    expect(decodeExplorerQuery('v=1&tc=nope').trace).toBeUndefined();
+    expect(decodeExplorerQuery('v=1&tc=false').trace).toBe(false);
+  });
+
+  it('leaves pre-trace links byte-identical', () => {
+    for (const link of ['v=1', 'v=1&lv=4&e=2578&c=0100101100&md=infinite&no=1']) {
+      expect(encodeExplorerQuery(decodeExplorerQuery(link))).toBe(link);
+    }
+  });
+});
