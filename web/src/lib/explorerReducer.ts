@@ -10,9 +10,11 @@ import {
   DEFAULT_EXPLORER_STATE,
   DEFAULT_INSTANCE_BUDGET,
   DEFAULT_LINE_SCALE,
+  DEFAULT_TRAIL_HOLD,
   MAX_LEVEL,
   clampInstanceBudget,
   clampLineScale,
+  clampTrailHold,
   connectionCount,
   leafOrder,
   matchingCount,
@@ -63,7 +65,10 @@ export type ExplorerAction =
   | { readonly type: 'setBudget'; readonly budget: number }
   | { readonly type: 'setLineWidth'; readonly lineWidth: number }
   | { readonly type: 'setNoOverlap'; readonly noOverlap: boolean }
-  | { readonly type: 'setTrace'; readonly trace: boolean };
+  | { readonly type: 'setTrace'; readonly trace: boolean }
+  | { readonly type: 'setFollow'; readonly follow: boolean }
+  | { readonly type: 'setTrailHold'; readonly hold: number }
+  | { readonly type: 'setKeepCircuits'; readonly keepCircuits: boolean };
 
 function clampInt(v: number, lo: number, hi: number): number {
   if (!Number.isFinite(v)) return lo;
@@ -176,6 +181,36 @@ export function explorerReducer(state: ExplorerState, action: ExplorerAction): E
         return rest as ExplorerState;
       }
       return { ...state, trace: false };
+    }
+
+    // Default-OFF, like `noOverlap`: only `follow: true` is ever stored.
+    case 'setFollow': {
+      if (action.follow === explorerFollow(state)) return state;
+      if (!action.follow) {
+        const { follow: _f, ...rest } = state;
+        return rest as ExplorerState;
+      }
+      return { ...state, follow: true };
+    }
+
+    case 'setTrailHold': {
+      const hold = clampTrailHold(action.hold);
+      if (hold === explorerTrailHold(state)) return state;
+      if (hold === DEFAULT_TRAIL_HOLD) {
+        const { hold: _h, ...rest } = state;
+        return rest as ExplorerState;
+      }
+      return { ...state, hold };
+    }
+
+    // Default-ON, like `trace`: only `keepCircuits: false` is ever stored.
+    case 'setKeepCircuits': {
+      if (action.keepCircuits === explorerKeepCircuits(state)) return state;
+      if (action.keepCircuits) {
+        const { keepCircuits: _k, ...rest } = state;
+        return rest as ExplorerState;
+      }
+      return { ...state, keepCircuits: false };
     }
 
     case 'setRootTile':
@@ -361,6 +396,21 @@ export function explorerLineWidth(state: ExplorerState): number {
 /** Whether tapping a strand traces it (infinite mode only). Default ON. */
 export function explorerTrace(state: ExplorerState): boolean {
   return state.trace !== false;
+}
+
+/** Whether the camera auto-follows the traced strand. Default OFF. */
+export function explorerFollow(state: ExplorerState): boolean {
+  return state.follow === true;
+}
+
+/** Most trail points held while auto-following (the moving window). */
+export function explorerTrailHold(state: ExplorerState): number {
+  return state.hold === undefined ? DEFAULT_TRAIL_HOLD : clampTrailHold(state.hold);
+}
+
+/** Whether a strand that closes into a circuit stays coloured. Default ON. */
+export function explorerKeepCircuits(state: ExplorerState): boolean {
+  return state.keepCircuits !== false;
 }
 
 /** Convenience selector: `subset` as a Set for the core APIs. */

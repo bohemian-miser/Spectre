@@ -155,3 +155,29 @@ describe('shareUrl', () => {
     );
   });
 });
+
+describe('follow / hold / keep-circuits params (explorer codec)', () => {
+  const inf: ExplorerState = { ...DEFAULT_EXPLORER_STATE, mode: 'infinite' };
+
+  it('encodes fw/hp/kc additively and round-trips', () => {
+    expect(stateToQuery(inf)).not.toMatch(/(^|&)(fw|hp|kc)=/);
+
+    const s: ExplorerState = { ...inf, follow: true, hold: 1234, keepCircuits: false };
+    const q = stateToQuery(s);
+    expect(q).toContain('fw=1');
+    expect(q).toContain('hp=1234');
+    expect(q).toContain('kc=0');
+    const back = hashToState(stateToHash(s));
+    expect(back.follow).toBe(true);
+    expect(back.hold).toBe(1234);
+    expect(back.keepCircuits).toBe(false);
+    expect(stateToQuery(back)).toBe(q); // canonical
+  });
+
+  it('drops all three keys at their defaults on decode', () => {
+    const back = hashToState('#/explorer?v=1&md=infinite&fw=0&hp=5000&kc=1');
+    expect('follow' in back).toBe(false);
+    expect('hold' in back).toBe(false);
+    expect('keepCircuits' in back).toBe(false);
+  });
+});

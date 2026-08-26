@@ -596,26 +596,47 @@ export function createWebGLRenderer(
   // --- traced strand --------------------------------------------------------
   // Segment i reads points i and i+1, so ONE point buffer is bound twice at a
   // one-point offset. Nothing is duplicated on the CPU and appending a point
-  // leaves every earlier vertex untouched.
-  const vboTrailXY = G.createBuffer();
-  const vboTrailS = G.createBuffer();
-  const vaoTrail = G.createVertexArray();
-  G.bindVertexArray(vaoTrail);
-  G.bindBuffer(G.ARRAY_BUFFER, vboTrailXY);
-  G.enableVertexAttribArray(4);
-  G.vertexAttribPointer(4, 2, G.FLOAT, false, 8, 0);
-  G.vertexAttribDivisor(4, 1);
-  G.enableVertexAttribArray(5);
-  G.vertexAttribPointer(5, 2, G.FLOAT, false, 8, 8);
-  G.vertexAttribDivisor(5, 1);
-  G.bindBuffer(G.ARRAY_BUFFER, vboTrailS);
-  G.enableVertexAttribArray(6);
-  G.vertexAttribPointer(6, 1, G.FLOAT, false, 4, 0);
-  G.vertexAttribDivisor(6, 1);
-  G.enableVertexAttribArray(7);
-  G.vertexAttribPointer(7, 1, G.FLOAT, false, 4, 4);
-  G.vertexAttribDivisor(7, 1);
-  G.bindVertexArray(null);
+  // leaves every earlier vertex untouched. Kept circuits use the same layout,
+  // one buffer pair each.
+  interface TrailBuffers {
+    readonly xy: WebGLBuffer;
+    readonly arc: WebGLBuffer;
+    readonly vao: WebGLVertexArrayObject;
+  }
+
+  const makeTrailBuffers = (): TrailBuffers => {
+    const xy = G.createBuffer();
+    const arc = G.createBuffer();
+    const vao = G.createVertexArray();
+    G.bindVertexArray(vao);
+    G.bindBuffer(G.ARRAY_BUFFER, xy);
+    G.enableVertexAttribArray(4);
+    G.vertexAttribPointer(4, 2, G.FLOAT, false, 8, 0);
+    G.vertexAttribDivisor(4, 1);
+    G.enableVertexAttribArray(5);
+    G.vertexAttribPointer(5, 2, G.FLOAT, false, 8, 8);
+    G.vertexAttribDivisor(5, 1);
+    G.bindBuffer(G.ARRAY_BUFFER, arc);
+    G.enableVertexAttribArray(6);
+    G.vertexAttribPointer(6, 1, G.FLOAT, false, 4, 0);
+    G.vertexAttribDivisor(6, 1);
+    G.enableVertexAttribArray(7);
+    G.vertexAttribPointer(7, 1, G.FLOAT, false, 4, 4);
+    G.vertexAttribDivisor(7, 1);
+    G.bindVertexArray(null);
+    return { xy, arc, vao };
+  };
+
+  const deleteTrailBuffers = (b: TrailBuffers): void => {
+    G.deleteBuffer(b.xy);
+    G.deleteBuffer(b.arc);
+    G.deleteVertexArray(b.vao);
+  };
+
+  const trailBufs = makeTrailBuffers();
+  const vboTrailXY = trailBufs.xy;
+  const vboTrailS = trailBufs.arc;
+  const vaoTrail = trailBufs.vao;
 
   // --- glyph vertex-pull texture (lazy: first aggregate cut) -----------------
   let glyphTex: WebGLTexture | null = null;
@@ -752,6 +773,11 @@ export function createWebGLRenderer(
   let origin = { x: 0, y: 0 };
   let trail: TrailGeometry | null = null;
   let trailUploaded = -1; // `TrailGeometry.version` currently on the GPU
+  // Kept circuits: frozen geometry, uploaded once per entry and reused (the
+  // map is keyed by geometry identity; entries leave it when they leave the
+  // list).
+  let circuits: readonly TrailGeometry[] = [];
+  const circuitBufs = new Map<TrailGeometry, TrailBuffers>();
   let disposed = false;
   let contextLost = false;
 
@@ -796,6 +822,27 @@ export function createWebGLRenderer(
     G.bindBuffer(G.ARRAY_BUFFER, vboTrailS);
     G.bufferData(G.ARRAY_BUFFER, trail.arc, G.DYNAMIC_DRAW);
     trailUploaded = trail.version;
+  };
+
+  const setCircuits = (next: readonly TrailGeometry[] | null): void => {
+    if (disposed || contextLost) return;
+    circuits = (next ?? []).filter((c) => c.pointCount >= 2);
+    const keep = new Set(circuits);
+    for (const [geom, bufs] of circuitBufs) {
+      if (!keep.has(geom)) {
+        deleteTrailBuffers(bufs);
+        circuitBufs.delete(geom);
+      }
+    }
+    for (const geom of circuits) {
+      if (circuitBufs.has(geom)) continue; // frozen geometry: upload once
+      const bufs = makeTrailBuffers();
+      G.bindBuffer(G.ARRAY_BUFFER, bufs.xy);
+      G.bufferData(G.ARRAY_BUFFER, geom.xy, G.STATIC_DRAW);
+      G.bindBuffer(G.ARRAY_BUFFER, bufs.arc);
+      G.bufferData(G.ARRAY_BUFFER, geom.arc, G.STATIC_DRAW);
+      circuitBufs.set(geom, bufs);
+    }
   };
 
   const setStyle = (style: MapRenderStyle | null): void => {
@@ -938,12 +985,13 @@ export function createWebGLRenderer(
         }
       }
 
-      // Traced strand — on top of everything, and NOT gated on the cut: it is
-      // world-anchored geometry of its own, so it keeps drawing at aggregate
-      // LOD (where it reads as the shape of the whole walk) and while a query
-      // for a fresh viewport is still outstanding.
-      if (trail && trail.pointCount >= 2) {
-        const off = originRelativeCenter(cam, trail.origin);
+      // Traced strand and kept circuits — on top of everything, and NOT gated
+      // on the cut: they are world-anchored geometry of their own, so they
+      // keep drawing at aggregate LOD (where a walk reads as its whole shape)
+      // and while a query for a fresh viewport is still outstanding. Circuits
+      // first, the live trail last, so the strand being traced stays on top.
+      const drawTrailPass = (geom: TrailGeometry, vao: WebGLVertexArrayObject): void => {
+        const off = originRelativeCenter(cam, geom.origin);
         G.useProgram(progTrail);
         G.uniform4f(
           uTrailView,
@@ -954,16 +1002,21 @@ export function createWebGLRenderer(
         );
         G.uniform2f(uTrailHalfRes, bw / 2, bh / 2);
         G.uniform1f(uTrailHalfPx, (BASE_LINE_PX * lineScale * trailScale * dpr) / 2);
-        G.uniform1f(uTrailTotal, trail.totalLength);
+        G.uniform1f(uTrailTotal, geom.totalLength);
         G.uniform1f(uTrailAlpha, 1);
         G.enable(G.BLEND);
         G.blendFunc(G.SRC_ALPHA, G.ONE_MINUS_SRC_ALPHA);
-        G.bindVertexArray(vaoTrail);
-        G.drawArraysInstanced(G.TRIANGLES, 0, 6, trail.pointCount - 1);
+        G.bindVertexArray(vao);
+        G.drawArraysInstanced(G.TRIANGLES, 0, 6, geom.pointCount - 1);
         G.disable(G.BLEND);
         drawCalls++;
-        trailPoints = trail.pointCount;
+        trailPoints += geom.pointCount;
+      };
+      for (const geom of circuits) {
+        const bufs = circuitBufs.get(geom);
+        if (bufs) drawTrailPass(geom, bufs.vao);
       }
+      if (trail && trail.pointCount >= 2) drawTrailPass(trail, vaoTrail);
 
       G.bindVertexArray(null);
       G.finish(); // honest HUD timing (the page draws on demand, not in a loop)
@@ -984,6 +1037,7 @@ export function createWebGLRenderer(
     setCut,
     setChords,
     setTrail,
+    setCircuits,
     setStyle,
     render,
     dispose(): void {
@@ -996,6 +1050,8 @@ export function createWebGLRenderer(
       G.deleteBuffer(vboType);
       G.deleteBuffer(vboTrailXY);
       G.deleteBuffer(vboTrailS);
+      for (const bufs of circuitBufs.values()) deleteTrailBuffers(bufs);
+      circuitBufs.clear();
       G.deleteVertexArray(vaoLeaf);
       G.deleteVertexArray(vaoLine);
       G.deleteVertexArray(vaoGlyph);

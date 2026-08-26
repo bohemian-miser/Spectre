@@ -172,3 +172,33 @@ describe('map line controls', () => {
     expect(decodeMapQuery('tr=1').trace).toBe(true);
   });
 });
+
+describe('follow / hold / keep-circuits params', () => {
+  it('encodes fw/hp/kc additively and round-trips canonically', () => {
+    const base = { ...DEFAULT_MAP_STATE, lines: true };
+    const plain = encodeMapQuery(base);
+    expect(plain).not.toContain('fw=');
+    expect(plain).not.toContain('hp=');
+    expect(plain).not.toContain('kc=');
+
+    const q = encodeMapQuery({ ...base, follow: true, hold: 1234, keepCircuits: false });
+    expect(q).toContain('fw=1');
+    expect(q).toContain('hp=1234');
+    expect(q).toContain('kc=0');
+    const back = decodeMapQuery(q);
+    expect(back.follow).toBe(true);
+    expect(back.hold).toBe(1234);
+    expect(back.keepCircuits).toBe(false);
+    expect(encodeMapQuery(back)).toBe(q); // canonical
+  });
+
+  it('defaults: follow off, hold at the default, keep-circuits on', () => {
+    const d = decodeMapQuery('');
+    expect(d.follow).toBe(false);
+    expect(d.hold).toBe(DEFAULT_MAP_STATE.hold);
+    expect(d.keepCircuits).toBe(true);
+    // Junk clamps rather than breaking the link.
+    expect(decodeMapQuery('hp=abc').hold).toBe(DEFAULT_MAP_STATE.hold);
+    expect(decodeMapQuery('hp=1').hold).toBeGreaterThan(1);
+  });
+});

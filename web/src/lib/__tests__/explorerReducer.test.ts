@@ -3,7 +3,10 @@ import {
   DEFAULT_EXPLORER_STATE,
   DEFAULT_INSTANCE_BUDGET,
   DEFAULT_LINE_SCALE,
+  DEFAULT_TRAIL_HOLD,
   FLAG,
+  MAX_TRAIL_HOLD,
+  MIN_TRAIL_HOLD,
   MAX_INSTANCE_BUDGET,
   MAX_LEVEL,
   MIN_INSTANCE_BUDGET,
@@ -17,10 +20,13 @@ import {
 } from '../../core';
 import {
   explorerBudget,
+  explorerFollow,
+  explorerKeepCircuits,
   explorerLineWidth,
   explorerMode,
   explorerReducer,
   explorerTrace,
+  explorerTrailHold,
   hasFlag,
   maxMatchingIndex,
   normalizeMatchingVector,
@@ -312,5 +318,50 @@ describe('tap-to-trace', () => {
     expect('trace' in on).toBe(false);
     expect(explorerTrace(on)).toBe(true);
     expect(run(base, { type: 'setTrace', trace: true })).toBe(base);
+  });
+});
+
+describe('auto-follow / trail hold / kept circuits', () => {
+  it('follow is off by default and stores only the ON choice', () => {
+    expect(explorerFollow(base)).toBe(false);
+    expect('follow' in base).toBe(false);
+
+    const on = run(base, { type: 'setFollow', follow: true });
+    expect(on.follow).toBe(true);
+    expect(explorerFollow(on)).toBe(true);
+    expect(run(on, { type: 'setFollow', follow: true })).toBe(on); // bail-out
+
+    const off = run(on, { type: 'setFollow', follow: false });
+    expect('follow' in off).toBe(false);
+    expect(run(base, { type: 'setFollow', follow: false })).toBe(base);
+  });
+
+  it('hold clamps into range and drops the key at the default', () => {
+    expect(explorerTrailHold(base)).toBe(DEFAULT_TRAIL_HOLD);
+
+    const set = run(base, { type: 'setTrailHold', hold: 1234 });
+    expect(set.hold).toBe(1234);
+    expect(explorerTrailHold(set)).toBe(1234);
+
+    expect(run(base, { type: 'setTrailHold', hold: 0 }).hold).toBe(MIN_TRAIL_HOLD);
+    expect(run(base, { type: 'setTrailHold', hold: 1e9 }).hold).toBe(MAX_TRAIL_HOLD);
+    expect(run(base, { type: 'setTrailHold', hold: Number.NaN })).toBe(base); // -> default, no key
+
+    const back = run(set, { type: 'setTrailHold', hold: DEFAULT_TRAIL_HOLD });
+    expect('hold' in back).toBe(false);
+  });
+
+  it('keep-circuits is on by default and stores only the OFF choice', () => {
+    expect(explorerKeepCircuits(base)).toBe(true);
+    expect('keepCircuits' in base).toBe(false);
+
+    const off = run(base, { type: 'setKeepCircuits', keepCircuits: false });
+    expect(off.keepCircuits).toBe(false);
+    expect(explorerKeepCircuits(off)).toBe(false);
+    expect(run(off, { type: 'setKeepCircuits', keepCircuits: false })).toBe(off);
+
+    const on = run(off, { type: 'setKeepCircuits', keepCircuits: true });
+    expect('keepCircuits' in on).toBe(false);
+    expect(run(base, { type: 'setKeepCircuits', keepCircuits: true })).toBe(base);
   });
 });

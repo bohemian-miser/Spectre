@@ -22,7 +22,9 @@ import {
   FAMILY_DISPLAY_NAMES,
   FLAG,
   LINE_SCALE_STEP,
+  MAX_TRAIL_HOLD,
   MIN_LINE_SCALE,
+  MIN_TRAIL_HOLD,
   MAX_LEVEL,
   SUBSTITUTION_GROWTH,
   TILE_NAMES,
@@ -64,9 +66,12 @@ import { useCircuitAnalysis } from '../hooks/useCircuitAnalysis';
 import { useExplorerStore } from '../hooks/useExplorerState';
 import {
   explorerBudget,
+  explorerFollow,
+  explorerKeepCircuits,
   explorerLineWidth,
   explorerMode,
   explorerTrace,
+  explorerTrailHold,
   hasFlag,
 } from '../lib/explorerReducer';
 import { matchingVectorToRecord } from '../lib/matchingModel';
@@ -149,6 +154,9 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
   const lineWidth = explorerLineWidth(state);
   const noOverlap = !!state.noOverlap;
   const traceOn = explorerTrace(state);
+  const followOn = explorerFollow(state);
+  const trailHold = explorerTrailHold(state);
+  const keepCircuitsOn = explorerKeepCircuits(state);
   const infinite = mode === 'infinite';
   const infiniteAvailable = supportsInfiniteMode(family);
 
@@ -855,16 +863,71 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
           />
           <span>Tap to colour a strand</span>
         </label>
+        <label className="control-row">
+          <input
+            type="checkbox"
+            aria-label="Auto-follow the traced strand"
+            data-testid="follow-toggle"
+            checked={followOn}
+            disabled={!infinite || !traceOn}
+            onChange={(e) => dispatch({ type: 'setFollow', follow: e.target.checked })}
+          />
+          <span>Auto-follow the strand</span>
+        </label>
         {infinite ? (
-          <div className="control-row">
-            <button
-              type="button"
-              data-testid="trace-clear"
-              onClick={() => infiniteApiRef.current?.clearTrace()}
-            >
-              Clear traced strand
-            </button>
-          </div>
+          <>
+            <label className="control-row">
+              <span>Hold</span>
+              <input
+                type="number"
+                aria-label="Most trail tiles held while following"
+                data-testid="trail-hold"
+                min={MIN_TRAIL_HOLD}
+                max={MAX_TRAIL_HOLD}
+                step={500}
+                value={trailHold}
+                disabled={!traceOn || !followOn}
+                onChange={(e) => dispatch({ type: 'setTrailHold', hold: Number(e.target.value) })}
+              />
+              <span className="muted">tiles of trail</span>
+            </label>
+            <p className="muted" role="note">
+              Auto-follow makes the camera chase the strand&rsquo;s head — the same walk panning by
+              hand feeds, driven for you. Wheel-zoom stays yours the whole time; dragging pauses
+              the chase until you let go. While following, the rainbow holds at most the last
+              &ldquo;hold&rdquo; tiles and lets the tail go behind it.
+            </p>
+          </>
+        ) : null}
+        <label className="control-row">
+          <input
+            type="checkbox"
+            aria-label="Keep closed circuits coloured"
+            data-testid="keep-circuits"
+            checked={keepCircuitsOn}
+            disabled={!infinite || !traceOn}
+            onChange={(e) =>
+              dispatch({ type: 'setKeepCircuits', keepCircuits: e.target.checked })
+            }
+          />
+          <span>Keep closed circuits coloured</span>
+        </label>
+        {infinite ? (
+          <>
+            <p className="muted" role="note">
+              A traced strand that comes back to its start is a circuit; with this on it stays lit
+              when you tap the next strand.
+            </p>
+            <div className="control-row">
+              <button
+                type="button"
+                data-testid="trace-clear"
+                onClick={() => infiniteApiRef.current?.clearTrace()}
+              >
+                Clear traced strand
+              </button>
+            </div>
+          </>
         ) : (
           <p className="muted" role="note">
             Tracing follows a strand across tiles the un-rooted engine expands as you pan, so it
@@ -996,6 +1059,9 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
             budget={budget}
             chords={infiniteChords}
             trace={traceOn && !!infiniteChords}
+            follow={followOn && traceOn && !!infiniteChords}
+            followHold={trailHold}
+            keepCircuits={keepCircuitsOn && traceOn && !!infiniteChords}
             style={infiniteStyle}
             initialCamera={initialInfiniteCamera}
             apiRef={infiniteApiRef}
@@ -1005,6 +1071,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
               subscribeRef={infiniteHudSubRef}
               linesOn={linesOn && !!infiniteChords}
               traceOn={traceOn && !!infiniteChords}
+              followOn={followOn && traceOn && !!infiniteChords}
             />
           </InfiniteCanvas>
         ) : !heavy ? (
@@ -1127,8 +1194,9 @@ function InfiniteHud(props: {
   readonly subscribeRef: React.MutableRefObject<((s: InfiniteCanvasStatus) => void) | null>;
   readonly linesOn: boolean;
   readonly traceOn: boolean;
+  readonly followOn: boolean;
 }): JSX.Element {
-  const { subscribeRef, linesOn, traceOn } = props;
+  const { subscribeRef, linesOn, traceOn, followOn } = props;
   const [status, setStatus] = useState<InfiniteCanvasStatus | null>(null);
   const latest = useRef<InfiniteCanvasStatus | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1181,11 +1249,18 @@ function InfiniteHud(props: {
       </span>
       <span data-testid="inf-trace">
         {trace?.active && trace.status
-          ? `traced: ${Math.round(trace.length).toLocaleString('en-US')} tiles long — ${describeWalk(trace.status)}`
+          ? `traced: ${Math.round(trace.length).toLocaleString('en-US')} tiles long — ${
+              followOn && trace.status === 'frontier' ? 'chasing…' : describeWalk(trace.status)
+            }`
           : traceOn
             ? 'traced: tap a strand'
             : 'traced: off'}
       </span>
+      {trace && trace.circuits > 0 ? (
+        <span data-testid="inf-circuits">
+          {trace.circuits} circuit{trace.circuits === 1 ? '' : 's'} kept
+        </span>
+      ) : null}
       <span>
         query {cut ? cut.queryMs.toFixed(1) : '—'} ms · draw {draw ? draw.drawMs.toFixed(1) : '—'} ms
         {draw ? ` · ${draw.drawCalls} call${draw.drawCalls === 1 ? '' : 's'}` : ''}

@@ -74,21 +74,25 @@ afterEach(() => {
 /** A renderer that records what it was told to draw. */
 interface FakeRenderer extends MapRenderer {
   readonly trails: (TrailGeometry | null)[];
+  readonly circuitSets: (readonly TrailGeometry[] | null)[];
   readonly cuts: ViewportCut[];
   frames: number;
 }
 
 function makeRenderer(): FakeRenderer {
   const trails: (TrailGeometry | null)[] = [];
+  const circuitSets: (readonly TrailGeometry[] | null)[] = [];
   const cuts: ViewportCut[] = [];
   const r: FakeRenderer = {
     mode: 'webgl2',
     trails,
+    circuitSets,
     cuts,
     frames: 0,
     setCut: (cut) => cuts.push(cut),
     setChords: (_t: LeafChordTable | null) => {},
     setTrail: (t) => trails.push(t),
+    setCircuits: (c) => circuitSets.push(c),
     setStyle: (_s: MapRenderStyle | null) => {},
     render: (): MapRenderStats => {
       r.frames++;
@@ -114,9 +118,9 @@ const chordsFor = (): LeafChordTable =>
  * Screen position of a chord's midpoint under `cam` — an unambiguous tap
  * target, found through the same engine query the component will run.
  */
-function chordTargetOn(cam: MapCamera): { x: number; y: number } {
+function chordTargetOn(cam: MapCamera, table: LeafChordTable = chordsFor()): { x: number; y: number } {
   const cut = createUnrootedEngine(SEED).query(viewRectFor(cam, WIDTH, HEIGHT), BUDGET);
-  const index = buildChordIndex(cut, chordsFor());
+  const index = buildChordIndex(cut, table);
   if (!index) throw new Error('no walkable cut at this camera');
   const hit = hitTestChord(index, { x: cam.cx, y: cam.cy }, 5);
   if (!hit) throw new Error('no chord near the view centre');
@@ -127,6 +131,9 @@ function chordTargetOn(cam: MapCamera): { x: number; y: number } {
 interface HarnessProps {
   readonly chords?: LeafChordTable | null;
   readonly trace?: boolean;
+  readonly follow?: boolean;
+  readonly followHold?: number | null;
+  readonly keepCircuits?: boolean;
   readonly camera?: MapCamera;
   readonly renderer: FakeRenderer;
   readonly apiOut: { current: InfiniteCanvasApi | null };
@@ -142,6 +149,9 @@ function Harness(props: HarnessProps): JSX.Element {
       budget={BUDGET}
       chords={props.chords === undefined ? chordsFor() : props.chords}
       trace={props.trace ?? true}
+      follow={props.follow ?? false}
+      followHold={props.followHold ?? null}
+      keepCircuits={props.keepCircuits ?? false}
       initialCamera={props.camera ?? createCamera(0, 0, 36)}
       apiRef={props.apiOut as React.MutableRefObject<InfiniteCanvasApi | null>}
       onStatusChange={props.onStatus}
@@ -330,5 +340,108 @@ describe('InfiniteCanvas — tap to trace', () => {
     tap(m.host, target.x, target.y);
     await settle();
     expect(m.status().trace.active).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+const loopTable = (): LeafChordTable =>
+  buildLeafChordTable([1, 5], comboToMatchingIndices('spectre', [1, 5], '0000000000'));
+
+describe('InfiniteCanvas — auto-follow', () => {
+  it('chases the head itself and never touches the zoom', async () => {
+    const m = await mount({ follow: true });
+    const target = chordTargetOn(createCamera(0, 0, 36));
+    tap(m.host, target.x, target.y);
+    await settle();
+    const early = m.status().trace.length;
+    expect(early).toBeGreaterThan(0);
+
+    // No user pans from here on: the camera must move on its own, and the
+    // chase must keep feeding the walk.
+    await settle();
+    await settle();
+    await settle();
+    await settle();
+    const cam = m.api.current!.getCamera();
+    expect(Math.hypot(cam.cx, cam.cy)).toBeGreaterThan(0.05);
+    expect(cam.scale).toBe(36);
+    expect(m.status().trace.length).toBeGreaterThan(early);
+  });
+
+  it('keeps the wheel live while chasing', async () => {
+    const m = await mount({ follow: true });
+    const target = chordTargetOn(createCamera(0, 0, 36));
+    tap(m.host, target.x, target.y);
+    await settle();
+
+    fireEvent.wheel(m.host, { deltaY: -400, clientX: WIDTH / 2, clientY: HEIGHT / 2 });
+    await settle();
+    expect(m.api.current!.getCamera().scale).toBeGreaterThan(36);
+    // Still chasing after the zoom: the walk keeps growing.
+    const len = m.status().trace.length;
+    await settle();
+    await settle();
+    expect(m.status().trace.length).toBeGreaterThanOrEqual(len);
+  });
+
+  it('holds at most the configured window while following', async () => {
+    const m = await mount({ follow: true, followHold: 20 });
+    const target = chordTargetOn(createCamera(0, 0, 36));
+    tap(m.host, target.x, target.y);
+    for (let i = 0; i < 6; i++) await settle();
+
+    const trace = m.status().trace;
+    expect(trace.points).toBeLessThanOrEqual(20);
+    // The odometer keeps the full distance even though the window let go.
+    expect(trace.length).toBeGreaterThan(0);
+    const trail = m.renderer.trails.at(-1)!;
+    expect(trail.pointCount).toBe(trace.points);
+    // The rainbow spans the window: rebased arc starts at zero.
+    expect(trail.arc[0]).toBe(0);
+    expect(trail.totalLength).toBeLessThanOrEqual(trace.length + 1e-6);
+  });
+});
+
+describe('InfiniteCanvas — kept circuits', () => {
+  it('archives a closed circuit on the next tap and clears on demand', async () => {
+    const m = await mount({ chords: loopTable(), keepCircuits: true });
+    const target = chordTargetOn(createCamera(0, 0, 36), loopTable());
+    tap(m.host, target.x, target.y);
+    await settle();
+    expect(m.status().trace.status).toBe('closed');
+    expect(m.status().trace.circuits).toBe(0); // still the live trail
+
+    tap(m.host, target.x, target.y);
+    await settle();
+    expect(m.status().trace.circuits).toBe(1);
+    const kept = m.renderer.circuitSets.at(-1);
+    expect(kept).not.toBeNull();
+    expect(kept!.length).toBe(1);
+    expect(kept![0].pointCount).toBeGreaterThan(2);
+
+    act(() => m.api.current?.clearTrace());
+    await settle();
+    expect(m.status().trace.circuits).toBe(0);
+    expect(m.renderer.circuitSets.at(-1)).toEqual([]);
+  });
+
+  it('does not archive with the toggle off, and dropping the toggle drops the kept', async () => {
+    const m = await mount({ chords: loopTable(), keepCircuits: false });
+    const target = chordTargetOn(createCamera(0, 0, 36), loopTable());
+    tap(m.host, target.x, target.y);
+    await settle();
+    tap(m.host, target.x, target.y);
+    await settle();
+    expect(m.status().trace.circuits).toBe(0);
+
+    // Now with it on: the tap archives the closed trail still lit from above.
+    await m.rerender({ keepCircuits: true });
+    tap(m.host, target.x, target.y);
+    await settle();
+    expect(m.status().trace.circuits).toBe(1);
+    await m.rerender({ keepCircuits: false });
+    expect(m.status().trace.circuits).toBe(0);
+    expect(m.renderer.circuitSets.at(-1)).toEqual([]);
   });
 });

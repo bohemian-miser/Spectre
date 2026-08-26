@@ -94,6 +94,24 @@ export interface ExplorerState {
    * same state. Read it as `state.trace ?? true`.
    */
   readonly trace?: boolean;
+  /**
+   * Auto-follow the traced strand (`fw=1`): the camera chases the walk's head
+   * and the walk feeds itself, no panning required. Additive: omitted when
+   * off (the default). Read it as `state.follow ?? false`.
+   */
+  readonly follow?: boolean;
+  /**
+   * Most trail points the follow mode holds on to (`hp=`) — the moving window
+   * behind the chased head; older points are let go. Additive: omitted at
+   * {@link DEFAULT_TRAIL_HOLD}. Read it as `state.hold ?? DEFAULT_TRAIL_HOLD`.
+   */
+  readonly hold?: number;
+  /**
+   * Keep a strand that closes into a circuit coloured when the next one is
+   * traced (`kc=0` when OFF). Default ON, like `trace`. Read it as
+   * `state.keepCircuits ?? true`.
+   */
+  readonly keepCircuits?: boolean;
 }
 
 /**
@@ -118,6 +136,22 @@ export function clampLineScale(scale: number): number {
   // Two decimals keeps `lw=` short and the round-trip exact.
   const snapped = Math.round(scale * 100) / 100;
   return Math.max(MIN_LINE_SCALE, snapped);
+}
+
+/**
+ * Follow-mode trail window ("how many things the chase holds on to"): the
+ * most trail points kept behind the head while auto-following, one point per
+ * tile crossed. The ceiling mirrors the walk's own hard cap
+ * (`TRAIL_MAX_POINTS` in `pages/map/strandWalk.ts`); the floor is the least
+ * a window can hold and still look like a trail.
+ */
+export const DEFAULT_TRAIL_HOLD = 5000;
+export const MIN_TRAIL_HOLD = 16;
+export const MAX_TRAIL_HOLD = 500_000;
+
+export function clampTrailHold(hold: number): number {
+  if (!Number.isFinite(hold)) return DEFAULT_TRAIL_HOLD;
+  return Math.max(MIN_TRAIL_HOLD, Math.min(MAX_TRAIL_HOLD, Math.round(hold)));
 }
 
 /** Display flag bits (§9.2 `fl`). */
@@ -298,6 +332,12 @@ export function encodeExplorerState(s: ExplorerState): URLSearchParams {
   }
   if (s.noOverlap) q.set('no', '1');
   if (s.trace === false) q.set('tc', '0');
+  if (s.follow) q.set('fw', '1');
+  if (s.hold !== undefined) {
+    const hp = clampTrailHold(s.hold);
+    if (hp !== DEFAULT_TRAIL_HOLD) q.set('hp', String(hp));
+  }
+  if (s.keepCircuits === false) q.set('kc', '0');
   return q;
 }
 
@@ -384,6 +424,15 @@ export function decodeExplorerState(q: URLSearchParams): ExplorerState {
   const noOverlap = noRaw === '1' || noRaw === 'true' ? true : undefined;
   const tcRaw = q.get('tc');
   const trace = tcRaw === '0' || tcRaw === 'false' ? false : undefined;
+  const fwRaw = q.get('fw');
+  const follow = fwRaw === '1' || fwRaw === 'true' ? true : undefined;
+  const hpRaw = Number.parseInt(q.get('hp') ?? '', 10);
+  const hold =
+    Number.isFinite(hpRaw) && clampTrailHold(hpRaw) !== DEFAULT_TRAIL_HOLD
+      ? clampTrailHold(hpRaw)
+      : undefined;
+  const kcRaw = q.get('kc');
+  const keepCircuits = kcRaw === '0' || kcRaw === 'false' ? false : undefined;
 
   const state: ExplorerState = {
     family,
@@ -402,6 +451,9 @@ export function decodeExplorerState(q: URLSearchParams): ExplorerState {
     ...(lineWidth !== undefined ? { lineWidth } : {}),
     ...(noOverlap ? { noOverlap } : {}),
     ...(trace === false ? { trace } : {}),
+    ...(follow ? { follow } : {}),
+    ...(hold !== undefined ? { hold } : {}),
+    ...(keepCircuits === false ? { keepCircuits } : {}),
   };
   return state;
 }

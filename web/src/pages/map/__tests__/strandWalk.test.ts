@@ -48,6 +48,7 @@ import {
   startTrail,
   trailGeometry,
   trailLength,
+  trimTrail,
   type StrandTrail,
   type WalkStatus,
 } from '../strandWalk';
@@ -475,5 +476,161 @@ describe('describeWalk', () => {
     expect(new Set(said).size).toBe(all.length);
     expect(describeWalk('frontier')).toMatch(/pan/i);
     expect(describeWalk('closed')).toMatch(/circuit/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Crowded connection points (extreme seam contracts)
+// ---------------------------------------------------------------------------
+//
+// Seam contracts slide connection points along their seams, and near a seam
+// end two DISTINCT points can legally come within ~0.01 of each other — far
+// inside the old 0.05 weld, which then reported junctions (both points read
+// as one) or dead ends (the crowding neighbour, running almost parallel to
+// the arrival chord, was mistaken for it and discarded, eating the real
+// continuation). The snap tolerance is sized to float drift instead, so these
+// walks must now step cleanly through crowded geometry.
+
+describe('crowded contracts (regression: "fails to find the edge next to it")', () => {
+  const CROWDED_CONTRACTS = {
+    2: { minor: 0, t: 0.995 },
+    5: { minor: 0, t: 0.01 },
+    7: { minor: 0, t: 0.99 },
+    8: { minor: 0, t: 0.985 },
+  } as const;
+
+  function crowdedTable(): LeafChordTable {
+    return buildLeafChordTable(
+      OPEN_SUBSET,
+      comboToMatchingIndices('spectre', OPEN_SUBSET, OPEN_COMBO),
+      CROWDED_CONTRACTS,
+    );
+  }
+
+  it('continuationAt steps through every interior connection point', () => {
+    const table = crowdedTable();
+    const view = rect(60, 40);
+    const cut = cutFor(view);
+    const index = buildChordIndex(cut, table)!;
+    const segs = cutSegments(cut, table);
+    const margin = MAX_CHORD_REACH + 0.5;
+    let probed = 0;
+    for (let i = 0; i < segs.length; i += 5) {
+      const [a, b] = segs[i];
+      for (const [pt, from] of [
+        [a, b],
+        [b, a],
+      ] as const) {
+        if (Math.abs(pt.x) > view.halfW - margin || Math.abs(pt.y) > view.halfH - margin) continue;
+        probed++;
+        // This rule has no odd tiles, so every interior point continues:
+        // anything else is the crowding failure this suite regresses.
+        expect(continuationAt(index, pt, from).kind).toBe('step');
+      }
+    }
+    expect(probed).toBeGreaterThan(100);
+  });
+
+  it('a walk crosses crowded geometry instead of dying at a fake junction', () => {
+    const table = crowdedTable();
+    const view = rect(60, 40);
+    const walked = walkFromCentre(view, table);
+    expect(walked).not.toBeNull();
+    const { trail } = walked!;
+    // Before the fix this stopped at 'junction' after a handful of steps.
+    expect(trail.status).toBe('frontier');
+    expect(trailLength(trail)).toBeGreaterThan(50);
+  });
+
+  it('closure still uses the tight snap: loops close, near-misses do not', () => {
+    const table = buildLeafChordTable(
+      LOOP_SUBSET,
+      comboToMatchingIndices('spectre', LOOP_SUBSET, LOOP_COMBO),
+      { 1: { minor: 0, t: 0.1 }, 5: { minor: 0, t: 0.93 } },
+    );
+    const view = rect(30);
+    const walked = walkFromCentre(view, table);
+    expect(walked).not.toBeNull();
+    expect(walked!.trail.status).toBe('closed');
+    // The trail genuinely returns to its start under the drift-scaled snap.
+    const t = walked!.trail;
+    const head = { x: t.xy[(t.count - 1) * 2], y: t.xy[(t.count - 1) * 2 + 1] };
+    expect(near(head, t.start, 1e-3)).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The follow window (trimTrail)
+// ---------------------------------------------------------------------------
+
+describe('trimTrail', () => {
+  function longWalk(): StrandTrail {
+    const walked = walkFromCentre(rect(60, 40), tableFor(OPEN_SUBSET, OPEN_COMBO));
+    expect(walked).not.toBeNull();
+    expect(walked!.trail.count).toBeGreaterThan(60);
+    return walked!.trail;
+  }
+
+  it('keeps the newest points and the odometer', () => {
+    const trail = longWalk();
+    const before = trailPoints(trail);
+    const total = trailLength(trail);
+    const version = trail.version;
+
+    trimTrail(trail, 40);
+    expect(trail.count).toBe(40);
+    expect(trail.version).toBeGreaterThan(version);
+    // The window is exactly the newest 40 points, bit-identical.
+    const after = trailPoints(trail);
+    const tail = before.slice(before.length - 40);
+    after.forEach((p, i) => {
+      expect(p.x).toBe(tail[i].x);
+      expect(p.y).toBe(tail[i].y);
+    });
+    // trailLength still reads the total walked, not the window's length.
+    expect(trailLength(trail)).toBe(total);
+    // head/prev untouched: the walk can carry straight on.
+    expect(trail.head.x).toBe(before[before.length - 1].x);
+    expect(trail.head.y).toBe(before[before.length - 1].y);
+  });
+
+  it('is a no-op under the cap and floors tiny caps', () => {
+    const trail = longWalk();
+    const count = trail.count;
+    const version = trail.version;
+    trimTrail(trail, count + 10);
+    expect(trail.count).toBe(count);
+    expect(trail.version).toBe(version);
+    trimTrail(trail, 1); // floored to MIN_TRAIL_HOLD
+    expect(trail.count).toBe(16);
+  });
+
+  it('rebases the renderer geometry onto the window', () => {
+    const trail = longWalk();
+    trimTrail(trail, 40);
+    const geom = trailGeometry(trail)!;
+    expect(geom.pointCount).toBe(40);
+    // Rainbow spans the window: arc restarts at 0 and totalLength is the
+    // window's own length, not the odometer.
+    expect(geom.arc[0]).toBe(0);
+    const windowLen = trail.arc[trail.count - 1] - trail.arc[0];
+    expect(geom.totalLength).toBeCloseTo(windowLen, 3);
+    expect(geom.totalLength).toBeLessThan(trailLength(trail));
+  });
+
+  it('still detects closure after the start left the window', () => {
+    // A loop long enough to trim mid-walk: walk it in small steps, trimming
+    // to fewer points than the circuit holds, and it must still close.
+    const table = tableFor(LOOP_SUBSET, LOOP_COMBO);
+    const view = rect(40);
+    const cut = cutFor(view);
+    const index = buildChordIndex(cut, table)!;
+    const hit = hitTestChord(index, { x: 0, y: 0 }, 5)!;
+    const trail = startTrail(hit);
+    for (let i = 0; i < 500 && !isTerminal(trail.status); i++) {
+      advanceWalk(trail, index, { covered: view, maxSteps: 1 });
+      trimTrail(trail, 16);
+    }
+    expect(trail.status).toBe('closed');
   });
 });
