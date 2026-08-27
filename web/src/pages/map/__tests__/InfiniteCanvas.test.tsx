@@ -24,6 +24,13 @@ import type { MapRenderStats, MapRenderStyle, MapRenderer, TrailGeometry } from 
 import { buildChordIndex, hitTestChord } from '../strandWalk';
 import { createUnrootedEngine } from '../../../core';
 
+// Chase tests run the real engine synchronously in jsdom, and the follow
+// feeder's head-centred cuts are deliberately large — on a slow CI runner a
+// single test can pass 5s. A timed-out test also poisons the rest of the
+// file (its still-running walk unmounts hosts under later tests), so the
+// margin here is generous.
+vi.setConfig({ testTimeout: 30_000 });
+
 const WIDTH = 800;
 const HEIGHT = 520;
 const SEED = 1;
