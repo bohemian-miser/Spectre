@@ -22,8 +22,11 @@ import {
   MIN_INSTANCE_BUDGET,
   clampInstanceBudget,
   clampLineScale,
+  clampTracePace,
   clampTrailHold,
+  decodeTraceSeed,
   edgesToSubset,
+  encodeTraceSeed,
   subsetFromString,
   subsetToEdges,
   subsetToString,
@@ -72,6 +75,14 @@ export interface MapUrlState {
    * ON, like `trace`.
    */
   readonly keepCircuits?: boolean;
+  /** Keep dead-ended strands (tails) coloured (`kt=0` when OFF). Default ON. */
+  readonly keepTails?: boolean;
+  /** Find and colour every on-screen circuit (`fc=1`), default OFF. */
+  readonly findCircuits?: boolean;
+  /** Chase pace in tiles/second (`fp=`); absent/null = full speed. */
+  readonly pace?: number | null;
+  /** The tapped chord the current trace grew from (`ts=`), for share links. */
+  readonly traceSeed?: readonly [number, number, number, number] | null;
 }
 
 /**
@@ -110,6 +121,10 @@ export const DEFAULT_MAP_STATE: MapUrlState = {
   follow: false,
   hold: DEFAULT_TRAIL_HOLD,
   keepCircuits: true,
+  keepTails: true,
+  findCircuits: false,
+  pace: null,
+  traceSeed: null,
 };
 
 /** Keep only base-36 digits and pad/trim to `COMBO_LENGTH`. */
@@ -162,6 +177,10 @@ export function encodeMapQuery(state: MapUrlState): string {
   const hp = clampTrailHold(state.hold ?? DEFAULT_TRAIL_HOLD);
   if (hp !== DEFAULT_TRAIL_HOLD) q.set('hp', String(hp));
   if (state.keepCircuits === false) q.set('kc', '0');
+  if (state.keepTails === false) q.set('kt', '0');
+  if (state.findCircuits) q.set('fc', '1');
+  if (state.pace != null) q.set('fp', String(clampTracePace(state.pace)));
+  if (state.traceSeed) q.set('ts', encodeTraceSeed(state.traceSeed));
   return q.toString();
 }
 
@@ -185,6 +204,10 @@ export function decodeMapQuery(query: string): MapUrlState {
   const fwRaw = q.get('fw');
   const hpRaw = num('hp');
   const kcRaw = q.get('kc');
+  const ktRaw = q.get('kt');
+  const fcRaw = q.get('fc');
+  const fpRaw = num('fp');
+  const tsRaw = q.get('ts');
   const eRaw = q.get('e');
   const cRaw = q.get('c');
   return {
@@ -202,6 +225,10 @@ export function decodeMapQuery(query: string): MapUrlState {
     follow: fwRaw === '1' || fwRaw === 'true',
     hold: hpRaw === null ? DEFAULT_TRAIL_HOLD : clampTrailHold(hpRaw),
     keepCircuits: !(kcRaw === '0' || kcRaw === 'false'),
+    keepTails: !(ktRaw === '0' || ktRaw === 'false'),
+    findCircuits: fcRaw === '1' || fcRaw === 'true',
+    pace: fpRaw === null ? null : clampTracePace(fpRaw),
+    traceSeed: tsRaw ? (decodeTraceSeed(tsRaw) ?? null) : null,
   };
 }
 

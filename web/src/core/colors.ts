@@ -136,3 +136,19 @@ export function rainbow(t: number): string {
 export function circuitHueColor(step: number): string {
   return `hsl(${(step * 40) % 360}, 100%, 50%)`;
 }
+
+/**
+ * Solid ink for a circuit of `length` segments: the same 40°-per-step hue
+ * ramp as {@link circuitHueColor}, addressed by the LENGTH itself rather than
+ * a patch-relative rank — so a circuit of a given length is the same colour
+ * in every view, on every screen, and across shared links.
+ */
+export function circuitLengthRgb(length: number): Rgb {
+  const h = (((length * 40) % 360) + 360) % 360 / 360;
+  // hsl with s = 1, l = 0.5 — identical maths to the GL shader's hsl2rgb.
+  const f = (n: number): number => {
+    const k = (n + h * 12) % 12;
+    return 0.5 - 0.5 * Math.max(-1, Math.min(Math.min(k - 3, 9 - k), 1));
+  };
+  return [Math.round(f(0) * 255), Math.round(f(8) * 255), Math.round(f(4) * 255)];
+}

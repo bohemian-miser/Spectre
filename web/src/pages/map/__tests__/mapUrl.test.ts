@@ -202,3 +202,46 @@ describe('follow / hold / keep-circuits params', () => {
     expect(decodeMapQuery('hp=1').hold).toBeGreaterThan(1);
   });
 });
+
+describe('pace / trace-seed params (map codec)', () => {
+  it('encodes fp/ts additively and round-trips canonically', () => {
+    const base = { ...DEFAULT_MAP_STATE, lines: true };
+    const plain = encodeMapQuery(base);
+    expect(plain).not.toContain('fp=');
+    expect(plain).not.toContain('ts=');
+
+    const q = encodeMapQuery({
+      ...base,
+      pace: 24,
+      traceSeed: [12.125, -7.5, 13.008, -8.25] as const,
+    });
+    expect(q).toContain('fp=24');
+    expect(q).toContain('ts=');
+    const back = decodeMapQuery(q);
+    expect(back.pace).toBe(24);
+    expect(back.traceSeed).toEqual([12.125, -7.5, 13.008, -8.25]);
+    expect(encodeMapQuery(back)).toBe(q); // canonical
+  });
+
+  it('defaults: full speed, no seed; junk drops cleanly', () => {
+    const d = decodeMapQuery('');
+    expect(d.pace).toBeNull();
+    expect(d.traceSeed).toBeNull();
+    expect(decodeMapQuery('ts=1,2,nope').traceSeed).toBeNull();
+  });
+});
+
+describe('kt / fc params (map codec)', () => {
+  it('round-trips keep-tails-off and find-all-on', () => {
+    const base = { ...DEFAULT_MAP_STATE, lines: true };
+    expect(encodeMapQuery(base)).not.toContain('kt=');
+    expect(encodeMapQuery(base)).not.toContain('fc=');
+    const q = encodeMapQuery({ ...base, keepTails: false, findCircuits: true });
+    expect(q).toContain('kt=0');
+    expect(q).toContain('fc=1');
+    const back = decodeMapQuery(q);
+    expect(back.keepTails).toBe(false);
+    expect(back.findCircuits).toBe(true);
+    expect(encodeMapQuery(back)).toBe(q);
+  });
+});

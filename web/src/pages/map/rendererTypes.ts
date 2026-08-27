@@ -23,6 +23,12 @@ export type RendererMode = 'webgl2' | 'canvas2d';
  * skip re-uploading between frames.
  */
 export interface TrailGeometry {
+  /**
+   * Solid ink (0..1 RGB) instead of the arc-length rainbow — how a CLOSED
+   * circuit is drawn, coloured by its length; absent = rainbow (the live
+   * chase and kept tails).
+   */
+  readonly color?: readonly [number, number, number];
   readonly origin: Pt;
   /** 2 floats per point, relative to `origin`. */
   readonly xy: Float32Array;

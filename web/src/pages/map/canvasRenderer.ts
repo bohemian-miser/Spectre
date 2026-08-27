@@ -363,11 +363,14 @@ function strokeTrail(
   C.lineCap = 'round';
   C.lineJoin = 'round';
 
-  const bands = Math.min(TRAIL_BANDS, n - 1);
+  const solid = trail.color
+    ? `rgb(${Math.round(trail.color[0] * 255)}, ${Math.round(trail.color[1] * 255)}, ${Math.round(trail.color[2] * 255)})`
+    : null;
+  const bands = solid ? 1 : Math.min(TRAIL_BANDS, n - 1);
   for (let b = 0; b < bands; b++) {
     const from = Math.floor((b * (n - 1)) / bands);
     const to = Math.floor(((b + 1) * (n - 1)) / bands); // inclusive: bands share a point
-    C.strokeStyle = rainbow(trail.arc[Math.floor((from + to) / 2)] / total);
+    C.strokeStyle = solid ?? rainbow(trail.arc[Math.floor((from + to) / 2)] / total);
     C.beginPath();
     let penDown = false;
     let px = 0;

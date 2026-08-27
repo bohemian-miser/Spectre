@@ -32,10 +32,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   DEFAULT_LINE_SCALE,
+  DEFAULT_TRACE_PACE,
   DEFAULT_TRAIL_HOLD,
   LINE_SCALE_STEP,
   MAX_TRAIL_HOLD,
   MIN_LINE_SCALE,
+  MIN_TRACE_PACE,
   MIN_TRAIL_HOLD,
   SUBSTITUTION_GROWTH,
   comboToMatchingIndices,
@@ -105,6 +107,13 @@ export function MapPage(props: MapPageProps): JSX.Element {
   const [follow, setFollow] = useState<boolean>(initial.follow ?? false);
   const [hold, setHold] = useState<number>(initial.hold ?? DEFAULT_TRAIL_HOLD);
   const [keepCircuits, setKeepCircuits] = useState<boolean>(initial.keepCircuits ?? true);
+  const [keepTails, setKeepTails] = useState<boolean>(initial.keepTails ?? true);
+  const [findCircuits, setFindCircuits] = useState<boolean>(initial.findCircuits ?? false);
+  const [pace, setPace] = useState<number | null>(initial.pace ?? null);
+  const [traceSeed, setTraceSeed] = useState<
+    readonly [number, number, number, number] | null
+  >(initial.traceSeed ?? null);
+  const [shareNote, setShareNote] = useState<string | null>(null);
   const [subset, setSubset] = useState<readonly number[]>(
     initial.subset ?? DEFAULT_MAP_STATE.subset ?? [],
   );
@@ -115,7 +124,15 @@ export function MapPage(props: MapPageProps): JSX.Element {
     mode: 'pending',
     cut: null,
     draw: null,
-    trace: { active: false, status: null, points: 0, length: 0, circuits: 0 },
+    trace: {
+      active: false,
+      status: null,
+      points: 0,
+      length: 0,
+      circuits: 0,
+      found: 0,
+      foundSkipped: false,
+    },
     error: null,
     size: { width: 0, height: 0 },
   });
@@ -134,6 +151,10 @@ export function MapPage(props: MapPageProps): JSX.Element {
     follow,
     hold,
     keepCircuits,
+    keepTails,
+    findCircuits,
+    pace,
+    traceSeed,
     subset,
     combo,
     lineWidth,
@@ -147,6 +168,10 @@ export function MapPage(props: MapPageProps): JSX.Element {
     follow,
     hold,
     keepCircuits,
+    keepTails,
+    findCircuits,
+    pace,
+    traceSeed,
     subset,
     combo,
     lineWidth,
@@ -186,6 +211,10 @@ export function MapPage(props: MapPageProps): JSX.Element {
       follow: w.follow,
       hold: w.hold,
       keepCircuits: w.keepCircuits,
+      keepTails: w.keepTails,
+      findCircuits: w.findCircuits,
+      pace: w.pace,
+      traceSeed: w.traceSeed,
       subset: w.subset,
       combo: w.combo,
     });
@@ -229,6 +258,10 @@ export function MapPage(props: MapPageProps): JSX.Element {
     follow,
     hold,
     keepCircuits,
+    keepTails,
+    findCircuits,
+    pace,
+    traceSeed,
     subset,
     combo,
     lineWidth,
@@ -256,6 +289,10 @@ export function MapPage(props: MapPageProps): JSX.Element {
         follow: w.follow,
         hold: w.hold,
         keepCircuits: w.keepCircuits,
+        keepTails: w.keepTails,
+        findCircuits: w.findCircuits,
+        pace: w.pace,
+        traceSeed: w.traceSeed,
         subset: w.subset,
         combo: w.combo,
       };
@@ -270,6 +307,10 @@ export function MapPage(props: MapPageProps): JSX.Element {
       setFollow(st.follow ?? false);
       setHold(st.hold ?? DEFAULT_TRAIL_HOLD);
       setKeepCircuits(st.keepCircuits ?? true);
+      setKeepTails(st.keepTails ?? true);
+      setFindCircuits(st.findCircuits ?? false);
+      setPace(st.pace ?? null);
+      setTraceSeed(st.traceSeed ?? null);
       setSubset(st.subset ?? []);
       setCombo(normalizeCombo(st.combo ?? ''));
       apiRef.current?.setCamera({ cx: st.cx, cy: st.cy, scale: st.scale });
@@ -469,17 +510,98 @@ export function MapPage(props: MapPageProps): JSX.Element {
             </label>
           </div>
 
-          <label className="control-row">
-            <input
-              type="checkbox"
-              aria-label="Keep closed circuits coloured"
-              data-testid="map-keep-circuits"
-              checked={keepCircuits}
-              disabled={!lines || !trace}
-              onChange={(e) => setKeepCircuits(e.target.checked)}
-            />
-            <span>Keep closed circuits coloured</span>
-          </label>
+          <div className="control-row">
+            <label className="control-row">
+              <input
+                type="checkbox"
+                aria-label="Keep closed circuits coloured"
+                data-testid="map-keep-circuits"
+                checked={keepCircuits}
+                disabled={!lines || !trace}
+                onChange={(e) => setKeepCircuits(e.target.checked)}
+              />
+              <span>Keep closed circuits coloured</span>
+            </label>
+            <label className="control-row">
+              <input
+                type="checkbox"
+                aria-label="Keep dead-ended strands coloured"
+                data-testid="map-keep-tails"
+                checked={keepTails}
+                disabled={!lines || !trace}
+                onChange={(e) => setKeepTails(e.target.checked)}
+              />
+              <span>Keep tails coloured</span>
+            </label>
+            <label className="control-row">
+              <input
+                type="checkbox"
+                aria-label="Find all circuits on screen"
+                data-testid="map-find-circuits"
+                checked={findCircuits}
+                disabled={!lines}
+                onChange={(e) => setFindCircuits(e.target.checked)}
+              />
+              <span>Find all circuits on screen</span>
+            </label>
+          </div>
+
+          <div className="control-row">
+            <label className="control-row">
+              <input
+                type="checkbox"
+                aria-label="Chase at full speed"
+                data-testid="map-pace-full"
+                checked={pace === null}
+                disabled={!lines || !trace}
+                onChange={(e) => setPace(e.target.checked ? null : DEFAULT_TRACE_PACE)}
+              />
+              <span>Full-speed chase</span>
+            </label>
+            {pace !== null ? (
+              <label className="control-row">
+                <span>Pace</span>
+                <input
+                  type="range"
+                  aria-label="Chase pace in tiles per second"
+                  data-testid="map-pace-slider"
+                  min={MIN_TRACE_PACE}
+                  max={240}
+                  step={1}
+                  value={Math.min(pace, 240)}
+                  disabled={!lines || !trace}
+                  onChange={(e) => setPace(Number(e.target.value))}
+                />
+                <span className="muted">{pace} tiles/s</span>
+              </label>
+            ) : null}
+          </div>
+
+          <div className="control-row">
+            <button
+              type="button"
+              data-testid="map-share-chase"
+              disabled={!traceSeed}
+              onClick={() => {
+                const url = typeof window !== 'undefined' ? window.location.href : '';
+                if (typeof navigator !== 'undefined' && navigator.clipboard) {
+                  navigator.clipboard.writeText(url).then(
+                    () => setShareNote('Link copied — it replays this chase from the same chord.'),
+                    () => setShareNote(url),
+                  );
+                } else {
+                  setShareNote(url);
+                }
+              }}
+            >
+              Copy share link
+            </button>
+            {shareNote ? (
+              <span className="muted" role="status">
+                {shareNote}
+              </span>
+            ) : null}
+          </div>
 
           <EdgeSubsetPicker
             family="spectre"
@@ -543,6 +665,11 @@ export function MapPage(props: MapPageProps): JSX.Element {
         follow={lines && trace && follow}
         followHold={hold}
         keepCircuits={lines && trace && keepCircuits}
+        keepTails={lines && trace && keepTails}
+        findCircuits={lines && findCircuits}
+        followPace={pace}
+        traceSeed={lines && trace ? traceSeed : null}
+        onTraceSeed={setTraceSeed}
         style={renderStyle}
         initialCamera={initialCameraRef.current}
         apiRef={apiRef}
@@ -591,8 +718,13 @@ export function MapPage(props: MapPageProps): JSX.Element {
                   : 'traced: off'}
             </span>
             {status.trace.circuits > 0 && (
-              <span data-testid="hud-circuits">
-                {status.trace.circuits} circuit{status.trace.circuits === 1 ? '' : 's'} kept
+              <span data-testid="hud-circuits">{status.trace.circuits} kept</span>
+            )}
+            {(status.trace.found > 0 || status.trace.foundSkipped) && (
+              <span data-testid="hud-found">
+                {status.trace.foundSkipped
+                  ? 'find: zoom in to tiles'
+                  : `${status.trace.found} circuits on screen`}
               </span>
             )}
             <span data-testid="hud-query-ms">

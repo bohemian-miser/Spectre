@@ -112,6 +112,27 @@ export interface ExplorerState {
    * `state.keepCircuits ?? true`.
    */
   readonly keepCircuits?: boolean;
+  /**
+   * Keep a strand that genuinely ENDED (a tail) coloured when the next one is
+   * traced (`kt=0` when OFF). Default ON, like `keepCircuits`.
+   */
+  readonly keepTails?: boolean;
+  /**
+   * Find and colour every circuit on screen (`fc=1`). Additive: omitted when
+   * off (the default). Read it as `state.findCircuits ?? false`.
+   */
+  readonly findCircuits?: boolean;
+  /**
+   * Chase pace in tiles per second (`fp=`). Absent = full speed (the
+   * default); present = watch the walk explore tile by tile at this rate.
+   */
+  readonly pace?: number;
+  /**
+   * The tapped chord a trace grew from (`ts=`): world coordinates
+   * `[atX, atY, toX, toY]`, three decimals. Present while a strand is being
+   * traced, so the link replays the same chase from the same chord.
+   */
+  readonly traceSeed?: readonly [number, number, number, number];
 }
 
 /**
@@ -156,6 +177,30 @@ export const MAX_TRAIL_HOLD = 10_000_000;
 export function clampTrailHold(hold: number): number {
   if (!Number.isFinite(hold)) return DEFAULT_TRAIL_HOLD;
   return Math.max(MIN_TRAIL_HOLD, Math.min(MAX_TRAIL_HOLD, Math.round(hold)));
+}
+
+/**
+ * Chase pace, in tiles per second, when the "full speed" toggle is off. The
+ * ceiling is where individual tiles stop being followable by eye anyway.
+ */
+export const DEFAULT_TRACE_PACE = 24;
+export const MIN_TRACE_PACE = 1;
+export const MAX_TRACE_PACE = 1000;
+
+export function clampTracePace(pace: number): number {
+  if (!Number.isFinite(pace)) return DEFAULT_TRACE_PACE;
+  return Math.max(MIN_TRACE_PACE, Math.min(MAX_TRACE_PACE, Math.round(pace)));
+}
+
+/** `ts=` codec: 4 world coordinates at 3 decimals, comma-joined. */
+export function encodeTraceSeed(seed: readonly [number, number, number, number]): string {
+  return seed.map((v) => v.toFixed(3)).join(',');
+}
+
+export function decodeTraceSeed(raw: string): readonly [number, number, number, number] | undefined {
+  const parts = raw.split(',').map((p) => Number.parseFloat(p));
+  if (parts.length !== 4 || parts.some((n) => !Number.isFinite(n))) return undefined;
+  return [parts[0], parts[1], parts[2], parts[3]];
 }
 
 /** Display flag bits (§9.2 `fl`). */
@@ -342,6 +387,10 @@ export function encodeExplorerState(s: ExplorerState): URLSearchParams {
     if (hp !== DEFAULT_TRAIL_HOLD) q.set('hp', String(hp));
   }
   if (s.keepCircuits === false) q.set('kc', '0');
+  if (s.keepTails === false) q.set('kt', '0');
+  if (s.findCircuits) q.set('fc', '1');
+  if (s.pace !== undefined) q.set('fp', String(clampTracePace(s.pace)));
+  if (s.traceSeed) q.set('ts', encodeTraceSeed(s.traceSeed));
   return q;
 }
 
@@ -437,6 +486,14 @@ export function decodeExplorerState(q: URLSearchParams): ExplorerState {
       : undefined;
   const kcRaw = q.get('kc');
   const keepCircuits = kcRaw === '0' || kcRaw === 'false' ? false : undefined;
+  const ktRaw = q.get('kt');
+  const keepTails = ktRaw === '0' || ktRaw === 'false' ? false : undefined;
+  const fcRaw = q.get('fc');
+  const findCircuits = fcRaw === '1' || fcRaw === 'true' ? true : undefined;
+  const fpRaw = Number.parseInt(q.get('fp') ?? '', 10);
+  const pace = Number.isFinite(fpRaw) ? clampTracePace(fpRaw) : undefined;
+  const tsRaw = q.get('ts');
+  const traceSeed = tsRaw ? decodeTraceSeed(tsRaw) : undefined;
 
   const state: ExplorerState = {
     family,
@@ -458,6 +515,10 @@ export function decodeExplorerState(q: URLSearchParams): ExplorerState {
     ...(follow ? { follow } : {}),
     ...(hold !== undefined ? { hold } : {}),
     ...(keepCircuits === false ? { keepCircuits } : {}),
+    ...(keepTails === false ? { keepTails } : {}),
+    ...(findCircuits ? { findCircuits } : {}),
+    ...(pace !== undefined ? { pace } : {}),
+    ...(traceSeed ? { traceSeed } : {}),
   };
   return state;
 }

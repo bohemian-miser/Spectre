@@ -18,12 +18,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   DEFAULT_CONTRACTS,
+  DEFAULT_TRACE_PACE,
   FAMILIES,
   FAMILY_DISPLAY_NAMES,
   FLAG,
   LINE_SCALE_STEP,
   MAX_TRAIL_HOLD,
   MIN_LINE_SCALE,
+  MIN_TRACE_PACE,
   MIN_TRAIL_HOLD,
   MAX_LEVEL,
   SUBSTITUTION_GROWTH,
@@ -67,9 +69,12 @@ import { useExplorerStore } from '../hooks/useExplorerState';
 import {
   explorerBudget,
   explorerFollow,
+  explorerFindCircuits,
   explorerKeepCircuits,
+  explorerKeepTails,
   explorerLineWidth,
   explorerMode,
+  explorerPace,
   explorerTrace,
   explorerTrailHold,
   hasFlag,
@@ -157,8 +162,31 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
   const followOn = explorerFollow(state);
   const trailHold = explorerTrailHold(state);
   const keepCircuitsOn = explorerKeepCircuits(state);
+  const keepTailsOn = explorerKeepTails(state);
+  const findOn = explorerFindCircuits(state);
+  const pace = explorerPace(state);
   const infinite = mode === 'infinite';
   const infiniteAvailable = supportsInfiniteMode(family);
+  const [shareNote, setShareNote] = useState<string | null>(null);
+
+  const onTraceSeed = useCallback(
+    (seed: readonly [number, number, number, number] | null): void => {
+      dispatch({ type: 'setTraceSeed', traceSeed: seed });
+    },
+    [dispatch],
+  );
+
+  const copyShareLink = useCallback((): void => {
+    const url = typeof window !== 'undefined' ? window.location.href : '';
+    if (typeof navigator !== 'undefined' && navigator.clipboard) {
+      navigator.clipboard.writeText(url).then(
+        () => setShareNote('Link copied — it replays this chase from the same chord.'),
+        () => setShareNote(url),
+      );
+    } else {
+      setShareNote(url);
+    }
+  }, []);
 
   const [hoverEdge, setHoverEdge] = useState<EdgeRef | null>(null);
   const [hoverMajor, setHoverMajor] = useState<number | null>(null);
@@ -893,12 +921,44 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
             </label>
             <p className="muted" role="note">
               Auto-follow makes the camera chase the strand&rsquo;s head — the same walk panning by
-              hand feeds, driven for you. Wheel-zoom stays yours the whole time; dragging pauses
-              the chase until you let go. While following, the rainbow holds at most the last
-              &ldquo;hold&rdquo; tiles and lets the tail go behind it — the window bounds memory,
-              not distance, so the chase itself can run forever (and still knows its start, so a
-              circuit closes even after the start left the window).
+              hand feeds, driven for you, at any zoom (the chase feeds itself with its own
+              head-centred queries, so zooming out to glyphs does not stop it). Wheel-zoom stays
+              yours the whole time; dragging pauses the chase until you let go. While following,
+              the rainbow holds at most the last &ldquo;hold&rdquo; tiles and lets the tail go
+              behind it — the window bounds memory, not distance, so the chase itself can run
+              forever (and still knows its start, so a circuit closes even after the start left
+              the window).
             </p>
+            <label className="control-row">
+              <input
+                type="checkbox"
+                aria-label="Chase at full speed"
+                data-testid="pace-full"
+                checked={pace === null}
+                disabled={!traceOn}
+                onChange={(e) =>
+                  dispatch({ type: 'setPace', pace: e.target.checked ? null : DEFAULT_TRACE_PACE })
+                }
+              />
+              <span>Full-speed chase</span>
+            </label>
+            {pace !== null ? (
+              <label className="control-row">
+                <span>Pace</span>
+                <input
+                  type="range"
+                  aria-label="Chase pace in tiles per second"
+                  data-testid="pace-slider"
+                  min={MIN_TRACE_PACE}
+                  max={240}
+                  step={1}
+                  value={Math.min(pace, 240)}
+                  disabled={!traceOn}
+                  onChange={(e) => dispatch({ type: 'setPace', pace: Number(e.target.value) })}
+                />
+                <span className="muted">{pace} tiles/s</span>
+              </label>
+            ) : null}
           </>
         ) : null}
         <label className="control-row">
@@ -914,11 +974,38 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
           />
           <span>Keep closed circuits coloured</span>
         </label>
+        <label className="control-row">
+          <input
+            type="checkbox"
+            aria-label="Keep dead-ended strands coloured"
+            data-testid="keep-tails"
+            checked={keepTailsOn}
+            disabled={!infinite || !traceOn}
+            onChange={(e) => dispatch({ type: 'setKeepTails', keepTails: e.target.checked })}
+          />
+          <span>Keep tails coloured</span>
+        </label>
+        <label className="control-row">
+          <input
+            type="checkbox"
+            aria-label="Find all circuits on screen"
+            data-testid="find-circuits"
+            checked={findOn}
+            disabled={!infinite}
+            onChange={(e) =>
+              dispatch({ type: 'setFindCircuits', findCircuits: e.target.checked })
+            }
+          />
+          <span>Find all circuits on screen</span>
+        </label>
         {infinite ? (
           <>
             <p className="muted" role="note">
-              A traced strand that comes back to its start is a circuit; with this on it stays lit
-              when you tap the next strand.
+              A traced strand that comes back to its start is a circuit — it flips from the
+              rainbow to the solid colour of its length the moment it closes (the rainbow stays
+              for tails), and the keep toggles hold finished strands lit while you tap the next.
+              &ldquo;Find all&rdquo; welds and traces everything on screen and colours every
+              circuit by length; it needs individual tiles (zoom in if it says so).
             </p>
             <div className="control-row">
               <button
@@ -928,7 +1015,20 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
               >
                 Clear traced strand
               </button>
+              <button
+                type="button"
+                data-testid="share-chase"
+                disabled={!state.traceSeed}
+                onClick={copyShareLink}
+              >
+                Copy share link
+              </button>
             </div>
+            {shareNote ? (
+              <p className="muted" role="status">
+                {shareNote}
+              </p>
+            ) : null}
           </>
         ) : (
           <p className="muted" role="note">
@@ -1064,6 +1164,11 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
             follow={followOn && traceOn && !!infiniteChords}
             followHold={trailHold}
             keepCircuits={keepCircuitsOn && traceOn && !!infiniteChords}
+            keepTails={keepTailsOn && traceOn && !!infiniteChords}
+            findCircuits={findOn && !!infiniteChords}
+            followPace={pace}
+            traceSeed={state.traceSeed ?? null}
+            onTraceSeed={onTraceSeed}
             style={infiniteStyle}
             initialCamera={initialInfiniteCamera}
             apiRef={infiniteApiRef}
@@ -1260,7 +1365,12 @@ function InfiniteHud(props: {
       </span>
       {trace && trace.circuits > 0 ? (
         <span data-testid="inf-circuits">
-          {trace.circuits} circuit{trace.circuits === 1 ? '' : 's'} kept
+          {trace.circuits} kept
+        </span>
+      ) : null}
+      {trace && (trace.found > 0 || trace.foundSkipped) ? (
+        <span data-testid="inf-found">
+          {trace.foundSkipped ? 'find: zoom in to tiles' : `${trace.found} circuits on screen`}
         </span>
       ) : null}
       <span>

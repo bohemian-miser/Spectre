@@ -383,6 +383,7 @@ uniform vec2 uHalfRes;
 uniform float uHalfPx;
 uniform float uTotalLen;
 uniform float uAlpha;
+uniform vec4 uSolid;
 out vec4 o;
 
 vec3 hsl2rgb(float h, float s, float l) {
@@ -401,7 +402,8 @@ void main() {
   float t = clamp(vS / max(uTotalLen, 1e-6), 0.0, 1.0);
   float deg = t * 300.0;
   float l = 0.5 + 0.15 * cos(radians(deg - 240.0));
-  o = vec4(hsl2rgb(deg / 360.0, 1.0, l), uAlpha);
+  // uSolid.a is a mix flag: 1 = solid circuit ink, 0 = the rainbow.
+  o = vec4(mix(hsl2rgb(deg / 360.0, 1.0, l), uSolid.rgb, uSolid.a), uAlpha);
 }`;
 
 const FS_COLOR = `#version 300 es
@@ -739,6 +741,7 @@ export function createWebGLRenderer(
   const uTrailHalfPx = loc(progTrail, 'uHalfPx');
   const uTrailTotal = loc(progTrail, 'uTotalLen');
   const uTrailAlpha = loc(progTrail, 'uAlpha');
+  const uTrailSolid = loc(progTrail, 'uSolid');
 
   // --- midpoint-mode distance field ------------------------------------------
   // One R8 (as RGBA8) target the size of the drawing buffer, rebuilt on resize.
@@ -1004,6 +1007,9 @@ export function createWebGLRenderer(
         G.uniform1f(uTrailHalfPx, (BASE_LINE_PX * lineScale * trailScale * dpr) / 2);
         G.uniform1f(uTrailTotal, geom.totalLength);
         G.uniform1f(uTrailAlpha, 1);
+        const solid = geom.color;
+        if (solid) G.uniform4f(uTrailSolid, solid[0], solid[1], solid[2], 1);
+        else G.uniform4f(uTrailSolid, 0, 0, 0, 0);
         G.enable(G.BLEND);
         G.blendFunc(G.SRC_ALPHA, G.ONE_MINUS_SRC_ALPHA);
         G.bindVertexArray(vao);

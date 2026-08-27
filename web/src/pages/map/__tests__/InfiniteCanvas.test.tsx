@@ -134,6 +134,11 @@ interface HarnessProps {
   readonly follow?: boolean;
   readonly followHold?: number | null;
   readonly keepCircuits?: boolean;
+  readonly keepTails?: boolean;
+  readonly findCircuits?: boolean;
+  readonly followPace?: number | null;
+  readonly traceSeed?: readonly [number, number, number, number] | null;
+  readonly onTraceSeed?: (seed: readonly [number, number, number, number] | null) => void;
   readonly camera?: MapCamera;
   readonly renderer: FakeRenderer;
   readonly apiOut: { current: InfiniteCanvasApi | null };
@@ -152,6 +157,11 @@ function Harness(props: HarnessProps): JSX.Element {
       follow={props.follow ?? false}
       followHold={props.followHold ?? null}
       keepCircuits={props.keepCircuits ?? false}
+      keepTails={props.keepTails ?? false}
+      findCircuits={props.findCircuits ?? false}
+      followPace={props.followPace ?? null}
+      traceSeed={props.traceSeed ?? null}
+      onTraceSeed={props.onTraceSeed}
       initialCamera={props.camera ?? createCamera(0, 0, 36)}
       apiRef={props.apiOut as React.MutableRefObject<InfiniteCanvasApi | null>}
       onStatusChange={props.onStatus}
@@ -443,5 +453,168 @@ describe('InfiniteCanvas — kept circuits', () => {
     await m.rerender({ keepCircuits: false });
     expect(m.status().trace.circuits).toBe(0);
     expect(m.renderer.circuitSets.at(-1)).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+describe('InfiniteCanvas — dead-end confirmation', () => {
+  it('still reports a genuine end, via the head-centred confirmation', async () => {
+    // Rule [2]: odd connection counts, tiles contribute no chords beyond the
+    // strand fragments — walks genuinely end at tile granularity.
+    const m = await mount({
+      chords: buildLeafChordTable([2], comboToMatchingIndices('spectre', [2], '0000000000')),
+    });
+    const target = chordTargetOn(
+      createCamera(0, 0, 36),
+      buildLeafChordTable([2], comboToMatchingIndices('spectre', [2], '0000000000')),
+    );
+    tap(m.host, target.x, target.y);
+    await settle();
+    await settle();
+    await settle();
+    // The first 'end' is demoted and re-derived from a feed cut centred on
+    // the head; the confirmation must arrive and stick.
+    expect(m.status().trace.status).toBe('end');
+  });
+});
+
+describe('InfiniteCanvas — pace limit', () => {
+  it('walks at roughly the configured tiles/second instead of all at once', async () => {
+    const m = await mount({ followPace: 5 });
+    const target = chordTargetOn(createCamera(0, 0, 36));
+    tap(m.host, target.x, target.y);
+    await settle();
+    await settle();
+    await settle();
+    await settle();
+    await settle();
+    const slow = m.status().trace;
+    expect(slow.active).toBe(true);
+    // ~0.5s at 5 tiles/s: a handful of points, not the hundreds full speed
+    // reaches in the same wall time (see the tap test above).
+    expect(slow.points).toBeGreaterThan(1);
+    expect(slow.points).toBeLessThanOrEqual(12);
+  });
+});
+
+describe('InfiniteCanvas — the chase feeds itself at any zoom', () => {
+  it('keeps walking while the display sits at aggregate LOD', async () => {
+    const m = await mount({ follow: true });
+    const target = chordTargetOn(createCamera(0, 0, 36));
+    tap(m.host, target.x, target.y);
+    await settle();
+    const before = m.status().trace.length;
+    expect(before).toBeGreaterThan(0);
+
+    // Zoom far out: the display cut turns aggregate (no leaf chords at all).
+    act(() => m.api.current?.setCamera({ scale: 0.05 }));
+    await settle();
+    expect(m.status().cut?.cutLevel ?? 0).toBeGreaterThan(0);
+
+    // The walk must keep growing anyway — fed by its own head-centred cuts.
+    await settle();
+    await settle();
+    const after = m.status().trace;
+    expect(after.active).toBe(true);
+    expect(after.length).toBeGreaterThan(before);
+  });
+});
+
+describe('InfiniteCanvas — shareable trace seed', () => {
+  it('reports the tapped chord and replays it from the prop', async () => {
+    const seeds: (readonly [number, number, number, number] | null)[] = [];
+    const m = await mount({ onTraceSeed: (s) => seeds.push(s) });
+    const target = chordTargetOn(createCamera(0, 0, 36));
+    tap(m.host, target.x, target.y);
+    await settle();
+    expect(seeds.length).toBeGreaterThan(0);
+    const seed = seeds.at(-1)!;
+    expect(seed).not.toBeNull();
+    expect(seed!.every((v) => Number.isFinite(v))).toBe(true);
+    const firstLength = m.status().trace.length;
+
+    // Clearing reports null…
+    act(() => m.api.current?.clearTrace());
+    await settle();
+    expect(seeds.at(-1)).toBeNull();
+    expect(m.status().trace.active).toBe(false);
+
+    // …and a fresh mount given the seed replays the same chase untapped.
+    const replayed: (readonly [number, number, number, number] | null)[] = [];
+    const m2 = await mount({ traceSeed: seed, onTraceSeed: (s) => replayed.push(s) });
+    await settle();
+    await settle();
+    const trace = m2.status().trace;
+    expect(trace.active).toBe(true);
+    expect(trace.length).toBeGreaterThan(0);
+    // The replayed walk reports the same chord (to codec precision).
+    expect(replayed.length).toBeGreaterThan(0);
+    const echo = replayed.at(-1)!;
+    expect(echo).not.toBeNull();
+    for (let i = 0; i < 4; i++) expect(Math.abs(echo![i] - seed![i])).toBeLessThan(0.01);
+    // And the camera jumped to the seed chord.
+    const cam = m2.api.current!.getCamera();
+    expect(Math.hypot(cam.cx - seed![0], cam.cy - seed![1])).toBeLessThan(30);
+    void firstLength;
+  });
+});
+
+describe('InfiniteCanvas — kept tails, circuit colour, find-all', () => {
+  const oddTable = (): LeafChordTable =>
+    buildLeafChordTable([2], comboToMatchingIndices('spectre', [2], '0000000000'));
+
+  it('keeps a dead-ended strand under the keep-tails toggle', async () => {
+    const m = await mount({ chords: oddTable(), keepTails: true });
+    const target = chordTargetOn(createCamera(0, 0, 36), oddTable());
+    tap(m.host, target.x, target.y);
+    await settle();
+    await settle();
+    expect(m.status().trace.status).toBe('end');
+    tap(m.host, target.x, target.y);
+    await settle();
+    expect(m.status().trace.circuits).toBe(1);
+    // A kept tail keeps its rainbow: no solid colour on the geometry.
+    expect(m.renderer.circuitSets.at(-1)![0].color).toBeUndefined();
+  });
+
+  it('does not keep tails with the toggle off', async () => {
+    const m = await mount({ chords: oddTable(), keepTails: false });
+    const target = chordTargetOn(createCamera(0, 0, 36), oddTable());
+    tap(m.host, target.x, target.y);
+    await settle();
+    await settle();
+    tap(m.host, target.x, target.y);
+    await settle();
+    expect(m.status().trace.circuits).toBe(0);
+  });
+
+  it('recolours a strand solid by length the moment it closes', async () => {
+    const m = await mount({ chords: loopTable() });
+    const target = chordTargetOn(createCamera(0, 0, 36), loopTable());
+    tap(m.host, target.x, target.y);
+    await settle();
+    expect(m.status().trace.status).toBe('closed');
+    const geom = m.renderer.trails.at(-1)!;
+    expect(geom.color).toBeDefined();
+    expect(geom.color!.length).toBe(3);
+  });
+
+  it('find-all colours every on-screen circuit and clears when toggled off', async () => {
+    const m = await mount({ chords: loopTable(), findCircuits: true });
+    await settle();
+    const t = m.status().trace;
+    expect(t.found).toBeGreaterThan(3);
+    expect(t.foundSkipped).toBe(false);
+    const overlays = m.renderer.circuitSets.at(-1)!;
+    expect(overlays.length).toBe(t.found);
+    expect(overlays.every((g) => g.color !== undefined)).toBe(true);
+    // Same length ⇒ same colour; the loop rule's short circuits repeat.
+    const keys = new Set(overlays.map((g) => g.color!.join(',')));
+    expect(keys.size).toBeLessThan(overlays.length);
+
+    await m.rerender({ findCircuits: false });
+    expect(m.status().trace.found).toBe(0);
+    expect(m.renderer.circuitSets.at(-1)!.length).toBe(0);
   });
 });

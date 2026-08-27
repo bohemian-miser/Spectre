@@ -316,18 +316,24 @@ export function hitTestChord(index: ChordIndex, world: Pt, maxDist: number): Cho
  * which from coverage), or several (`junction`, which `tracePaths` also refuses
  * to walk through).
  *
- * Membership of the weld cluster at `point` is decided by {@link
- * snapEpsilonAt} — sized to float drift, NOT to point spacing — so distinct
- * connection points that seam contracts have slid close together (they can
- * legally come within ~0.01 of each other) are never mistaken for `point`.
- * Within the cluster, the chord we arrived on is recognised by its FAR end
- * sitting nearest `from` (not by its tile being present, so a walk resumes
- * correctly even after the tile it stepped off has been panned out of the
- * cut) — and exactly ONE chord is discarded for it, so a crowding neighbour
- * running almost parallel to the arrival chord can never eat the real
- * continuation. When two candidates remain at comparable distance the
- * geometry is genuinely ambiguous (points coincide at drift scale) and the
- * answer is `junction`; a clearly-nearest candidate wins outright.
+ * The decision is nearest-candidate-with-separation, not a fixed weld
+ * membership: every chord end within `searchRadius` of `point` is a
+ * candidate; exactly ONE is discarded as the chord we arrived on (the one
+ * whose FAR end lies nearest `from` — not "its tile is present", so a walk
+ * resumes correctly after the tile it stepped off was panned out); of the
+ * rest, the nearest wins OUTRIGHT unless a second candidate sits within 4×
+ * of it (floored at drift scale, 2e-4), which is the genuinely ambiguous
+ * case and reads as `junction`. Two properties fall out:
+ *
+ *  - distinct connection points that seam contracts slid close together
+ *    (legally down to ~0.01) never eat the true continuation — the true weld
+ *    partner sits at drift distance (≤ ~6e-4 anywhere reachable), orders of
+ *    magnitude nearer, so the separation test keeps the step unambiguous;
+ *  - the walk has no tolerance cliff: however a residual error separates the
+ *    welded pair — f32 emission, double rounding far from the origin — the
+ *    partner is still found as long as it lands inside `searchRadius` and
+ *    nothing else is comparably close. Only crowding AT the error scale
+ *    (points genuinely indistinguishable) refuses, as it must.
  */
 export function continuationAt(
   index: ChordIndex,
@@ -335,13 +341,12 @@ export function continuationAt(
   from: Pt,
   searchRadius = WELD_EPSILON,
 ): { kind: 'step'; next: Pt } | { kind: 'none' } | { kind: 'junction' } {
-  const snap = snapEpsilonAt(point);
-  const snap2 = snap * snap;
+  const sr2 = searchRadius * searchRadius;
   const lx = point.x - index.origin.x;
   const ly = point.y - index.origin.y;
-  // Weld-cluster members: distance² of the end sitting on `point`, plus the
-  // far end the strand would continue to. Flat arrays — this is the walk's
-  // inner loop and clusters hold 2-3 members.
+  // Candidates: distance² of the end near `point`, plus the far end the
+  // strand would continue to. Flat arrays — this is the walk's inner loop and
+  // the list holds a handful of entries.
   const memD: number[] = [];
   const memX: number[] = [];
   const memY: number[] = [];
@@ -349,12 +354,12 @@ export function continuationAt(
     const da = (ax - point.x) * (ax - point.x) + (ay - point.y) * (ay - point.y);
     const db = (bx - point.x) * (bx - point.x) + (by - point.y) * (by - point.y);
     // A degenerate (near-zero-length) chord can enrol both of its ends.
-    if (da < snap2) {
+    if (da < sr2) {
       memD.push(da);
       memX.push(bx);
       memY.push(by);
     }
-    if (db < snap2) {
+    if (db < sr2) {
       memD.push(db);
       memX.push(ax);
       memY.push(ay);
@@ -362,11 +367,12 @@ export function continuationAt(
   });
   if (memD.length === 0) return { kind: 'none' };
 
-  // Discard exactly one arrival chord: the member whose far end lies nearest
-  // `from`, provided it is a genuine match at drift scale.
+  // Discard exactly one arrival chord: the candidate whose far end lies
+  // nearest `from`. Only the single best match is removed, and the true
+  // arrival (far end at drift distance from `from`) always beats a crowding
+  // neighbour, so a generous radius here is safe.
   let arrival = -1;
-  let bestFrom = snapEpsilonAt(from);
-  bestFrom *= bestFrom;
+  let bestFrom = sr2;
   for (let i = 0; i < memD.length; i++) {
     const d = (memX[i] - from.x) * (memX[i] - from.x) + (memY[i] - from.y) * (memY[i] - from.y);
     if (d < bestFrom) {
@@ -375,9 +381,6 @@ export function continuationAt(
     }
   }
 
-  // Of what remains, take the member nearest `point`; a second candidate only
-  // makes this a junction when it sits at comparable distance (within 4× of
-  // the nearest, floored at 2e-4 so exact hits don't divide by drift noise).
   let best = -1;
   let second = -1;
   for (let i = 0; i < memD.length; i++) {
@@ -462,6 +465,11 @@ export interface StrandTrail {
   /** Cumulative arc length at each point, in world units. */
   arc: Float64Array;
   count: number;
+  /**
+   * Total steps ever taken (tiles crossed), odometer-style: unlike `count` it
+   * never goes down when the window trims. What a pace limiter meters.
+   */
+  steps: number;
   /** Bumped whenever points were appended — the renderer's upload key. */
   version: number;
   /** Where the walk began: the far end of the tapped chord. */
@@ -471,6 +479,11 @@ export interface StrandTrail {
   /** The point before `head`, i.e. the direction the walk came from. */
   prev: Pt;
   status: WalkStatus;
+  /**
+   * Solid ink (0..1 RGB) once the strand closed into a circuit — set by the
+   * embedding component, copied into the render geometry; absent = rainbow.
+   */
+  color?: readonly [number, number, number];
   /**
    * World point the renderer's f32 coordinates are measured from. Trail state
    * rather than render cache, so appending points never disturbs it — a moved
@@ -516,6 +529,7 @@ export function startTrail(seed: ChordEnd): StrandTrail {
     xy: new Float64Array(2048),
     arc: new Float64Array(1024),
     count: 0,
+    steps: 0,
     version: 1,
     start: seed.to,
     head: seed.at,
@@ -629,6 +643,7 @@ export function advanceWalk(
     trail.prev = trail.head;
     trail.head = cont.next;
     push(trail, cont.next);
+    trail.steps++;
     const dx = trail.head.x - trail.start.x;
     const dy = trail.head.y - trail.start.y;
     if (dx * dx + dy * dy < eps2 && trail.count > 3) {
@@ -679,6 +694,7 @@ export function trailGeometry(trail: StrandTrail): TrailGeometry | null {
   const arc = new Float32Array(n);
   for (let i = 0; i < n; i++) arc[i] = trail.arc[i] - arcBase;
   const geom: TrailGeometry = {
+    ...(trail.color ? { color: trail.color } : {}),
     origin: anchor,
     xy,
     arc,
