@@ -459,15 +459,18 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
     if (!trail || isTerminal(trail.status)) return;
     const index = ensureIndex();
     const cut = lastCutRef.current;
+    // The follow window: while the camera does the chasing, the trail lets go
+    // behind the head, so an endless walk holds a bounded line — and, holding
+    // one, never stops for length (the walk trims itself mid-advance instead
+    // of tripping its memory backstop).
+    const hold = followOnRef.current ? followHoldRef.current : null;
     advanceWalk(trail, index, {
       // A truncated cut has holes in it, so a missing chord there proves
       // nothing about the strand — never call an end on one.
       covered: cut && !cut.truncated ? coveredRef.current : null,
+      hold,
     });
-    // The follow window: while the camera does the chasing, the trail lets go
-    // behind the head so an endless walk holds a bounded line.
-    const hold = followHoldRef.current;
-    if (followOnRef.current && hold != null) trimTrail(trail, hold);
+    if (hold != null) trimTrail(trail, hold);
     rendererRef.current?.setTrail(trailGeometry(trail));
     publishTrace();
     scheduleDraw();

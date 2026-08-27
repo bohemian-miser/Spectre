@@ -103,8 +103,14 @@ const CELL = 2;
  */
 export const TRACE_MAX_INSTANCES = 200_000;
 
-/** Points the trail holds before it stops growing (~12 MB of doubles). */
-export const TRAIL_MAX_POINTS = 500_000;
+/**
+ * Points an UN-windowed trail holds before it stops growing (~240 MB of
+ * doubles, plus the f32 render copy) — a memory backstop, not a length limit.
+ * A walk given a `hold` window (see {@link AdvanceOptions}) trims itself
+ * instead and never stops for size: its memory is bounded by the window, so
+ * its length is unbounded.
+ */
+export const TRAIL_MAX_POINTS = 10_000_000;
 
 /**
  * Steps one {@link advanceWalk} call takes before handing control back.
@@ -568,6 +574,14 @@ export interface AdvanceOptions {
    */
   readonly covered?: ViewRect | null;
   readonly maxSteps?: number;
+  /**
+   * Moving-window size, in points. With it set the walk trims itself down to
+   * the window as it goes (amortized — a trim runs every quarter-window of
+   * appends, never per step) and NEVER reports `'full'`: bounded memory buys
+   * unbounded length. Without it the trail grows until
+   * {@link TRAIL_MAX_POINTS} and stops there — the memory backstop.
+   */
+  readonly hold?: number | null;
 }
 
 /**
@@ -586,14 +600,20 @@ export function advanceWalk(
   }
   const covered = opts.covered ?? null;
   const maxSteps = opts.maxSteps ?? ADVANCE_MAX_STEPS;
+  const hold = opts.hold ?? null;
+  const trimAt = hold != null ? hold + Math.max(1024, hold >> 2) : 0;
   // Closure is "the head IS the start point", so it uses the same drift-scaled
   // snap as the weld — a strand merely passing a crowded neighbour of its
-  // start must not read as a circuit.
+  // start must not read as a circuit. `start` is trail state, not a trail
+  // point, so the test keeps working long after the window let the start
+  // scroll out.
   const closeEps = snapEpsilonAt(trail.start);
   const eps2 = closeEps * closeEps;
 
   for (let step = 0; step < maxSteps; step++) {
-    if (trail.count >= TRAIL_MAX_POINTS) {
+    if (hold != null) {
+      if (trail.count >= trimAt) trimTrail(trail, hold);
+    } else if (trail.count >= TRAIL_MAX_POINTS) {
       trail.status = 'full';
       return trail;
     }

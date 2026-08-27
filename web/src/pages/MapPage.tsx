@@ -512,9 +512,10 @@ export function MapPage(props: MapPageProps): JSX.Element {
             pan the way it is heading and it keeps going. The line is remembered in world
             coordinates, so pan back and it is still there. Auto-follow does the panning for you:
             the camera chases the head (wheel-zoom stays yours; dragging pauses it), and the
-            rainbow holds at most the last &ldquo;hold&rdquo; tiles, letting the tail go behind it.
-            A strand that closes into a circuit stays lit for the next tap while &ldquo;keep closed
-            circuits&rdquo; is on.
+            rainbow holds at most the last &ldquo;hold&rdquo; tiles, letting the tail go behind it —
+            the window bounds memory, not distance, so the chase can run forever and still closes
+            a circuit even after its start left the window. A strand that closes into a circuit
+            stays lit for the next tap while &ldquo;keep closed circuits&rdquo; is on.
           </p>
           {noChords ? (
             <p className="warning-badge" role="status">

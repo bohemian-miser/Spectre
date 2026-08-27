@@ -634,3 +634,32 @@ describe('trimTrail', () => {
     expect(trail.status).toBe('closed');
   });
 });
+
+describe('hold window vs the memory backstop', () => {
+  it('a walk with a hold window never reports full — it trims and keeps going', () => {
+    const table = tableFor(OPEN_SUBSET, OPEN_COMBO);
+    const view = rect(60, 40);
+    const index = buildChordIndex(cutFor(view), table)!;
+    const trail = startTrail(hitTestChord(index, { x: 0, y: 0 }, 5)!);
+    // Same trick the 'full' test uses: pretend the buffer already sits at the
+    // backstop. Un-windowed, the very next advance stops with 'full'; with a
+    // window it must trim down and carry on walking instead.
+    trail.count = TRAIL_MAX_POINTS;
+    advanceWalk(trail, index, { covered: view, hold: 64 });
+    expect(trail.status).not.toBe('full');
+    expect(['walking', 'frontier', 'closed', 'end']).toContain(trail.status);
+    // Memory stayed bounded by the window (plus the amortization slack).
+    expect(trail.count).toBeLessThan(64 + 1024 + ADVANCE_MAX_STEPS);
+    expect(trail.count).toBeLessThan(TRAIL_MAX_POINTS / 100);
+  });
+
+  it('without a window the backstop still applies', () => {
+    const table = tableFor(OPEN_SUBSET, OPEN_COMBO);
+    const view = rect(20);
+    const index = buildChordIndex(cutFor(view), table)!;
+    const trail = startTrail(hitTestChord(index, { x: 0, y: 0 }, 5)!);
+    trail.count = TRAIL_MAX_POINTS;
+    advanceWalk(trail, index, { covered: view });
+    expect(trail.status).toBe('full');
+  });
+});

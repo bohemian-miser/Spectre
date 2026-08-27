@@ -895,7 +895,9 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
               Auto-follow makes the camera chase the strand&rsquo;s head — the same walk panning by
               hand feeds, driven for you. Wheel-zoom stays yours the whole time; dragging pauses
               the chase until you let go. While following, the rainbow holds at most the last
-              &ldquo;hold&rdquo; tiles and lets the tail go behind it.
+              &ldquo;hold&rdquo; tiles and lets the tail go behind it — the window bounds memory,
+              not distance, so the chase itself can run forever (and still knows its start, so a
+              circuit closes even after the start left the window).
             </p>
           </>
         ) : null}

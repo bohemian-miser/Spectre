@@ -141,13 +141,17 @@ export function clampLineScale(scale: number): number {
 /**
  * Follow-mode trail window ("how many things the chase holds on to"): the
  * most trail points kept behind the head while auto-following, one point per
- * tile crossed. The ceiling mirrors the walk's own hard cap
- * (`TRAIL_MAX_POINTS` in `pages/map/strandWalk.ts`); the floor is the least
- * a window can hold and still look like a trail.
+ * tile crossed. A windowed walk's LENGTH is unbounded — the window is what
+ * bounds its memory — so the ceiling is only about how much the browser is
+ * asked to hold and redraw (~40 bytes a point CPU-side plus the GPU copy:
+ * the top value is ~0.5 GB, the same opt-in weight as the 10M instance
+ * budget). It mirrors the un-windowed hard cap (`TRAIL_MAX_POINTS` in
+ * `pages/map/strandWalk.ts`); the floor is the least a window can hold and
+ * still look like a trail.
  */
 export const DEFAULT_TRAIL_HOLD = 5000;
 export const MIN_TRAIL_HOLD = 16;
-export const MAX_TRAIL_HOLD = 500_000;
+export const MAX_TRAIL_HOLD = 10_000_000;
 
 export function clampTrailHold(hold: number): number {
   if (!Number.isFinite(hold)) return DEFAULT_TRAIL_HOLD;
