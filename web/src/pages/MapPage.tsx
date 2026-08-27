@@ -531,7 +531,7 @@ export function MapPage(props: MapPageProps): JSX.Element {
                 disabled={!lines || !trace}
                 onChange={(e) => setKeepTails(e.target.checked)}
               />
-              <span>Keep tails coloured</span>
+              <span>Keep tails &amp; part-chases coloured</span>
             </label>
             <label className="control-row">
               <input

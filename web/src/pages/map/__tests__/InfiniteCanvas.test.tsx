@@ -618,3 +618,19 @@ describe('InfiniteCanvas — kept tails, circuit colour, find-all', () => {
     expect(m.renderer.circuitSets.at(-1)!.length).toBe(0);
   });
 });
+
+describe('InfiniteCanvas — part-chased strands persist too', () => {
+  it('keeps a frontier-stopped chase when the next strand is tapped', async () => {
+    // OPEN rule: the walk runs to the edge of the tiles and waits (frontier).
+    const m = await mount({ keepTails: true });
+    const target = chordTargetOn(createCamera(0, 0, 36));
+    tap(m.host, target.x, target.y);
+    await settle();
+    expect(m.status().trace.status).toBe('frontier');
+
+    tap(m.host, target.x, target.y); // start a new chase mid-strand
+    await settle();
+    expect(m.status().trace.circuits).toBe(1); // the part-chase stayed lit
+    expect(m.renderer.circuitSets.at(-1)![0].color).toBeUndefined(); // rainbow
+  });
+});

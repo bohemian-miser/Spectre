@@ -983,7 +983,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
             disabled={!infinite || !traceOn}
             onChange={(e) => dispatch({ type: 'setKeepTails', keepTails: e.target.checked })}
           />
-          <span>Keep tails coloured</span>
+          <span>Keep tails &amp; part-chases coloured</span>
         </label>
         <label className="control-row">
           <input

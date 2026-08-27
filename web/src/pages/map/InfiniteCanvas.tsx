@@ -112,14 +112,23 @@ const FOLLOW_MAX_VIEWPORTS_PER_S = 0.9;
 const MAX_KEPT_CIRCUITS = 64;
 
 /**
- * The walk feeder: while auto-following, the walk is fed by its OWN small
- * leaf-LOD queries centred on the head, decoupled from whatever the display
- * is showing — so the chase keeps running while the camera is zoomed out to
- * glyph LOD, and a fresh head-centred cut (a different engine descent than
- * the display's) is what may confirm a dead end. Half-extent in world units.
+ * The walk feeder: while auto-following, the walk is fed by its OWN leaf-LOD
+ * queries centred on the head, decoupled from whatever the display is showing
+ * — so the chase keeps running while the camera is zoomed out to glyph LOD,
+ * and a fresh head-centred cut (a different engine descent than the
+ * display's) is what may confirm a dead end.
+ *
+ * The rect is ADAPTIVE (half-extent in world units): it starts small and
+ * grows ×1.5 every time the walk drinks a whole feed and asks for more, up
+ * to a ceiling that still fits the feed budget at leaf LOD — a full-speed
+ * chase on a fast machine ends up swallowing ~30k tiles per query instead
+ * of ~800. A paced chase, or one that stopped consuming, shrinks it back:
+ * big rects are pure waste when the walk is only sipping.
  */
-const FEED_HALF = 40;
-const FEED_BUDGET = 50_000;
+const FEED_HALF_MIN = 40;
+const FEED_HALF_MAX = 240;
+const FEED_GROW = 1.5;
+const FEED_BUDGET = 100_000;
 
 /**
  * Find-all-circuits: ceilings for welding + tracing the whole display cut on
@@ -364,6 +373,7 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
   const paceLastRef = useRef(0);
   const feedSchedulerRef = useRef<QueryScheduler<UnrootedQueryRequest> | null>(null);
   const feedSeqRef = useRef(0);
+  const feedHalfRef = useRef(FEED_HALF_MIN);
   /** Head position of a dead end awaiting confirmation by a head-centred cut. */
   const endPendingRef = useRef<Pt | null>(null);
   /** A shared-link seed chord waiting for a cut that contains it. */
@@ -509,7 +519,10 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
     let step = dist * (1 - Math.exp(-dt / FOLLOW_TAU_MS));
     const viewportWorld = Math.min(width, height) / cam.scale;
     const maxStep = ((FOLLOW_MAX_VIEWPORTS_PER_S * viewportWorld) / 1000) * dt;
-    if (step > maxStep) step = maxStep;
+    // The gentle cap keeps a nearby chase watchable; once the head has pulled
+    // more than ~1.5 viewports ahead the exponential runs uncapped, so a
+    // full-throttle walk is caught up with instead of lost.
+    if (step > maxStep && dist < viewportWorld * 1.5) step = maxStep;
     camRef.current = {
       cx: cam.cx + (dx / dist) * step,
       cy: cam.cy + (dy / dist) * step,
@@ -626,16 +639,21 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
   recomputeFoundRef.current = recomputeFound;
 
   /**
-   * Move a finished trail over to the kept list: a closed circuit under the
-   * keep-circuits toggle, a genuine dead end (a tail) under keep-tails.
+   * Move the outgoing trail over to the kept list when a new trace starts: a
+   * CLOSED circuit under the keep-circuits toggle; anything else — a genuine
+   * dead end, a junction stop, or a chase simply abandoned mid-strand — is a
+   * tail-shaped rainbow the user coloured, kept under keep-tails. What was
+   * chased stays on screen; the toggles are what let it go instead.
    */
   const archiveFinishedTrail = useCallback((): void => {
     const old = trailRef.current;
-    if (!old) return;
+    if (!old || old.count < 2) return;
     const kind =
-      old.status === 'closed' && keepCircuitsRef.current
-        ? ('circuit' as const)
-        : old.status === 'end' && keepTailsRef.current
+      old.status === 'closed'
+        ? keepCircuitsRef.current
+          ? ('circuit' as const)
+          : null
+        : keepTailsRef.current
           ? ('tail' as const)
           : null;
     if (!kind) return;
@@ -673,10 +691,11 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
     const trail = trailRef.current;
     const scheduler = feedSchedulerRef.current;
     if (!trail || isTerminal(trail.status) || !scheduler || !chordsRef.current) return;
+    const half = feedHalfRef.current;
     scheduler.request({
       id: ++feedSeqRef.current,
       seed: worldRef.current.seed >>> 0,
-      view: { cx: trail.head.x, cy: trail.head.y, halfW: FEED_HALF, halfH: FEED_HALF },
+      view: { cx: trail.head.x, cy: trail.head.y, halfW: half, halfH: half },
       budget: FEED_BUDGET,
     });
   }, []);
@@ -745,6 +764,16 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
       rendererRef.current?.setTrail(trailGeometry(trail));
       publishTrace();
       scheduleDraw();
+      if (fromFeed) {
+        // Size the next feed to the walk's appetite: a full-speed walk that
+        // drank the whole rect and wants more gets a bigger one; a paced or
+        // stalled walk gets the small one back.
+        const consumed = trail.status === 'frontier' && trail.steps > stepsBefore;
+        feedHalfRef.current =
+          consumed && paceRef.current == null
+            ? Math.min(FEED_HALF_MAX, feedHalfRef.current * FEED_GROW)
+            : FEED_HALF_MIN;
+      }
       // 'walking' means the step cap was reached with more to do; another
       // slice is queued so a walk crossing a wide viewport never blocks the
       // frame it is drawn in.
@@ -935,7 +964,7 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
       onError: () => {
         // Best-effort: the display query is what surfaces engine errors.
       },
-      minIntervalMs: 100,
+      minIntervalMs: 40,
     });
     feedSchedulerRef.current = feedScheduler;
     return () => {
