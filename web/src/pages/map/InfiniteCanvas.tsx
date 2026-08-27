@@ -31,7 +31,20 @@ import {
   type MutableRefObject,
   type ReactNode,
 } from 'react';
-import type { UnrootedQueryRequest, UnrootedQueryResponse, ViewRect } from '../../core';
+import {
+  COS30,
+  SIN30,
+  circuitLengthRgb,
+  isAggregateType,
+  pathLength,
+  tracePaths,
+  weldSegments,
+  type Pt,
+  type Segment,
+  type UnrootedQueryRequest,
+  type UnrootedQueryResponse,
+  type ViewRect,
+} from '../../core';
 import { useElementSize } from '../../hooks/useElementSize';
 import { createTilingClient, type TilingClient } from '../../workers/tilingClient';
 import {
@@ -56,6 +69,8 @@ import {
   startTrail,
   trailGeometry,
   trailLength,
+  trimTrail,
+  type ChordEnd,
   type ChordIndex,
   type StrandTrail,
   type WalkStatus,
@@ -65,6 +80,7 @@ import type {
   MapRenderStyle,
   MapRenderer,
   RendererMode,
+  TrailGeometry,
 } from './rendererTypes';
 
 export type InfiniteCanvasMode = 'pending' | RendererMode | 'unsupported';
@@ -79,6 +95,49 @@ const TAP_MAX_MS = 700;
 
 /** Tap target for picking a strand, in CSS px — a fingertip, not a pixel. */
 const TAP_PICK_RADIUS_PX = 16;
+
+/**
+ * Follow-mode camera: exponential approach to the walk's head with this time
+ * constant (ms), capped at {@link FOLLOW_MAX_VIEWPORTS_PER_S} so a head a
+ * whole screen ahead is chased, not teleported to.
+ */
+const FOLLOW_TAU_MS = 300;
+const FOLLOW_MAX_VIEWPORTS_PER_S = 0.9;
+
+/**
+ * Most kept circuits. Each is a frozen geometry the renderers draw every
+ * frame; past this the OLDEST is let go, which in practice needs a session of
+ * dedicated circuit hunting to reach.
+ */
+const MAX_KEPT_CIRCUITS = 64;
+
+/**
+ * The walk feeder: while auto-following, the walk is fed by its OWN leaf-LOD
+ * queries centred on the head, decoupled from whatever the display is showing
+ * — so the chase keeps running while the camera is zoomed out to glyph LOD,
+ * and a fresh head-centred cut (a different engine descent than the
+ * display's) is what may confirm a dead end.
+ *
+ * The rect is ADAPTIVE (half-extent in world units): it starts small and
+ * grows ×1.5 every time the walk drinks a whole feed and asks for more, up
+ * to a ceiling that still fits the feed budget at leaf LOD — a full-speed
+ * chase on a fast machine ends up swallowing ~30k tiles per query instead
+ * of ~800. A paced chase, or one that stopped consuming, shrinks it back:
+ * big rects are pure waste when the walk is only sipping.
+ */
+const FEED_HALF_MIN = 40;
+const FEED_HALF_MAX = 240;
+const FEED_GROW = 1.5;
+const FEED_BUDGET = 100_000;
+
+/**
+ * Find-all-circuits: ceilings for welding + tracing the whole display cut on
+ * the main thread per query (~tens of ms at the instance cap), and for how
+ * many found circuits are drawn (each is its own trail pass; the LONGEST win
+ * a seat when there are more).
+ */
+const FIND_MAX_INSTANCES = 30_000;
+const MAX_FOUND_CIRCUITS = 400;
 
 export interface InfiniteCutInfo {
   readonly count: number;
@@ -102,8 +161,18 @@ export interface InfiniteTraceInfo {
   readonly active: boolean;
   readonly status: WalkStatus | null;
   readonly points: number;
-  /** Coloured length in world units (a tile edge is 1). */
+  /**
+   * Coloured length in world units (a tile edge is 1). Odometer-style: the
+   * follow mode's trail window may hold fewer points, but this keeps counting
+   * everything walked.
+   */
   readonly length: number;
+  /** Finished strands kept lit (the keep-circuits / keep-tails toggles). */
+  readonly circuits: number;
+  /** Circuits found on screen by the find-all toggle. */
+  readonly found: number;
+  /** True when find-all is on but the cut is too big/coarse to analyse. */
+  readonly foundSkipped: boolean;
 }
 
 const NO_TRACE: InfiniteTraceInfo = Object.freeze({
@@ -111,6 +180,9 @@ const NO_TRACE: InfiniteTraceInfo = Object.freeze({
   status: null,
   points: 0,
   length: 0,
+  circuits: 0,
+  found: 0,
+  foundSkipped: false,
 });
 
 export interface InfiniteCanvasStatus {
@@ -153,6 +225,54 @@ export interface InfiniteCanvasProps {
    * trace in progress.
    */
   readonly trace?: boolean;
+  /**
+   * Auto-follow: the camera chases the walk's head, and the queries that
+   * movement fires are what feed the walk — the same loop panning by hand
+   * drives, run by the camera itself. The user keeps the wheel: zoom is never
+   * touched (only cx/cy), and a drag suspends the chase until release.
+   */
+  readonly follow?: boolean;
+  /**
+   * Most trail points held while `follow` is on (a moving window behind the
+   * head; older points are let go). null/undefined = keep everything, the
+   * manual-tracing behaviour.
+   */
+  readonly followHold?: number | null;
+  /**
+   * Keep a strand that closed into a circuit coloured when the next strand is
+   * traced. Off drops the kept circuits.
+   */
+  readonly keepCircuits?: boolean;
+  /**
+   * Keep a strand that genuinely ENDED (a tail) coloured when the next strand
+   * is traced. Off drops the kept tails.
+   */
+  readonly keepTails?: boolean;
+  /**
+   * Find EVERY circuit in the current display cut and colour each by its
+   * length — the rooted analysis's weld+trace run over whatever is on screen,
+   * refreshed as the camera moves. Needs a leaf cut of at most
+   * {@link FIND_MAX_INSTANCES} tiles; coarser views skip and say so.
+   */
+  readonly findCircuits?: boolean;
+  /**
+   * Chase pace, in tiles per second — the walk explores that many tiles and
+   * no more, so it can be watched tile by tile. null/undefined = full speed.
+   */
+  readonly followPace?: number | null;
+  /**
+   * A tapped chord to replay a trace from: world coordinates
+   * `[atX, atY, toX, toY]` (the shareable-link seed). When set and nothing is
+   * traced yet, the camera jumps there and the trace starts as soon as a leaf
+   * cut holds the chord — the same walk the original tap started.
+   */
+  readonly traceSeed?: readonly [number, number, number, number] | null;
+  /**
+   * The chord the current trace grew from, whenever one starts (null when the
+   * trace is cleared) — what a page writes into the URL to make the chase
+   * shareable.
+   */
+  onTraceSeed?(seed: readonly [number, number, number, number] | null): void;
   /** Camera used on mount only; afterwards the component owns it. */
   readonly initialCamera?: MapCamera;
   onCameraChange?(cam: MapCamera): void;
@@ -176,6 +296,14 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
     chords = null,
     style = null,
     trace = false,
+    follow = false,
+    followHold = null,
+    keepCircuits = false,
+    keepTails = false,
+    findCircuits = false,
+    followPace = null,
+    traceSeed = null,
+    onTraceSeed,
     onCameraChange,
     onStatusChange,
     forceSyncClient,
@@ -224,6 +352,36 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
   // --- traced strand ----------------------------------------------------------
   const traceOnRef = useRef(trace);
   traceOnRef.current = trace;
+  const followOnRef = useRef(follow);
+  followOnRef.current = follow;
+  const followHoldRef = useRef(followHold);
+  followHoldRef.current = followHold;
+  const keepCircuitsRef = useRef(keepCircuits);
+  keepCircuitsRef.current = keepCircuits;
+  const keepTailsRef = useRef(keepTails);
+  keepTailsRef.current = keepTails;
+  const findOnRef = useRef(findCircuits);
+  findOnRef.current = findCircuits;
+  /** Circuits the find-all toggle carved out of the current display cut. */
+  const foundRef = useRef<readonly TrailGeometry[]>([]);
+  const foundInfoRef = useRef({ found: 0, skipped: false });
+  const followRafRef = useRef(0);
+  const followLastRef = useRef(0);
+  const paceRef = useRef(followPace);
+  paceRef.current = followPace;
+  const paceTokensRef = useRef(0);
+  const paceLastRef = useRef(0);
+  const feedSchedulerRef = useRef<QueryScheduler<UnrootedQueryRequest> | null>(null);
+  const feedSeqRef = useRef(0);
+  const feedHalfRef = useRef(FEED_HALF_MIN);
+  /** Head position of a dead end awaiting confirmation by a head-centred cut. */
+  const endPendingRef = useRef<Pt | null>(null);
+  /** A shared-link seed chord waiting for a cut that contains it. */
+  const replayRef = useRef<readonly [number, number, number, number] | null>(null);
+  const traceSeedCbRef = useRef(onTraceSeed);
+  traceSeedCbRef.current = onTraceSeed;
+  /** Kept finished strands (circuits and tails), newest last. */
+  const keptRef = useRef<readonly { geom: TrailGeometry; kind: 'circuit' | 'tail' }[]>([]);
   const trailRef = useRef<StrandTrail | null>(null);
   // Rebuilt lazily from the newest cut — a walk that has nothing to do (or
   // nowhere to go) must not pay for an index it will not read.
@@ -271,91 +429,6 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
     rafRef.current = requestAnimationFrame(draw);
   }, [draw]);
 
-  // --- traced strand -----------------------------------------------------------
-  const publishTrace = useCallback((): void => {
-    const trail = trailRef.current;
-    publish({
-      trace: trail
-        ? {
-            active: true,
-            status: trail.status,
-            points: trail.count,
-            length: trailLength(trail),
-          }
-        : NO_TRACE,
-    });
-  }, [publish]);
-
-  /** The newest cut's chord index, built on first use and cached per cut. */
-  const ensureIndex = useCallback((): ChordIndex | null => {
-    const cut = lastCutRef.current;
-    const table = chordsRef.current;
-    if (!cut || !table) return null;
-    if (indexCutRef.current !== cut) {
-      indexCutRef.current = cut;
-      indexRef.current = buildChordIndex(cut, table);
-    }
-    return indexRef.current;
-  }, []);
-
-  /**
-   * Walk as far as the tiles currently on screen allow, then stop and wait.
-   *
-   * `'walking'` means the step cap was reached with more to do, so another
-   * slice is queued for the next frame — that keeps a walk that crosses a
-   * whole wide viewport from blocking the one it is drawn in.
-   */
-  const runWalk = useCallback((): void => {
-    const trail = trailRef.current;
-    if (!trail || isTerminal(trail.status)) return;
-    const index = ensureIndex();
-    const cut = lastCutRef.current;
-    advanceWalk(trail, index, {
-      // A truncated cut has holes in it, so a missing chord there proves
-      // nothing about the strand — never call an end on one.
-      covered: cut && !cut.truncated ? coveredRef.current : null,
-    });
-    rendererRef.current?.setTrail(trailGeometry(trail));
-    publishTrace();
-    scheduleDraw();
-    if (trail.status === 'walking' && !walkRafRef.current) {
-      walkRafRef.current = requestAnimationFrame(() => {
-        walkRafRef.current = 0;
-        runWalk();
-      });
-    }
-  }, [ensureIndex, publishTrace, scheduleDraw]);
-
-  const clearTrace = useCallback((): void => {
-    if (walkRafRef.current) cancelAnimationFrame(walkRafRef.current);
-    walkRafRef.current = 0;
-    if (!trailRef.current) return;
-    trailRef.current = null;
-    rendererRef.current?.setTrail(null);
-    publishTrace();
-    scheduleDraw();
-  }, [publishTrace, scheduleDraw]);
-
-  /** Start a trace at a viewport position in CSS px. */
-  const traceAt = useCallback(
-    (x: number, y: number): boolean => {
-      const { width, height } = sizeRef.current;
-      if (width <= 0 || height <= 0) return false;
-      const index = ensureIndex();
-      if (!index) return false;
-      const cam = camRef.current;
-      const world = screenToWorld(cam, x, y, width, height);
-      const hit = hitTestChord(index, world, TAP_PICK_RADIUS_PX / cam.scale);
-      if (!hit) return false;
-      if (walkRafRef.current) cancelAnimationFrame(walkRafRef.current);
-      walkRafRef.current = 0;
-      trailRef.current = startTrail(hit);
-      runWalk();
-      return true;
-    },
-    [ensureIndex, runWalk],
-  );
-
   // --- queries ----------------------------------------------------------------
   const requestQuery = useCallback((): void => {
     const scheduler = schedulerRef.current;
@@ -377,6 +450,441 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
     requestQuery();
     cameraCbRef.current?.(camRef.current);
   }, [scheduleDraw, requestQuery]);
+
+  // --- traced strand -----------------------------------------------------------
+  const publishTrace = useCallback((): void => {
+    const trail = trailRef.current;
+    const circuits = keptRef.current.length;
+    const { found, skipped } = foundInfoRef.current;
+    publish({
+      trace: trail
+        ? {
+            active: true,
+            status: trail.status,
+            points: trail.count,
+            length: trailLength(trail),
+            circuits,
+            found,
+            foundSkipped: skipped,
+          }
+        : circuits || found || skipped
+          ? { ...NO_TRACE, circuits, found, foundSkipped: skipped }
+          : NO_TRACE,
+    });
+  }, [publish]);
+
+  /** The newest cut's chord index, built on first use and cached per cut. */
+  const ensureIndex = useCallback((): ChordIndex | null => {
+    const cut = lastCutRef.current;
+    const table = chordsRef.current;
+    if (!cut || !table) return null;
+    if (indexCutRef.current !== cut) {
+      indexCutRef.current = cut;
+      indexRef.current = buildChordIndex(cut, table);
+    }
+    return indexRef.current;
+  }, []);
+
+  // --- follow (the camera chases the head) ------------------------------------
+  const stopFollow = useCallback((): void => {
+    if (followRafRef.current) cancelAnimationFrame(followRafRef.current);
+    followRafRef.current = 0;
+  }, []);
+
+  /**
+   * One follow frame: nudge the camera toward the walk's head. The loop
+   * re-arms itself while there is a live walk to chase; it never touches
+   * `scale`, so wheel/pinch zoom composes with it freely, and it holds still
+   * while a pointer is down so a drag is not fought over.
+   */
+  const followTick = useCallback((): void => {
+    followRafRef.current = 0;
+    const trail = trailRef.current;
+    if (!followOnRef.current || !trail || isTerminal(trail.status)) return;
+    followRafRef.current = requestAnimationFrame(followTick);
+    if (pointersRef.current.size > 0) {
+      followLastRef.current = performance.now();
+      return;
+    }
+    const now = performance.now();
+    const dt = Math.min(64, Math.max(1, now - followLastRef.current));
+    followLastRef.current = now;
+    const cam = camRef.current;
+    const { width, height } = sizeRef.current;
+    const dx = trail.head.x - cam.cx;
+    const dy = trail.head.y - cam.cy;
+    const dist = Math.hypot(dx, dy);
+    // Converged (sub-pixel): keep ticking cheaply, but write nothing.
+    if (dist * cam.scale < 0.5) return;
+    let step = dist * (1 - Math.exp(-dt / FOLLOW_TAU_MS));
+    const viewportWorld = Math.min(width, height) / cam.scale;
+    const maxStep = ((FOLLOW_MAX_VIEWPORTS_PER_S * viewportWorld) / 1000) * dt;
+    // The gentle cap keeps a nearby chase watchable; once the head has pulled
+    // more than ~1.5 viewports ahead the exponential runs uncapped, so a
+    // full-throttle walk is caught up with instead of lost.
+    if (step > maxStep && dist < viewportWorld * 1.5) step = maxStep;
+    camRef.current = {
+      cx: cam.cx + (dx / dist) * step,
+      cy: cam.cy + (dy / dist) * step,
+      scale: cam.scale,
+    };
+    onCameraChanged();
+  }, [onCameraChanged]);
+
+  const ensureFollow = useCallback((): void => {
+    if (followRafRef.current) return;
+    const trail = trailRef.current;
+    if (!followOnRef.current || !trail || isTerminal(trail.status)) return;
+    followLastRef.current = performance.now();
+    followRafRef.current = requestAnimationFrame(followTick);
+  }, [followTick]);
+
+  /** Hand the renderer everything that stays lit: kept strands + found circuits. */
+  const syncOverlays = useCallback((): void => {
+    rendererRef.current?.setCircuits([
+      ...keptRef.current.map((k) => k.geom),
+      ...foundRef.current,
+    ]);
+  }, []);
+
+  const setKept = useCallback(
+    (next: readonly { geom: TrailGeometry; kind: 'circuit' | 'tail' }[]): void => {
+      keptRef.current = next;
+      syncOverlays();
+    },
+    [syncOverlays],
+  );
+
+  /**
+   * Weld + trace the whole display cut and colour every closed circuit by its
+   * length — the same pipeline the rooted analysis runs, over whatever the
+   * camera happens to hold. Synchronous by design: at the instance ceiling it
+   * is tens of milliseconds, and cuts arrive at most every 120 ms.
+   */
+  const recomputeFound = useCallback((): void => {
+    const had = foundRef.current.length > 0 || foundInfoRef.current.skipped;
+    const apply = (geoms: readonly TrailGeometry[], skipped: boolean): void => {
+      foundRef.current = geoms;
+      foundInfoRef.current = { found: geoms.length, skipped };
+      syncOverlays();
+      publishTrace();
+      scheduleDraw();
+    };
+    const table = chordsRef.current;
+    const cut = lastCutRef.current;
+    if (!findOnRef.current || !table || table.chordCount === 0 || !cut) {
+      if (had) apply([], false);
+      return;
+    }
+    if (cut.cutLevel !== 0 || cut.truncated || cut.count > FIND_MAX_INSTANCES) {
+      apply([], true);
+      return;
+    }
+    const segs: Segment[] = [];
+    for (let i = 0; i < cut.count; i++) {
+      const tb = cut.type[i];
+      if (isAggregateType(tb)) continue;
+      const local = table.segments[tb];
+      if (!local || local.length === 0) continue;
+      const code = cut.code[i];
+      const rot = code & 15;
+      const mir = (code & 16) !== 0 ? -1 : 1;
+      const co = COS30[rot];
+      const si = SIN30[rot];
+      const px = cut.pos[i * 2] + cut.origin.x;
+      const py = cut.pos[i * 2 + 1] + cut.origin.y;
+      for (const [a, b] of local) {
+        segs.push([
+          { x: co * mir * a.x - si * a.y + px, y: si * mir * a.x + co * a.y + py },
+          { x: co * mir * b.x - si * b.y + px, y: si * mir * b.x + co * b.y + py },
+        ]);
+      }
+    }
+    const { circuits } = tracePaths(weldSegments(segs));
+    let geoms: TrailGeometry[] = [];
+    for (const path of circuits) {
+      const pts = path.points;
+      const n = pts.length;
+      if (n < 3) continue;
+      const xy = new Float32Array((n + 1) * 2);
+      const arc = new Float32Array(n + 1);
+      let total = 0;
+      for (let i = 0; i <= n; i++) {
+        const q = pts[i % n];
+        xy[i * 2] = q.x - cut.origin.x;
+        xy[i * 2 + 1] = q.y - cut.origin.y;
+        if (i > 0) {
+          const r = pts[i - 1];
+          total += Math.hypot(q.x - r.x, q.y - r.y);
+        }
+        arc[i] = total;
+      }
+      const rgb = circuitLengthRgb(pathLength(path));
+      geoms.push({
+        color: [rgb[0] / 255, rgb[1] / 255, rgb[2] / 255],
+        origin: cut.origin,
+        xy,
+        arc,
+        pointCount: n + 1,
+        totalLength: total,
+        version: 1,
+      });
+    }
+    if (geoms.length > MAX_FOUND_CIRCUITS) {
+      geoms = [...geoms].sort((a, b) => b.totalLength - a.totalLength).slice(0, MAX_FOUND_CIRCUITS);
+    }
+    apply(geoms, false);
+  }, [syncOverlays, publishTrace, scheduleDraw]);
+  const recomputeFoundRef = useRef(recomputeFound);
+  recomputeFoundRef.current = recomputeFound;
+
+  /**
+   * Move the outgoing trail over to the kept list when a new trace starts: a
+   * CLOSED circuit under the keep-circuits toggle; anything else — a genuine
+   * dead end, a junction stop, or a chase simply abandoned mid-strand — is a
+   * tail-shaped rainbow the user coloured, kept under keep-tails. What was
+   * chased stays on screen; the toggles are what let it go instead.
+   */
+  const archiveFinishedTrail = useCallback((): void => {
+    const old = trailRef.current;
+    if (!old || old.count < 2) return;
+    const kind =
+      old.status === 'closed'
+        ? keepCircuitsRef.current
+          ? ('circuit' as const)
+          : null
+        : keepTailsRef.current
+          ? ('tail' as const)
+          : null;
+    if (!kind) return;
+    const geom = trailGeometry(old);
+    if (!geom) return;
+    setKept([...keptRef.current.slice(-(MAX_KEPT_CIRCUITS - 1)), { geom, kind }]);
+  }, [setKept]);
+
+  /**
+   * Steps the pace limit allows right now: undefined = unlimited, 0 = starved
+   * this tick (come back next frame). A token bucket capped at one second of
+   * pace, shared by display-fed and feeder-fed advances.
+   */
+  const paceBudget = useCallback((): number | undefined => {
+    const pace = paceRef.current;
+    if (pace == null || pace <= 0) return undefined;
+    const now = performance.now();
+    const dt = Math.min(1000, Math.max(0, now - (paceLastRef.current || now)));
+    paceLastRef.current = now;
+    paceTokensRef.current = Math.min(pace, paceTokensRef.current + (pace * dt) / 1000);
+    return Math.floor(paceTokensRef.current);
+  }, []);
+
+  const runWalkRef = useRef<(() => void) | null>(null);
+  const scheduleWalkTick = useCallback((): void => {
+    if (walkRafRef.current) return;
+    walkRafRef.current = requestAnimationFrame(() => {
+      walkRafRef.current = 0;
+      runWalkRef.current?.();
+    });
+  }, []);
+
+  /** Ask the feeder for a fresh leaf cut centred on the walk's head. */
+  const requestFeed = useCallback((): void => {
+    const trail = trailRef.current;
+    const scheduler = feedSchedulerRef.current;
+    if (!trail || isTerminal(trail.status) || !scheduler || !chordsRef.current) return;
+    const half = feedHalfRef.current;
+    scheduler.request({
+      id: ++feedSeqRef.current,
+      seed: worldRef.current.seed >>> 0,
+      view: { cx: trail.head.x, cy: trail.head.y, halfW: half, halfH: half },
+      budget: FEED_BUDGET,
+    });
+  }, []);
+
+  /**
+   * Keep the feeder pumping wherever the display cannot feed the walk: while
+   * auto-following (any zoom — the chase must not care what LOD is on
+   * screen), and while a dead end awaits its head-centred confirmation.
+   */
+  const maybeFeed = useCallback((): void => {
+    const trail = trailRef.current;
+    if (!trail || isTerminal(trail.status)) return;
+    if (trail.status !== 'frontier' && trail.status !== 'offscreen') return;
+    if (!followOnRef.current && !endPendingRef.current) return;
+    requestFeed();
+  }, [requestFeed]);
+
+  /**
+   * Advance the walk against one chord index and its covered rect, applying
+   * the pace limit, the follow window, and the dead-end confirmation rule:
+   * an `'end'` from a DISPLAY cut is only a candidate (rare engine states can
+   * under-cover a rect; measured and fixed in `unrooted.ts`, but belt on
+   * braces here) — it demotes to `'frontier'` and a head-centred feed cut is
+   * asked to confirm. Only an `'end'` seen by a feed cut, whose rect is
+   * centred on the head by construction, is believed.
+   */
+  const advanceAgainst = useCallback(
+    (index: ChordIndex | null, covered: ViewRect | null, fromFeed: boolean): void => {
+      const trail = trailRef.current;
+      if (!trail || isTerminal(trail.status)) return;
+      const budget = paceBudget();
+      if (budget === 0) {
+        scheduleWalkTick(); // pace-starved: tokens regrow next frame
+        return;
+      }
+      const hold = followOnRef.current ? followHoldRef.current : null;
+      const stepsBefore = trail.steps;
+      advanceWalk(trail, index, {
+        // A truncated cut has holes in it, so a missing chord there proves
+        // nothing about the strand — never call an end on one.
+        covered,
+        hold,
+        ...(budget !== undefined ? { maxSteps: budget } : {}),
+      });
+      if (budget !== undefined) {
+        paceTokensRef.current = Math.max(0, paceTokensRef.current - (trail.steps - stepsBefore));
+      }
+      if (hold != null) trimTrail(trail, hold);
+      if (trail.status === 'closed' && !trail.color) {
+        // A closed circuit stops being a rainbow: it gets the solid ink of
+        // its length, the same colour that circuit has everywhere else.
+        const rgb = circuitLengthRgb(trail.steps + 1);
+        trail.color = [rgb[0] / 255, rgb[1] / 255, rgb[2] / 255];
+        trail.version++;
+        trail.geom = null;
+      }
+      if (trail.status === 'end' && !fromFeed) {
+        trail.status = 'frontier';
+        endPendingRef.current = { x: trail.head.x, y: trail.head.y };
+        requestFeed();
+      } else if (trail.status === 'end') {
+        endPendingRef.current = null; // confirmed by a head-centred cut
+      } else if (trail.steps !== stepsBefore) {
+        endPendingRef.current = null; // the walk moved on — no end after all
+      }
+      rendererRef.current?.setTrail(trailGeometry(trail));
+      publishTrace();
+      scheduleDraw();
+      if (fromFeed) {
+        // Size the next feed to the walk's appetite: a full-speed walk that
+        // drank the whole rect and wants more gets a bigger one; a paced or
+        // stalled walk gets the small one back.
+        const consumed = trail.status === 'frontier' && trail.steps > stepsBefore;
+        feedHalfRef.current =
+          consumed && paceRef.current == null
+            ? Math.min(FEED_HALF_MAX, feedHalfRef.current * FEED_GROW)
+            : FEED_HALF_MIN;
+      }
+      // 'walking' means the step cap was reached with more to do; another
+      // slice is queued so a walk crossing a wide viewport never blocks the
+      // frame it is drawn in.
+      if (trail.status === 'walking') scheduleWalkTick();
+      ensureFollow();
+      maybeFeed();
+    },
+    [paceBudget, scheduleWalkTick, publishTrace, scheduleDraw, ensureFollow, maybeFeed, requestFeed],
+  );
+  const advanceAgainstRef = useRef(advanceAgainst);
+  advanceAgainstRef.current = advanceAgainst;
+
+  /** Walk as far as the tiles currently on screen allow, then stop and wait. */
+  const runWalk = useCallback((): void => {
+    const trail = trailRef.current;
+    if (!trail || isTerminal(trail.status)) return;
+    const index = ensureIndex();
+    if (!index && followOnRef.current) {
+      // The display is at glyph LOD (or too dense to index): the chase must
+      // not stall or read 'offscreen' — the feeder keeps it walking.
+      maybeFeed();
+      ensureFollow();
+      return;
+    }
+    const cut = lastCutRef.current;
+    advanceAgainst(index, cut && !cut.truncated ? coveredRef.current : null, false);
+  }, [ensureIndex, advanceAgainst, maybeFeed, ensureFollow]);
+  runWalkRef.current = runWalk;
+
+  /** Report the chord the current trace grew from (the shareable seed). */
+  const publishSeed = useCallback((hit: ChordEnd | null): void => {
+    traceSeedCbRef.current?.(
+      hit
+        ? [
+            Math.round(hit.at.x * 1000) / 1000,
+            Math.round(hit.at.y * 1000) / 1000,
+            Math.round(hit.to.x * 1000) / 1000,
+            Math.round(hit.to.y * 1000) / 1000,
+          ]
+        : null,
+    );
+  }, []);
+
+  const clearTrace = useCallback((): void => {
+    if (walkRafRef.current) cancelAnimationFrame(walkRafRef.current);
+    walkRafRef.current = 0;
+    stopFollow();
+    endPendingRef.current = null;
+    replayRef.current = null;
+    if (!trailRef.current && keptRef.current.length === 0) return;
+    trailRef.current = null;
+    rendererRef.current?.setTrail(null);
+    if (keptRef.current.length) setKept([]);
+    publishSeed(null);
+    publishTrace();
+    scheduleDraw();
+  }, [publishTrace, publishSeed, scheduleDraw, setKept, stopFollow]);
+
+  /** Start a trace at a viewport position in CSS px. */
+  const traceAt = useCallback(
+    (x: number, y: number): boolean => {
+      const { width, height } = sizeRef.current;
+      if (width <= 0 || height <= 0) return false;
+      const index = ensureIndex();
+      if (!index) return false;
+      const cam = camRef.current;
+      const world = screenToWorld(cam, x, y, width, height);
+      const hit = hitTestChord(index, world, TAP_PICK_RADIUS_PX / cam.scale);
+      if (!hit) return false;
+      if (walkRafRef.current) cancelAnimationFrame(walkRafRef.current);
+      walkRafRef.current = 0;
+      endPendingRef.current = null;
+      replayRef.current = null; // a real tap supersedes a shared-link seed
+      // A circuit or tail the last walk finished stays lit under the new trace.
+      archiveFinishedTrail();
+      trailRef.current = startTrail(hit);
+      publishSeed(hit);
+      runWalk();
+      return true;
+    },
+    [ensureIndex, runWalk, archiveFinishedTrail, publishSeed],
+  );
+
+  /**
+   * Start the shared-link trace once a leaf cut holds its chord. One shot:
+   * the first cut that COULD answer (chord point inside its covered rect,
+   * walkable index built) either finds the chord and starts the walk, or
+   * proves the link's rule no longer draws it and gives up quietly.
+   */
+  const tryReplay = useCallback((): void => {
+    const seed = replayRef.current;
+    if (!seed || trailRef.current || !traceOnRef.current) return;
+    const index = ensureIndex();
+    if (!index) return;
+    const cov = coveredRef.current;
+    if (!cov) return;
+    if (Math.abs(seed[0] - cov.cx) > cov.halfW || Math.abs(seed[1] - cov.cy) > cov.halfH) return;
+    const hit = hitTestChord(index, { x: seed[0], y: seed[1] }, 1.5);
+    replayRef.current = null;
+    if (!hit) return;
+    // Aim the walk the way the shared tap aimed it.
+    const flip =
+      Math.hypot(hit.at.x - seed[0], hit.at.y - seed[1]) >
+      Math.hypot(hit.to.x - seed[0], hit.to.y - seed[1]);
+    const oriented: ChordEnd = flip ? { at: hit.to, to: hit.at } : hit;
+    trailRef.current = startTrail(oriented);
+    publishSeed(oriented);
+    runWalk();
+  }, [ensureIndex, publishSeed, runWalk]);
+  const tryReplayRef = useRef(tryReplay);
+  tryReplayRef.current = tryReplay;
 
   // --- client + scheduler lifecycle -------------------------------------------
   useEffect(() => {
@@ -421,7 +929,10 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
             trail.status = 'frontier';
             publishTrace();
           }
+        } else if (!trail) {
+          tryReplayRef.current?.(); // a shared-link seed may be waiting for this cut
         }
+        recomputeFoundRef.current?.(); // find-all works per display cut
       },
       onError: (err) => {
         publish({ error: err instanceof Error ? err.message : String(err) });
@@ -429,10 +940,39 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
       minIntervalMs: 120,
     });
     schedulerRef.current = scheduler;
+    // The walk feeder: small head-centred leaf queries of its own, so the
+    // chase neither depends on the display's LOD nor trusts a single cut
+    // about a dead end. Results never reach the renderer's tile scene.
+    const feedScheduler = createQueryScheduler<
+      UnrootedQueryRequest,
+      { res: UnrootedQueryResponse; ms: number }
+    >({
+      run: async (req) => {
+        const t0 = performance.now();
+        const res = await client.query(req);
+        return { res, ms: performance.now() - t0 };
+      },
+      onResult: ({ res }, req) => {
+        if (res.seed !== (worldRef.current.seed >>> 0)) return;
+        const trail = trailRef.current;
+        if (!trail || isTerminal(trail.status)) return;
+        const table = chordsRef.current;
+        if (!table || res.cut.cutLevel !== 0) return;
+        const index = buildChordIndex(res.cut, table);
+        advanceAgainstRef.current?.(index, res.cut.truncated ? null : req.view, true);
+      },
+      onError: () => {
+        // Best-effort: the display query is what surfaces engine errors.
+      },
+      minIntervalMs: 40,
+    });
+    feedSchedulerRef.current = feedScheduler;
     return () => {
       scheduler.dispose();
+      feedScheduler.dispose();
       client.dispose();
       schedulerRef.current = null;
+      feedSchedulerRef.current = null;
       clientRef.current = null;
       rendererRef.current?.dispose();
       rendererRef.current = null;
@@ -442,6 +982,8 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
       inertiaRef.current = 0;
       if (walkRafRef.current) cancelAnimationFrame(walkRafRef.current);
       walkRafRef.current = 0;
+      if (followRafRef.current) cancelAnimationFrame(followRafRef.current);
+      followRafRef.current = 0;
     };
   }, [forceSyncClient, scheduleDraw, publish, runWalk, publishTrace]);
 
@@ -475,6 +1017,7 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
       // A lost context takes the trail's buffers with it; the walk itself lives
       // in world doubles on this side, so it survives and just re-uploads.
       if (trailRef.current) renderer.setTrail(trailGeometry(trailRef.current));
+      if (keptRef.current.length) renderer.setCircuits(keptRef.current.map((k) => k.geom));
       scheduleDraw();
       requestQuery();
     }
@@ -512,12 +1055,76 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
     // The traced line is the OLD rule's geometry; under a new one it would be
     // a rainbow over nothing. Drop it rather than let it lie.
     clearTrace();
+    recomputeFoundRef.current?.(); // found circuits belong to the rule too
     scheduleDraw();
   }, [chords, clearTrace, scheduleDraw]);
 
   useEffect(() => {
     if (!trace) clearTrace();
   }, [trace, clearTrace]);
+
+  useEffect(() => {
+    if (follow) {
+      ensureFollow();
+      maybeFeed();
+    } else stopFollow();
+  }, [follow, ensureFollow, stopFollow, maybeFeed]);
+
+  // Pace changes take effect at once: reset the bucket and nudge the walk so
+  // a speed-up does not wait for the next cut to be noticed.
+  useEffect(() => {
+    paceTokensRef.current = 0;
+    paceLastRef.current = performance.now();
+    if (trailRef.current && !isTerminal(trailRef.current.status)) runWalk();
+  }, [followPace, runWalk]);
+
+  // A shared-link seed: jump the camera to the chord and trace it as soon as
+  // a cut holds it. The prop also echoes back after every locally-started
+  // trace (pages mirror it into the URL) — the live trail guards against
+  // treating the echo as a new request.
+  const traceSeedKey = traceSeed ? traceSeed.join(',') : '';
+  useEffect(() => {
+    if (!traceSeed || trailRef.current) return;
+    replayRef.current = traceSeed;
+    camRef.current = createCamera(traceSeed[0], traceSeed[1], camRef.current.scale);
+    onCameraChanged();
+    tryReplay();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [traceSeedKey]);
+
+  // Toggling a keep switch off lets that kind of kept strand go.
+  useEffect(() => {
+    if (keepCircuits) return;
+    const next = keptRef.current.filter((k) => k.kind !== 'circuit');
+    if (next.length === keptRef.current.length) return;
+    setKept(next);
+    publishTrace();
+    scheduleDraw();
+  }, [keepCircuits, setKept, publishTrace, scheduleDraw]);
+
+  useEffect(() => {
+    recomputeFound();
+  }, [findCircuits, recomputeFound]);
+
+  useEffect(() => {
+    if (keepTails) return;
+    const next = keptRef.current.filter((k) => k.kind !== 'tail');
+    if (next.length === keptRef.current.length) return;
+    setKept(next);
+    publishTrace();
+    scheduleDraw();
+  }, [keepTails, setKept, publishTrace, scheduleDraw]);
+
+  // A shrunken hold applies at once — the walk may be idle at a frontier and
+  // would otherwise not trim until it next advances.
+  useEffect(() => {
+    const trail = trailRef.current;
+    if (!follow || followHold == null || !trail || trail.count <= followHold) return;
+    trimTrail(trail, followHold);
+    rendererRef.current?.setTrail(trailGeometry(trail));
+    publishTrace();
+    scheduleDraw();
+  }, [follow, followHold, publishTrace, scheduleDraw]);
 
   useEffect(() => {
     styleRef.current = style ?? null;

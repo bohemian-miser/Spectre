@@ -136,12 +136,32 @@ const COVER_SHRINK = 0.2;
 const COVER_GRID_X = 48;
 const COVER_GRID_Y = 24;
 /**
- * Levels below the emitted cut that the coverage probe runs at. Coarser is
- * cheaper (~1/G per level) but inflates each node's AABB, which can paper
- * over a real hole; +2 keeps probe nodes small against a grid cell while
- * costing ~1/60th of the emission walk.
+ * Levels below the emitted cut that the coverage probe runs at, for AGGREGATE
+ * cuts. Coarser is cheaper (~1/G per level) but inflates each node's AABB,
+ * which can paper over a real hole; +2 keeps probe nodes small against a grid
+ * cell while costing ~1/60th of the emission walk.
+ *
+ * LEAF cuts (`cutEstimate == 0`) probe at leaf level instead — exact tile
+ * AABBs, cost comparable to the emission walk itself, which a budget-bounded
+ * leaf cut can afford. This is not a luxury: holes are missing SUBTREES of a
+ * sibling supertile poking into the view (measured: ~20-40 tiles inside the
+ * requested rect), and level-2 probe AABBs bled far enough over such a hole
+ * to mark every occupancy cell while the count plateaued for FOUR ancestor
+ * levels — one deeper than the old 3-level stability window, so the cut
+ * shipped with the hole. Leaf-level AABBs leave the hole's interior cells
+ * unmarked, and the wider window below catches the plateau besides.
  */
 const COVER_PROBE_LIFT = 2;
+
+/**
+ * Ancestor levels of count agreement demanded before the emitted set is
+ * believed complete. Plateaus of exactly 4 levels were measured in the wild
+ * (seeds 99 / 20260827 near the origin at z=36); 6-level plateaus appear at
+ * far zoom (the seed-1 z=0.02 case in the module notes), where the occupancy
+ * grid is what catches the hole. Together with leaf-exact probing this is a
+ * belt on braces.
+ */
+const COVER_STABLE_WINDOW = 5;
 
 const LEAF_INDEX = new Map<TileTypeId, number>(LEAF_ORDER.map((t, i) => [t, i]));
 const META_INDEX = new Map<TileTypeId, number>(TILE_NAMES.map((t, i) => [t, i]));
@@ -623,17 +643,23 @@ export function createUnrootedEngine(seed: number): UnrootedEngine {
       // emitted set complete: the fractal patch does not fill its bbox, so
       // bbox containment alone is not coverage.
       //
-      // Two conditions must hold together. Count stability across a 3-level
-      // window says a higher ancestor finds nothing new; the occupancy grid
-      // says the view is actually filled. Neither suffices alone — a chain
-      // whose next few ancestors all extend away from the view keeps its
-      // counts equal while leaving a hole in it (seed 1 at z=0.02 held the
-      // same count from level 13 to 18 and only closed at 19).
+      // Two conditions must hold together. Count stability across a
+      // COVER_STABLE_WINDOW says a higher ancestor finds nothing new; the
+      // occupancy grid says the view is actually filled. Neither suffices
+      // alone — a chain whose next few ancestors all extend away from the
+      // view keeps its counts equal while leaving a hole in it (seed 1 at
+      // z=0.02 held the same count from level 13 to 18 and only closed at
+      // 19; seeds 99/20260827 near the origin plateaued for 4 levels while
+      // the coarse probe's AABBs papered over a ~30-tile hole — hence the
+      // leaf-exact probe for leaf cuts).
       ancestorLevel = coverageLevel(view);
       for (;;) {
-        const upper = Math.min(ancestorLevel + 3, UNROOTED_MAX_LEVEL);
+        const upper = Math.min(ancestorLevel + COVER_STABLE_WINDOW, UNROOTED_MAX_LEVEL);
         ensureLevel(upper);
-        const probeCut = Math.min(ancestorLevel, cutEstimate + COVER_PROBE_LIFT);
+        // Leaf cuts probe at leaf level (exact AABBs); aggregate cuts keep the
+        // lifted, cheaper probe. See COVER_PROBE_LIFT for why this matters.
+        const probeCut =
+          cutEstimate === 0 ? 0 : Math.min(ancestorLevel, cutEstimate + COVER_PROBE_LIFT);
         const lower = probeView(ancestorLevel, probeCut, view);
         if (
           lower.count > 0 &&

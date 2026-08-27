@@ -155,3 +155,67 @@ describe('shareUrl', () => {
     );
   });
 });
+
+describe('follow / hold / keep-circuits params (explorer codec)', () => {
+  const inf: ExplorerState = { ...DEFAULT_EXPLORER_STATE, mode: 'infinite' };
+
+  it('encodes fw/hp/kc additively and round-trips', () => {
+    expect(stateToQuery(inf)).not.toMatch(/(^|&)(fw|hp|kc)=/);
+
+    const s: ExplorerState = { ...inf, follow: true, hold: 1234, keepCircuits: false };
+    const q = stateToQuery(s);
+    expect(q).toContain('fw=1');
+    expect(q).toContain('hp=1234');
+    expect(q).toContain('kc=0');
+    const back = hashToState(stateToHash(s));
+    expect(back.follow).toBe(true);
+    expect(back.hold).toBe(1234);
+    expect(back.keepCircuits).toBe(false);
+    expect(stateToQuery(back)).toBe(q); // canonical
+  });
+
+  it('drops all three keys at their defaults on decode', () => {
+    const back = hashToState('#/explorer?v=1&md=infinite&fw=0&hp=5000&kc=1');
+    expect('follow' in back).toBe(false);
+    expect('hold' in back).toBe(false);
+    expect('keepCircuits' in back).toBe(false);
+  });
+});
+
+describe('pace / trace-seed params (explorer codec)', () => {
+  const inf: ExplorerState = { ...DEFAULT_EXPLORER_STATE, mode: 'infinite' };
+
+  it('encodes fp/ts additively and round-trips', () => {
+    expect(stateToQuery(inf)).not.toMatch(/(^|&)(fp|ts)=/);
+
+    const s: ExplorerState = { ...inf, pace: 24, traceSeed: [12.125, -7.5, 13.008, -8.25] };
+    const q = stateToQuery(s);
+    expect(q).toContain('fp=24');
+    expect(q).toContain('ts=');
+    const back = hashToState(stateToHash(s));
+    expect(back.pace).toBe(24);
+    expect(back.traceSeed).toEqual([12.125, -7.5, 13.008, -8.25]);
+    expect(stateToQuery(back)).toBe(q); // canonical
+  });
+
+  it('drops malformed seeds and junk paces', () => {
+    const back = hashToState('#/explorer?v=1&md=infinite&fp=abc&ts=1,2,zzz');
+    expect('pace' in back).toBe(false);
+    expect('traceSeed' in back).toBe(false);
+  });
+});
+
+describe('kt / fc params (explorer codec)', () => {
+  const inf: ExplorerState = { ...DEFAULT_EXPLORER_STATE, mode: 'infinite' };
+  it('round-trips keep-tails-off and find-all-on', () => {
+    expect(stateToQuery(inf)).not.toMatch(/(^|&)(kt|fc)=/);
+    const s: ExplorerState = { ...inf, keepTails: false, findCircuits: true };
+    const q = stateToQuery(s);
+    expect(q).toContain('kt=0');
+    expect(q).toContain('fc=1');
+    const back = hashToState(stateToHash(s));
+    expect(back.keepTails).toBe(false);
+    expect(back.findCircuits).toBe(true);
+    expect(stateToQuery(back)).toBe(q);
+  });
+});

@@ -136,3 +136,25 @@ export function rainbow(t: number): string {
 export function circuitHueColor(step: number): string {
   return `hsl(${(step * 40) % 360}, 100%, 50%)`;
 }
+
+/**
+ * Solid ink for a circuit of `length` segments, addressed by the LENGTH
+ * itself rather than a patch-relative rank — so a circuit of a given length
+ * is the same colour in every view, on every screen, and across shared
+ * links. Hue and lightness advance along Roberts' R2 low-discrepancy
+ * sequence (multipliers 1/ρ and 1/ρ² for the plastic number ρ), which is
+ * irrational on both axes: two different lengths never share a colour, where
+ * a fixed hue step would repeat exactly every 360/step lengths.
+ */
+export function circuitLengthRgb(length: number): Rgb {
+  const n = Math.abs(Math.round(length));
+  const h = (n * 0.7548776662466927) % 1;
+  const l = 0.38 + 0.26 * ((n * 0.5698402909980532) % 1);
+  // hsl → rgb at s = 1.
+  const a = Math.min(l, 1 - l);
+  const f = (ch: number): number => {
+    const k = (ch + h * 12) % 12;
+    return l - a * Math.max(-1, Math.min(Math.min(k - 3, 9 - k), 1));
+  };
+  return [Math.round(f(0) * 255), Math.round(f(8) * 255), Math.round(f(4) * 255)];
+}

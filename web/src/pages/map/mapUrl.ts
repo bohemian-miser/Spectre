@@ -16,12 +16,17 @@
 import {
   DEFAULT_INSTANCE_BUDGET,
   DEFAULT_LINE_SCALE,
+  DEFAULT_TRAIL_HOLD,
   INSTANCE_BUDGETS,
   MAX_INSTANCE_BUDGET,
   MIN_INSTANCE_BUDGET,
   clampInstanceBudget,
   clampLineScale,
+  clampTracePace,
+  clampTrailHold,
+  decodeTraceSeed,
   edgesToSubset,
+  encodeTraceSeed,
   subsetFromString,
   subsetToEdges,
   subsetToString,
@@ -61,6 +66,23 @@ export interface MapUrlState {
    * it off writes a parameter — pre-existing links keep encoding unchanged.
    */
   readonly trace?: boolean;
+  /** Auto-follow the traced strand (`fw=1`), omitted when off (the default). */
+  readonly follow?: boolean;
+  /** Most trail points held while following (`hp=`), omitted at the default. */
+  readonly hold?: number;
+  /**
+   * Keep strands that close into circuits coloured (`kc=0` when OFF). Default
+   * ON, like `trace`.
+   */
+  readonly keepCircuits?: boolean;
+  /** Keep dead-ended strands (tails) coloured (`kt=0` when OFF). Default ON. */
+  readonly keepTails?: boolean;
+  /** Find and colour every on-screen circuit (`fc=1`), default OFF. */
+  readonly findCircuits?: boolean;
+  /** Chase pace in tiles/second (`fp=`); absent/null = full speed. */
+  readonly pace?: number | null;
+  /** The tapped chord the current trace grew from (`ts=`), for share links. */
+  readonly traceSeed?: readonly [number, number, number, number] | null;
 }
 
 /**
@@ -96,6 +118,13 @@ export const DEFAULT_MAP_STATE: MapUrlState = {
   lineWidth: DEFAULT_LINE_SCALE,
   noOverlap: false,
   trace: true,
+  follow: false,
+  hold: DEFAULT_TRAIL_HOLD,
+  keepCircuits: true,
+  keepTails: true,
+  findCircuits: false,
+  pace: null,
+  traceSeed: null,
 };
 
 /** Keep only base-36 digits and pad/trim to `COMBO_LENGTH`. */
@@ -144,6 +173,14 @@ export function encodeMapQuery(state: MapUrlState): string {
   if (lw !== DEFAULT_LINE_SCALE) q.set('lw', String(lw));
   if (state.noOverlap) q.set('no', '1');
   if (state.trace === false) q.set('tr', '0');
+  if (state.follow) q.set('fw', '1');
+  const hp = clampTrailHold(state.hold ?? DEFAULT_TRAIL_HOLD);
+  if (hp !== DEFAULT_TRAIL_HOLD) q.set('hp', String(hp));
+  if (state.keepCircuits === false) q.set('kc', '0');
+  if (state.keepTails === false) q.set('kt', '0');
+  if (state.findCircuits) q.set('fc', '1');
+  if (state.pace != null) q.set('fp', String(clampTracePace(state.pace)));
+  if (state.traceSeed) q.set('ts', encodeTraceSeed(state.traceSeed));
   return q.toString();
 }
 
@@ -164,6 +201,13 @@ export function decodeMapQuery(query: string): MapUrlState {
   const lnRaw = q.get('ln');
   const noRaw = q.get('no');
   const trRaw = q.get('tr');
+  const fwRaw = q.get('fw');
+  const hpRaw = num('hp');
+  const kcRaw = q.get('kc');
+  const ktRaw = q.get('kt');
+  const fcRaw = q.get('fc');
+  const fpRaw = num('fp');
+  const tsRaw = q.get('ts');
   const eRaw = q.get('e');
   const cRaw = q.get('c');
   return {
@@ -178,6 +222,13 @@ export function decodeMapQuery(query: string): MapUrlState {
     lineWidth: lwRaw === null ? DEFAULT_LINE_SCALE : clampLineScale(lwRaw),
     noOverlap: noRaw === '1' || noRaw === 'true',
     trace: !(trRaw === '0' || trRaw === 'false'),
+    follow: fwRaw === '1' || fwRaw === 'true',
+    hold: hpRaw === null ? DEFAULT_TRAIL_HOLD : clampTrailHold(hpRaw),
+    keepCircuits: !(kcRaw === '0' || kcRaw === 'false'),
+    keepTails: !(ktRaw === '0' || ktRaw === 'false'),
+    findCircuits: fcRaw === '1' || fcRaw === 'true',
+    pace: fpRaw === null ? null : clampTracePace(fpRaw),
+    traceSeed: tsRaw ? (decodeTraceSeed(tsRaw) ?? null) : null,
   };
 }
 

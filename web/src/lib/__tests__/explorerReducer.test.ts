@@ -3,7 +3,12 @@ import {
   DEFAULT_EXPLORER_STATE,
   DEFAULT_INSTANCE_BUDGET,
   DEFAULT_LINE_SCALE,
+  DEFAULT_TRACE_PACE,
+  DEFAULT_TRAIL_HOLD,
   FLAG,
+  MAX_TRACE_PACE,
+  MAX_TRAIL_HOLD,
+  MIN_TRAIL_HOLD,
   MAX_INSTANCE_BUDGET,
   MAX_LEVEL,
   MIN_INSTANCE_BUDGET,
@@ -17,10 +22,16 @@ import {
 } from '../../core';
 import {
   explorerBudget,
+  explorerFindCircuits,
+  explorerFollow,
+  explorerKeepTails,
+  explorerPace,
+  explorerKeepCircuits,
   explorerLineWidth,
   explorerMode,
   explorerReducer,
   explorerTrace,
+  explorerTrailHold,
   hasFlag,
   maxMatchingIndex,
   normalizeMatchingVector,
@@ -312,5 +323,99 @@ describe('tap-to-trace', () => {
     expect('trace' in on).toBe(false);
     expect(explorerTrace(on)).toBe(true);
     expect(run(base, { type: 'setTrace', trace: true })).toBe(base);
+  });
+});
+
+describe('auto-follow / trail hold / kept circuits', () => {
+  it('follow is off by default and stores only the ON choice', () => {
+    expect(explorerFollow(base)).toBe(false);
+    expect('follow' in base).toBe(false);
+
+    const on = run(base, { type: 'setFollow', follow: true });
+    expect(on.follow).toBe(true);
+    expect(explorerFollow(on)).toBe(true);
+    expect(run(on, { type: 'setFollow', follow: true })).toBe(on); // bail-out
+
+    const off = run(on, { type: 'setFollow', follow: false });
+    expect('follow' in off).toBe(false);
+    expect(run(base, { type: 'setFollow', follow: false })).toBe(base);
+  });
+
+  it('hold clamps into range and drops the key at the default', () => {
+    expect(explorerTrailHold(base)).toBe(DEFAULT_TRAIL_HOLD);
+
+    const set = run(base, { type: 'setTrailHold', hold: 1234 });
+    expect(set.hold).toBe(1234);
+    expect(explorerTrailHold(set)).toBe(1234);
+
+    expect(run(base, { type: 'setTrailHold', hold: 0 }).hold).toBe(MIN_TRAIL_HOLD);
+    expect(run(base, { type: 'setTrailHold', hold: 1e9 }).hold).toBe(MAX_TRAIL_HOLD);
+    expect(run(base, { type: 'setTrailHold', hold: Number.NaN })).toBe(base); // -> default, no key
+
+    const back = run(set, { type: 'setTrailHold', hold: DEFAULT_TRAIL_HOLD });
+    expect('hold' in back).toBe(false);
+  });
+
+  it('keep-circuits is on by default and stores only the OFF choice', () => {
+    expect(explorerKeepCircuits(base)).toBe(true);
+    expect('keepCircuits' in base).toBe(false);
+
+    const off = run(base, { type: 'setKeepCircuits', keepCircuits: false });
+    expect(off.keepCircuits).toBe(false);
+    expect(explorerKeepCircuits(off)).toBe(false);
+    expect(run(off, { type: 'setKeepCircuits', keepCircuits: false })).toBe(off);
+
+    const on = run(off, { type: 'setKeepCircuits', keepCircuits: true });
+    expect('keepCircuits' in on).toBe(false);
+    expect(run(base, { type: 'setKeepCircuits', keepCircuits: true })).toBe(base);
+  });
+});
+
+describe('chase pace and shareable trace seed', () => {
+  it('pace defaults to full speed and stores only a number', () => {
+    expect(explorerPace(base)).toBeNull();
+    expect('pace' in base).toBe(false);
+
+    const slow = run(base, { type: 'setPace', pace: DEFAULT_TRACE_PACE });
+    expect(slow.pace).toBe(DEFAULT_TRACE_PACE);
+    expect(explorerPace(slow)).toBe(DEFAULT_TRACE_PACE);
+    expect(run(slow, { type: 'setPace', pace: DEFAULT_TRACE_PACE })).toBe(slow); // bail-out
+    expect(run(base, { type: 'setPace', pace: 1e9 }).pace).toBe(MAX_TRACE_PACE);
+
+    const full = run(slow, { type: 'setPace', pace: null });
+    expect('pace' in full).toBe(false);
+    expect(run(base, { type: 'setPace', pace: null })).toBe(base);
+  });
+
+  it('trace seed stores four coordinates and clears to no key', () => {
+    expect('traceSeed' in base).toBe(false);
+    const seeded = run(base, { type: 'setTraceSeed', traceSeed: [1.5, -2.25, 3, 4.125] });
+    expect(seeded.traceSeed).toEqual([1.5, -2.25, 3, 4.125]);
+    expect(run(seeded, { type: 'setTraceSeed', traceSeed: [1.5, -2.25, 3, 4.125] })).toBe(seeded);
+    const cleared = run(seeded, { type: 'setTraceSeed', traceSeed: null });
+    expect('traceSeed' in cleared).toBe(false);
+    expect(run(base, { type: 'setTraceSeed', traceSeed: null })).toBe(base);
+  });
+});
+
+describe('keep-tails and find-all toggles', () => {
+  it('keep-tails is on by default and stores only the OFF choice', () => {
+    expect(explorerKeepTails(base)).toBe(true);
+    expect('keepTails' in base).toBe(false);
+    const off = run(base, { type: 'setKeepTails', keepTails: false });
+    expect(off.keepTails).toBe(false);
+    const on = run(off, { type: 'setKeepTails', keepTails: true });
+    expect('keepTails' in on).toBe(false);
+    expect(run(base, { type: 'setKeepTails', keepTails: true })).toBe(base);
+  });
+
+  it('find-all is off by default and stores only the ON choice', () => {
+    expect(explorerFindCircuits(base)).toBe(false);
+    expect('findCircuits' in base).toBe(false);
+    const on = run(base, { type: 'setFindCircuits', findCircuits: true });
+    expect(on.findCircuits).toBe(true);
+    const off = run(on, { type: 'setFindCircuits', findCircuits: false });
+    expect('findCircuits' in off).toBe(false);
+    expect(run(base, { type: 'setFindCircuits', findCircuits: false })).toBe(base);
   });
 });

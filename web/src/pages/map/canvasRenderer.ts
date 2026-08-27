@@ -138,6 +138,7 @@ export function createCanvas2dRenderer(canvas: HTMLCanvasElement): MapRenderer |
   let lineScale = 1;
   let trailScale = DEFAULT_TRAIL_SCALE;
   let trail: TrailGeometry | null = null;
+  let circuits: readonly TrailGeometry[] = [];
 
   let cutRef: ViewportCut | null = null;
   let byType: Map<number, number[]> = new Map();
@@ -156,6 +157,10 @@ export function createCanvas2dRenderer(canvas: HTMLCanvasElement): MapRenderer |
 
   const setTrail = (next: TrailGeometry | null): void => {
     trail = next && next.pointCount >= 2 ? next : null;
+  };
+
+  const setCircuits = (next: readonly TrailGeometry[] | null): void => {
+    circuits = (next ?? []).filter((c) => c.pointCount >= 2);
   };
 
   const setStyle = (style: MapRenderStyle | null): void => {
@@ -285,13 +290,17 @@ export function createCanvas2dRenderer(canvas: HTMLCanvasElement): MapRenderer |
       C.setTransform(1, 0, 0, 1, 0, 0);
     }
 
-    // Traced strand — drawn straight in device pixels (no per-instance
-    // transform to ride) and NOT gated on the cut: it is world-anchored, so it
-    // stays put when the viewport leaves it and comes back.
+    // Traced strand and kept circuits — drawn straight in device pixels (no
+    // per-instance transform to ride) and NOT gated on the cut: they are
+    // world-anchored, so they stay put when the viewport leaves them and comes
+    // back. Circuits first so the live trail stays on top.
     let trailPoints = 0;
+    C.setTransform(1, 0, 0, 1, 0, 0);
+    for (const c of circuits) {
+      trailPoints += strokeTrail(C, c, cam, bw, bh, dpr, BASE_LINE_PX * lineScale * trailScale);
+    }
     if (trail) {
-      C.setTransform(1, 0, 0, 1, 0, 0);
-      trailPoints = strokeTrail(C, trail, cam, bw, bh, dpr, BASE_LINE_PX * lineScale * trailScale);
+      trailPoints += strokeTrail(C, trail, cam, bw, bh, dpr, BASE_LINE_PX * lineScale * trailScale);
     }
 
     return {
@@ -310,12 +319,14 @@ export function createCanvas2dRenderer(canvas: HTMLCanvasElement): MapRenderer |
     setCut,
     setChords,
     setTrail,
+    setCircuits,
     setStyle,
     render,
     dispose(): void {
       cutRef = null;
       chordPaths = null;
       trail = null;
+      circuits = [];
       byType.clear();
     },
   };
@@ -352,11 +363,14 @@ function strokeTrail(
   C.lineCap = 'round';
   C.lineJoin = 'round';
 
-  const bands = Math.min(TRAIL_BANDS, n - 1);
+  const solid = trail.color
+    ? `rgb(${Math.round(trail.color[0] * 255)}, ${Math.round(trail.color[1] * 255)}, ${Math.round(trail.color[2] * 255)})`
+    : null;
+  const bands = solid ? 1 : Math.min(TRAIL_BANDS, n - 1);
   for (let b = 0; b < bands; b++) {
     const from = Math.floor((b * (n - 1)) / bands);
     const to = Math.floor(((b + 1) * (n - 1)) / bands); // inclusive: bands share a point
-    C.strokeStyle = rainbow(trail.arc[Math.floor((from + to) / 2)] / total);
+    C.strokeStyle = solid ?? rainbow(trail.arc[Math.floor((from + to) / 2)] / total);
     C.beginPath();
     let penDown = false;
     let px = 0;

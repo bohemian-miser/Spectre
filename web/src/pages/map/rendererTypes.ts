@@ -23,6 +23,12 @@ export type RendererMode = 'webgl2' | 'canvas2d';
  * skip re-uploading between frames.
  */
 export interface TrailGeometry {
+  /**
+   * Solid ink (0..1 RGB) instead of the arc-length rainbow — how a CLOSED
+   * circuit is drawn, coloured by its length; absent = rainbow (the live
+   * chase and kept tails).
+   */
+  readonly color?: readonly [number, number, number];
   readonly origin: Pt;
   /** 2 floats per point, relative to `origin`. */
   readonly xy: Float32Array;
@@ -86,7 +92,10 @@ export interface MapRenderStats {
    * claim lines that were not drawn.
    */
   readonly chordsDrawn: number;
-  /** Points of the traced strand rasterized this frame (0 when there is none). */
+  /**
+   * Points of the traced strand plus every kept circuit rasterized this frame
+   * (0 when there is nothing traced).
+   */
   readonly trailPoints: number;
 }
 
@@ -102,6 +111,14 @@ export interface MapRenderer {
    * the camera goes — including back where the walk started.
    */
   setTrail(trail: TrailGeometry | null): void;
+  /**
+   * Adopt the kept closed circuits (empty/null clears them). Each entry is a
+   * FROZEN trail — a walk that came back to its start — drawn exactly like the
+   * live trail (world-anchored, every LOD), so a circuit stays lit while new
+   * strands are traced. Entries are compared by identity and by `version`, so
+   * renderers upload each circuit once and reuse it forever after.
+   */
+  setCircuits(circuits: readonly TrailGeometry[] | null): void;
   /** Override appearance (merged over the defaults). */
   setStyle(style: MapRenderStyle | null): void;
   /** Draw the current cut under `cam`. CSS-pixel size + devicePixelRatio. */

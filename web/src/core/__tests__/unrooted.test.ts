@@ -884,3 +884,29 @@ describe('viewport LOD policy and wire format', () => {
     expect(common).toBeGreaterThan(10);
   });
 });
+
+describe('viewport coverage regression (measured holes)', () => {
+  // These exact (seed, rect) pairs shipped incomplete cuts: the count
+  // plateaued for 4 ancestor levels while the coarse occupancy probe's AABBs
+  // papered over a ~20-40 tile hole INSIDE the requested rect (a sibling
+  // supertile poking into the view that only a higher descent finds). A cut
+  // must emit the same leaf set a descent from far above finds.
+  const CASES = [
+    { seed: 99, view: { cx: -6.65, cy: 9.13, halfW: 20, halfH: 13.33 } },
+    { seed: 20260827, view: { cx: 17.66, cy: -18.63, halfW: 20, halfH: 13.33 } },
+    { seed: 99, view: { cx: 18.96, cy: -22.96, halfW: 20, halfH: 13.33 } },
+  ];
+
+  it('emits the complete leaf set for rects that used to come up short', () => {
+    for (const c of CASES) {
+      const engine = createUnrootedEngine(c.seed);
+      const cut = engine.query(c.view, 100_000);
+      expect(cut.cutLevel).toBe(0);
+      expect(cut.truncated).toBe(false);
+      const deep = engine.query(c.view, 100_000, {
+        ancestorLevel: Math.min(cut.ancestorLevel + 6, UNROOTED_MAX_LEVEL),
+      });
+      expect(cut.count).toBe(deep.count);
+    }
+  });
+});

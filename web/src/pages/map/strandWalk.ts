@@ -30,6 +30,7 @@
 
 import {
   COS30,
+  MIN_TRAIL_HOLD,
   SIN30,
   SPECTRE_PTS,
   isAggregateType,
@@ -41,12 +42,47 @@ import type { LeafChordTable } from './chords';
 import type { TrailGeometry } from './rendererTypes';
 
 /**
- * Weld tolerance, in world units. Same ε as `weldSegments`: the connection
- * points of abutting tiles are meant to be the SAME point, and the only thing
- * between them is float drift (the engine emits f32 positions, re-anchored to a
- * fresh origin on every query).
+ * Search radius when hunting for chord ends near a point, in world units.
+ * Generous on purpose — it only bounds which chords are LOOKED AT; whether an
+ * end actually counts as "the same connection point" is decided by the much
+ * tighter {@link snapEpsilonAt} below. (Historically this single value did
+ * both jobs, which broke walks under extreme seam contracts: two DISTINCT
+ * connection points slid within 0.05 of each other read as one, and the walk
+ * reported junctions — or worse, mistook the crowding neighbour for the chord
+ * it arrived on and reported a dead end next to a perfectly good edge.)
  */
 export const WELD_EPSILON = 0.05;
+
+/**
+ * Base snap tolerance for "these two chord ends are the SAME connection
+ * point", in world units. Sized against the real error budget, not against
+ * point spacing: abutting tiles' connection points coincide by construction,
+ * and what separates them is (a) the f32 quantization of emitted instance
+ * positions — bounded by the cut's local extent, ≤ ~1e-4 for any walkable
+ * (≤ {@link TRACE_MAX_INSTANCES}) cut — and (b) double rounding of the
+ * absolute world coordinates the trail stores. Measured drift stays under
+ * 2e-4 near the origin and under ~6e-4 at |world| ≈ 1e12.
+ */
+export const SNAP_EPSILON = 1e-3;
+
+/**
+ * Ceiling for the adaptive snap: the contract sliders move in 1% steps of a
+ * unit edge, so distinct connection points legitimately come as close as
+ * ~0.01. The snap must never grow past that, or crowded points would merge
+ * again like the old 0.05 weld did.
+ */
+export const SNAP_EPSILON_MAX = 0.005;
+
+/**
+ * Snap tolerance around a world point. The double-rounding contribution
+ * grows with the coordinate magnitude (an ulp at 1e12 is ~2.2e-4), so far
+ * from the origin the tolerance follows it — a few ulps of headroom — while
+ * staying under {@link SNAP_EPSILON_MAX}.
+ */
+export function snapEpsilonAt(p: Pt): number {
+  const m = Math.max(Math.abs(p.x), Math.abs(p.y));
+  return Math.min(SNAP_EPSILON_MAX, SNAP_EPSILON + m * 2e-15);
+}
 
 /**
  * Farthest a chord endpoint can sit from its tile's emitted position. Chord
@@ -67,8 +103,14 @@ const CELL = 2;
  */
 export const TRACE_MAX_INSTANCES = 200_000;
 
-/** Points the trail holds before it stops growing (~12 MB of doubles). */
-export const TRAIL_MAX_POINTS = 500_000;
+/**
+ * Points an UN-windowed trail holds before it stops growing (~240 MB of
+ * doubles, plus the f32 render copy) — a memory backstop, not a length limit.
+ * A walk given a `hold` window (see {@link AdvanceOptions}) trims itself
+ * instead and never stops for size: its memory is bounded by the window, so
+ * its length is unbounded.
+ */
+export const TRAIL_MAX_POINTS = 10_000_000;
 
 /**
  * Steps one {@link advanceWalk} call takes before handing control back.
@@ -274,46 +316,88 @@ export function hitTestChord(index: ChordIndex, world: Pt, maxDist: number): Cho
  * which from coverage), or several (`junction`, which `tracePaths` also refuses
  * to walk through).
  *
- * The chord we arrived on is recognised by its FAR end sitting on `from`, not
- * by its tile being present — so a walk resumes correctly even after the tile
- * it stepped off has been panned out of the cut.
+ * The decision is nearest-candidate-with-separation, not a fixed weld
+ * membership: every chord end within `searchRadius` of `point` is a
+ * candidate; exactly ONE is discarded as the chord we arrived on (the one
+ * whose FAR end lies nearest `from` — not "its tile is present", so a walk
+ * resumes correctly after the tile it stepped off was panned out); of the
+ * rest, the nearest wins OUTRIGHT unless a second candidate sits within 4×
+ * of it (floored at drift scale, 2e-4), which is the genuinely ambiguous
+ * case and reads as `junction`. Two properties fall out:
+ *
+ *  - distinct connection points that seam contracts slid close together
+ *    (legally down to ~0.01) never eat the true continuation — the true weld
+ *    partner sits at drift distance (≤ ~6e-4 anywhere reachable), orders of
+ *    magnitude nearer, so the separation test keeps the step unambiguous;
+ *  - the walk has no tolerance cliff: however a residual error separates the
+ *    welded pair — f32 emission, double rounding far from the origin — the
+ *    partner is still found as long as it lands inside `searchRadius` and
+ *    nothing else is comparably close. Only crowding AT the error scale
+ *    (points genuinely indistinguishable) refuses, as it must.
  */
 export function continuationAt(
   index: ChordIndex,
   point: Pt,
   from: Pt,
-  epsilon = WELD_EPSILON,
+  searchRadius = WELD_EPSILON,
 ): { kind: 'step'; next: Pt } | { kind: 'none' } | { kind: 'junction' } {
-  const eps2 = epsilon * epsilon;
+  const sr2 = searchRadius * searchRadius;
   const lx = point.x - index.origin.x;
   const ly = point.y - index.origin.y;
-  let forward = 0;
-  let nx = 0;
-  let ny = 0;
-  forEachNearbyChord(index, lx, ly, epsilon, (ax, ay, bx, by) => {
-    // Which end (if either) sits on `point`? Take the far end from there.
+  // Candidates: distance² of the end near `point`, plus the far end the
+  // strand would continue to. Flat arrays — this is the walk's inner loop and
+  // the list holds a handful of entries.
+  const memD: number[] = [];
+  const memX: number[] = [];
+  const memY: number[] = [];
+  forEachNearbyChord(index, lx, ly, searchRadius, (ax, ay, bx, by) => {
     const da = (ax - point.x) * (ax - point.x) + (ay - point.y) * (ay - point.y);
     const db = (bx - point.x) * (bx - point.x) + (by - point.y) * (by - point.y);
-    let ox: number;
-    let oy: number;
-    if (da < eps2) {
-      ox = bx;
-      oy = by;
-    } else if (db < eps2) {
-      ox = ax;
-      oy = ay;
-    } else {
-      return;
+    // A degenerate (near-zero-length) chord can enrol both of its ends.
+    if (da < sr2) {
+      memD.push(da);
+      memX.push(bx);
+      memY.push(by);
     }
-    // The chord we arrived on: skip it, or the walk would just turn round.
-    if ((ox - from.x) * (ox - from.x) + (oy - from.y) * (oy - from.y) < eps2) return;
-    forward++;
-    nx = ox;
-    ny = oy;
+    if (db < sr2) {
+      memD.push(db);
+      memX.push(ax);
+      memY.push(ay);
+    }
   });
-  if (forward === 0) return { kind: 'none' };
-  if (forward > 1) return { kind: 'junction' };
-  return { kind: 'step', next: { x: nx, y: ny } };
+  if (memD.length === 0) return { kind: 'none' };
+
+  // Discard exactly one arrival chord: the candidate whose far end lies
+  // nearest `from`. Only the single best match is removed, and the true
+  // arrival (far end at drift distance from `from`) always beats a crowding
+  // neighbour, so a generous radius here is safe.
+  let arrival = -1;
+  let bestFrom = sr2;
+  for (let i = 0; i < memD.length; i++) {
+    const d = (memX[i] - from.x) * (memX[i] - from.x) + (memY[i] - from.y) * (memY[i] - from.y);
+    if (d < bestFrom) {
+      bestFrom = d;
+      arrival = i;
+    }
+  }
+
+  let best = -1;
+  let second = -1;
+  for (let i = 0; i < memD.length; i++) {
+    if (i === arrival) continue;
+    if (best === -1 || memD[i] < memD[best]) {
+      second = best;
+      best = i;
+    } else if (second === -1 || memD[i] < memD[second]) {
+      second = i;
+    }
+  }
+  if (best === -1) return { kind: 'none' };
+  if (second !== -1) {
+    const ambit = 4 * Math.max(Math.sqrt(memD[best]), 2e-4);
+    if (memD[second] < ambit * ambit) return { kind: 'junction' };
+  }
+  return { kind: 'step', next: { x: memX[best], y: memY[best] } };
 }
 
 // ---------------------------------------------------------------------------
@@ -381,6 +465,11 @@ export interface StrandTrail {
   /** Cumulative arc length at each point, in world units. */
   arc: Float64Array;
   count: number;
+  /**
+   * Total steps ever taken (tiles crossed), odometer-style: unlike `count` it
+   * never goes down when the window trims. What a pace limiter meters.
+   */
+  steps: number;
   /** Bumped whenever points were appended — the renderer's upload key. */
   version: number;
   /** Where the walk began: the far end of the tapped chord. */
@@ -390,6 +479,11 @@ export interface StrandTrail {
   /** The point before `head`, i.e. the direction the walk came from. */
   prev: Pt;
   status: WalkStatus;
+  /**
+   * Solid ink (0..1 RGB) once the strand closed into a circuit — set by the
+   * embedding component, copied into the render geometry; absent = rainbow.
+   */
+  color?: readonly [number, number, number];
   /**
    * World point the renderer's f32 coordinates are measured from. Trail state
    * rather than render cache, so appending points never disturbs it — a moved
@@ -435,6 +529,7 @@ export function startTrail(seed: ChordEnd): StrandTrail {
     xy: new Float64Array(2048),
     arc: new Float64Array(1024),
     count: 0,
+    steps: 0,
     version: 1,
     start: seed.to,
     head: seed.at,
@@ -453,6 +548,30 @@ export function trailLength(trail: StrandTrail): number {
   return trail.count === 0 ? 0 : trail.arc[trail.count - 1];
 }
 
+/**
+ * Drop the OLDEST points until at most `maxPoints` remain — the moving-window
+ * behaviour of the follow mode, where the head runs on forever and the tail
+ * lets go behind it.
+ *
+ * What survives a trim: `start` (so circuit closure is still detected even
+ * after the start scrolled out of the window), `head`/`prev`/`status` (the
+ * walk itself), and the ABSOLUTE arc values (so `trailLength` keeps reading
+ * as the total distance walked, odometer-style, not the window's length).
+ * The rainbow is unaffected too: {@link trailGeometry} rebases arc onto the
+ * window, so the gradient always spans exactly the points still held.
+ */
+export function trimTrail(trail: StrandTrail, maxPoints: number): StrandTrail {
+  const max = Math.max(MIN_TRAIL_HOLD, Math.floor(maxPoints));
+  if (trail.count <= max) return trail;
+  const drop = trail.count - max;
+  trail.xy.copyWithin(0, drop * 2, trail.count * 2);
+  trail.arc.copyWithin(0, drop, trail.count);
+  trail.count = max;
+  trail.version++;
+  trail.geom = null;
+  return trail;
+}
+
 /** True when `p` lies inside `rect` (both in world coordinates). */
 function within(rect: ViewRect, p: Pt): boolean {
   return Math.abs(p.x - rect.cx) <= rect.halfW && Math.abs(p.y - rect.cy) <= rect.halfH;
@@ -469,6 +588,14 @@ export interface AdvanceOptions {
    */
   readonly covered?: ViewRect | null;
   readonly maxSteps?: number;
+  /**
+   * Moving-window size, in points. With it set the walk trims itself down to
+   * the window as it goes (amortized — a trim runs every quarter-window of
+   * appends, never per step) and NEVER reports `'full'`: bounded memory buys
+   * unbounded length. Without it the trail grows until
+   * {@link TRAIL_MAX_POINTS} and stops there — the memory backstop.
+   */
+  readonly hold?: number | null;
 }
 
 /**
@@ -487,10 +614,20 @@ export function advanceWalk(
   }
   const covered = opts.covered ?? null;
   const maxSteps = opts.maxSteps ?? ADVANCE_MAX_STEPS;
-  const eps2 = WELD_EPSILON * WELD_EPSILON;
+  const hold = opts.hold ?? null;
+  const trimAt = hold != null ? hold + Math.max(1024, hold >> 2) : 0;
+  // Closure is "the head IS the start point", so it uses the same drift-scaled
+  // snap as the weld — a strand merely passing a crowded neighbour of its
+  // start must not read as a circuit. `start` is trail state, not a trail
+  // point, so the test keeps working long after the window let the start
+  // scroll out.
+  const closeEps = snapEpsilonAt(trail.start);
+  const eps2 = closeEps * closeEps;
 
   for (let step = 0; step < maxSteps; step++) {
-    if (trail.count >= TRAIL_MAX_POINTS) {
+    if (hold != null) {
+      if (trail.count >= trimAt) trimTrail(trail, hold);
+    } else if (trail.count >= TRAIL_MAX_POINTS) {
       trail.status = 'full';
       return trail;
     }
@@ -506,6 +643,7 @@ export function advanceWalk(
     trail.prev = trail.head;
     trail.head = cont.next;
     push(trail, cont.next);
+    trail.steps++;
     const dx = trail.head.x - trail.start.x;
     const dy = trail.head.y - trail.start.y;
     if (dx * dx + dy * dy < eps2 && trail.count > 3) {
@@ -548,12 +686,20 @@ export function trailGeometry(trail: StrandTrail): TrailGeometry | null {
     xy[i * 2] = trail.xy[i * 2] - anchor.x;
     xy[i * 2 + 1] = trail.xy[i * 2 + 1] - anchor.y;
   }
+  // Arc is rebased onto the window (arc[0] = 0): for an untrimmed trail this
+  // changes nothing, and for a trimmed one it keeps the rainbow spanning the
+  // points actually held — and keeps the f32 arc values small no matter how
+  // far the odometer has run.
+  const arcBase = trail.arc[0];
+  const arc = new Float32Array(n);
+  for (let i = 0; i < n; i++) arc[i] = trail.arc[i] - arcBase;
   const geom: TrailGeometry = {
+    ...(trail.color ? { color: trail.color } : {}),
     origin: anchor,
     xy,
-    arc: new Float32Array(trail.arc.subarray(0, n)),
+    arc,
     pointCount: n,
-    totalLength: trail.arc[n - 1],
+    totalLength: trail.arc[n - 1] - arcBase,
     version: trail.version,
   };
   trail.geom = geom;
