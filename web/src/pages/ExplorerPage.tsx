@@ -82,7 +82,8 @@ import {
 import { matchingVectorToRecord } from '../lib/matchingModel';
 import { buildTilingModel } from '../lib/tilingModel';
 import { overlayChordsD, pathsBox } from '../lib/overlayPaths';
-import { EXPLORER_ROUTE } from '../lib/urlState';
+import { EXPLORER_ROUTE, shareUrl } from '../lib/urlState';
+import { copyText, shareLinkBase } from '../hooks/shareLink';
 import { expandBox, isEmptyBox, roundCamera, transformBox } from '../lib/viewport';
 import { sceneFilename, serializeSceneSvg } from '../lib/exportScene';
 import { downloadBlob, downloadText, svgTextToPngBlob } from './sceneDownload';
@@ -168,6 +169,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
   const infinite = mode === 'infinite';
   const infiniteAvailable = supportsInfiniteMode(family);
   const [shareNote, setShareNote] = useState<string | null>(null);
+  const [shareFallback, setShareFallback] = useState<string | null>(null);
 
   const onTraceSeed = useCallback(
     (seed: readonly [number, number, number, number] | null): void => {
@@ -176,17 +178,21 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
     [dispatch],
   );
 
+  // The URL is built from the CURRENT state, not location.href — the hash
+  // sync is debounced, so the address bar can be a beat behind the tap that
+  // set the seed.
   const copyShareLink = useCallback((): void => {
-    const url = typeof window !== 'undefined' ? window.location.href : '';
-    if (typeof navigator !== 'undefined' && navigator.clipboard) {
-      navigator.clipboard.writeText(url).then(
-        () => setShareNote('Link copied — it replays this chase from the same chord.'),
-        () => setShareNote(url),
-      );
-    } else {
-      setShareNote(url);
-    }
-  }, []);
+    const url = shareUrl(state, shareLinkBase());
+    void copyText(url).then((ok) => {
+      if (ok) {
+        setShareFallback(null);
+        setShareNote('Link copied — it replays this chase from the same chord.');
+      } else {
+        setShareNote('Copying is blocked here — select the link below and copy it.');
+        setShareFallback(url);
+      }
+    });
+  }, [state]);
 
   const [hoverEdge, setHoverEdge] = useState<EdgeRef | null>(null);
   const [hoverMajor, setHoverMajor] = useState<number | null>(null);
@@ -1028,6 +1034,17 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
               <p className="muted" role="status">
                 {shareNote}
               </p>
+            ) : null}
+            {shareFallback ? (
+              <input
+                data-testid="share-fallback"
+                aria-label="Share link"
+                readOnly
+                value={shareFallback}
+                style={{ width: '100%' }}
+                onFocus={(e) => e.currentTarget.select()}
+                onClick={(e) => e.currentTarget.select()}
+              />
             ) : null}
           </>
         ) : (
