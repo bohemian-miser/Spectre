@@ -61,6 +61,13 @@ export const SITE_NAV: readonly NavItem[] = Object.freeze([
     blurb: 'Pan and zoom an endless spectre tiling, expanded on demand around the camera.',
   },
   {
+    id: 'supertiles',
+    label: 'Supertiles',
+    entry: 'supertiles.html',
+    status: 'ready',
+    blurb: 'Push a supertile apart into the pieces it is made of, one substitution at a time.',
+  },
+  {
     id: 'legacy',
     label: 'Legacy p5 app',
     entry: 'legacy.html',
