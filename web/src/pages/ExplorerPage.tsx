@@ -1196,6 +1196,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
               linesOn={linesOn && !!infiniteChords}
               traceOn={traceOn && !!infiniteChords}
               followOn={followOn && traceOn && !!infiniteChords}
+              fillsOn={hasFlag(state, FLAG.BACKGROUNDS)}
             />
           </InfiniteCanvas>
         ) : !heavy ? (
@@ -1319,8 +1320,10 @@ function InfiniteHud(props: {
   readonly linesOn: boolean;
   readonly traceOn: boolean;
   readonly followOn: boolean;
+  /** Tile backgrounds; with them off, supertile glyphs are not drawn either. */
+  readonly fillsOn: boolean;
 }): JSX.Element {
-  const { subscribeRef, linesOn, traceOn, followOn } = props;
+  const { subscribeRef, linesOn, traceOn, followOn, fillsOn } = props;
   const [status, setStatus] = useState<InfiniteCanvasStatus | null>(null);
   const latest = useRef<InfiniteCanvasStatus | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1354,11 +1357,13 @@ function InfiniteHud(props: {
     <div className="map-hud" data-testid="explorer-infinite-hud" role="status">
       <span>{status?.mode === 'pending' || !status ? 'starting…' : status.mode}</span>
       <span data-testid="inf-instances">{(cut?.count ?? 0).toLocaleString('en-US')} instances</span>
-      <span>
+      <span data-testid="inf-lod">
         {cut
           ? cut.cutLevel === 0
             ? 'LOD: individual tiles'
-            : `LOD: level-${cut.cutLevel} glyphs`
+            : fillsOn
+              ? `LOD: level-${cut.cutLevel} glyphs`
+              : `LOD: level-${cut.cutLevel} glyphs — hidden (backgrounds off)`
           : 'LOD: —'}
       </span>
       <span data-testid="inf-depth">
@@ -1390,7 +1395,7 @@ function InfiniteHud(props: {
           {trace.foundSkipped ? 'find: zoom in to tiles' : `${trace.found} circuits on screen`}
         </span>
       ) : null}
-      <span>
+      <span data-testid="inf-draw">
         query {cut ? cut.queryMs.toFixed(1) : '—'} ms · draw {draw ? draw.drawMs.toFixed(1) : '—'} ms
         {draw ? ` · ${draw.drawCalls} call${draw.drawCalls === 1 ? '' : 's'}` : ''}
       </span>

@@ -887,18 +887,29 @@ export function createWebGLRenderer(
         const ky = (-2 * cam.scale * dpr) / bh;
 
         if (cutLevel > 0) {
-          G.useProgram(progGlyph);
-          G.uniform4f(uGlyphView, vx, vy, kx, ky);
-          G.uniform3fv(uGlyphPal, aggPalette);
-          const fit = glyphFitForCut(cutLevel);
-          G.uniform4f(uFitLin, fit[0], fit[1], fit[3], fit[4]);
-          G.uniform2f(uFitOff, fit[2], fit[5]);
-          G.activeTexture(G.TEXTURE0);
-          G.bindTexture(G.TEXTURE_2D, glyphTex);
-          G.uniform1i(uGlyphTexLoc, 0);
-          G.bindVertexArray(vaoGlyph);
-          G.drawArraysInstanced(G.TRIANGLES, 0, glyphVertCount, count);
-          drawCalls++;
+          // Supertile glyphs are tile BACKGROUNDS, exactly like the leaf fills
+          // below: a solid shape in its type's colour. So "backgrounds off"
+          // has to silence them too — otherwise zooming out past the leaf cut
+          // replaces a clean line drawing with a carpet of coloured blobs,
+          // which is the one thing the switch is there to prevent. (The
+          // Canvas2D renderer has always skipped them; this is the WebGL2 path
+          // catching up.) Nothing else draws at an aggregate cut — strand
+          // lines are leaf-only — so with fills off the viewport is
+          // deliberately empty here, and the HUD says so.
+          if (showFills) {
+            G.useProgram(progGlyph);
+            G.uniform4f(uGlyphView, vx, vy, kx, ky);
+            G.uniform3fv(uGlyphPal, aggPalette);
+            const fit = glyphFitForCut(cutLevel);
+            G.uniform4f(uFitLin, fit[0], fit[1], fit[3], fit[4]);
+            G.uniform2f(uFitOff, fit[2], fit[5]);
+            G.activeTexture(G.TEXTURE0);
+            G.bindTexture(G.TEXTURE_2D, glyphTex);
+            G.uniform1i(uGlyphTexLoc, 0);
+            G.bindVertexArray(vaoGlyph);
+            G.drawArraysInstanced(G.TRIANGLES, 0, glyphVertCount, count);
+            drawCalls++;
+          }
         } else {
           if (showFills) {
             G.useProgram(progLeaf);

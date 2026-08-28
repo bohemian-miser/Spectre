@@ -213,31 +213,33 @@ export function createCanvas2dRenderer(canvas: HTMLCanvasElement): MapRenderer |
         Math.min(cut.count, CANVAS2D_MAX_INSTANCES) <= OUTLINE_MAX_INSTANCES;
       const strokeAlpha = outlineAlphaForScale(cam.scale);
 
-      for (const [typeByte, list] of byType) {
-        if (!showFills) {
-          drawn += list.length;
-          continue;
-        }
-        const path = aggregate
-          ? (glyphPaths as Path2D[])[typeByte - AGGREGATE_TYPE_BASE]
-          : leafPath;
-        C.fillStyle = aggregate
-          ? aggColors[typeByte - AGGREGATE_TYPE_BASE]
-          : leafColors[typeByte] ?? '#c8c8c8';
-        for (const i of list) {
-          const m = instanceScreenTransform(
-            cam,
-            cssW,
-            cssH,
-            cut.origin,
-            cut.pos[i * 2],
-            cut.pos[i * 2 + 1],
-            cut.code[i],
-            fit,
-          );
-          C.setTransform(dpr * m[0], dpr * m[3], dpr * m[1], dpr * m[4], dpr * m[2], dpr * m[5]);
-          C.fill(path);
-          drawn++;
+      // Backgrounds off means no tile fills at ANY level of detail — leaf
+      // tiles and supertile glyphs alike. Skipping the pass outright (rather
+      // than counting instances nobody filled) keeps `instances`/`drawCalls`
+      // honest: they report what was actually painted.
+      if (showFills) {
+        for (const [typeByte, list] of byType) {
+          const path = aggregate
+            ? (glyphPaths as Path2D[])[typeByte - AGGREGATE_TYPE_BASE]
+            : leafPath;
+          C.fillStyle = aggregate
+            ? aggColors[typeByte - AGGREGATE_TYPE_BASE]
+            : leafColors[typeByte] ?? '#c8c8c8';
+          for (const i of list) {
+            const m = instanceScreenTransform(
+              cam,
+              cssW,
+              cssH,
+              cut.origin,
+              cut.pos[i * 2],
+              cut.pos[i * 2 + 1],
+              cut.code[i],
+              fit,
+            );
+            C.setTransform(dpr * m[0], dpr * m[3], dpr * m[1], dpr * m[4], dpr * m[2], dpr * m[5]);
+            C.fill(path);
+            drawn++;
+          }
         }
       }
 
