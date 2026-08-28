@@ -72,6 +72,7 @@ export type ExplorerAction =
   | { readonly type: 'setKeepCircuits'; readonly keepCircuits: boolean }
   | { readonly type: 'setKeepTails'; readonly keepTails: boolean }
   | { readonly type: 'setFindCircuits'; readonly findCircuits: boolean }
+  | { readonly type: 'setPersistFound'; readonly persistFound: boolean }
   | { readonly type: 'setPace'; readonly pace: number | null }
   | {
       readonly type: 'setTraceSeed';
@@ -261,6 +262,17 @@ export function explorerReducer(state: ExplorerState, action: ExplorerAction): E
         return rest as ExplorerState;
       }
       return { ...state, findCircuits: true };
+    }
+
+    // Default-OFF too: the found circuits are only held past their own zoom
+    // level when someone asks for it.
+    case 'setPersistFound': {
+      if (action.persistFound === explorerPersistFound(state)) return state;
+      if (!action.persistFound) {
+        const { persistFound: _p, ...rest } = state;
+        return rest as ExplorerState;
+      }
+      return { ...state, persistFound: true };
     }
 
     case 'setRootTile':
@@ -471,6 +483,11 @@ export function explorerKeepTails(state: ExplorerState): boolean {
 /** Whether every on-screen circuit is found and coloured. Default OFF. */
 export function explorerFindCircuits(state: ExplorerState): boolean {
   return state.findCircuits === true;
+}
+
+/** Whether found circuits stay drawn once the camera outruns find-all. */
+export function explorerPersistFound(state: ExplorerState): boolean {
+  return state.persistFound === true;
 }
 
 /** Chase pace in tiles/second, or null for full speed (the default). */

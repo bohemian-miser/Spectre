@@ -236,12 +236,20 @@ describe('kt / fc params (map codec)', () => {
     const base = { ...DEFAULT_MAP_STATE, lines: true };
     expect(encodeMapQuery(base)).not.toContain('kt=');
     expect(encodeMapQuery(base)).not.toContain('fc=');
-    const q = encodeMapQuery({ ...base, keepTails: false, findCircuits: true });
+    const q = encodeMapQuery({
+      ...base,
+      keepTails: false,
+      findCircuits: true,
+      persistFound: true,
+    });
     expect(q).toContain('kt=0');
     expect(q).toContain('fc=1');
     const back = decodeMapQuery(q);
     expect(back.keepTails).toBe(false);
     expect(back.findCircuits).toBe(true);
+    expect(back.persistFound).toBe(true);
+    expect(q).toContain('pf=1');
+    expect(encodeMapQuery({ ...base, persistFound: false })).not.toContain('pf=');
     expect(encodeMapQuery(back)).toBe(q);
   });
 });

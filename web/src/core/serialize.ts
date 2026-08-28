@@ -123,6 +123,12 @@ export interface ExplorerState {
    */
   readonly findCircuits?: boolean;
   /**
+   * Keep the circuits found at a leaf cut drawn when the camera zooms out past
+   * what find-all can analyse (`pf=1`). Additive: omitted when off (the
+   * default). Read it as `state.persistFound ?? false`.
+   */
+  readonly persistFound?: boolean;
+  /**
    * Chase pace in tiles per second (`fp=`). Absent = full speed (the
    * default); present = watch the walk explore tile by tile at this rate.
    */
@@ -389,6 +395,7 @@ export function encodeExplorerState(s: ExplorerState): URLSearchParams {
   if (s.keepCircuits === false) q.set('kc', '0');
   if (s.keepTails === false) q.set('kt', '0');
   if (s.findCircuits) q.set('fc', '1');
+  if (s.persistFound) q.set('pf', '1');
   if (s.pace !== undefined) q.set('fp', String(clampTracePace(s.pace)));
   if (s.traceSeed) q.set('ts', encodeTraceSeed(s.traceSeed));
   return q;
@@ -490,6 +497,8 @@ export function decodeExplorerState(q: URLSearchParams): ExplorerState {
   const keepTails = ktRaw === '0' || ktRaw === 'false' ? false : undefined;
   const fcRaw = q.get('fc');
   const findCircuits = fcRaw === '1' || fcRaw === 'true' ? true : undefined;
+  const pfRaw = q.get('pf');
+  const persistFound = pfRaw === '1' || pfRaw === 'true' ? true : undefined;
   const fpRaw = Number.parseInt(q.get('fp') ?? '', 10);
   const pace = Number.isFinite(fpRaw) ? clampTracePace(fpRaw) : undefined;
   const tsRaw = q.get('ts');
@@ -517,6 +526,7 @@ export function decodeExplorerState(q: URLSearchParams): ExplorerState {
     ...(keepCircuits === false ? { keepCircuits } : {}),
     ...(keepTails === false ? { keepTails } : {}),
     ...(findCircuits ? { findCircuits } : {}),
+    ...(persistFound ? { persistFound } : {}),
     ...(pace !== undefined ? { pace } : {}),
     ...(traceSeed ? { traceSeed } : {}),
   };

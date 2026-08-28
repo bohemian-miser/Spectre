@@ -49,8 +49,10 @@ import { useElementSize } from '../../hooks/useElementSize';
 import { createTilingClient, type TilingClient } from '../../workers/tilingClient';
 import {
   DEFAULT_SCALE,
+  VIEW_MARGIN,
   createCamera,
   panBy,
+  scaleForTileCount,
   screenToWorld,
   viewRectFor,
   zoomAt,
@@ -138,6 +140,12 @@ const FEED_BUDGET = 100_000;
  */
 const FIND_MAX_INSTANCES = 30_000;
 const MAX_FOUND_CIRCUITS = 400;
+/**
+ * `zoomToCircuitView` aims at this fraction of the binding ceiling rather than
+ * at the ceiling itself. The tile count a viewport holds is an area estimate,
+ * so landing exactly on the limit would flip to "too coarse" on the first pan.
+ */
+const CIRCUIT_VIEW_HEADROOM = 0.8;
 
 export interface InfiniteCutInfo {
   readonly count: number;
@@ -173,6 +181,11 @@ export interface InfiniteTraceInfo {
   readonly found: number;
   /** True when find-all is on but the cut is too big/coarse to analyse. */
   readonly foundSkipped: boolean;
+  /**
+   * The drawn circuits are HELD from a closer view: the camera has since gone
+   * past what find-all can compute, and the persist toggle kept them.
+   */
+  readonly foundStale: boolean;
 }
 
 const NO_TRACE: InfiniteTraceInfo = Object.freeze({
@@ -183,6 +196,7 @@ const NO_TRACE: InfiniteTraceInfo = Object.freeze({
   circuits: 0,
   found: 0,
   foundSkipped: false,
+  foundStale: false,
 });
 
 export interface InfiniteCanvasStatus {
@@ -211,6 +225,13 @@ export interface InfiniteCanvasApi {
   traceAt(x: number, y: number): boolean;
   /** Drop the traced strand. */
   clearTrace(): void;
+  /**
+   * Zoom to the widest view that find-all can still analyse — as far out as
+   * the display can go while the engine is still emitting individual tiles
+   * within the find pass's ceiling. Only the scale moves; the centre stays.
+   * Returns the scale it set, or null before the first layout.
+   */
+  zoomToCircuitView(): number | null;
 }
 
 export interface InfiniteCanvasProps {
@@ -255,6 +276,14 @@ export interface InfiniteCanvasProps {
    * {@link FIND_MAX_INSTANCES} tiles; coarser views skip and say so.
    */
   readonly findCircuits?: boolean;
+  /**
+   * Keep the circuits found at a leaf cut on screen when the camera zooms out
+   * past what find-all can compute. The geometries are world-anchored, so they
+   * keep drawing in the right place at any zoom — this is the only way to see
+   * a whole neighbourhood's circuits at once, since finding them needs
+   * individual tiles but appreciating the pattern does not.
+   */
+  readonly persistFound?: boolean;
   /**
    * Chase pace, in tiles per second — the walk explores that many tiles and
    * no more, so it can be watched tile by tile. null/undefined = full speed.
@@ -301,6 +330,7 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
     keepCircuits = false,
     keepTails = false,
     findCircuits = false,
+    persistFound = false,
     followPace = null,
     traceSeed = null,
     onTraceSeed,
@@ -362,9 +392,11 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
   keepTailsRef.current = keepTails;
   const findOnRef = useRef(findCircuits);
   findOnRef.current = findCircuits;
+  const persistFoundRef = useRef(persistFound);
+  persistFoundRef.current = persistFound;
   /** Circuits the find-all toggle carved out of the current display cut. */
   const foundRef = useRef<readonly TrailGeometry[]>([]);
-  const foundInfoRef = useRef({ found: 0, skipped: false });
+  const foundInfoRef = useRef({ found: 0, skipped: false, stale: false });
   const followRafRef = useRef(0);
   const followLastRef = useRef(0);
   const paceRef = useRef(followPace);
@@ -455,7 +487,7 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
   const publishTrace = useCallback((): void => {
     const trail = trailRef.current;
     const circuits = keptRef.current.length;
-    const { found, skipped } = foundInfoRef.current;
+    const { found, skipped, stale } = foundInfoRef.current;
     publish({
       trace: trail
         ? {
@@ -466,9 +498,10 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
             circuits,
             found,
             foundSkipped: skipped,
+            foundStale: stale,
           }
         : circuits || found || skipped
-          ? { ...NO_TRACE, circuits, found, foundSkipped: skipped }
+          ? { ...NO_TRACE, circuits, found, foundSkipped: skipped, foundStale: stale }
           : NO_TRACE,
     });
   }, [publish]);
@@ -565,7 +598,7 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
     const had = foundRef.current.length > 0 || foundInfoRef.current.skipped;
     const apply = (geoms: readonly TrailGeometry[], skipped: boolean): void => {
       foundRef.current = geoms;
-      foundInfoRef.current = { found: geoms.length, skipped };
+      foundInfoRef.current = { found: geoms.length, skipped, stale: false };
       syncOverlays();
       publishTrace();
       scheduleDraw();
@@ -577,6 +610,15 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
       return;
     }
     if (cut.cutLevel !== 0 || cut.truncated || cut.count > FIND_MAX_INSTANCES) {
+      // Too coarse to FIND circuits — but the ones already found are
+      // world-anchored, so they can go on being drawn while the camera pulls
+      // back. That is the point of the persist toggle: finding needs
+      // individual tiles, seeing the pattern they make does not.
+      if (persistFoundRef.current && foundRef.current.length > 0) {
+        foundInfoRef.current = { found: foundRef.current.length, skipped: false, stale: true };
+        publishTrace();
+        return;
+      }
       apply([], true);
       return;
     }
@@ -1296,6 +1338,26 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
       isBusy: () => schedulerRef.current?.inFlight ?? false,
       traceAt,
       clearTrace,
+      zoomToCircuitView: () => {
+        const { width, height } = sizeRef.current;
+        if (width <= 0 || height <= 0) return null;
+        // Two ceilings bind: the find pass's own, and the engine's instance
+        // budget (past which it cuts to supertile glyphs and there are no
+        // individual tiles to weld at all). Aim just inside the lower one, so
+        // the view sits at the boundary rather than tipping over it.
+        //
+        // The count that matters is the CUT's, and the cut covers the padded
+        // query rect rather than the viewport — 1.2× per axis is 1.44× the
+        // area, so sizing the viewport to the ceiling overshoots it by half
+        // as much again.
+        const ceiling = Math.min(FIND_MAX_INSTANCES, worldRef.current.budget);
+        const inViewport = (ceiling * CIRCUIT_VIEW_HEADROOM) / VIEW_MARGIN ** 2;
+        const scale = scaleForTileCount(inViewport, width, height);
+        stopInertia();
+        camRef.current = createCamera(camRef.current.cx, camRef.current.cy, scale);
+        onCameraChanged();
+        return scale;
+      },
     };
     return () => {
       apiRef.current = null;

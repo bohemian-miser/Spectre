@@ -75,6 +75,7 @@ import {
   explorerLineWidth,
   explorerMode,
   explorerPace,
+  explorerPersistFound,
   explorerTrace,
   explorerTrailHold,
   hasFlag,
@@ -165,6 +166,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
   const keepCircuitsOn = explorerKeepCircuits(state);
   const keepTailsOn = explorerKeepTails(state);
   const findOn = explorerFindCircuits(state);
+  const persistFoundOn = explorerPersistFound(state);
   const pace = explorerPace(state);
   const infinite = mode === 'infinite';
   const infiniteAvailable = supportsInfiniteMode(family);
@@ -1004,6 +1006,19 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
           />
           <span>Find all circuits on screen</span>
         </label>
+        <label className="control-row">
+          <input
+            type="checkbox"
+            aria-label="Keep found circuits on screen when zoomed out"
+            data-testid="persist-found"
+            checked={persistFoundOn}
+            disabled={!infinite || !findOn}
+            onChange={(e) =>
+              dispatch({ type: 'setPersistFound', persistFound: e.target.checked })
+            }
+          />
+          <span>Keep them when you zoom out</span>
+        </label>
         {infinite ? (
           <>
             <p className="muted" role="note">
@@ -1011,8 +1026,19 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
               rainbow to the solid colour of its length the moment it closes (the rainbow stays
               for tails), and the keep toggles hold finished strands lit while you tap the next.
               &ldquo;Find all&rdquo; welds and traces everything on screen and colours every
-              circuit by length; it needs individual tiles (zoom in if it says so).
+              circuit by length. Finding them needs individual tiles, so &ldquo;Circuit
+              zoom&rdquo; parks the camera at the widest view that still has them; past that,
+              &ldquo;keep them&rdquo; holds the ones already found while you pull further back.
             </p>
+            <div className="control-row">
+              <button
+                type="button"
+                data-testid="circuit-zoom"
+                onClick={() => infiniteApiRef.current?.zoomToCircuitView()}
+              >
+                Circuit zoom
+              </button>
+            </div>
             <div className="control-row">
               <button
                 type="button"
@@ -1183,6 +1209,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
             keepCircuits={keepCircuitsOn && traceOn && !!infiniteChords}
             keepTails={keepTailsOn && traceOn && !!infiniteChords}
             findCircuits={findOn && !!infiniteChords}
+            persistFound={persistFoundOn}
             followPace={pace}
             traceSeed={state.traceSeed ?? null}
             onTraceSeed={onTraceSeed}
@@ -1392,7 +1419,11 @@ function InfiniteHud(props: {
       ) : null}
       {trace && (trace.found > 0 || trace.foundSkipped) ? (
         <span data-testid="inf-found">
-          {trace.foundSkipped ? 'find: zoom in to tiles' : `${trace.found} circuits on screen`}
+          {trace.foundSkipped
+            ? 'find: zoom in to tiles'
+            : trace.foundStale
+              ? `${trace.found} circuits held from a closer view`
+              : `${trace.found} circuits on screen`}
         </span>
       ) : null}
       <span data-testid="inf-draw">

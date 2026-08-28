@@ -79,6 +79,8 @@ export interface MapUrlState {
   readonly keepTails?: boolean;
   /** Find and colour every on-screen circuit (`fc=1`), default OFF. */
   readonly findCircuits?: boolean;
+  /** Hold found circuits on screen past find-all's zoom (`pf=1`), default OFF. */
+  readonly persistFound?: boolean;
   /** Chase pace in tiles/second (`fp=`); absent/null = full speed. */
   readonly pace?: number | null;
   /** The tapped chord the current trace grew from (`ts=`), for share links. */
@@ -123,6 +125,7 @@ export const DEFAULT_MAP_STATE: MapUrlState = {
   keepCircuits: true,
   keepTails: true,
   findCircuits: false,
+  persistFound: false,
   pace: null,
   traceSeed: null,
 };
@@ -179,6 +182,7 @@ export function encodeMapQuery(state: MapUrlState): string {
   if (state.keepCircuits === false) q.set('kc', '0');
   if (state.keepTails === false) q.set('kt', '0');
   if (state.findCircuits) q.set('fc', '1');
+  if (state.persistFound) q.set('pf', '1');
   if (state.pace != null) q.set('fp', String(clampTracePace(state.pace)));
   if (state.traceSeed) q.set('ts', encodeTraceSeed(state.traceSeed));
   return q.toString();
@@ -206,6 +210,7 @@ export function decodeMapQuery(query: string): MapUrlState {
   const kcRaw = q.get('kc');
   const ktRaw = q.get('kt');
   const fcRaw = q.get('fc');
+  const pfRaw = q.get('pf');
   const fpRaw = num('fp');
   const tsRaw = q.get('ts');
   const eRaw = q.get('e');
@@ -227,6 +232,7 @@ export function decodeMapQuery(query: string): MapUrlState {
     keepCircuits: !(kcRaw === '0' || kcRaw === 'false'),
     keepTails: !(ktRaw === '0' || ktRaw === 'false'),
     findCircuits: fcRaw === '1' || fcRaw === 'true',
+    persistFound: pfRaw === '1' || pfRaw === 'true',
     pace: fpRaw === null ? null : clampTracePace(fpRaw),
     traceSeed: tsRaw ? (decodeTraceSeed(tsRaw) ?? null) : null,
   };
