@@ -167,3 +167,33 @@
     width: 104px;
   }
 }
+
+/* Rule + analysis panel below the viewport. The Explorer keeps these in a
+   sidebar; here the picture is the wide thing, so they run underneath it in
+   columns that reflow rather than squeezing the viewport. */
+.supertiles-rulepanel {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+/* The ten matching editors want width, not a column: given one they stack into
+   a tower taller than the picture they belong to. */
+.supertiles-rulepanel .explorer-matchings,
+.supertiles-rulepanel .explorer-advanced {
+  grid-column: 1 / -1;
+}
+.supertiles-rulepanel fieldset,
+.supertiles-rulepanel details {
+  margin: 0;
+}
+/* The matching grid is sized for a sidebar; here it runs across the page. */
+.supertiles-rulepanel .matching-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.supertile-strand {
+  pointer-events: none;
+}

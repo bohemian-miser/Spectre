@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
+import { comboToMatchingIndices } from '../../../core';
 import {
+  DEFAULT_COMBO,
+  DEFAULT_SUBSET,
   DEFAULT_SUPERTILES_STATE,
   SUPERTILES_ROUTE,
   decodeSupertilesQuery,
@@ -26,6 +29,9 @@ describe('supertiles URL codec', () => {
       depth: 2,
       showTiles: false,
       showLabels: false,
+      lines: true,
+      subset: [1, 5],
+      matching: comboToMatchingIndices('spectre', [1, 5], '0000000000'),
     };
     expect(decodeSupertilesQuery(encodeSupertilesQuery(state))).toEqual(state);
   });
@@ -38,6 +44,9 @@ describe('supertiles URL codec', () => {
       depth: 3,
       showTiles: true,
       showLabels: false,
+      lines: false,
+      subset: DEFAULT_SUBSET,
+      matching: comboToMatchingIndices('spectre', DEFAULT_SUBSET, DEFAULT_COMBO),
     };
     const once = encodeSupertilesQuery(state);
     expect(encodeSupertilesQuery(decodeSupertilesQuery(once))).toBe(once);
@@ -46,6 +55,38 @@ describe('supertiles URL codec', () => {
   it('carries only what changed', () => {
     const q = encodeSupertilesQuery({ ...DEFAULT_SUPERTILES_STATE, level: 5 });
     expect(q).toBe('lv=5');
+  });
+
+  it('carries the rule once lines are on, and reads it back', () => {
+    const q = encodeSupertilesQuery({
+      ...DEFAULT_SUPERTILES_STATE,
+      lines: true,
+      subset: [1, 5],
+      matching: comboToMatchingIndices('spectre', [1, 5], '0000000000'),
+    });
+    expect(q).toContain('ln=1');
+    expect(q).toContain('e=15');
+    const back = decodeSupertilesQuery(q);
+    expect(back.lines).toBe(true);
+    expect(back.subset).toEqual([1, 5]);
+    expect(back.matching).toEqual(comboToMatchingIndices('spectre', [1, 5], '0000000000'));
+  });
+
+  it('reads the lossless matching vector when a link carries one', () => {
+    // `m=` is the fallback the Explorer's codec also uses, for matchings no
+    // combination string can name. A link carrying one must survive intact.
+    const vector = comboToMatchingIndices('spectre', DEFAULT_SUBSET, DEFAULT_COMBO);
+    const back = decodeSupertilesQuery(`ln=1&e=2578&m=${vector.join('.')}`);
+    expect(back.matching).toEqual(vector);
+    // A malformed entry falls back to 0 rather than producing NaN geometry.
+    expect(decodeSupertilesQuery('ln=1&e=2578&m=0.x.0').matching).toHaveLength(vector.length);
+    expect(decodeSupertilesQuery('ln=1&e=2578&m=0.x.0').matching.every(Number.isFinite)).toBe(true);
+  });
+
+  it('prefers the combination string whenever one exists', () => {
+    const q = encodeSupertilesQuery({ ...DEFAULT_SUPERTILES_STATE, lines: true });
+    expect(q).toContain('c=');
+    expect(q).not.toContain('m=');
   });
 
   it('clamps hostile input instead of trusting it', () => {

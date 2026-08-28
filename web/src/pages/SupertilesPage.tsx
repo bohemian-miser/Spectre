@@ -17,9 +17,19 @@
 
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 
-import { PanZoom, type PanZoomApi } from '../components';
-import { SUPER_RULES, TILE_NAMES, type TileTypeId } from '../core';
+import {
+  PanZoom,
+  SeamContractControls,
+  StatsSummary,
+  StrandRuleControls,
+  type PanZoomApi,
+} from '../components';
+import { LEAF_ORDER, SUPER_RULES, TILE_NAMES, type TileTypeId } from '../core';
+import { useCircuitAnalysis } from '../hooks/useCircuitAnalysis';
+import { matchingVectorToRecord } from '../lib/matchingModel';
 import { tileColor } from '../lib/palette';
+import { buildLeafChordTable } from './map/chords';
+import { STRAND_DRAW_BUDGET, buildExplodedStrands } from './supertiles/strands';
 import { ExplodedView, LABEL_BUDGET, TILE_DRAW_BUDGET } from './supertiles/ExplodedView';
 import {
   MAX_DEPTH,
@@ -61,6 +71,9 @@ export function SupertilesPage(props: SupertilesPageProps): JSX.Element {
         : { ...DEFAULT_SUPERTILES_STATE };
   }
   const [state, setState] = useState<SupertilesUrlState>(initialRef.current);
+  const [highlightLengths, setHighlightLengths] = useState<ReadonlySet<number>>(
+    () => new Set<number>(),
+  );
   const panRef = useRef<PanZoomApi | null>(null);
   const urlTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -114,6 +127,63 @@ export function SupertilesPage(props: SupertilesPageProps): JSX.Element {
       }),
     [deferred.rootTile, deferred.level, deferred.gap, deferred.depth],
   );
+
+  // --- the strand rule --------------------------------------------------
+  //
+  // The view already shows a ROOTED patch — a level-L supertile of one flavour
+  // — which is exactly what circuit analysis needs. So the same hook the
+  // Explorer uses runs here on the same kind of input, and the same stats
+  // panel reports it; nothing about the analysis is re-implemented.
+  const linesOn = deferred.lines && deferred.subset.length > 0;
+
+  const chords = useMemo(
+    () =>
+      linesOn
+        ? buildLeafChordTable(deferred.subset, deferred.matching, deferred.contracts)
+        : null,
+    [linesOn, deferred.subset, deferred.matching, deferred.contracts],
+  );
+
+  const analysisInput = useMemo(
+    () =>
+      linesOn
+        ? {
+            family: 'spectre' as const,
+            rootTile: deferred.rootTile,
+            level: deferred.level,
+            subset: deferred.subset,
+            matchingIndexByType: matchingVectorToRecord('spectre', deferred.matching),
+            contracts: deferred.contracts,
+            rainbowTails: false,
+          }
+        : null,
+    [linesOn, deferred.rootTile, deferred.level, deferred.subset, deferred.matching, deferred.contracts],
+  );
+  const analysis = useCircuitAnalysis(analysisInput, { workerMinLevel: 3 });
+
+  /**
+   * The drawn lines. Welded and traced where the tiling really puts them and
+   * then cut into per-piece runs, so a strand crossing between two pieces
+   * visibly comes apart when they are pushed away from each other.
+   */
+  const strands = useMemo(() => buildExplodedStrands(layout, chords), [layout, chords]);
+
+  const circuitColors = useMemo(
+    () => new Map(analysis.result?.circuitColors ?? []),
+    [analysis.result],
+  );
+
+  const onSelectLength = useCallback((length: number, additive: boolean): void => {
+    setHighlightLengths((prev) => {
+      if (additive) {
+        const next = new Set(prev);
+        if (!next.delete(length)) next.add(length);
+        return next;
+      }
+      return prev.size === 1 && prev.has(length) ? new Set<number>() : new Set([length]);
+    });
+  }, []);
+  const clearLengths = useCallback(() => setHighlightLengths(new Set<number>()), []);
 
   const fitBounds = useMemo(
     () => ({ min: layout.bounds.min, max: layout.bounds.max }),
@@ -229,6 +299,17 @@ export function SupertilesPage(props: SupertilesPageProps): JSX.Element {
             <span>Labels</span>
           </label>
 
+          <label className="supertiles-control supertiles-check">
+            <input
+              type="checkbox"
+              aria-label="Draw the strand lines and analyse the circuits"
+              data-testid="st-lines"
+              checked={state.lines}
+              onChange={(e) => patch({ lines: e.target.checked })}
+            />
+            <span>Circuit lines</span>
+          </label>
+
           <button type="button" onClick={() => panRef.current?.reset()}>
             Fit view
           </button>
@@ -267,6 +348,9 @@ export function SupertilesPage(props: SupertilesPageProps): JSX.Element {
               camera={api.camera}
               showTiles={state.showTiles}
               showLabels={state.showLabels}
+              strands={strands.runs}
+              circuitColors={circuitColors}
+              highlightLengths={highlightLengths}
               idPrefix="st"
             />
           )}
@@ -287,7 +371,73 @@ export function SupertilesPage(props: SupertilesPageProps): JSX.Element {
           {state.showLabels && !labelsDrawn ? (
             <span data-testid="st-labels-note">labels off — too many pieces</span>
           ) : null}
+          {linesOn ? (
+            <span data-testid="st-strands">
+              {strands.skipped
+                ? `lines: over ${fmt(STRAND_DRAW_BUDGET)} tiles`
+                : `${fmt(strands.circuitCount)} circuits · ${fmt(strands.tailCount)} wanderers`}
+            </span>
+          ) : null}
         </div>
+      </div>
+
+      <div className="supertiles-rulepanel">
+        <StrandRuleControls
+          family="spectre"
+          subset={state.subset}
+          matching={state.matching}
+          contracts={state.contracts}
+          onSubsetChange={(subset) => patch({ subset, lines: true })}
+          onToggleMajor={(major) =>
+            patch({
+              subset: state.subset.includes(major)
+                ? state.subset.filter((m) => m !== major)
+                : [...state.subset, major].sort((a, b) => a - b),
+              lines: true,
+            })
+          }
+          onMatchingChange={(tileType, index) =>
+            patch({
+              matching: LEAF_ORDER.map((t, i) => (t === tileType ? index : state.matching[i] ?? 0)),
+            })
+          }
+        />
+
+        <SeamContractControls
+          family="spectre"
+          subset={state.subset}
+          contracts={state.contracts}
+          onChange={(major, contract) =>
+            patch({ contracts: { ...(state.contracts ?? {}), [major]: contract } })
+          }
+          onReset={() => patch({ contracts: undefined })}
+        />
+
+        <fieldset>
+          <legend>Analysis</legend>
+          {!linesOn ? (
+            <p className="muted" data-testid="st-analysis-off">
+              Turn “Circuit lines” on to weld and trace this supertile.
+            </p>
+          ) : (
+            <>
+              <p className="muted">
+                The pieces are a rendering device; the circuits are not. They are welded and
+                traced where the tiling really puts the tiles, so what you see is the level-
+                {deferred.level} {deferred.rootTile} supertile's own answer — and a strand that
+                runs between two pieces comes apart exactly where it crosses.
+              </p>
+              <StatsSummary
+                result={analysis.result}
+                running={analysis.running}
+                error={analysis.error}
+                highlightLengths={highlightLengths}
+                onSelectLength={onSelectLength}
+                onClearLengths={clearLengths}
+              />
+            </>
+          )}
+        </fieldset>
       </div>
 
       <p className="muted supertiles-note">

@@ -17,7 +17,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  DEFAULT_CONTRACTS,
   DEFAULT_TRACE_PACE,
   FAMILIES,
   FAMILY_DISPLAY_NAMES,
@@ -31,17 +30,12 @@ import {
   SUBSTITUTION_GROWTH,
   TILE_NAMES,
   TILE_PALETTES,
-  familyMajors,
-  formatComboShareString,
   hexToRgb,
   leafOrder,
-  matchingIndicesToCombo,
-  metaEdges,
   mul,
   pathLength,
   supportsInfiniteMode,
   svgMatrixString,
-  type EdgeContract,
   type Path,
   type Rgb,
   type TileFamilyId,
@@ -50,12 +44,11 @@ import {
 import {
   CircuitLayer,
   ColorSchemePicker,
-  ContractSlider,
   DisplayToggles,
-  EdgeSubsetPicker,
-  MatchingSlider,
   PanZoom,
+  SeamContractControls,
   SharePanel,
+  StrandRuleControls,
   StatsSummary,
   TilePalette,
   TilingCanvas,
@@ -63,7 +56,6 @@ import {
   type EdgeRef,
   type PanZoomApi,
 } from '../components';
-import { edgeClassColor } from '../lib/palette';
 import { useCircuitAnalysis } from '../hooks/useCircuitAnalysis';
 import { useExplorerStore } from '../hooks/useExplorerState';
 import {
@@ -151,7 +143,6 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
   const { state, dispatch } = useExplorerStore({ syncUrl: props.syncUrl ?? true, route });
 
   const family = state.family;
-  const order = useMemo(() => leafOrder(family), [family]);
   const selected = useMemo(() => new Set(state.subset), [state.subset]);
   const curvy = hasFlag(state, FLAG.CURVY) && family !== 'hex';
   const linesOn = hasFlag(state, FLAG.LINES);
@@ -494,11 +485,6 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
 
   // --- share / export ------------------------------------------------------
 
-  const combo = useMemo(() => {
-    const digits = matchingIndicesToCombo(family, state.subset, state.matching);
-    return digits === null ? null : formatComboShareString(state.subset, digits);
-  }, [family, state.subset, state.matching]);
-
   const liveSvg = useCallback(
     (): SVGSVGElement | null =>
       (viewportRef.current?.querySelector('svg.tiling-view') as SVGSVGElement | null) ?? null,
@@ -553,23 +539,6 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
 
   // --- contracts (advanced) ------------------------------------------------
 
-  const minorCounts = useMemo(() => {
-    const out: Record<number, number> = {};
-    for (const type of order) {
-      for (const seam of metaEdges(family, type)) {
-        out[seam.major] = Math.max(out[seam.major] ?? 1, seam.edgeIndices.length);
-      }
-    }
-    return out;
-  }, [family, order]);
-
-  const contractOf = useCallback(
-    (major: number): EdgeContract =>
-      state.contracts?.[major] ?? DEFAULT_CONTRACTS[major] ?? { minor: 0, t: 0.5 },
-    [state.contracts],
-  );
-
-  const majors = useMemo(() => familyMajors(family), [family]);
   const tileCount = model.tileCount;
   const heavy = !infinite && state.level > SVG_MAX_LEVEL;
   /** Tiles a level-L patch holds — the count the infinite view targets. */
@@ -737,61 +706,26 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
           ) : null}
         </fieldset>
 
-        <fieldset>
-          <legend>Edge rule</legend>
-          <EdgeSubsetPicker
-            family={family}
-            subset={state.subset}
-            highlightMajors={highlightMajors}
-            onSubsetChange={(subset) => dispatch({ type: 'setSubset', subset })}
-            onToggleMajor={(major) => dispatch({ type: 'toggleMajor', major })}
-            onHoverMajor={setHoverMajor}
-          />
-        </fieldset>
-
-        <fieldset className="explorer-matchings">
-          <legend>Matchings</legend>
-          <p className="combo-readout">
-            {combo ? (
-              <>
-                Combination string: <code>{combo}</code>
-              </>
-            ) : (
-              <span className="muted">
-                This matching set crosses itself, so it has no combination string.
-              </span>
-            )}
-          </p>
-          <label className="control-row">
-            <input
-              type="checkbox"
-              checked={nonCrossingOnly}
-              onChange={() => dispatch({ type: 'toggleFlag', flag: FLAG.NON_CROSSING_ONLY })}
-            />
-            <span>Non-crossing options only</span>
-          </label>
-          <div className="matching-grid">
-            {order.map((type, i) => (
-              <MatchingSlider
-                key={type}
-                family={family}
-                tileType={type}
-                selectedEdges={selected}
-                contracts={state.contracts}
-                value={state.matching[i] ?? 0}
-                nonCrossingOnly={nonCrossingOnly}
-                curvy={curvy}
-                colorScheme={state.colorScheme}
-                customColors={state.customColors}
-                tileSize={116}
-                onChange={(index) => dispatch({ type: 'setMatching', tileType: type, index })}
-              />
-            ))}
-          </div>
-          {state.subset.length === 0 ? (
-            <p className="muted">Pick an edge rule above to give the tiles connection points.</p>
-          ) : null}
-        </fieldset>
+        <StrandRuleControls
+          family={family}
+          subset={state.subset}
+          matching={state.matching}
+          contracts={state.contracts}
+          colorScheme={state.colorScheme}
+          customColors={state.customColors}
+          curvy={curvy}
+          nonCrossingOnly={nonCrossingOnly}
+          highlightMajors={highlightMajors}
+          onSubsetChange={(subset) => dispatch({ type: 'setSubset', subset })}
+          onToggleMajor={(major) => dispatch({ type: 'toggleMajor', major })}
+          onHoverMajor={setHoverMajor}
+          onMatchingChange={(tileType, index) =>
+            dispatch({ type: 'setMatching', tileType, index })
+          }
+          onToggleNonCrossing={() =>
+            dispatch({ type: 'toggleFlag', flag: FLAG.NON_CROSSING_ONLY })
+          }
+        />
 
         <fieldset className="explorer-overlays">
           <legend>Overlay tools</legend>
@@ -1112,43 +1046,13 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
           ) : null}
         </fieldset>
 
-        <details className="explorer-advanced">
-          <summary>Advanced: seam contracts</summary>
-          <p className="muted">
-            Where a drawn line crosses each seam class. Each slider spans the whole seam — notches
-            mark the vertices between its physical edges — and moving a contract slides every dot
-            and line end on that class; the topology never changes. Greyed classes are not part of
-            the current edge rule.
-          </p>
-          {majors.map((major) => {
-            const c = contractOf(major);
-            const minorCount = Math.max(1, minorCounts[major] ?? 1);
-            const activeClass = state.subset.includes(major);
-            const pinned = major === 0;
-            return (
-              <div
-                className={`contract-row${activeClass ? '' : ' is-inactive'}`}
-                key={major}
-                data-major={major}
-                style={{ color: edgeClassColor(major) }}
-              >
-                <span className="contract-name">class {major === 7 ? '7 (M)' : major}</span>
-                <ContractSlider
-                  major={major}
-                  minorCount={minorCount}
-                  value={c}
-                  active={activeClass}
-                  pinned={pinned}
-                  onChange={(contract) => dispatch({ type: 'setContract', major, contract })}
-                />
-                <em>{pinned ? 'centre' : `${c.minor}.${Math.round(c.t * 100)}%`}</em>
-              </div>
-            );
-          })}
-          <button type="button" onClick={() => dispatch({ type: 'clearContracts' })}>
-            Reset contracts
-          </button>
-        </details>
+        <SeamContractControls
+          family={family}
+          subset={state.subset}
+          contracts={state.contracts}
+          onChange={(major, contract) => dispatch({ type: 'setContract', major, contract })}
+          onReset={() => dispatch({ type: 'clearContracts' })}
+        />
 
         {/* Not a `disabled` fieldset: the escape-hatch button must stay live. */}
         <fieldset className={infinite ? 'is-unavailable' : undefined}>

@@ -13,10 +13,17 @@ import {
   cameraAffine,
   type Camera,
 } from '../../lib/viewport';
-import { leafOrder, outlinePath, svgMatrixString, type TileFamilyId } from '../../core';
+import {
+  TAIL_COLOR,
+  leafOrder,
+  outlinePath,
+  svgMatrixString,
+  type TileFamilyId,
+} from '../../core';
 import { tileColor } from '../../lib/palette';
-import { tileDefId, tileOutline } from '../../lib/tilingModel';
+import { polylineD, tileDefId, tileOutline } from '../../lib/tilingModel';
 import { islandTiles, type ExplodedLayout, type Island } from './explode';
+import type { StrandRun } from './strands';
 
 /**
  * Above this many spectres the individual tiles stop being drawn: they are
@@ -35,6 +42,13 @@ export interface ExplodedViewProps {
   readonly showTiles?: boolean;
   /** Name each piece with its substitution flavour. */
   readonly showLabels?: boolean;
+  /** Strand runs to draw over the pieces (see `strands.ts`). */
+  readonly strands?: readonly StrandRun[];
+  /** Circuit colour per length — the analysis's own map, so the picture and
+   *  the stats panel always agree about what a colour means. */
+  readonly circuitColors?: ReadonlyMap<number, string>;
+  /** Lengths picked out in the stats panel; others are dimmed. */
+  readonly highlightLengths?: ReadonlySet<number>;
   readonly idPrefix?: string;
   readonly className?: string;
   readonly ariaLabel?: string;
@@ -52,6 +66,9 @@ export function ExplodedView(props: ExplodedViewProps): JSX.Element {
     camera,
     showTiles = true,
     showLabels = true,
+    strands,
+    circuitColors,
+    highlightLengths,
     idPrefix,
     className,
     ariaLabel,
@@ -87,6 +104,16 @@ export function ExplodedView(props: ExplodedViewProps): JSX.Element {
         return Math.max(1e-6, Math.max(maxX - minX, maxY - minY));
       }),
     [layout],
+  );
+
+  /**
+   * One weight for every strand, tied to the pieces rather than the scene, and
+   * heavy enough to read over a filled tiling — the lines are the point when
+   * they are on, not an annotation.
+   */
+  const strandWidth = useMemo(
+    () => (spans.length ? Math.min(...spans) / 55 : 0.08),
+    [spans],
   );
 
   const pieces = useMemo(
@@ -158,6 +185,35 @@ export function ExplodedView(props: ExplodedViewProps): JSX.Element {
     });
   }, [drawLabels, layout, spans]);
 
+  /**
+   * Strand runs. A run is already in exploded coordinates, so it only needs a
+   * colour: a circuit takes the analysis's colour for its length, a tail the
+   * shared tail grey. With lengths picked out in the stats panel, everything
+   * else fades rather than disappearing — the pattern stays legible.
+   */
+  const strandPaths = useMemo(() => {
+    if (!strands || strands.length === 0) return null;
+    const picked = highlightLengths && highlightLengths.size > 0 ? highlightLengths : null;
+    return strands.map((run, i) => {
+      const chosen = !picked || (run.closed && picked.has(run.length));
+      const stroke = run.closed ? circuitColors?.get(run.length) ?? '#1c9c4b' : TAIL_COLOR;
+      return (
+        <path
+          key={`s${i}`}
+          className={run.closed ? 'supertile-strand is-circuit' : 'supertile-strand is-tail'}
+          d={polylineD(run.points)}
+          fill="none"
+          stroke={stroke}
+          strokeWidth={strandWidth}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          opacity={chosen ? 1 : 0.12}
+          data-length={run.length}
+        />
+      );
+    });
+  }, [strands, circuitColors, highlightLengths, strandWidth]);
+
   const viewBox = `${layout.bounds.min.x} ${layout.bounds.min.y} ${
     layout.bounds.max.x - layout.bounds.min.x
   } ${layout.bounds.max.y - layout.bounds.min.y}`;
@@ -190,6 +246,7 @@ export function ExplodedView(props: ExplodedViewProps): JSX.Element {
         <g className="supertile-pieces" strokeLinejoin="round">
           {pieces}
         </g>
+        {strandPaths ? <g className="supertile-strands">{strandPaths}</g> : null}
         {labels ? <g className="supertile-labels">{labels}</g> : null}
       </g>
     </svg>
