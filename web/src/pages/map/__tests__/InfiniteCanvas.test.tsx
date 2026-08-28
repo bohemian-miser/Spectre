@@ -187,6 +187,23 @@ async function settle(): Promise<void> {
   });
 }
 
+/**
+ * {@link settle} until `done()` holds, rather than for a fixed span of wall
+ * clock. Re-cutting after a camera change is real engine work scheduled across
+ * animation frames, so "80ms is surely enough" is a race that loses whenever
+ * the machine is busy — CI runs the whole suite in parallel forks. The
+ * condition is what these tests actually mean; the deadline only stops a
+ * genuine hang from hanging the run.
+ */
+async function settleUntil(done: () => boolean, what: string): Promise<void> {
+  const deadline = Date.now() + 10_000;
+  for (;;) {
+    await settle();
+    if (done()) return;
+    if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`);
+  }
+}
+
 function tap(host: Element, x: number, y: number): void {
   fireEvent.pointerDown(host, { pointerId: 1, pointerType: 'mouse', button: 0, clientX: x, clientY: y });
   fireEvent.pointerUp(host, { pointerId: 1, pointerType: 'mouse', button: 0, clientX: x, clientY: y });
@@ -638,20 +655,17 @@ describe('InfiniteCanvas — circuits past their own zoom', () => {
 
     // Zoom out past what find-all can analyse: without the toggle they go.
     act(() => m.api.current?.setCamera({ scale: 0.05 }));
-    await settle();
-    expect(m.status().cut?.cutLevel ?? 0).toBeGreaterThan(0);
+    await settleUntil(() => (m.status().cut?.cutLevel ?? 0) > 0, 'the coarse cut');
     expect(m.status().trace.foundSkipped).toBe(true);
     expect(m.status().trace.found).toBe(0);
     expect(m.renderer.circuitSets.at(-1)!.length).toBe(0);
 
     // Back in, then out again with the toggle on: the same circuits stay lit.
     act(() => m.api.current?.setCamera({ scale: 36 }));
-    await settle();
-    await settle();
-    expect(m.status().trace.found).toBe(found);
+    await settleUntil(() => m.status().trace.found === found, 'the circuits to be found again');
     await m.rerender({ findCircuits: true, persistFound: true });
     act(() => m.api.current?.setCamera({ scale: 0.05 }));
-    await settle();
+    await settleUntil(() => (m.status().cut?.cutLevel ?? 0) > 0, 'the coarse cut');
     const held = m.status().trace;
     expect(held.found).toBe(found);
     expect(held.foundSkipped).toBe(false);
@@ -664,14 +678,12 @@ describe('InfiniteCanvas — circuits past their own zoom', () => {
     const m = await mount({ chords: loopTable(), findCircuits: true });
     // Start far too far out for find-all.
     act(() => m.api.current?.setCamera({ scale: 0.05 }));
-    await settle();
-    expect(m.status().trace.foundSkipped).toBe(true);
+    await settleUntil(() => m.status().trace.foundSkipped, 'find-all to give up on the coarse view');
     const before = m.api.current!.getCamera();
 
     const scale = m.api.current!.zoomToCircuitView();
     expect(scale).not.toBeNull();
-    await settle();
-    await settle();
+    await settleUntil(() => m.status().cut?.cutLevel === 0, 'the leaf cut it zoomed to');
 
     const after = m.api.current!.getCamera();
     // Only the zoom moved…
