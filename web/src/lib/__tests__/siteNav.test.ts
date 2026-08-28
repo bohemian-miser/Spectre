@@ -16,13 +16,27 @@ import {
 } from '../siteNav';
 
 describe('siteNav', () => {
-  it('lists the five destinations with unique ids', () => {
-    expect(SITE_NAV.map((i) => i.id)).toEqual(['explorer', 'tails', 'stats', 'map', 'legacy']);
+  it('lists the six destinations with unique ids', () => {
+    expect(SITE_NAV.map((i) => i.id)).toEqual([
+      'explorer',
+      'tails',
+      'stats',
+      'map',
+      'supertiles',
+      'legacy',
+    ]);
     expect(new Set(SITE_NAV.map((i) => i.id)).size).toBe(SITE_NAV.length);
   });
 
-  it('ships all five destinations', () => {
-    expect(readyNav().map((i) => i.id)).toEqual(['explorer', 'tails', 'stats', 'map', 'legacy']);
+  it('ships all six destinations', () => {
+    expect(readyNav().map((i) => i.id)).toEqual([
+      'explorer',
+      'tails',
+      'stats',
+      'map',
+      'supertiles',
+      'legacy',
+    ]);
   });
 
   it('builds hrefs under the deploy base', () => {
@@ -41,6 +55,7 @@ describe('siteNav', () => {
     expect(activeNavId('/Spectre/index.html')).toBe('explorer');
     expect(activeNavId('/Spectre/legacy.html')).toBe('legacy');
     expect(activeNavId('/Spectre/map.html')).toBe('map');
+    expect(activeNavId('/Spectre/supertiles.html')).toBe('supertiles');
     expect(activeNavId('/Spectre/widgets.html')).toBeNull();
   });
 

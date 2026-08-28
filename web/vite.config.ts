@@ -26,6 +26,7 @@ export default defineConfig({
         tails: resolve(__dirname, 'tails.html'),
         stats: resolve(__dirname, 'stats.html'),
         map: resolve(__dirname, 'map.html'),
+        supertiles: resolve(__dirname, 'supertiles.html'),
         legacy: resolve(__dirname, 'legacy.html'),
         widgets: resolve(__dirname, 'widgets.html'),
       },

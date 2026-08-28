@@ -170,6 +170,17 @@ export function scaleForLevel(level: number, width: number, height: number): num
   return clampScale(Math.sqrt((w * h) / worldArea));
 }
 
+/**
+ * Zoom whose viewport holds about `tiles` INDIVIDUAL tiles — the same maths as
+ * {@link scaleForLevel} addressed by a tile count instead of a level, for the
+ * ceilings that are quoted in tiles (the trace index, the find-all pass).
+ */
+export function scaleForTileCount(tiles: number, width: number, height: number): number {
+  const w = Math.max(1, width);
+  const h = Math.max(1, height);
+  return clampScale(Math.sqrt((w * h) / (Math.max(1, tiles) * SPECTRE_TILE_AREA)));
+}
+
 /** Inverse of {@link scaleForLevel} (fractional; the HUD rounds it). */
 export function levelForScale(scale: number, width: number, height: number): number {
   const w = Math.max(1, width);

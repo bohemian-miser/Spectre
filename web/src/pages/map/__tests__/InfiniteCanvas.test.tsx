@@ -143,6 +143,7 @@ interface HarnessProps {
   readonly keepCircuits?: boolean;
   readonly keepTails?: boolean;
   readonly findCircuits?: boolean;
+  readonly persistFound?: boolean;
   readonly followPace?: number | null;
   readonly traceSeed?: readonly [number, number, number, number] | null;
   readonly onTraceSeed?: (seed: readonly [number, number, number, number] | null) => void;
@@ -166,6 +167,7 @@ function Harness(props: HarnessProps): JSX.Element {
       keepCircuits={props.keepCircuits ?? false}
       keepTails={props.keepTails ?? false}
       findCircuits={props.findCircuits ?? false}
+      persistFound={props.persistFound ?? false}
       followPace={props.followPace ?? null}
       traceSeed={props.traceSeed ?? null}
       onTraceSeed={props.onTraceSeed}
@@ -653,6 +655,63 @@ describe('InfiniteCanvas — the tiles a chase crossed', () => {
     const m = await mount({});
     await settle();
     expect(m.status().trace.tiles).toEqual([]);
+  });
+});
+
+describe('InfiniteCanvas — circuits past their own zoom', () => {
+  it('drops found circuits when the view goes coarse, and holds them when asked', async () => {
+    // Zoomed in far enough for a leaf cut, find-all finds circuits.
+    const m = await mount({ chords: loopTable(), findCircuits: true });
+    await settle();
+    const found = m.status().trace.found;
+    expect(found).toBeGreaterThan(3);
+
+    // Zoom out past what find-all can analyse: without the toggle they go.
+    act(() => m.api.current?.setCamera({ scale: 0.05 }));
+    await settle();
+    expect(m.status().cut?.cutLevel ?? 0).toBeGreaterThan(0);
+    expect(m.status().trace.foundSkipped).toBe(true);
+    expect(m.status().trace.found).toBe(0);
+    expect(m.renderer.circuitSets.at(-1)!.length).toBe(0);
+
+    // Back in, then out again with the toggle on: the same circuits stay lit.
+    act(() => m.api.current?.setCamera({ scale: 36 }));
+    await settle();
+    await settle();
+    expect(m.status().trace.found).toBe(found);
+    await m.rerender({ findCircuits: true, persistFound: true });
+    act(() => m.api.current?.setCamera({ scale: 0.05 }));
+    await settle();
+    const held = m.status().trace;
+    expect(held.found).toBe(found);
+    expect(held.foundSkipped).toBe(false);
+    // Held, and honest about it.
+    expect(held.foundStale).toBe(true);
+    expect(m.renderer.circuitSets.at(-1)!.length).toBe(found);
+  });
+
+  it('zooms to the widest view that still has individual tiles', async () => {
+    const m = await mount({ chords: loopTable(), findCircuits: true });
+    // Start far too far out for find-all.
+    act(() => m.api.current?.setCamera({ scale: 0.05 }));
+    await settle();
+    expect(m.status().trace.foundSkipped).toBe(true);
+    const before = m.api.current!.getCamera();
+
+    const scale = m.api.current!.zoomToCircuitView();
+    expect(scale).not.toBeNull();
+    await settle();
+    await settle();
+
+    const after = m.api.current!.getCamera();
+    // Only the zoom moved…
+    expect(after.cx).toBeCloseTo(before.cx, 9);
+    expect(after.cy).toBeCloseTo(before.cy, 9);
+    expect(after.scale).toBeGreaterThan(before.scale);
+    // …and it lands somewhere find-all can actually work.
+    expect(m.status().cut?.cutLevel).toBe(0);
+    expect(m.status().trace.foundSkipped).toBe(false);
+    expect(m.status().trace.found).toBeGreaterThan(0);
   });
 });
 

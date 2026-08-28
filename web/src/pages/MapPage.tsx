@@ -114,6 +114,7 @@ export function MapPage(props: MapPageProps): JSX.Element {
   const [keepCircuits, setKeepCircuits] = useState<boolean>(initial.keepCircuits ?? true);
   const [keepTails, setKeepTails] = useState<boolean>(initial.keepTails ?? true);
   const [findCircuits, setFindCircuits] = useState<boolean>(initial.findCircuits ?? false);
+  const [persistFound, setPersistFound] = useState<boolean>(initial.persistFound ?? false);
   const [pace, setPace] = useState<number | null>(initial.pace ?? null);
   const [traceSeed, setTraceSeed] = useState<
     readonly [number, number, number, number] | null
@@ -138,6 +139,7 @@ export function MapPage(props: MapPageProps): JSX.Element {
       circuits: 0,
       found: 0,
       foundSkipped: false,
+      foundStale: false,
       tiles: [],
     },
     error: null,
@@ -160,6 +162,7 @@ export function MapPage(props: MapPageProps): JSX.Element {
     keepCircuits,
     keepTails,
     findCircuits,
+    persistFound,
     pace,
     traceSeed,
     subset,
@@ -177,6 +180,7 @@ export function MapPage(props: MapPageProps): JSX.Element {
     keepCircuits,
     keepTails,
     findCircuits,
+    persistFound,
     pace,
     traceSeed,
     subset,
@@ -226,6 +230,7 @@ export function MapPage(props: MapPageProps): JSX.Element {
       keepCircuits: w.keepCircuits,
       keepTails: w.keepTails,
       findCircuits: w.findCircuits,
+      persistFound: w.persistFound,
       pace: w.pace,
       traceSeed: w.traceSeed,
       subset: w.subset,
@@ -278,6 +283,7 @@ export function MapPage(props: MapPageProps): JSX.Element {
     keepCircuits,
     keepTails,
     findCircuits,
+    persistFound,
     pace,
     traceSeed,
     subset,
@@ -309,6 +315,7 @@ export function MapPage(props: MapPageProps): JSX.Element {
         keepCircuits: w.keepCircuits,
         keepTails: w.keepTails,
         findCircuits: w.findCircuits,
+        persistFound: w.persistFound,
         pace: w.pace,
         traceSeed: w.traceSeed,
         subset: w.subset,
@@ -327,6 +334,7 @@ export function MapPage(props: MapPageProps): JSX.Element {
       setKeepCircuits(st.keepCircuits ?? true);
       setKeepTails(st.keepTails ?? true);
       setFindCircuits(st.findCircuits ?? false);
+      setPersistFound(st.persistFound ?? false);
       setPace(st.pace ?? null);
       setTraceSeed(st.traceSeed ?? null);
       setSubset(st.subset ?? []);
@@ -562,6 +570,25 @@ export function MapPage(props: MapPageProps): JSX.Element {
               />
               <span>Find all circuits on screen</span>
             </label>
+            <label className="control-row">
+              <input
+                type="checkbox"
+                aria-label="Keep found circuits on screen when zoomed out"
+                data-testid="map-persist-found"
+                checked={persistFound}
+                disabled={!lines || !findCircuits}
+                onChange={(e) => setPersistFound(e.target.checked)}
+              />
+              <span>Keep them when you zoom out</span>
+            </label>
+            <button
+              type="button"
+              data-testid="map-circuit-zoom"
+              disabled={!lines}
+              onClick={() => apiRef.current?.zoomToCircuitView()}
+            >
+              Circuit zoom
+            </button>
           </div>
 
           <div className="control-row">
@@ -697,6 +724,7 @@ export function MapPage(props: MapPageProps): JSX.Element {
         keepCircuits={lines && trace && keepCircuits}
         keepTails={lines && trace && keepTails}
         findCircuits={lines && findCircuits}
+        persistFound={persistFound}
         followPace={pace}
         traceSeed={lines && trace ? traceSeed : null}
         onTraceSeed={setTraceSeed}
@@ -754,7 +782,9 @@ export function MapPage(props: MapPageProps): JSX.Element {
               <span data-testid="hud-found">
                 {status.trace.foundSkipped
                   ? 'find: zoom in to tiles'
-                  : `${status.trace.found} circuits on screen`}
+                  : status.trace.foundStale
+                    ? `${status.trace.found} circuits held from a closer view`
+                    : `${status.trace.found} circuits on screen`}
               </span>
             )}
             <span data-testid="hud-query-ms">
