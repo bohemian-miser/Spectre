@@ -45,6 +45,7 @@ import {
   subsetToString,
 } from '../core';
 import { EdgeSubsetPicker } from '../components';
+import { copyText, shareLinkBase } from '../hooks/shareLink';
 import { DEFAULT_SCALE, createCamera, type MapCamera } from './map/camera';
 import { buildLeafChordTable, type LeafChordTable } from './map/chords';
 import {
@@ -114,6 +115,7 @@ export function MapPage(props: MapPageProps): JSX.Element {
     readonly [number, number, number, number] | null
   >(initial.traceSeed ?? null);
   const [shareNote, setShareNote] = useState<string | null>(null);
+  const [shareFallback, setShareFallback] = useState<string | null>(null);
   const [subset, setSubset] = useState<readonly number[]>(
     initial.subset ?? DEFAULT_MAP_STATE.subset ?? [],
   );
@@ -194,11 +196,11 @@ export function MapPage(props: MapPageProps): JSX.Element {
   );
 
   // --- URL ---------------------------------------------------------------------
-  const writeUrl = useCallback((): void => {
-    if (!syncUrl || typeof window === 'undefined') return;
+  /** Canonical hash for the CURRENT state — fresher than the debounced URL. */
+  const currentHash = useCallback((): string => {
     const cam = camRef.current;
     const w = worldRef.current;
-    const hash = mapStateToHash({
+    return mapStateToHash({
       seed: w.seed,
       budget: w.budget,
       lineWidth: w.lineWidth,
@@ -218,10 +220,15 @@ export function MapPage(props: MapPageProps): JSX.Element {
       subset: w.subset,
       combo: w.combo,
     });
+  }, []);
+
+  const writeUrl = useCallback((): void => {
+    if (!syncUrl || typeof window === 'undefined') return;
+    const hash = currentHash();
     if (window.location.hash !== hash) {
       window.history.replaceState(window.history.state, '', hash);
     }
-  }, [syncUrl]);
+  }, [syncUrl, currentHash]);
 
   const writeUrlSoon = useCallback((): void => {
     if (!syncUrl) return;
@@ -583,15 +590,16 @@ export function MapPage(props: MapPageProps): JSX.Element {
               data-testid="map-share-chase"
               disabled={!traceSeed}
               onClick={() => {
-                const url = typeof window !== 'undefined' ? window.location.href : '';
-                if (typeof navigator !== 'undefined' && navigator.clipboard) {
-                  navigator.clipboard.writeText(url).then(
-                    () => setShareNote('Link copied — it replays this chase from the same chord.'),
-                    () => setShareNote(url),
-                  );
-                } else {
-                  setShareNote(url);
-                }
+                const url = `${shareLinkBase().split('#')[0]}${currentHash()}`;
+                void copyText(url).then((ok) => {
+                  if (ok) {
+                    setShareFallback(null);
+                    setShareNote('Link copied — it replays this chase from the same chord.');
+                  } else {
+                    setShareNote('Copying is blocked here — select the link below and copy it.');
+                    setShareFallback(url);
+                  }
+                });
               }}
             >
               Copy share link
@@ -600,6 +608,17 @@ export function MapPage(props: MapPageProps): JSX.Element {
               <span className="muted" role="status">
                 {shareNote}
               </span>
+            ) : null}
+            {shareFallback ? (
+              <input
+                data-testid="map-share-fallback"
+                aria-label="Share link"
+                readOnly
+                value={shareFallback}
+                style={{ width: '100%' }}
+                onFocus={(e) => e.currentTarget.select()}
+                onClick={(e) => e.currentTarget.select()}
+              />
             ) : null}
           </div>
 

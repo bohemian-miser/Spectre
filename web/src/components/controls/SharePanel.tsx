@@ -14,6 +14,7 @@ import {
   type ExplorerState,
 } from '../../core';
 import { shareUrl } from '../../lib/urlState';
+import { copyText, shareLinkBase } from '../../hooks/shareLink';
 
 export interface SharePanelProps {
   readonly state: ExplorerState;
@@ -32,14 +33,8 @@ export interface SharePanelProps {
   readonly children?: ReactNode;
 }
 
-async function copy(text: string): Promise<boolean> {
-  try {
-    await navigator.clipboard.writeText(text);
-    return true;
-  } catch {
-    return false;
-  }
-}
+// Copying goes through `copyText`, whose synchronous selection path also
+// works where embeds deny the async Clipboard API (`lib/shareLink.ts`).
 
 export function SharePanel(props: SharePanelProps): JSX.Element {
   const {
@@ -55,7 +50,7 @@ export function SharePanel(props: SharePanelProps): JSX.Element {
   } = props;
   const [copied, setCopied] = useState<string | null>(null);
 
-  const base = baseUrl ?? (typeof window !== 'undefined' ? window.location.href : '');
+  const base = baseUrl ?? shareLinkBase();
   const url = useMemo(() => shareUrl(state, base, route), [state, base, route]);
 
   const combo = useMemo(() => {
@@ -63,11 +58,12 @@ export function SharePanel(props: SharePanelProps): JSX.Element {
     return digits === null ? null : formatComboShareString(state.subset, digits);
   }, [state]);
 
-  const flash = (label: string) => (ok: boolean) => setCopied(ok ? label : `${label} failed`);
+  const flash = (label: string) => (ok: boolean) =>
+    setCopied(ok ? label : 'Copying is blocked here — select the text below and copy it.');
 
   return (
     <div className={['share-panel', className ?? ''].filter(Boolean).join(' ')}>
-      <button type="button" onClick={() => void copy(url).then(flash('Link copied'))}>
+      <button type="button" onClick={() => void copyText(url).then(flash('Link copied'))}>
         Copy link
       </button>
       <button
@@ -78,7 +74,7 @@ export function SharePanel(props: SharePanelProps): JSX.Element {
             ? 'This state uses a crossing matching, which combination strings cannot express'
             : combo
         }
-        onClick={() => combo && void copy(combo).then(flash('Combination copied'))}
+        onClick={() => combo && void copyText(combo).then(flash('Combination copied'))}
       >
         Copy combination string
       </button>
