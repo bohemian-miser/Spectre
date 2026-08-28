@@ -19,6 +19,7 @@ import {
   zoomAt,
   levelForScale,
   scaleForLevel,
+  scaleForTileCount,
   tilesAtLevel,
 } from '../camera';
 import { SPECTRE_TILE_AREA, SUBSTITUTION_GROWTH } from '../../../core';
@@ -171,6 +172,25 @@ describe('level <-> zoom (infinite mode level control)', () => {
       const tilesInView = (W / s) * (H / s) / SPECTRE_TILE_AREA;
       expect(tilesInView / tilesAtLevel(level)).toBeCloseTo(1, 6);
     }
+  });
+
+  it('addresses the same zoom by tile count as by level', () => {
+    for (const level of [0, 2, 5, 8]) {
+      expect(scaleForTileCount(tilesAtLevel(level), W, H)).toBeCloseTo(
+        scaleForLevel(level, W, H),
+        9,
+      );
+    }
+  });
+
+  it('puts about the asked-for number of tiles in view', () => {
+    for (const tiles of [1, 500, 30_000, 1_000_000]) {
+      const s = scaleForTileCount(tiles, W, H);
+      const inView = ((W / s) * (H / s)) / SPECTRE_TILE_AREA;
+      expect(inView / tiles).toBeCloseTo(1, 6);
+    }
+    // Fewer tiles on screen means closer in.
+    expect(scaleForTileCount(100, W, H)).toBeGreaterThan(scaleForTileCount(10_000, W, H));
   });
 
   it('one level step is one substitution step (×sqrt(7.873) ≈ 2.806 zoom)', () => {

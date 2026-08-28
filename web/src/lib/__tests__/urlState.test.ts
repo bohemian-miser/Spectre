@@ -209,13 +209,22 @@ describe('kt / fc params (explorer codec)', () => {
   const inf: ExplorerState = { ...DEFAULT_EXPLORER_STATE, mode: 'infinite' };
   it('round-trips keep-tails-off and find-all-on', () => {
     expect(stateToQuery(inf)).not.toMatch(/(^|&)(kt|fc)=/);
-    const s: ExplorerState = { ...inf, keepTails: false, findCircuits: true };
+    const s: ExplorerState = {
+      ...inf,
+      keepTails: false,
+      findCircuits: true,
+      persistFound: true,
+    };
     const q = stateToQuery(s);
     expect(q).toContain('kt=0');
     expect(q).toContain('fc=1');
     const back = hashToState(stateToHash(s));
     expect(back.keepTails).toBe(false);
     expect(back.findCircuits).toBe(true);
+    expect(back.persistFound).toBe(true);
+    expect(stateToQuery(s)).toContain('pf=1');
+    // Off is the default and writes nothing.
+    expect(stateToQuery({ ...s, persistFound: false })).not.toContain('pf=');
     expect(stateToQuery(back)).toBe(q);
   });
 });

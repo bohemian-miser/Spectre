@@ -23,6 +23,7 @@ import {
 import {
   explorerBudget,
   explorerFindCircuits,
+  explorerPersistFound,
   explorerFollow,
   explorerKeepTails,
   explorerPace,
@@ -417,5 +418,15 @@ describe('keep-tails and find-all toggles', () => {
     const off = run(on, { type: 'setFindCircuits', findCircuits: false });
     expect('findCircuits' in off).toBe(false);
     expect(run(base, { type: 'setFindCircuits', findCircuits: false })).toBe(base);
+  });
+
+  it('persist-found is off by default and stores only the ON choice', () => {
+    expect(explorerPersistFound(base)).toBe(false);
+    expect('persistFound' in base).toBe(false);
+    const on = run(base, { type: 'setPersistFound', persistFound: true });
+    expect(explorerPersistFound(on)).toBe(true);
+    const off = run(on, { type: 'setPersistFound', persistFound: false });
+    expect('persistFound' in off).toBe(false);
+    expect(run(base, { type: 'setPersistFound', persistFound: false })).toBe(base);
   });
 });
