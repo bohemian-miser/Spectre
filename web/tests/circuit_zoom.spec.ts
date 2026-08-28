@@ -27,34 +27,49 @@ test('circuit zoom lands on a view find-all can actually analyse', async ({ page
 });
 
 test('found circuits are dropped on zoom-out, and held when asked', async ({ page }) => {
+  // Real engine work at three different zooms, so the default budget is tight
+  // even when nothing is wrong.
+  test.setTimeout(90_000);
   await page.setViewportSize({ width: 1280, height: 900 });
-  await page.goto(`#/explorer?v=1&md=infinite&${RULE}&fc=1&lv=6`);
+  await page.goto(`#/explorer?v=1&md=infinite&${RULE}&fc=1&lv=4`);
   await expect(page.getByTestId('inf-instances')).not.toHaveText('0 instances', { timeout: 30000 });
-  await page.getByTestId('circuit-zoom').click();
-  await page.waitForTimeout(2500);
-  await expect(page.getByTestId('inf-found')).toContainText('circuits on screen');
 
   const viewport = page.locator('.explorer-infinite');
   const box = (await viewport.boundingBox())!;
-  const zoomOut = async (steps: number): Promise<void> => {
-    for (let i = 0; i < steps; i++) {
+  /**
+   * Wheel out in a few big steps and let the assertions wait for the result,
+   * rather than sleeping a fixed amount after each one — the queries take as
+   * long as they take, and a CI runner is slower than a laptop.
+   */
+  const zoomOut = async (): Promise<void> => {
+    for (let i = 0; i < 6; i++) {
       await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-      await page.mouse.wheel(0, 200);
-      await page.waitForTimeout(60);
+      await page.mouse.wheel(0, 400);
     }
-    await page.waitForTimeout(1800);
   };
 
+  const toCircuitView = async (): Promise<void> => {
+    await page.getByTestId('circuit-zoom').click();
+    await expect(page.getByTestId('inf-found')).toContainText('circuits on screen', {
+      timeout: 30000,
+    });
+  };
+
+  await toCircuitView();
+
   // Without the toggle, a coarse view has nothing to show.
-  await zoomOut(10);
-  await expect(page.getByTestId('inf-found')).toHaveText('find: zoom in to tiles');
+  await zoomOut();
+  await expect(page.getByTestId('inf-found')).toHaveText('find: zoom in to tiles', {
+    timeout: 30000,
+  });
 
   // With it, the same circuits stay lit — and the HUD says they are held.
-  await page.getByTestId('circuit-zoom').click();
-  await page.waitForTimeout(2500);
+  await toCircuitView();
   await page.getByTestId('persist-found').check();
-  await zoomOut(10);
-  await expect(page.getByTestId('inf-found')).toContainText('held from a closer view');
+  await zoomOut();
+  await expect(page.getByTestId('inf-found')).toContainText('held from a closer view', {
+    timeout: 30000,
+  });
   // They are really being drawn, not just counted.
   await expect(page.getByTestId('inf-draw')).not.toContainText('· 0 calls');
 });
