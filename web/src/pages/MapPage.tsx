@@ -33,6 +33,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   DEFAULT_LINE_SCALE,
   DEFAULT_TRACE_PACE,
+  LEAF_ORDER,
   DEFAULT_TRAIL_HOLD,
   LINE_SCALE_STEP,
   MAX_TRAIL_HOLD,
@@ -40,8 +41,10 @@ import {
   MIN_TRACE_PACE,
   MIN_TRAIL_HOLD,
   SUBSTITUTION_GROWTH,
+  TILE_PALETTES,
   comboToMatchingIndices,
   edgesToSubset,
+  rgbToCss,
   subsetToString,
 } from '../core';
 import { EdgeSubsetPicker } from '../components';
@@ -65,6 +68,7 @@ import {
   type MapUrlState,
 } from './map/mapUrl';
 import { CANVAS2D_MAX_INSTANCES } from './map/canvasRenderer';
+import { TraceTicker } from './map/TraceTicker';
 import { describeWalk } from './map/strandWalk';
 import type { MapRenderer } from './map/renderer';
 import type { MapRenderStyle } from './map/rendererTypes';
@@ -134,6 +138,7 @@ export function MapPage(props: MapPageProps): JSX.Element {
       circuits: 0,
       found: 0,
       foundSkipped: false,
+      tiles: [],
     },
     error: null,
     size: { width: 0, height: 0 },
@@ -193,6 +198,12 @@ export function MapPage(props: MapPageProps): JSX.Element {
   const renderStyle = useMemo<MapRenderStyle>(
     () => ({ lineScale: lineWidth, noOverlap }),
     [lineWidth, noOverlap],
+  );
+
+  /** Tile colours for the ticker: the map draws the default palette. */
+  const leafCss = useMemo(
+    () => LEAF_ORDER.map((t) => rgbToCss(TILE_PALETTES.bright[t] ?? [200, 200, 200])),
+    [],
   );
 
   // --- URL ---------------------------------------------------------------------
@@ -756,6 +767,8 @@ export function MapPage(props: MapPageProps): JSX.Element {
             <span data-testid="hud-zoom">{drawInfo ? formatZoom(drawInfo.scale) : ''}</span>
           </div>
         )}
+
+        <TraceTicker tiles={status.trace.tiles} colors={leafCss} />
 
         {mode === 'canvas2d' && (
           <div className="map-note" data-testid="map-fallback-note">

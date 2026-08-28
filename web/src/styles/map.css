@@ -208,3 +208,47 @@
     height: 62vh;
   }
 }
+
+/* Trace ticker — the tiles the chase is crossing, along the bottom of the
+   viewport. Absolutely positioned like .map-hud, so it never participates in
+   the viewport's layout (which must stay deterministic). */
+.trace-ticker {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  /* Clear of the viewport caption, which is absolutely positioned along the
+     bottom edge of the Explorer's viewport at left: 12px. */
+  bottom: 34px;
+  display: flex;
+  gap: 3px;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 5px 7px;
+  border-radius: var(--radius);
+  background: rgba(16, 19, 26, 0.72);
+  /* Newest is at the right; older names run off the left edge rather than
+     wrapping, so the strip keeps a fixed height however fast the chase runs. */
+  overflow: hidden;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.trace-tile {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border-radius: 999px;
+  color: #10131a;
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 11px;
+  line-height: 1.5;
+  opacity: 0.75;
+}
+.trace-tile.is-newest {
+  opacity: 1;
+  box-shadow: 0 0 0 1.5px #f4f6fb;
+}
+
+@media (max-width: 780px) {
+  .trace-ticker {
+    font-size: 10px;
+  }
+}
