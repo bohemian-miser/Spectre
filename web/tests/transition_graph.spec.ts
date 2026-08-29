@@ -256,7 +256,7 @@ test('a click pins what it picked, and the background lets go', async ({ page })
   await page.mouse.click(at.x, at.y);
   // Away from the panel entirely: the pick must survive losing the pointer.
   await page.mouse.move(svg.x - 300, svg.y - 200);
-  await expect(page.getByTestId('transition-pinned')).toContainText(
+  await expect(page.getByTestId('transition-picked')).toContainText(
     `${target.from} → ${target.to}`,
   );
   // An explicit pick shows itself rather than waiting to be switched on.
@@ -267,7 +267,7 @@ test('a click pins what it picked, and the background lets go', async ({ page })
   // middle is not — long edges bow straight across it.)
   await page.mouse.move(svg.x + 8 * k, svg.y + 8 * k);
   await page.mouse.click(svg.x + 8 * k, svg.y + 8 * k);
-  await expect(page.getByTestId('transition-pinned')).toHaveCount(0);
+  await expect(page.getByTestId('transition-picked')).toHaveCount(0);
 });
 
 test('clicking a name picks the whole tile type, and lights it on screen', async ({ page }) => {
@@ -286,7 +286,7 @@ test('clicking a name picks the whole tile type, and lights it on screen', async
   const at = { x: label.x + label.width / 2, y: label.y + label.height / 2 };
   await page.mouse.move(at.x, at.y);
   await page.mouse.click(at.x, at.y);
-  await expect(page.getByTestId('transition-pinned')).toContainText('Phi');
+  await expect(page.getByTestId('transition-picked')).toContainText('Phi');
   // Every chord of that type in the cut becomes its own bit of ink.
   await expect.poll(calls).toBeGreaterThan(before);
 });
@@ -329,7 +329,7 @@ test('ranks runs of any length, and draws the one picked', async ({ page }) => {
   const first = rows.first();
   const want = Number(await first.getAttribute('data-count'));
   await first.click();
-  const pinned = page.getByTestId('transition-pinned');
+  const pinned = page.getByTestId('transition-picked');
   await expect(pinned).toBeVisible();
   // Five tiles, named in full — the whole sequence, not just its count.
   expect(((await pinned.textContent()) ?? '').split(/\s+/).length).toBeGreaterThanOrEqual(5);
@@ -355,10 +355,102 @@ test('keeps the path marks up with a chase that is still running', async ({ page
   const rows = page.locator('[data-testid=chain-rows] li');
   await expect.poll(async () => rows.count()).toBeGreaterThan(0);
   await rows.first().click();
-  await expect(page.getByTestId('transition-pinned')).toBeVisible();
+  await expect(page.getByTestId('transition-picked')).toBeVisible();
 
   const before = await calls();
   expect(before).toBeGreaterThan(0);
   // The chase is walking; every new tile of that type is another mark.
   await expect.poll(calls, { timeout: 20000 }).toBeGreaterThan(before);
+});
+
+/**
+ * Only a handful of the hundred drawn pairs have a count on a short chase.
+ * The other ninety-odd are still real transitions the TILING makes, so they
+ * have to answer the pointer and light up — that they did not is what made
+ * the panel look broken.
+ */
+test('a pair the chase never made is still pickable, and still on the tiling', async ({ page }) => {
+  await chase(page, `#/explorer?v=1&md=infinite&${RULE}&fp=8&tg=1&hs=1`);
+  const graph = page.getByTestId('transition-graph');
+  await expect(graph).toBeVisible({ timeout: 30000 });
+  const calls = async (): Promise<number> => {
+    const t = (await page.getByTestId('inf-draw').textContent()) ?? '';
+    return Number(/(\d+) calls/.exec(t)?.[1] ?? -1);
+  };
+  await expect.poll(calls).toBeGreaterThan(0);
+
+  const edges = await graph.locator('.tg-edge').evaluateAll((gs) =>
+    gs.map((g) => {
+      const d = (g as HTMLElement).dataset;
+      return {
+        from: d.from!,
+        to: d.to!,
+        count: Number(d.count),
+        d: g.querySelector('.tg-line')!.getAttribute('d')!,
+      };
+    }),
+  );
+  // The premise: most pairs are uncounted. If that stops being true the test
+  // still holds, but it is no longer testing the interesting case.
+  expect(edges.filter((e) => e.count === 0).length).toBeGreaterThan(edges.length / 2);
+
+  const svg = (await graph.locator('svg').boundingBox())!;
+  const k = svg.width / 240;
+  const aim = (e: (typeof edges)[number]) => {
+    const [sx, sy, cx, cy, ex, ey] = e.d.match(/-?\d+(\.\d+)?/g)!.map(Number);
+    return { x: svg.x + ((sx + 2 * cx + ex) / 4) * k, y: svg.y + ((sy + 2 * cy + ey) / 4) * k };
+  };
+
+  // Sweep the uncounted pairs. Two things have to hold: the pointer answers
+  // for a good number of them, and at least one of those puts ink on the
+  // tiling — a transition the chase never made but the tiling makes anyway,
+  // which is the whole reason "on screen" is a separate question.
+  const before = await calls();
+  let answered = 0;
+  let lit: string | null = null;
+  // A sample rather than all ninety-odd: enough to show the rate is nothing
+  // like the "none of them" it was, without a hundred pointer moves.
+  const sample = edges.filter((x) => x.count === 0 && x.from !== x.to).slice(0, 40);
+  for (const e of sample) {
+    const at = aim(e);
+    await page.mouse.move(at.x, at.y);
+    const text = await page
+      .getByTestId('transition-readout')
+      .textContent({ timeout: 2000 })
+      .catch(() => null);
+    if (text !== `${e.from} → ${e.to}: 0`) continue; // a nearer curve took it
+    answered++;
+    const marks = (await page.getByTestId('transition-marks').textContent()) ?? '';
+    // Either it is on the tiling, and says how much, or it is not and says so.
+    expect(marks).toMatch(/(\d+|none) on screen/);
+    if (!lit && /[1-9]\d* on screen/.test(marks)) {
+      lit = `${e.from} → ${e.to}`;
+      await page.mouse.click(at.x, at.y);
+      await expect(page.getByTestId('transition-picked')).toContainText(lit);
+      await expect.poll(calls).toBeGreaterThan(before);
+      await page.getByTestId('transition-unpin').click();
+    }
+  }
+  // Before this, only the pairs the chase happened to make answered at all —
+  // eight of a hundred, and none of these ninety-odd.
+  expect(answered).toBeGreaterThan(12);
+  expect(lit).not.toBeNull();
+});
+
+test('says how much it drew, including when that is nothing', async ({ page }) => {
+  await chase(page, `#/explorer?v=1&md=infinite&${RULE}&fp=8&tg=1&hs=1&ht=1`);
+  const graph = page.getByTestId('transition-graph');
+  await expect(graph).toBeVisible({ timeout: 30000 });
+
+  // Every type is on screen somewhere, so a name always draws something.
+  const label = (await graph.locator('.tg-node text', { hasText: 'Phi' }).first().boundingBox())!;
+  await page.mouse.move(label.x + label.width / 2, label.y + label.height / 2);
+  await page.mouse.click(label.x + label.width / 2, label.y + label.height / 2);
+  await expect(page.getByTestId('transition-marks')).toContainText(/\d+ on screen/, {
+    timeout: 10000,
+  });
+  // A short chase crosses a handful of types, so "none in path" is a fact the
+  // panel has to be able to state.
+  const text = (await page.getByTestId('transition-marks').textContent()) ?? '';
+  expect(text).toMatch(/(none|\d+) in path/);
 });

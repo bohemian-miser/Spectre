@@ -47,6 +47,12 @@ export interface TransitionGraphProps {
   readonly chains?: readonly Chain[];
   /** The run length `chains` was counted at; 0 = nothing counted yet. */
   readonly chainLength?: number;
+  /**
+   * How much ink the current pick actually put on the plane. A pick that drew
+   * nothing is a fact to show — a type the chase never crossed, a pair this
+   * rule never makes — not something to leave the reader guessing about.
+   */
+  readonly marks?: { readonly onScreen: number; readonly inPath: number };
   /** Ask for a different run length — null when nothing should be counted. */
   onChainLength?(length: number | null): void;
   /**
@@ -223,8 +229,21 @@ function edgeGeometry(
   };
 }
 
-/** How near the pointer must come to a curve, in viewBox units, to pick it. */
-const HOVER_REACH = 16;
+/**
+ * How near the pointer must come to a curve to pick it, in CSS PIXELS.
+ *
+ * Not viewBox units: a hundred curves in a 208px panel are crowded, and the
+ * expand control exists to read them apart. A reach fixed in viewBox units
+ * would scale up with the panel and leave the big one exactly as vague as the
+ * small one, which is the opposite of what expanding is for.
+ */
+const REACH_PX = 12;
+/**
+ * How much further a pair the walk never made has to be from the pointer to
+ * lose to one it did. Aiming loosely in a thicket should land on a pair the
+ * chase actually made; aiming dead on an unused one should still pick it.
+ */
+const UNUSED_PENALTY = 2.2;
 /** How near it must come to a type's dot on the ring to pick that type. */
 const DOT_REACH = 6;
 /**
@@ -247,7 +266,7 @@ function inLabel(name: string, anchor: Pt, right: boolean, px: number, py: numbe
 
 export function TransitionGraph(props: TransitionGraphProps): JSX.Element | null {
   const { transitions, colors, names = LEAF_ORDER, className } = props;
-  const { chains = [], chainLength = 0, onChainLength, onSelect } = props;
+  const { chains = [], chainLength = 0, onChainLength, onSelect, marks } = props;
   const { highlightOnScreen, onToggleOnScreen, highlightInPath, onToggleInPath } = props;
   const uid = useId().replace(/:/g, '');
   const [hover, setHover] = useState<GraphSelection | null>(null);
@@ -318,7 +337,7 @@ export function TransitionGraph(props: TransitionGraphProps): JSX.Element | null
    * mostly hand the pointer to a faint line nobody was aiming at.
    */
   const resolveAt = useCallback(
-    (px: number, py: number): GraphSelection | null => {
+    (px: number, py: number, reach: number): GraphSelection | null => {
       for (let i = 0; i < n; i++) {
         const anchor = nodeAt(i, n, LABEL_R);
         const dot = nodeAt(i, n, R);
@@ -329,16 +348,19 @@ export function TransitionGraph(props: TransitionGraphProps): JSX.Element | null
           return { kind: 'type', type: i };
         }
       }
+      // Nearest curve wins, with unused pairs pushed away by a factor rather
+      // than excluded. Excluding them left ninety-odd of the hundred drawn
+      // edges ignoring the pointer, which is a dead panel rather than a design
+      // choice: "on screen" asks where a transition happens on the TILING, and
+      // the walk's counts have no say in that.
       let best: GraphSelection | null = null;
-      let bestD2 = HOVER_REACH * HOVER_REACH;
+      let bestScore = reach;
       for (const e of edges) {
-        if (transitions[e.from * n + e.to] === 0) continue;
+        const weight = transitions[e.from * n + e.to] > 0 ? 1 : UNUSED_PENALTY;
         for (const s of e.samples) {
-          const dx = s.x - px;
-          const dy = s.y - py;
-          const d2 = dx * dx + dy * dy;
-          if (d2 < bestD2) {
-            bestD2 = d2;
+          const score = Math.hypot(s.x - px, s.y - py) * weight;
+          if (score < bestScore) {
+            bestScore = score;
             best = { kind: 'pair', from: e.from, to: e.to };
           }
         }
@@ -348,20 +370,29 @@ export function TransitionGraph(props: TransitionGraphProps): JSX.Element | null
     [edges, transitions, n, names],
   );
 
-  const toViewBox = useCallback((clientX: number, clientY: number): Pt | null => {
-    const svg = svgRef.current;
-    if (!svg) return null;
-    const r = svg.getBoundingClientRect();
-    if (r.width === 0 || r.height === 0) return null;
-    // The viewBox is square and the element keeps its aspect, so one scale.
-    return { x: ((clientX - r.left) / r.width) * SIZE, y: ((clientY - r.top) / r.height) * SIZE };
-  }, []);
+  /** Pointer position in viewBox units, with how many of them a pixel is. */
+  const toViewBox = useCallback(
+    (clientX: number, clientY: number): { x: number; y: number; perPx: number } | null => {
+      const svg = svgRef.current;
+      if (!svg) return null;
+      const r = svg.getBoundingClientRect();
+      if (r.width === 0 || r.height === 0) return null;
+      // The viewBox is square and the element keeps its aspect, so one scale.
+      const perPx = SIZE / r.width;
+      return {
+        x: ((clientX - r.left) / r.width) * SIZE,
+        y: ((clientY - r.top) / r.height) * SIZE,
+        perPx,
+      };
+    },
+    [],
+  );
 
   const onMove = useCallback(
     (ev: React.MouseEvent<SVGSVGElement>): void => {
       const p = toViewBox(ev.clientX, ev.clientY);
       if (!p) return;
-      const found = resolveAt(p.x, p.y);
+      const found = resolveAt(p.x, p.y, REACH_PX * p.perPx);
       setHover((prev) => (selectionKey(prev) === selectionKey(found) ? prev : found));
     },
     [resolveAt, toViewBox],
@@ -374,19 +405,24 @@ export function TransitionGraph(props: TransitionGraphProps): JSX.Element | null
   const pick = useCallback(
     (sel: GraphSelection | null): void => {
       setPinned((prev) => (selectionKey(prev) === selectionKey(sel) ? null : sel));
-      // Picking something and seeing nothing happen is the whole trap here:
-      // the path marks cost almost nothing, so an explicit choice turns them
-      // on rather than quietly needing a checkbox first.
-      if (sel && !highlightOnScreen && !highlightInPath) onToggleInPath?.();
+      // Picking something and seeing nothing happen is the whole trap here, so
+      // an explicit choice switches the modes on rather than quietly needing a
+      // checkbox first. BOTH of them: "in path" alone is the narrow one — a
+      // short chase crosses five or six types, so most picks would still show
+      // nothing and read as broken. A run needs neither.
+      if (sel && sel.kind !== 'chain' && !highlightOnScreen && !highlightInPath) {
+        onToggleInPath?.();
+        onToggleOnScreen?.();
+      }
     },
-    [highlightOnScreen, highlightInPath, onToggleInPath],
+    [highlightOnScreen, highlightInPath, onToggleInPath, onToggleOnScreen],
   );
 
   const onSvgClick = useCallback(
     (ev: React.MouseEvent<SVGSVGElement>): void => {
       const p = toViewBox(ev.clientX, ev.clientY);
       if (!p) return;
-      pick(resolveAt(p.x, p.y));
+      pick(resolveAt(p.x, p.y, REACH_PX * p.perPx));
     },
     [pick, resolveAt, toViewBox],
   );
@@ -418,6 +454,24 @@ export function TransitionGraph(props: TransitionGraphProps): JSX.Element | null
     const key = sel.types.join(',');
     return chains.find((c) => c.types.join(',') === key)?.count ?? null;
   };
+
+  /**
+   * What the pick drew, in the modes that are on. "none on screen" is the
+   * answer to "why did clicking that do nothing" — a pair this rule never
+   * makes, or a type the chase never crossed — and saying it is the
+   * difference between a fact and a bug.
+   */
+  const drew = ((): string | null => {
+    if (!marks || !active) return null;
+    const parts: string[] = [];
+    if (active.kind !== 'chain' && highlightOnScreen) {
+      parts.push(marks.onScreen ? `${marks.onScreen.toLocaleString('en-US')} on screen` : 'none on screen');
+    }
+    if (highlightInPath || active.kind === 'chain') {
+      parts.push(marks.inPath ? `${marks.inPath.toLocaleString('en-US')} in path` : 'none in path');
+    }
+    return parts.length ? parts.join(' · ') : null;
+  })();
 
   /** Turn a run of type indices into coloured letters. */
   const sequence = (types: readonly number[], testid?: string): JSX.Element => (
@@ -514,28 +568,41 @@ export function TransitionGraph(props: TransitionGraphProps): JSX.Element | null
         ) : null}
       </div>
 
-      {pinned ? (
-        <div className="tg-pinned" data-testid="transition-pinned">
-          {sequence(
-            pinned.kind === 'pair'
-              ? [pinned.from, pinned.to]
-              : pinned.kind === 'type'
-                ? [pinned.type]
-                : pinned.types,
-          )}
-          <span className="tg-pinned-name">{describe(pinned)}</span>
-          {countOf(pinned) !== null ? (
-            <span className="tg-pinned-count">×{countOf(pinned)}</span>
+      {active ? (
+        <div
+          className="tg-pinned"
+          data-testid="transition-picked"
+          data-pinned={pinned ? '1' : '0'}
+        >
+          <div className="tg-pinned-top">
+            {sequence(
+              active.kind === 'pair'
+                ? [active.from, active.to]
+                : active.kind === 'type'
+                  ? [active.type]
+                  : active.types,
+            )}
+            <span className="tg-pinned-name">{describe(active)}</span>
+            {countOf(active) !== null ? (
+              <span className="tg-pinned-count">×{countOf(active)}</span>
+            ) : null}
+            {pinned ? (
+              <button
+                type="button"
+                data-testid="transition-unpin"
+                aria-label="Stop picking this out"
+                title="Dismiss"
+                onClick={() => setPinned(null)}
+              >
+                ×
+              </button>
+            ) : null}
+          </div>
+          {drew ? (
+            <div className="tg-pinned-marks" data-testid="transition-marks">
+              {drew}
+            </div>
           ) : null}
-          <button
-            type="button"
-            data-testid="transition-unpin"
-            aria-label="Stop picking this out"
-            title="Dismiss"
-            onClick={() => setPinned(null)}
-          >
-            ×
-          </button>
         </div>
       ) : null}
 

@@ -1045,6 +1045,41 @@ describe('InfiniteCanvas — highlighting what the graph picked', () => {
     expect(runs.every((g) => g.pointCount >= seq.length + 1)).toBe(true);
   });
 
+  /**
+   * A pick that draws nothing has to be legible as a FACT — a type the chase
+   * never crossed, a pair this rule never makes — and the panel can only say
+   * so if the counts come back to it.
+   */
+  it('reports how much ink each mode put on the plane', async () => {
+    const { m, from, to } = await walkedPair();
+    expect(m.status().highlight).toEqual({ onScreen: 0, inPath: 0 });
+
+    await m.rerender({
+      highlight: { kind: 'pair', from, to },
+      highlightInPath: true,
+      highlightOnScreen: true,
+    });
+    await settle();
+    const both = m.status().highlight;
+    expect(both.inPath).toBeGreaterThan(0);
+    expect(both.onScreen).toBeGreaterThanOrEqual(both.inPath);
+    expect(both.onScreen + both.inPath).toBe(marks(m).length);
+
+    // A type the walk never crossed draws nothing along the path, and says so
+    // rather than leaving the reader to guess.
+    const crossed = new Set(m.status().trace.tiles);
+    const missing = [...Array(10).keys()].find((t) => !crossed.has(t));
+    if (missing !== undefined) {
+      await m.rerender({ highlight: { kind: 'type', type: missing }, highlightInPath: true });
+      await settle();
+      expect(m.status().highlight.inPath).toBe(0);
+    }
+
+    await m.rerender({ highlight: null });
+    await settle();
+    expect(m.status().highlight).toEqual({ onScreen: 0, inPath: 0 });
+  });
+
   it('counts the ranked runs only when a length is asked for', async () => {
     const { m } = await walkedPair();
     expect(m.status().trace.chains).toHaveLength(0);

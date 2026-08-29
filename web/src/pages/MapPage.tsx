@@ -172,6 +172,7 @@ export function MapPage(props: MapPageProps): JSX.Element {
       chainLength: 0,
       steps: 0,
     },
+    highlight: { onScreen: 0, inPath: 0 },
     error: null,
     size: { width: 0, height: 0 },
   });
@@ -931,6 +932,7 @@ export function MapPage(props: MapPageProps): JSX.Element {
             colors={leafCss}
             className={showTicker ? undefined : 'is-low'}
             chains={status.trace.chains}
+            marks={status.highlight}
             chainLength={status.trace.chainLength}
             onChainLength={setChainLength}
             onSelect={setGraphPick}

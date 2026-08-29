@@ -1466,6 +1466,7 @@ function InfiniteHud(props: {
           colors={leafCss}
           className={tickerOn ? undefined : 'is-low'}
           chains={trace?.chains ?? []}
+          marks={status?.highlight}
           chainLength={trace?.chainLength ?? 0}
           onChainLength={onChainLength}
           onSelect={onSelect}

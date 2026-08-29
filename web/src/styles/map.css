@@ -381,16 +381,24 @@
 
 /* --- the pinned pick ------------------------------------------------------ */
 
-/* What a click holds on to, so it is legible without the pointer on it. */
+/* What is picked out, so it is legible without the pointer on it. */
 .tg-pinned {
-  display: flex;
-  align-items: baseline;
-  gap: 5px;
   padding: 2px 3px 3px;
   border-bottom: 1px solid rgba(244, 246, 251, 0.14);
   font-family: var(--mono, ui-monospace, monospace);
   font-size: 10px;
   color: #e7ecf6;
+}
+.tg-pinned-top {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+}
+/* How much ink it actually put on the plane — including none, which is a
+   fact about the rule or the chase rather than a broken panel. */
+.tg-pinned-marks {
+  color: #8f9bb3;
+  font-size: 9px;
 }
 .tg-pinned-name {
   overflow: hidden;
@@ -402,7 +410,7 @@
 .tg-pinned-count {
   color: #f4f6fb;
 }
-.tg-pinned button {
+.tg-pinned-top button {
   padding: 0 4px;
   border: 1px solid rgba(244, 246, 251, 0.28);
   border-radius: 4px;
