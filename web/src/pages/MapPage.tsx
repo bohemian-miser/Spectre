@@ -76,6 +76,7 @@ import {
 import { CANVAS2D_MAX_INSTANCES } from './map/canvasRenderer';
 import { TraceTicker } from './map/TraceTicker';
 import { TransitionGraph } from './map/TransitionGraph';
+import type { GraphSelection } from './map/transitions';
 import { describeWalk } from './map/strandWalk';
 import type { MapRenderer } from './map/renderer';
 import type { MapRenderStyle } from './map/rendererTypes';
@@ -137,7 +138,9 @@ export function MapPage(props: MapPageProps): JSX.Element {
   );
   const [highlightInPath, setHighlightInPath] = useState<boolean>(initial.highlightInPath ?? false);
   /** Graph edge under the pointer — too fast-moving to belong in the URL. */
-  const [hoverPair, setHoverPair] = useState<{ from: number; to: number } | null>(null);
+  /** What the transition graph has picked out, and the run length it wants. */
+  const [graphPick, setGraphPick] = useState<GraphSelection | null>(null);
+  const [chainLength, setChainLength] = useState<number | null>(null);
   const [pace, setPace] = useState<number | null>(initial.pace ?? null);
   const [traceSeed, setTraceSeed] = useState<
     readonly [number, number, number, number] | null
@@ -165,6 +168,8 @@ export function MapPage(props: MapPageProps): JSX.Element {
       foundStale: false,
       tiles: [],
       transitions: [],
+      chains: [],
+      chainLength: 0,
       steps: 0,
     },
     error: null,
@@ -843,9 +848,10 @@ export function MapPage(props: MapPageProps): JSX.Element {
         persistFound={persistFound}
         findCeiling={findCeiling}
         foundHold={foundHold}
-        highlightPair={hoverPair}
+        highlight={graphPick}
         highlightOnScreen={highlightOnScreen}
         highlightInPath={highlightInPath}
+        chainLength={chainLength}
         followPace={pace}
         traceSeed={lines && trace ? traceSeed : null}
         onTraceSeed={setTraceSeed}
@@ -924,7 +930,10 @@ export function MapPage(props: MapPageProps): JSX.Element {
             transitions={status.trace.transitions}
             colors={leafCss}
             className={showTicker ? undefined : 'is-low'}
-            onHoverPair={setHoverPair}
+            chains={status.trace.chains}
+            chainLength={status.trace.chainLength}
+            onChainLength={setChainLength}
+            onSelect={setGraphPick}
             highlightOnScreen={highlightOnScreen}
             onToggleOnScreen={() => setHighlightOnScreen((v) => !v)}
             highlightInPath={highlightInPath}

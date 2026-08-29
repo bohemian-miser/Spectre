@@ -25,7 +25,17 @@ import {
   transitionCounts,
   TRANSITION_TYPES,
 } from '../strandWalk';
-import { buildTransitionIndex, pairKey, pathTransitions, type Elbow } from '../transitions';
+import {
+  buildTransitionIndex,
+  chainCounts,
+  pairKey,
+  pathChains,
+  pathTransitions,
+  pathTypeChords,
+  screenTypeChords,
+  selectionKey,
+  type Elbow,
+} from '../transitions';
 
 const SEED = 1;
 const SUBSET = [2, 5, 7, 8];
@@ -192,5 +202,165 @@ describe('pathTransitions', () => {
       }
     }
     expect(compared).toBeGreaterThan(20);
+  });
+});
+
+/**
+ * Runs of types are what the ranked list ranks. The load-bearing claim is that
+ * the count and the drawing agree: whatever the list says a run happened N
+ * times, the path has N of them to point at.
+ */
+describe('chainCounts', () => {
+  const walk = (steps: number) => {
+    const index = indexFor();
+    const seed = hitTestChord(index, { x: 0, y: 0 }, 6);
+    expect(seed).not.toBeNull();
+    const trail = startTrail(seed!);
+    advanceWalk(trail, index, { maxSteps: steps });
+    return { index, trail };
+  };
+
+  it('counts pairs into exactly the transition matrix', () => {
+    const { trail } = walk(200);
+    const counts = transitionCounts(trail);
+    const chains = chainCounts(chordTypes(trail), 2, TRANSITION_TYPES);
+    // Same fact, two mechanisms: one accumulated a step at a time during the
+    // walk, the other read the finished type log.
+    let total = 0;
+    for (const c of chains) {
+      expect(c.types).toHaveLength(2);
+      expect(c.count).toBe(counts[c.types[0] * TRANSITION_TYPES + c.types[1]]);
+      total += c.count;
+    }
+    expect(total).toBe(counts.reduce((a, b) => a + b, 0));
+    // Every counted pair is listed, not just the ones that happen to be big.
+    expect(chains).toHaveLength(counts.filter((c) => c > 0).length);
+  });
+
+  it('ranks commonest first', () => {
+    const { trail } = walk(200);
+    const chains = chainCounts(chordTypes(trail), 3, TRANSITION_TYPES);
+    expect(chains.length).toBeGreaterThan(1);
+    for (let i = 1; i < chains.length; i++) {
+      expect(chains[i - 1].count).toBeGreaterThanOrEqual(chains[i].count);
+    }
+  });
+
+  it('counts overlapping runs, because that is what "how often" means', () => {
+    // A A A holds two A As and one A A A, not one of each.
+    expect(chainCounts([1, 1, 1], 2)).toEqual([{ types: [1, 1], count: 2 }]);
+    expect(chainCounts([1, 1, 1], 3)).toEqual([{ types: [1, 1, 1], count: 1 }]);
+    expect(chainCounts([1, 1, 1], 4)).toEqual([]);
+  });
+
+  it('keeps runs apart past the packed-key limit', () => {
+    // Longer than a run can be packed into a double, so this takes the string
+    // path — and two runs differing only in the last tile must stay distinct.
+    const a = new Array<number>(20).fill(3);
+    const types = [...a, 7, ...a, 8];
+    const chains = chainCounts(types, 20, TRANSITION_TYPES);
+    const twenty = chains.find((c) => c.types.every((t) => t === 3));
+    expect(twenty?.count).toBe(2);
+    expect(chains.filter((c) => c.types.at(-1) === 7)).toHaveLength(1);
+    expect(chains.filter((c) => c.types.at(-1) === 8)).toHaveLength(1);
+  });
+
+  it('has nothing to say about a path shorter than the run', () => {
+    expect(chainCounts([1, 2], 3)).toEqual([]);
+    expect(chainCounts([], 2)).toEqual([]);
+    expect(chainCounts([1, 2, 3], 0)).toEqual([]);
+  });
+});
+
+describe('pathChains and pathTypeChords', () => {
+  const walk = (steps: number) => {
+    const index = indexFor();
+    const seed = hitTestChord(index, { x: 0, y: 0 }, 6);
+    const trail = startTrail(seed!);
+    advanceWalk(trail, index, { maxSteps: steps });
+    return { index, trail };
+  };
+
+  it('draws one run of line per place the path spelled the sequence out', () => {
+    const { trail } = walk(200);
+    const types = chordTypes(trail);
+    const top = chainCounts(types, 4, TRANSITION_TYPES)[0];
+    const runs = pathChains(trail, top.types);
+    expect(runs.length).toBeGreaterThan(0);
+    // Overlapping occurrences merge into one longer run, so the pieces are at
+    // most as many as the count — and every piece is at least the sequence.
+    expect(runs.length).toBeLessThanOrEqual(top.count);
+    for (const r of runs) expect(r.length).toBeGreaterThanOrEqual(top.types.length + 1);
+    // The points are the line that was drawn, not a copy of it.
+    const first = runs[0];
+    const k = indexOfRun(types, top.types);
+    expect(first[0].x).toBeCloseTo(trail.xy[k * 2], 9);
+    expect(first[0].y).toBeCloseTo(trail.xy[k * 2 + 1], 9);
+  });
+
+  it('covers every chord of a type the path crossed', () => {
+    const { trail } = walk(200);
+    const types = chordTypes(trail);
+    const want = LEAF_ORDER.map((_, t) => [...types].filter((x) => x === t).length);
+    const t = want.findIndex((c) => c > 1);
+    expect(t).toBeGreaterThanOrEqual(0);
+    const runs = pathTypeChords(trail, t);
+    // Each run of `n` points is `n - 1` chords; adjacent ones are merged, so
+    // the pieces add up to the chords rather than matching them one for one.
+    const chords = runs.reduce((a, r) => a + r.length - 1, 0);
+    expect(chords).toBe(want[t]);
+  });
+
+  it('finds every chord of a type on screen, walked or not', () => {
+    const { index, trail } = walk(200);
+    const t = chordTypes(trail)[0];
+    const onScreen = screenTypeChords(index, t);
+    expect(onScreen.length).toBeGreaterThan(0);
+    for (const r of onScreen) expect(r).toHaveLength(2);
+    // Untraced tiles have their chords too, so the screen has more than the
+    // walk — the same containment the pair highlight relies on.
+    const walked = pathTypeChords(trail, t).reduce((a, r) => a + r.length - 1, 0);
+    expect(onScreen.length).toBeGreaterThanOrEqual(walked);
+  });
+
+  it('is empty for a sequence the path never made', () => {
+    const { trail } = walk(60);
+    const counts = transitionCounts(trail);
+    // A pair with no count is a pair the walk never made, so it has nowhere to
+    // be drawn — even though both of its types are all over the path.
+    const unused = counts.findIndex((c) => c === 0);
+    expect(unused).toBeGreaterThanOrEqual(0);
+    const pair = [Math.floor(unused / TRANSITION_TYPES), unused % TRANSITION_TYPES];
+    expect(pathChains(trail, pair)).toEqual([]);
+    expect(pathChains(trail, [])).toEqual([]);
+    // This rule gives every leaf a chord, so "a type that is not there" has to
+    // be one past the last of them.
+    expect(pathTypeChords(trail, LEAF_ORDER.length)).toEqual([]);
+  });
+});
+
+/** First chord index where `types` spells `seq`. */
+function indexOfRun(types: ArrayLike<number>, seq: readonly number[]): number {
+  outer: for (let k = 0; k + seq.length <= types.length; k++) {
+    for (let j = 0; j < seq.length; j++) if (types[k + j] !== seq[j]) continue outer;
+    return k;
+  }
+  return -1;
+}
+
+describe('selectionKey', () => {
+  it('tells the three shapes apart, and an absent one from all of them', () => {
+    expect(selectionKey(null)).toBe('');
+    expect(selectionKey({ kind: 'pair', from: 1, to: 2 })).not.toBe(
+      selectionKey({ kind: 'pair', from: 2, to: 1 }),
+    );
+    expect(selectionKey({ kind: 'type', type: 1 })).not.toBe(
+      selectionKey({ kind: 'chain', types: [1] }),
+    );
+    // Equal selections must key the same, or the view behind rebuilds its ink
+    // on every pointer move.
+    expect(selectionKey({ kind: 'chain', types: [1, 2, 3] })).toBe(
+      selectionKey({ kind: 'chain', types: [1, 2, 3] }),
+    );
   });
 });

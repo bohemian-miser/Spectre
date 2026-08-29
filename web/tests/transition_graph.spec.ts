@@ -215,3 +215,150 @@ test('hovering an edge lights that transition on the tiling', async ({ page }) =
   // Every crossing of that pair in the cut becomes its own bit of ink.
   await expect.poll(calls).toBeGreaterThan(before);
 });
+
+/**
+ * Hovering finds a transition; holding on to it is how you then go and look at
+ * the tiling. A pick has to outlive the pointer, and let go on request.
+ */
+test('a click pins what it picked, and the background lets go', async ({ page }) => {
+  await chase(page, `#/explorer?v=1&md=infinite&${RULE}&fp=8&tg=1`);
+  const graph = page.getByTestId('transition-graph');
+  await expect(graph).toBeVisible({ timeout: 30000 });
+  await expect
+    .poll(async () =>
+      graph.locator('.tg-edge').evaluateAll((gs) =>
+        gs.filter((g) => Number((g as HTMLElement).dataset.count) > 0).length,
+      ),
+    )
+    .toBeGreaterThan(0);
+
+  const target = await graph.locator('.tg-edge').evaluateAll((gs) =>
+    gs
+      .map((g) => {
+        const d = (g as HTMLElement).dataset;
+        return {
+          from: d.from!,
+          to: d.to!,
+          count: Number(d.count),
+          d: g.querySelector('.tg-line')!.getAttribute('d')!,
+        };
+      })
+      .filter((e) => e.count > 0)
+      .sort((a, b) => b.count - a.count)[0],
+  );
+  const n = target.d.match(/-?\d+(\.\d+)?/g)!.map(Number);
+  const [sx, sy, cx, cy, ex, ey] = n;
+  const svg = (await graph.locator('svg').boundingBox())!;
+  const k = svg.width / 240; // the viewBox is 240 wide
+  const at = { x: svg.x + ((sx + 2 * cx + ex) / 4) * k, y: svg.y + ((sy + 2 * cy + ey) / 4) * k };
+
+  await page.mouse.move(at.x, at.y);
+  await page.mouse.click(at.x, at.y);
+  // Away from the panel entirely: the pick must survive losing the pointer.
+  await page.mouse.move(svg.x - 300, svg.y - 200);
+  await expect(page.getByTestId('transition-pinned')).toContainText(
+    `${target.from} → ${target.to}`,
+  );
+  // An explicit pick shows itself rather than waiting to be switched on.
+  await expect(page.getByTestId('highlight-in-path')).toBeChecked();
+
+  // A corner: the ring and its names live within about 60 units of the middle,
+  // so this is the one part of the panel that is genuinely background. (The
+  // middle is not — long edges bow straight across it.)
+  await page.mouse.move(svg.x + 8 * k, svg.y + 8 * k);
+  await page.mouse.click(svg.x + 8 * k, svg.y + 8 * k);
+  await expect(page.getByTestId('transition-pinned')).toHaveCount(0);
+});
+
+test('clicking a name picks the whole tile type, and lights it on screen', async ({ page }) => {
+  await chase(page, `#/explorer?v=1&md=infinite&${RULE}&fp=8&tg=1&hs=1`);
+  const graph = page.getByTestId('transition-graph');
+  await expect(graph).toBeVisible({ timeout: 30000 });
+  const calls = async (): Promise<number> => {
+    const t = (await page.getByTestId('inf-draw').textContent()) ?? '';
+    return Number(/(\d+) calls/.exec(t)?.[1] ?? -1);
+  };
+  await expect.poll(calls).toBeGreaterThan(0);
+  const before = await calls();
+
+  // The name is a word, not a point: aim at the middle of it.
+  const label = (await graph.locator('.tg-node text', { hasText: 'Phi' }).first().boundingBox())!;
+  const at = { x: label.x + label.width / 2, y: label.y + label.height / 2 };
+  await page.mouse.move(at.x, at.y);
+  await page.mouse.click(at.x, at.y);
+  await expect(page.getByTestId('transition-pinned')).toContainText('Phi');
+  // Every chord of that type in the cut becomes its own bit of ink.
+  await expect.poll(calls).toBeGreaterThan(before);
+});
+
+/**
+ * The ranked mode answers "how often does this five-tile section come round?",
+ * which the circle cannot: it only draws pairs.
+ */
+test('ranks runs of any length, and draws the one picked', async ({ page }) => {
+  await chase(page, `#/explorer?v=1&md=infinite&${RULE}&tg=1`);
+  const graph = page.getByTestId('transition-graph');
+  await expect(graph).toBeVisible({ timeout: 30000 });
+  const calls = async (): Promise<number> => {
+    const t = (await page.getByTestId('inf-draw').textContent()) ?? '';
+    return Number(/(\d+) calls/.exec(t)?.[1] ?? -1);
+  };
+
+  await page.getByTestId('transition-mode').click();
+  await expect(graph).toHaveAttribute('data-mode', 'ranked');
+  // Full height, so a long ranking is worth scrolling.
+  const panel = (await graph.boundingBox())!;
+  expect(panel.height).toBeGreaterThan(page.viewportSize()!.height * 0.6);
+
+  // Pairs to begin with, and they agree with the circle's own counts.
+  const rows = page.locator('[data-testid=chain-rows] li');
+  await expect.poll(async () => rows.count()).toBeGreaterThan(0);
+  const counts = await rows.evaluateAll((ls) => ls.map((l) => Number((l as HTMLElement).dataset.count)));
+  expect([...counts].sort((a, b) => b - a)).toEqual(counts);
+
+  await page.getByTestId('chain-order').click();
+  const rare = await rows.evaluateAll((ls) => ls.map((l) => Number((l as HTMLElement).dataset.count)));
+  expect(rare[0]).toBeLessThanOrEqual(rare.at(-1)!);
+  await page.getByTestId('chain-order').click();
+
+  await page.getByTestId('chain-length-5').click();
+  await expect(page.getByTestId('chain-distinct')).not.toHaveText('counting…', { timeout: 10000 });
+  await expect.poll(async () => rows.count()).toBeGreaterThan(0);
+  const before = await calls();
+
+  const first = rows.first();
+  const want = Number(await first.getAttribute('data-count'));
+  await first.click();
+  const pinned = page.getByTestId('transition-pinned');
+  await expect(pinned).toBeVisible();
+  // Five tiles, named in full — the whole sequence, not just its count.
+  expect(((await pinned.textContent()) ?? '').split(/\s+/).length).toBeGreaterThanOrEqual(5);
+  expect(want).toBeGreaterThan(0);
+  // And drawn: each place the path spelled it out is its own run of ink.
+  await expect.poll(calls).toBeGreaterThan(before);
+});
+
+/**
+ * The bug this whole pass exists for: the marks used to be computed once and
+ * then left behind by the very walk they describe.
+ */
+test('keeps the path marks up with a chase that is still running', async ({ page }) => {
+  await chase(page, `#/explorer?v=1&md=infinite&${RULE}&fw=1&fp=12&tg=1&ht=1`);
+  await expect(page.getByTestId('transition-graph')).toBeVisible({ timeout: 30000 });
+  const calls = async (): Promise<number> => {
+    const t = (await page.getByTestId('inf-draw').textContent()) ?? '';
+    return Number(/(\d+) calls/.exec(t)?.[1] ?? -1);
+  };
+
+  await page.getByTestId('transition-mode').click();
+  await page.getByTestId('chain-length-1').click();
+  const rows = page.locator('[data-testid=chain-rows] li');
+  await expect.poll(async () => rows.count()).toBeGreaterThan(0);
+  await rows.first().click();
+  await expect(page.getByTestId('transition-pinned')).toBeVisible();
+
+  const before = await calls();
+  expect(before).toBeGreaterThan(0);
+  // The chase is walking; every new tile of that type is another mark.
+  await expect.poll(calls, { timeout: 20000 }).toBeGreaterThan(before);
+});

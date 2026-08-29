@@ -34,11 +34,12 @@ import {
 import { originRelativeCenter, type MapCamera } from './camera';
 import type { LeafChordTable } from './chords';
 import { GLYPH_LEVEL, buildGlyphMeshes, glyphFitForCut } from './glyphs';
-import type {
-  MapRenderStats,
-  MapRenderStyle,
-  MapRenderer,
-  TrailGeometry,
+import {
+  HIGHLIGHT_WIDTH,
+  type MapRenderStats,
+  type MapRenderStyle,
+  type MapRenderer,
+  type TrailGeometry,
 } from './rendererTypes';
 import {
   BASE_LINE_PX,
@@ -139,6 +140,7 @@ export function createCanvas2dRenderer(canvas: HTMLCanvasElement): MapRenderer |
   let trailScale = DEFAULT_TRAIL_SCALE;
   let trail: TrailGeometry | null = null;
   let circuits: readonly TrailGeometry[] = [];
+  let highlights: readonly TrailGeometry[] = [];
 
   let cutRef: ViewportCut | null = null;
   let byType: Map<number, number[]> = new Map();
@@ -161,6 +163,10 @@ export function createCanvas2dRenderer(canvas: HTMLCanvasElement): MapRenderer |
 
   const setCircuits = (next: readonly TrailGeometry[] | null): void => {
     circuits = (next ?? []).filter((c) => c.pointCount >= 2);
+  };
+
+  const setHighlights = (next: readonly TrailGeometry[] | null): void => {
+    highlights = (next ?? []).filter((c) => c.pointCount >= 2);
   };
 
   const setStyle = (style: MapRenderStyle | null): void => {
@@ -304,6 +310,18 @@ export function createCanvas2dRenderer(canvas: HTMLCanvasElement): MapRenderer |
     if (trail) {
       trailPoints += strokeTrail(C, trail, cam, bw, bh, dpr, BASE_LINE_PX * lineScale * trailScale);
     }
+    // Last, and wider: a highlight sits ON the line it points at.
+    for (const h of highlights) {
+      trailPoints += strokeTrail(
+        C,
+        h,
+        cam,
+        bw,
+        bh,
+        dpr,
+        BASE_LINE_PX * lineScale * trailScale * HIGHLIGHT_WIDTH,
+      );
+    }
 
     return {
       mode: 'canvas2d',
@@ -322,6 +340,7 @@ export function createCanvas2dRenderer(canvas: HTMLCanvasElement): MapRenderer |
     setChords,
     setTrail,
     setCircuits,
+    setHighlights,
     setStyle,
     render,
     dispose(): void {
@@ -329,6 +348,7 @@ export function createCanvas2dRenderer(canvas: HTMLCanvasElement): MapRenderer |
       chordPaths = null;
       trail = null;
       circuits = [];
+      highlights = [];
       byType.clear();
     },
   };

@@ -10,6 +10,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { LEAF_ORDER } from '../../../core';
 import { TransitionGraph } from '../TransitionGraph';
+import type { Chain, GraphSelection } from '../transitions';
 
 const N = LEAF_ORDER.length;
 const colors = LEAF_ORDER.map((_, i) => `rgb(${i}, ${i}, ${i})`);
@@ -55,16 +56,30 @@ function withBox(container: Element): SVGSVGElement {
   return svg;
 }
 
+/** Where a type's name is drawn, in viewBox units (SIZE 240, LABEL_R 60). */
+function labelAt(i: number): { clientX: number; clientY: number } {
+  const a = (i / N) * Math.PI * 2 - Math.PI / 2;
+  return { clientX: 120 + Math.cos(a) * 60, clientY: 120 + Math.sin(a) * 60 };
+}
+
+/** The midpoint of an edge's own curve, in viewBox units. */
+function edgeMid(container: Element, from: string, to: string): { clientX: number; clientY: number } {
+  const d = lineOf(edgeFor(container, from, to)).getAttribute('d')!;
+  // Midpoint of the quadratic: (start + 2·ctrl + end) / 4.
+  const [sx, sy, cx, cy, ex, ey] = nums(d);
+  return { clientX: (sx + 2 * cx + ex) / 4, clientY: (sy + 2 * cy + ey) / 4 };
+}
+
 /** Move the pointer to a point on this edge's own curve. */
 function hoverEdge(container: Element, from: string, to: string): void {
-  const d = lineOf(edgeFor(container, from, to)).getAttribute('d')!;
-  const p = nums(d);
-  // Midpoint of the quadratic: (start + 2·ctrl + end) / 4.
-  const [sx, sy, cx, cy, ex, ey] = p;
-  fireEvent.mouseMove(withBox(container), {
-    clientX: (sx + 2 * cx + ex) / 4,
-    clientY: (sy + 2 * cy + ey) / 4,
-  });
+  fireEvent.mouseMove(withBox(container), edgeMid(container, from, to));
+}
+
+/** Click that same point — the pointer has to be there for the click to land. */
+function clickEdge(container: Element, from: string, to: string): void {
+  const at = edgeMid(container, from, to);
+  fireEvent.mouseMove(withBox(container), at);
+  fireEvent.click(withBox(container), at);
 }
 
 afterEach(cleanup);
@@ -174,9 +189,8 @@ describe('TransitionGraph', () => {
     const { container, queryByTestId } = render(
       <TransitionGraph transitions={matrix({ 'Phi>Gamma1': 12 })} colors={colors} />,
     );
-    // The dead centre of the panel: curves bow away from it, and in any case
-    // nothing uncounted may claim the pointer.
-    fireEvent.mouseMove(withBox(container), { clientX: 120, clientY: 120 });
+    // A corner, well outside the ring: nothing uncounted may claim the pointer.
+    fireEvent.mouseMove(withBox(container), { clientX: 8, clientY: 8 });
     expect(queryByTestId('transition-readout')).toBeNull();
   });
 
@@ -197,17 +211,17 @@ describe('TransitionGraph', () => {
   });
 
   it('reports the hovered edge outward, and clears it on leave', () => {
-    const seen: ({ from: number; to: number } | null)[] = [];
+    const seen: (GraphSelection | null)[] = [];
     const { container } = render(
       <TransitionGraph
         transitions={matrix({ 'Phi>Gamma1': 3 })}
         colors={colors}
-        onHoverPair={(p) => seen.push(p)}
+        onSelect={(p) => seen.push(p)}
       />,
     );
     seen.length = 0;
     hoverEdge(container, 'Phi', 'Gamma1');
-    expect(seen.at(-1)).toEqual({ from: indexOf('Phi'), to: indexOf('Gamma1') });
+    expect(seen.at(-1)).toEqual({ kind: 'pair', from: indexOf('Phi'), to: indexOf('Gamma1') });
     fireEvent.mouseLeave(withBox(container));
     expect(seen.at(-1)).toBeNull();
   });
@@ -249,5 +263,235 @@ describe('TransitionGraph', () => {
       <TransitionGraph transitions={matrix({ 'Phi>Gamma1': 2 })} colors={['rgb(1, 1, 1)']} />,
     );
     expect(container.querySelectorAll('.tg-edge')).toHaveLength(N * N);
+  });
+});
+
+/**
+ * A pick has to outlive the pointer. Hovering a hundred curves is how you find
+ * one; holding on to it is how you then go and look at the tiling.
+ */
+describe('TransitionGraph — picking things out', () => {
+  const seen = (): { list: (GraphSelection | null)[]; onSelect(s: GraphSelection | null): void } => {
+    const list: (GraphSelection | null)[] = [];
+    return { list, onSelect: (s) => list.push(s) };
+  };
+
+  it('pins a clicked edge, and keeps it after the pointer leaves', () => {
+    const out = seen();
+    const { container, queryByTestId } = render(
+      <TransitionGraph
+        transitions={matrix({ 'Phi>Gamma1': 12 })}
+        colors={colors}
+        onSelect={out.onSelect}
+      />,
+    );
+    clickEdge(container, 'Phi', 'Gamma1');
+    fireEvent.mouseLeave(withBox(container));
+
+    expect(out.list.at(-1)).toEqual({ kind: 'pair', from: indexOf('Phi'), to: indexOf('Gamma1') });
+    expect(queryByTestId('transition-pinned')?.textContent).toContain('Phi → Gamma1');
+    // The readout still names it with nothing under the pointer.
+    expect(queryByTestId('transition-readout')?.textContent).toBe('Phi → Gamma1: 12');
+  });
+
+  it('picks the whole type when a name is clicked', () => {
+    const out = seen();
+    const { container, queryByTestId } = render(
+      <TransitionGraph transitions={matrix({ 'Phi>Gamma1': 4 })} colors={colors} onSelect={out.onSelect} />,
+    );
+    const box = withBox(container);
+    fireEvent.mouseMove(box, labelAt(indexOf('Lambda')));
+    fireEvent.click(box, labelAt(indexOf('Lambda')));
+    expect(out.list.at(-1)).toEqual({ kind: 'type', type: indexOf('Lambda') });
+    expect(queryByTestId('transition-pinned')?.textContent).toContain('Lambda');
+  });
+
+  it('lets go when the background is clicked', () => {
+    const out = seen();
+    const { container, queryByTestId } = render(
+      <TransitionGraph transitions={matrix({ 'Phi>Gamma1': 4 })} colors={colors} onSelect={out.onSelect} />,
+    );
+    clickEdge(container, 'Phi', 'Gamma1');
+    expect(queryByTestId('transition-pinned')).not.toBeNull();
+
+    // A corner. The ring and its names are all within about 60 units of the
+    // middle, so this is the one part that is background whatever the counts —
+    // the middle is not, since long edges bow straight across it.
+    const box = withBox(container);
+    fireEvent.mouseMove(box, { clientX: 8, clientY: 8 });
+    fireEvent.click(box, { clientX: 8, clientY: 8 });
+    expect(queryByTestId('transition-pinned')).toBeNull();
+    expect(out.list.at(-1)).toBeNull();
+  });
+
+  it('replaces one pick with the next rather than stacking them', () => {
+    const out = seen();
+    const { container, queryByTestId } = render(
+      <TransitionGraph
+        transitions={matrix({ 'Phi>Gamma1': 12, 'Xi>Pi': 5 })}
+        colors={colors}
+        onSelect={out.onSelect}
+      />,
+    );
+    clickEdge(container, 'Phi', 'Gamma1');
+    clickEdge(container, 'Xi', 'Pi');
+    fireEvent.mouseLeave(withBox(container));
+    expect(out.list.at(-1)).toEqual({ kind: 'pair', from: indexOf('Xi'), to: indexOf('Pi') });
+    expect(queryByTestId('transition-pinned')?.textContent).toContain('Xi → Pi');
+  });
+
+  /**
+   * Clicking something and seeing nothing happen is the trap this avoids: the
+   * path marks are one linear read of the trail, so an explicit pick turns
+   * them on rather than quietly needing a checkbox first.
+   */
+  it('turns the path marks on when a pick would otherwise show nothing', () => {
+    const inPath = vi.fn();
+    const { container } = render(
+      <TransitionGraph
+        transitions={matrix({ 'Phi>Gamma1': 12 })}
+        colors={colors}
+        highlightOnScreen={false}
+        onToggleOnScreen={vi.fn()}
+        highlightInPath={false}
+        onToggleInPath={inPath}
+      />,
+    );
+    clickEdge(container, 'Phi', 'Gamma1');
+    expect(inPath).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves the modes alone when one is already on', () => {
+    const inPath = vi.fn();
+    const { container } = render(
+      <TransitionGraph
+        transitions={matrix({ 'Phi>Gamma1': 12 })}
+        colors={colors}
+        highlightOnScreen
+        onToggleOnScreen={vi.fn()}
+        highlightInPath={false}
+        onToggleInPath={inPath}
+      />,
+    );
+    clickEdge(container, 'Phi', 'Gamma1');
+    expect(inPath).not.toHaveBeenCalled();
+  });
+});
+
+const chain = (names: string[], count: number): Chain => ({
+  types: names.map(indexOf),
+  count,
+});
+
+describe('TransitionGraph — ranked runs', () => {
+  const CHAINS: readonly Chain[] = [
+    chain(['Phi', 'Gamma1'], 40),
+    chain(['Xi', 'Pi'], 9),
+    chain(['Delta', 'Theta'], 2),
+  ];
+
+  const ranked = (extra: Partial<React.ComponentProps<typeof TransitionGraph>> = {}) => {
+    const r = render(
+      <TransitionGraph
+        transitions={matrix({ 'Phi>Gamma1': 40 })}
+        colors={colors}
+        chains={CHAINS}
+        chainLength={2}
+        {...extra}
+      />,
+    );
+    fireEvent.click(r.getByTestId('transition-mode'));
+    return r;
+  };
+
+  it('asks for pairs when opened, and for nothing when closed again', () => {
+    const onChainLength = vi.fn();
+    const r = render(
+      <TransitionGraph transitions={matrix()} colors={colors} onChainLength={onChainLength} />,
+    );
+    expect(onChainLength).toHaveBeenLastCalledWith(null);
+    fireEvent.click(r.getByTestId('transition-mode'));
+    expect(onChainLength).toHaveBeenLastCalledWith(2);
+    fireEvent.click(r.getByTestId('chain-length-5'));
+    expect(onChainLength).toHaveBeenLastCalledWith(5);
+    fireEvent.click(r.getByTestId('transition-mode'));
+    expect(onChainLength).toHaveBeenLastCalledWith(null);
+  });
+
+  it('swaps the circle for a list, and grows to the full height', () => {
+    const { container, getByTestId, queryByTestId } = ranked();
+    expect(container.querySelector('.trace-graph')?.getAttribute('data-mode')).toBe('ranked');
+    expect(container.querySelector('.trace-graph')?.className).toContain('is-tall');
+    expect(container.querySelector('svg')).toBeNull();
+    expect(getByTestId('chain-rows').children).toHaveLength(3);
+    expect(queryByTestId('chain-distinct')?.textContent).toBe('3 distinct');
+  });
+
+  it('ranks commonest first, and rarest first on request', () => {
+    const { getByTestId } = ranked();
+    const counts = (): number[] =>
+      [...getByTestId('chain-rows').children].map((li) => Number((li as HTMLElement).dataset.count));
+    expect(counts()).toEqual([40, 9, 2]);
+    fireEvent.click(getByTestId('chain-order'));
+    expect(counts()).toEqual([2, 9, 40]);
+  });
+
+  it('picks a pair from a two-long row, and a chain from a longer one', () => {
+    const out: (GraphSelection | null)[] = [];
+    const three = [...CHAINS, chain(['Phi', 'Gamma1', 'Xi'], 7)];
+    const { getByTestId } = ranked({ chains: three, chainLength: 3, onSelect: (s) => out.push(s) });
+
+    fireEvent.click(getByTestId(`chain-row-${[indexOf('Xi'), indexOf('Pi')].join(',')}`));
+    expect(out.at(-1)).toEqual({ kind: 'pair', from: indexOf('Xi'), to: indexOf('Pi') });
+
+    const seq = ['Phi', 'Gamma1', 'Xi'].map(indexOf);
+    fireEvent.click(getByTestId(`chain-row-${seq.join(',')}`));
+    expect(out.at(-1)).toEqual({ kind: 'chain', types: seq });
+    expect(getByTestId('transition-pinned').textContent).toContain('Phi Gamma1 Xi');
+  });
+
+  it('previews a row on hover and falls back to the pin on leave', () => {
+    const out: (GraphSelection | null)[] = [];
+    const { getByTestId } = ranked({ onSelect: (s) => out.push(s) });
+    const pair = getByTestId(`chain-row-${[indexOf('Phi'), indexOf('Gamma1')].join(',')}`);
+    const other = getByTestId(`chain-row-${[indexOf('Xi'), indexOf('Pi')].join(',')}`);
+
+    fireEvent.click(pair);
+    fireEvent.mouseEnter(other);
+    expect(out.at(-1)).toEqual({ kind: 'pair', from: indexOf('Xi'), to: indexOf('Pi') });
+    fireEvent.mouseLeave(other);
+    expect(out.at(-1)).toEqual({ kind: 'pair', from: indexOf('Phi'), to: indexOf('Gamma1') });
+  });
+
+  it('offers every length from one tile to thirty', () => {
+    const { getByTestId, queryByTestId } = ranked();
+    expect(queryByTestId('chain-length-1')).not.toBeNull();
+    expect(queryByTestId('chain-length-30')).not.toBeNull();
+    expect(queryByTestId('chain-length-31')).toBeNull();
+    fireEvent.click(getByTestId('chain-length-1'));
+    // A single tile is a type, so its row picks the type out.
+    expect(getByTestId('chain-length-1').getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('says it is counting until the numbers are for the length asked for', () => {
+    const { getByTestId } = ranked({ chainLength: 2 });
+    expect(getByTestId('chain-distinct').textContent).toBe('3 distinct');
+    fireEvent.click(getByTestId('chain-length-7'));
+    expect(getByTestId('chain-distinct').textContent).toBe('counting…');
+  });
+
+  it('draws a page of rows at a time, and more when asked', () => {
+    const many: Chain[] = [];
+    // Distinct sequences, as a real count is: i in base N, three digits.
+    for (let i = 0; i < 450; i++) {
+      many.push({ types: [i % N, Math.floor(i / N) % N, Math.floor(i / (N * N))], count: 450 - i });
+    }
+    const { getByTestId, queryByTestId } = ranked({ chains: many, chainLength: 3 });
+    expect(getByTestId('chain-rows').children.length).toBe(200);
+    fireEvent.click(getByTestId('chain-more'));
+    expect(getByTestId('chain-rows').children.length).toBe(400);
+    fireEvent.click(getByTestId('chain-more'));
+    expect(getByTestId('chain-rows').children.length).toBe(450);
+    expect(queryByTestId('chain-more')).toBeNull();
   });
 });

@@ -6,22 +6,29 @@
  * `Phi Gamma2 Gamma1 Xi Phi Gamma2 Gamma1` is going round something, and the
  * ticker makes you spot that by eye, one name at a time.
  *
- * So this draws the whole chase at once: every leaf type on a circle in its
- * own colour, and a directed edge for every ordered pair — all n² of them,
- * including a tile type following itself, which really happens. Weight is the
- * count, so the paths the substitution actually favours are the thick ones and
- * the rest stay faint rather than disappearing.
+ * So this draws the whole chase at once, two ways:
  *
- * Direction is the point, so `Phi → Gamma1` must be readable apart from
- * `Gamma1 → Phi`. Each edge bows to ONE side of the straight line between its
- * endpoints, chosen from the direction of travel: reversing the pair flips the
- * perpendicular, so the two directions bow to opposite sides and sit as a
- * lens rather than on top of each other. An arrowhead at the target end, in
- * the source type's colour, says which way round each one is.
+ *  - **the circle** — every leaf type on a ring in its own colour, and a
+ *    directed edge for every ordered pair (all n², including a type following
+ *    itself, which really happens). Weight is the count, so the paths the
+ *    substitution favours are the thick ones and the rest stay faint rather
+ *    than disappearing. Direction is the point, so `Phi → Gamma1` must be
+ *    readable apart from `Gamma1 → Phi`: each edge bows to ONE side of the
+ *    straight line between its endpoints, chosen from the direction of travel,
+ *    so reversing the pair flips the perpendicular and the two sit as a lens
+ *    rather than on top of each other.
+ *  - **the ranking** — the same counts as a list, longest runs included: not
+ *    just pairs but any length of run, so "how often does this five-tile
+ *    section come round?" is a question you can ask and then click.
+ *
+ * Anything picked out here — an edge, a type, a run — is reported outward so
+ * the tiling behind can light the same thing up. Hovering previews; clicking
+ * pins, and a click on the background lets go again.
  */
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { LEAF_ORDER } from '../../core';
+import { selectionKey, type Chain, type GraphSelection } from './transitions';
 
 export interface TransitionGraphProps {
   /**
@@ -34,10 +41,19 @@ export interface TransitionGraphProps {
   /** Type names, defaulting to `LEAF_ORDER`. */
   readonly names?: readonly string[];
   /**
-   * The edge under the pointer, reported as it changes — what lets the view
-   * behind pick the same transition out on the tiling.
+   * Runs of consecutive types the path made, commonest first — what the ranked
+   * mode lists. Counted by the view that owns the walk, at {@link chainLength}.
    */
-  onHoverPair?(pair: { from: number; to: number } | null): void;
+  readonly chains?: readonly Chain[];
+  /** The run length `chains` was counted at; 0 = nothing counted yet. */
+  readonly chainLength?: number;
+  /** Ask for a different run length — null when nothing should be counted. */
+  onChainLength?(length: number | null): void;
+  /**
+   * What is picked out, reported as it changes — what lets the view behind
+   * find the same thing on the tiling. Hover previews over a pinned choice.
+   */
+  onSelect?(selection: GraphSelection | null): void;
   /** Light every place that transition can happen in the current view. */
   readonly highlightOnScreen?: boolean;
   onToggleOnScreen?(): void;
@@ -63,6 +79,30 @@ const NODE_GAP = 5;
 const HEAD_GAP = 7;
 /** How far an edge bows off the straight line, as a fraction of its length. */
 const BEND = 0.22;
+
+/** Longest run the ranked mode will count. */
+export const MAX_CHAIN = 30;
+/** Rows drawn before the reader asks for more, and the step for asking. */
+const ROW_PAGE = 200;
+
+/**
+ * The letter each leaf is named after. A run of thirty tiles has to fit on a
+ * line to be read at all, and `Λ` is what "Lambda" means anyway.
+ */
+const GLYPHS: Readonly<Record<string, string>> = {
+  Delta: 'Δ',
+  Theta: 'Θ',
+  Lambda: 'Λ',
+  Xi: 'Ξ',
+  Pi: 'Π',
+  Sigma: 'Σ',
+  Phi: 'Φ',
+  Psi: 'Ψ',
+  Gamma1: 'Γ₁',
+  Gamma2: 'Γ₂',
+};
+const glyphFor = (name: string | undefined): string =>
+  (name && GLYPHS[name]) || (name ?? '?').slice(0, 2);
 
 interface Pt {
   readonly x: number;
@@ -185,24 +225,66 @@ function edgeGeometry(
 
 /** How near the pointer must come to a curve, in viewBox units, to pick it. */
 const HOVER_REACH = 16;
+/** How near it must come to a type's dot on the ring to pick that type. */
+const DOT_REACH = 6;
+/**
+ * A name's box, in viewBox units: the anchor, and the text running out from it
+ * away from the ring. Aiming at the WORD is how a reader picks a type, and the
+ * word is some 30 units wide — hit-testing its anchor point alone misses the
+ * end of "Gamma2" by more than the reach.
+ *
+ * The font is the panel's monospace at 9 units, so a character is about 5.4
+ * wide; the padding is what makes a near miss still count.
+ */
+const CHAR_W = 5.4;
+const LABEL_PAD = 4;
+function inLabel(name: string, anchor: Pt, right: boolean, px: number, py: number): boolean {
+  const w = name.length * CHAR_W;
+  const x0 = (right ? anchor.x : anchor.x - w) - LABEL_PAD;
+  const x1 = (right ? anchor.x + w : anchor.x) + LABEL_PAD;
+  return px >= x0 && px <= x1 && Math.abs(py - anchor.y) <= 6 + LABEL_PAD;
+}
 
 export function TransitionGraph(props: TransitionGraphProps): JSX.Element | null {
   const { transitions, colors, names = LEAF_ORDER, className } = props;
-  const { onHoverPair, highlightOnScreen, onToggleOnScreen, highlightInPath, onToggleInPath } =
-    props;
+  const { chains = [], chainLength = 0, onChainLength, onSelect } = props;
+  const { highlightOnScreen, onToggleOnScreen, highlightInPath, onToggleInPath } = props;
   const uid = useId().replace(/:/g, '');
-  const [hover, setHover] = useState<{ from: number; to: number } | null>(null);
+  const [hover, setHover] = useState<GraphSelection | null>(null);
+  /** The click-pinned choice: it outlives the pointer until another, or a dismiss. */
+  const [pinned, setPinned] = useState<GraphSelection | null>(null);
   const [expanded, setExpanded] = useState(false);
+  const [ranked, setRanked] = useState(false);
+  const [length, setLength] = useState(2);
+  /** Rarest first — how you find the run the chase almost never makes. */
+  const [ascending, setAscending] = useState(false);
+  const [rowLimit, setRowLimit] = useState(ROW_PAGE);
   const svgRef = useRef<SVGSVGElement | null>(null);
 
-  // Report the hovered edge outward, once per change rather than per pointer
-  // move — the listener's work is per-change, and a mousemove stream is not.
-  const hoverOut = useRef(onHoverPair);
-  hoverOut.current = onHoverPair;
+  // Hover previews over the pin, so moving the pointer away shows the pinned
+  // choice again rather than nothing.
+  const active = hover ?? pinned;
+  const activeKey = selectionKey(active);
+
+  // Report outward once per change rather than per pointer move — the
+  // listener's work is per-change, and a mousemove stream is not.
+  const selectOut = useRef(onSelect);
+  selectOut.current = onSelect;
   useEffect(() => {
-    hoverOut.current?.(hover);
-  }, [hover?.from, hover?.to, hover]);
-  useEffect(() => () => hoverOut.current?.(null), []);
+    selectOut.current?.(active);
+    // `activeKey` is the identity of `active`; re-reporting an equal selection
+    // would make the view behind rebuild its ink for nothing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeKey]);
+  useEffect(() => () => selectOut.current?.(null), []);
+
+  // Ask for run counts only while the ranked list is actually open.
+  const lengthOut = useRef(onChainLength);
+  lengthOut.current = onChainLength;
+  useEffect(() => {
+    lengthOut.current?.(ranked ? length : null);
+  }, [ranked, length]);
+  useEffect(() => () => lengthOut.current?.(null), []);
 
   const n = Math.round(Math.sqrt(transitions.length));
   const valid = n > 1 && n * n === transitions.length;
@@ -227,22 +309,27 @@ export function TransitionGraph(props: TransitionGraphProps): JSX.Element | null
   }, [transitions]);
 
   /**
-   * Pick the edge whose curve passes nearest the pointer. Only edges with a
-   * count are candidates: an unused pair has nothing to report, and letting
-   * the other 90-odd compete would mostly hand hover to a faint line the
-   * reader was not aiming at.
+   * What is under the pointer, in viewBox coordinates.
+   *
+   * Names win over edges: they sit outside the ring where no edge runs, and a
+   * reader aiming at "Lambda" means the type, not whichever faint curve
+   * happens to pass nearby. Only edges with a count are candidates — an unused
+   * pair has nothing to report, and letting the other ninety compete would
+   * mostly hand the pointer to a faint line nobody was aiming at.
    */
-  const onMove = useCallback(
-    (ev: React.MouseEvent<SVGSVGElement>): void => {
-      const svg = svgRef.current;
-      if (!svg) return;
-      const r = svg.getBoundingClientRect();
-      if (r.width === 0 || r.height === 0) return;
-      // The viewBox is square and the element keeps its aspect, so one scale.
-      const px = ((ev.clientX - r.left) / r.width) * SIZE;
-      const py = ((ev.clientY - r.top) / r.height) * SIZE;
-
-      let best: { from: number; to: number } | null = null;
+  const resolveAt = useCallback(
+    (px: number, py: number): GraphSelection | null => {
+      for (let i = 0; i < n; i++) {
+        const anchor = nodeAt(i, n, LABEL_R);
+        const dot = nodeAt(i, n, R);
+        if (
+          inLabel(names[i] ?? '', anchor, anchor.x >= C - 0.5, px, py) ||
+          Math.hypot(dot.x - px, dot.y - py) <= DOT_REACH
+        ) {
+          return { kind: 'type', type: i };
+        }
+      }
+      let best: GraphSelection | null = null;
       let bestD2 = HOVER_REACH * HOVER_REACH;
       for (const e of edges) {
         if (transitions[e.from * n + e.to] === 0) continue;
@@ -252,32 +339,126 @@ export function TransitionGraph(props: TransitionGraphProps): JSX.Element | null
           const d2 = dx * dx + dy * dy;
           if (d2 < bestD2) {
             bestD2 = d2;
-            best = { from: e.from, to: e.to };
+            best = { kind: 'pair', from: e.from, to: e.to };
           }
         }
       }
-      setHover((prev) =>
-        prev?.from === best?.from && prev?.to === best?.to ? prev : best,
-      );
+      return best;
     },
-    [edges, transitions, n],
+    [edges, transitions, n, names],
   );
 
+  const toViewBox = useCallback((clientX: number, clientY: number): Pt | null => {
+    const svg = svgRef.current;
+    if (!svg) return null;
+    const r = svg.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) return null;
+    // The viewBox is square and the element keeps its aspect, so one scale.
+    return { x: ((clientX - r.left) / r.width) * SIZE, y: ((clientY - r.top) / r.height) * SIZE };
+  }, []);
+
+  const onMove = useCallback(
+    (ev: React.MouseEvent<SVGSVGElement>): void => {
+      const p = toViewBox(ev.clientX, ev.clientY);
+      if (!p) return;
+      const found = resolveAt(p.x, p.y);
+      setHover((prev) => (selectionKey(prev) === selectionKey(found) ? prev : found));
+    },
+    [resolveAt, toViewBox],
+  );
+
+  /**
+   * A click pins what is under it — and a click on the background lets go,
+   * which is the way out of a pin without hunting for a button.
+   */
+  const pick = useCallback(
+    (sel: GraphSelection | null): void => {
+      setPinned((prev) => (selectionKey(prev) === selectionKey(sel) ? null : sel));
+      // Picking something and seeing nothing happen is the whole trap here:
+      // the path marks cost almost nothing, so an explicit choice turns them
+      // on rather than quietly needing a checkbox first.
+      if (sel && !highlightOnScreen && !highlightInPath) onToggleInPath?.();
+    },
+    [highlightOnScreen, highlightInPath, onToggleInPath],
+  );
+
+  const onSvgClick = useCallback(
+    (ev: React.MouseEvent<SVGSVGElement>): void => {
+      const p = toViewBox(ev.clientX, ev.clientY);
+      if (!p) return;
+      pick(resolveAt(p.x, p.y));
+    },
+    [pick, resolveAt, toViewBox],
+  );
+
+  // A different length or order is a different list; start it from the top.
+  useEffect(() => {
+    setRowLimit(ROW_PAGE);
+  }, [length, ascending]);
+
+  const rows = useMemo(() => {
+    // `chains` arrives commonest first. Rarest first is the same list read
+    // backwards, which is cheaper and keeps ties in the same order.
+    const list = ascending ? [...chains].reverse() : chains;
+    return list.slice(0, rowLimit);
+  }, [chains, ascending, rowLimit]);
+
   if (!valid) return null;
+
+  const nameOf = (i: number): string => names[i] ?? `#${i}`;
+  const colorOf = (i: number): string => colors[i] ?? '#c8c8c8';
+  const describe = (sel: GraphSelection): string => {
+    if (sel.kind === 'pair') return `${nameOf(sel.from)} → ${nameOf(sel.to)}`;
+    if (sel.kind === 'type') return nameOf(sel.type);
+    return sel.types.map(nameOf).join(' ');
+  };
+  const countOf = (sel: GraphSelection): number | null => {
+    if (sel.kind === 'pair') return transitions[sel.from * n + sel.to];
+    if (sel.kind !== 'chain') return null;
+    const key = sel.types.join(',');
+    return chains.find((c) => c.types.join(',') === key)?.count ?? null;
+  };
+
+  /** Turn a run of type indices into coloured letters. */
+  const sequence = (types: readonly number[], testid?: string): JSX.Element => (
+    <span className="tg-seq" data-testid={testid}>
+      {types.map((t, i) => (
+        <span key={i} style={{ color: colorOf(t) }} title={nameOf(t)}>
+          {glyphFor(names[t])}
+        </span>
+      ))}
+    </span>
+  );
+
+  /** Which types this selection touches, for dimming everything else. */
+  const touches = (i: number): boolean => {
+    if (!active) return true;
+    if (active.kind === 'pair') return active.from === i || active.to === i;
+    if (active.kind === 'type') return active.type === i;
+    return active.types.includes(i);
+  };
 
   // Heavy edges last so they are not buried under the faint ones.
   const order = [...edges].sort(
     (p, q) => transitions[p.from * n + p.to] - transitions[q.from * n + q.to],
   );
-  const hovered = hover ? transitions[hover.from * n + hover.to] : 0;
+
+  const distinct = chains.length;
+  const counted = chainLength === length;
 
   return (
     <div
-      className={['trace-graph', expanded ? 'is-big' : '', className ?? '']
+      className={[
+        'trace-graph',
+        expanded ? 'is-big' : '',
+        ranked ? 'is-tall' : '',
+        className ?? '',
+      ]
         .filter(Boolean)
         .join(' ')}
       data-testid="transition-graph"
       data-expanded={expanded ? '1' : '0'}
+      data-mode={ranked ? 'ranked' : 'graph'}
       // The panel sits INSIDE the map viewport, which takes a pointerdown to
       // start a pan or a trace and captures the pointer for it. Without this
       // a click on a control here is swallowed by that capture — and worse,
@@ -296,10 +477,21 @@ export function TransitionGraph(props: TransitionGraphProps): JSX.Element | null
           title={expanded ? 'Shrink' : 'Expand'}
           onClick={() => setExpanded((v) => !v)}
         >
-          {expanded ? '\u2013' : '\u2b1c'}
+          {expanded ? '–' : '⬜'}
+        </button>
+        <button
+          type="button"
+          className="tg-expand"
+          data-testid="transition-mode"
+          aria-pressed={ranked}
+          aria-label={ranked ? 'Show the transition circle' : 'Rank the runs by how often'}
+          title={ranked ? 'Circle' : 'Ranked runs'}
+          onClick={() => setRanked((v) => !v)}
+        >
+          {ranked ? '◎' : '≡'}
         </button>
         {onToggleOnScreen ? (
-          <label title="Light every place this transition happens on screen">
+          <label title="Light every place this happens on screen">
             <input
               type="checkbox"
               data-testid="highlight-on-screen"
@@ -310,7 +502,7 @@ export function TransitionGraph(props: TransitionGraphProps): JSX.Element | null
           </label>
         ) : null}
         {onToggleInPath ? (
-          <label title="Light only the crossings the traced strand made">
+          <label title="Light only the places the traced strand went through">
             <input
               type="checkbox"
               data-testid="highlight-in-path"
@@ -321,100 +513,215 @@ export function TransitionGraph(props: TransitionGraphProps): JSX.Element | null
           </label>
         ) : null}
       </div>
-      <svg
-        ref={svgRef}
-        viewBox={`0 0 ${SIZE} ${SIZE}`}
-        onMouseMove={onMove}
-        onMouseLeave={() => setHover(null)}
-        role="img"
-        aria-label="How often the chase stepped from each tile type into each other"
-      >
-        <defs>
-          {names.slice(0, n).map((name, i) => (
-            <marker
-              key={name}
-              id={`tg-${uid}-${i}`}
-              viewBox="0 0 8 8"
-              refX="7"
-              refY="4"
-              markerWidth="5"
-              markerHeight="5"
-              orient="auto-start-reverse"
-            >
-              <path d="M 0 0.6 L 8 4 L 0 7.4 z" fill={colors[i] ?? '#c8c8c8'} />
-            </marker>
-          ))}
-        </defs>
 
-        {order.map((e) => {
-          const count = transitions[e.from * n + e.to];
-          const isHover = hover?.from === e.from && hover?.to === e.to;
-          const share = max > 0 ? count / max : 0;
-          // sqrt so one dominant pair does not flatten every other edge.
-          const width = count === 0 ? 0.4 : 0.7 + 2.3 * Math.sqrt(share);
-          const base = count === 0 ? 0.07 : 0.3 + 0.55 * share;
-          // Hovering one edge dims the rest, which is the only way to follow a
-          // single curve through a hundred of them.
-          const opacity = isHover ? 1 : hover ? base * 0.25 : base;
-          const color = colors[e.from] ?? '#c8c8c8';
-          return (
-            <g
-              key={`${e.from}-${e.to}`}
-              className="tg-edge"
-              data-from={names[e.from]}
-              data-to={names[e.to]}
-              data-count={count}
-            >
-              <title>{`${names[e.from]} → ${names[e.to]}: ${count}`}</title>
-              <path
-                className="tg-line"
-                d={e.d}
-                stroke={color}
-                strokeWidth={isHover ? width + 1.4 : width}
-                strokeOpacity={opacity}
-                markerEnd={`url(#tg-${uid}-${e.from})`}
-              />
-            </g>
-          );
-        })}
-
-        {names.slice(0, n).map((name, i) => {
-          const p = nodeAt(i, n, LABEL_R);
-          const dot = nodeAt(i, n, R);
-          // Right half reads outward to the right, left half to the left, so
-          // nothing runs back over the ring.
-          const right = p.x >= C - 0.5;
-          const dim = hover !== null && hover.from !== i && hover.to !== i;
-          return (
-            <g key={name} className="tg-node" opacity={dim ? 0.35 : 1}>
-              <circle cx={dot.x} cy={dot.y} r={2.6} fill={colors[i] ?? '#c8c8c8'} />
-              <text
-                x={p.x}
-                y={p.y}
-                fill={colors[i] ?? '#c8c8c8'}
-                textAnchor={right ? 'start' : 'end'}
-                dominantBaseline="middle"
-                data-tile={name}
-              >
-                {name}
-              </text>
-            </g>
-          );
-        })}
-
-        {hover ? (
-          <text
-            className="tg-readout"
-            x={C}
-            y={C}
-            textAnchor="middle"
-            dominantBaseline="middle"
-            data-testid="transition-readout"
+      {pinned ? (
+        <div className="tg-pinned" data-testid="transition-pinned">
+          {sequence(
+            pinned.kind === 'pair'
+              ? [pinned.from, pinned.to]
+              : pinned.kind === 'type'
+                ? [pinned.type]
+                : pinned.types,
+          )}
+          <span className="tg-pinned-name">{describe(pinned)}</span>
+          {countOf(pinned) !== null ? (
+            <span className="tg-pinned-count">×{countOf(pinned)}</span>
+          ) : null}
+          <button
+            type="button"
+            data-testid="transition-unpin"
+            aria-label="Stop picking this out"
+            title="Dismiss"
+            onClick={() => setPinned(null)}
           >
-            {`${names[hover.from]} → ${names[hover.to]}: ${hovered}`}
-          </text>
-        ) : null}
-      </svg>
+            ×
+          </button>
+        </div>
+      ) : null}
+
+      {ranked ? (
+        <div
+          className="tg-ranked"
+          // Clicking past the rows dismisses, the same as the graph's background.
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setPinned(null);
+          }}
+        >
+          <div className="tg-lengths" role="group" aria-label="Run length">
+            {Array.from({ length: MAX_CHAIN }, (_, i) => i + 1).map((L) => (
+              <button
+                key={L}
+                type="button"
+                data-testid={`chain-length-${L}`}
+                aria-pressed={L === length}
+                className={L === length ? 'is-on' : ''}
+                onClick={() => setLength(L)}
+              >
+                {L}
+              </button>
+            ))}
+          </div>
+          <div className="tg-rank-head">
+            <button
+              type="button"
+              data-testid="chain-order"
+              aria-pressed={ascending}
+              onClick={() => setAscending((v) => !v)}
+              title={ascending ? 'Showing the rarest first' : 'Showing the commonest first'}
+            >
+              {ascending ? 'rarest' : 'commonest'}
+            </button>
+            <span data-testid="chain-distinct">
+              {counted
+                ? `${distinct.toLocaleString('en-US')} distinct`
+                : 'counting…'}
+            </span>
+          </div>
+          <ol className="tg-rows" data-testid="chain-rows">
+            {rows.map((c) => {
+              const sel: GraphSelection =
+                c.types.length === 1
+                  ? { kind: 'type', type: c.types[0] }
+                  : c.types.length === 2
+                    ? { kind: 'pair', from: c.types[0], to: c.types[1] }
+                    : { kind: 'chain', types: c.types };
+              const key = c.types.join(',');
+              const on = selectionKey(active) === selectionKey(sel);
+              return (
+                <li
+                  key={key}
+                  className={`tg-row${on ? ' is-on' : ''}`}
+                  data-testid={`chain-row-${key}`}
+                  data-count={c.count}
+                  onMouseEnter={() => setHover(sel)}
+                  onMouseLeave={() => setHover(null)}
+                  onClick={() => pick(sel)}
+                >
+                  {sequence(c.types)}
+                  <span className="tg-row-count">{c.count.toLocaleString('en-US')}</span>
+                </li>
+              );
+            })}
+          </ol>
+          {chains.length > rows.length ? (
+            <button
+              type="button"
+              className="tg-more"
+              data-testid="chain-more"
+              onClick={() => setRowLimit((v) => v + ROW_PAGE)}
+            >
+              {`show ${Math.min(ROW_PAGE, chains.length - rows.length)} more of ${distinct.toLocaleString('en-US')}`}
+            </button>
+          ) : null}
+          {counted && distinct === 0 ? (
+            <p className="tg-empty">Trace a strand to count its runs.</p>
+          ) : null}
+        </div>
+      ) : (
+        <svg
+          ref={svgRef}
+          viewBox={`0 0 ${SIZE} ${SIZE}`}
+          onMouseMove={onMove}
+          onMouseLeave={() => setHover(null)}
+          onClick={onSvgClick}
+          role="img"
+          aria-label="How often the chase stepped from each tile type into each other"
+        >
+          <defs>
+            {names.slice(0, n).map((name, i) => (
+              <marker
+                key={name}
+                id={`tg-${uid}-${i}`}
+                viewBox="0 0 8 8"
+                refX="7"
+                refY="4"
+                markerWidth="5"
+                markerHeight="5"
+                orient="auto-start-reverse"
+              >
+                <path d="M 0 0.6 L 8 4 L 0 7.4 z" fill={colorOf(i)} />
+              </marker>
+            ))}
+          </defs>
+
+          {order.map((e) => {
+            const count = transitions[e.from * n + e.to];
+            const isOn =
+              (active?.kind === 'pair' && active.from === e.from && active.to === e.to) ||
+              (active?.kind === 'type' && (active.type === e.from || active.type === e.to));
+            const share = max > 0 ? count / max : 0;
+            // sqrt so one dominant pair does not flatten every other edge.
+            const width = count === 0 ? 0.4 : 0.7 + 2.3 * Math.sqrt(share);
+            const base = count === 0 ? 0.07 : 0.3 + 0.55 * share;
+            // Picking one edge dims the rest, which is the only way to follow a
+            // single curve through a hundred of them.
+            const opacity = isOn ? 1 : active ? base * 0.25 : base;
+            return (
+              <g
+                key={`${e.from}-${e.to}`}
+                className={`tg-edge${isOn ? ' is-on' : ''}`}
+                data-from={nameOf(e.from)}
+                data-to={nameOf(e.to)}
+                data-count={count}
+              >
+                <title>{`${nameOf(e.from)} → ${nameOf(e.to)}: ${count}`}</title>
+                <path
+                  className="tg-line"
+                  d={e.d}
+                  stroke={colorOf(e.from)}
+                  strokeWidth={isOn ? width + 1.4 : width}
+                  strokeOpacity={opacity}
+                  markerEnd={`url(#tg-${uid}-${e.from})`}
+                />
+              </g>
+            );
+          })}
+
+          {names.slice(0, n).map((name, i) => {
+            const p = nodeAt(i, n, LABEL_R);
+            const dot = nodeAt(i, n, R);
+            // Right half reads outward to the right, left half to the left, so
+            // nothing runs back over the ring.
+            const right = p.x >= C - 0.5;
+            const on = active?.kind === 'type' && active.type === i;
+            return (
+              <g
+                key={name}
+                className={`tg-node${on ? ' is-on' : ''}`}
+                opacity={touches(i) ? 1 : 0.35}
+              >
+                <circle cx={dot.x} cy={dot.y} r={on ? 3.8 : 2.6} fill={colorOf(i)} />
+                <text
+                  x={p.x}
+                  y={p.y}
+                  fill={colorOf(i)}
+                  textAnchor={right ? 'start' : 'end'}
+                  dominantBaseline="middle"
+                  fontWeight={on ? 700 : undefined}
+                  data-tile={name}
+                >
+                  {name}
+                </text>
+              </g>
+            );
+          })}
+
+          {active ? (
+            <text
+              className="tg-readout"
+              x={C}
+              y={C}
+              textAnchor="middle"
+              dominantBaseline="middle"
+              data-testid="transition-readout"
+            >
+              {countOf(active) !== null
+                ? `${describe(active)}: ${countOf(active)}`
+                : describe(active)}
+            </text>
+          ) : null}
+        </svg>
+      )}
     </div>
   );
 }
