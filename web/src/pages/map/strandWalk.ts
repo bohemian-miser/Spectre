@@ -220,7 +220,7 @@ function forEachNearbyChord(
   localX: number,
   localY: number,
   reach: number,
-  visit: (ax: number, ay: number, bx: number, by: number) => void,
+  visit: (ax: number, ay: number, bx: number, by: number, leafType: number) => void,
 ): void {
   const { cut, chords, cols, rows, starts, items, minX, minY, origin } = index;
   const probe = Math.ceil((reach + MAX_CHORD_REACH) / CELL);
@@ -256,6 +256,7 @@ function forEachNearbyChord(
             si * mir * a.x + co * a.y + py,
             co * mir * b.x - si * b.y + px,
             si * mir * b.x + co * b.y + py,
+            typeByte,
           );
         }
       }
@@ -340,7 +341,7 @@ export function continuationAt(
   point: Pt,
   from: Pt,
   searchRadius = WELD_EPSILON,
-): { kind: 'step'; next: Pt } | { kind: 'none' } | { kind: 'junction' } {
+): { kind: 'step'; next: Pt; leafType: number } | { kind: 'none' } | { kind: 'junction' } {
   const sr2 = searchRadius * searchRadius;
   const lx = point.x - index.origin.x;
   const ly = point.y - index.origin.y;
@@ -350,7 +351,10 @@ export function continuationAt(
   const memD: number[] = [];
   const memX: number[] = [];
   const memY: number[] = [];
-  forEachNearbyChord(index, lx, ly, searchRadius, (ax, ay, bx, by) => {
+  // The tile each candidate chord belongs to, so a step can say which tile it
+  // crossed (the trace ticker) without a second spatial lookup.
+  const memT: number[] = [];
+  forEachNearbyChord(index, lx, ly, searchRadius, (ax, ay, bx, by, leafType) => {
     const da = (ax - point.x) * (ax - point.x) + (ay - point.y) * (ay - point.y);
     const db = (bx - point.x) * (bx - point.x) + (by - point.y) * (by - point.y);
     // A degenerate (near-zero-length) chord can enrol both of its ends.
@@ -358,11 +362,13 @@ export function continuationAt(
       memD.push(da);
       memX.push(bx);
       memY.push(by);
+      memT.push(leafType);
     }
     if (db < sr2) {
       memD.push(db);
       memX.push(ax);
       memY.push(ay);
+      memT.push(leafType);
     }
   });
   if (memD.length === 0) return { kind: 'none' };
@@ -397,12 +403,19 @@ export function continuationAt(
     const ambit = 4 * Math.max(Math.sqrt(memD[best]), 2e-4);
     if (memD[second] < ambit * ambit) return { kind: 'junction' };
   }
-  return { kind: 'step', next: { x: memX[best], y: memY[best] } };
+  return { kind: 'step', next: { x: memX[best], y: memY[best] }, leafType: memT[best] };
 }
 
 // ---------------------------------------------------------------------------
 // The trail
 // ---------------------------------------------------------------------------
+
+/**
+ * How many recent steps' tiles a trail remembers. Enough to fill a ticker
+ * across a wide screen several times over, small enough that a chase running
+ * at ~125k tiles/s pays nothing for it.
+ */
+export const RECENT_TILES = 256;
 
 /**
  * Why a walk is not currently advancing.
@@ -492,6 +505,13 @@ export interface StrandTrail {
   anchor: Pt;
   /** Cached f32 geometry for the renderer (rebuilt only when it must be). */
   geom: TrailGeometry | null;
+  /**
+   * The tiles the last {@link RECENT_TILES} steps crossed, as leaf-type bytes
+   * in a ring written at `steps % RECENT_TILES`. A ring rather than a per-step
+   * array on purpose: a chase can run to millions of steps, and nothing wants
+   * that history — only the tail end of it, for the ticker.
+   */
+  recent: Uint8Array;
 }
 
 function grow(trail: StrandTrail, need: number): void {
@@ -537,10 +557,25 @@ export function startTrail(seed: ChordEnd): StrandTrail {
     status: 'walking',
     anchor: seed.to,
     geom: null,
+    recent: new Uint8Array(RECENT_TILES),
   };
   push(trail, seed.to);
   push(trail, seed.at);
   return trail;
+}
+
+/**
+ * The tiles the last `n` steps crossed, oldest first — leaf-type bytes, ready
+ * to be named and coloured. Shorter than `n` when the walk is younger than
+ * that; empty before the first step.
+ */
+export function recentTiles(trail: StrandTrail, n: number = RECENT_TILES): number[] {
+  const have = Math.min(trail.steps, RECENT_TILES, Math.max(0, Math.floor(n)));
+  const out: number[] = [];
+  for (let i = have; i > 0; i--) {
+    out.push(trail.recent[(trail.steps - i + RECENT_TILES * 2) % RECENT_TILES]);
+  }
+  return out;
 }
 
 /** Length of the coloured line so far, in world units (tile edge = 1). */
@@ -643,6 +678,7 @@ export function advanceWalk(
     trail.prev = trail.head;
     trail.head = cont.next;
     push(trail, cont.next);
+    trail.recent[trail.steps % RECENT_TILES] = cont.leafType;
     trail.steps++;
     const dx = trail.head.x - trail.start.x;
     const dy = trail.head.y - trail.start.y;

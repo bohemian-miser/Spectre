@@ -35,6 +35,7 @@ import {
   formatComboShareString,
   hexToRgb,
   leafOrder,
+  rgbToCss,
   matchingIndicesToCombo,
   metaEdges,
   mul,
@@ -98,6 +99,7 @@ import {
 } from './map/InfiniteCanvas';
 import type { MapRenderStyle } from './map/rendererTypes';
 import { MAP_BUDGETS, formatBudget } from './map/mapUrl';
+import { TraceTicker } from './map/TraceTicker';
 import { DEFAULT_LINE_COLOR, LIGHT_LINE_COLOR } from './map/webglRenderer';
 import '../styles/map.css';
 
@@ -311,6 +313,12 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
       noOverlap,
     };
   }, [state.colorScheme, state.customColors, state.flags, lineWidth, noOverlap]);
+
+  /** Tile colours for the trace ticker — the palette the tiles are drawn in. */
+  const leafCss = useMemo(
+    () => (infiniteStyle.leafColors ?? []).map((rgb) => rgbToCss(rgb)),
+    [infiniteStyle],
+  );
 
   /**
    * Level → zoom. The rooted level control means "show a patch of 7.873^L
@@ -1224,6 +1232,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
               traceOn={traceOn && !!infiniteChords}
               followOn={followOn && traceOn && !!infiniteChords}
               fillsOn={hasFlag(state, FLAG.BACKGROUNDS)}
+              leafCss={leafCss}
             />
           </InfiniteCanvas>
         ) : !heavy ? (
@@ -1349,8 +1358,10 @@ function InfiniteHud(props: {
   readonly followOn: boolean;
   /** Tile backgrounds; with them off, supertile glyphs are not drawn either. */
   readonly fillsOn: boolean;
+  /** Tile colours for the ticker, in `LEAF_ORDER`. */
+  readonly leafCss: readonly string[];
 }): JSX.Element {
-  const { subscribeRef, linesOn, traceOn, followOn, fillsOn } = props;
+  const { subscribeRef, linesOn, traceOn, followOn, fillsOn, leafCss } = props;
   const [status, setStatus] = useState<InfiniteCanvasStatus | null>(null);
   const latest = useRef<InfiniteCanvasStatus | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1381,57 +1392,62 @@ function InfiniteHud(props: {
       : null;
 
   return (
-    <div className="map-hud" data-testid="explorer-infinite-hud" role="status">
-      <span>{status?.mode === 'pending' || !status ? 'starting…' : status.mode}</span>
-      <span data-testid="inf-instances">{(cut?.count ?? 0).toLocaleString('en-US')} instances</span>
-      <span data-testid="inf-lod">
-        {cut
-          ? cut.cutLevel === 0
-            ? 'LOD: individual tiles'
-            : fillsOn
-              ? `LOD: level-${cut.cutLevel} glyphs`
-              : `LOD: level-${cut.cutLevel} glyphs — hidden (backgrounds off)`
-          : 'LOD: —'}
-      </span>
-      <span data-testid="inf-depth">
-        {depth === null ? 'depth ~—' : `depth ~${depth.toFixed(1)} · chain ${cut?.ancestorLevel ?? '—'}`}
-      </span>
-      <span data-testid="inf-lines">
-        {!linesOn
-          ? 'lines: off'
-          : aggregate
-            ? 'lines: hidden (aggregate LOD)'
-            : `lines: ${(draw?.chordsDrawn ?? 0).toLocaleString('en-US')} chords`}
-      </span>
-      <span data-testid="inf-trace">
-        {trace?.active && trace.status
-          ? `traced: ${Math.round(trace.length).toLocaleString('en-US')} tiles long — ${
-              followOn && trace.status === 'frontier' ? 'chasing…' : describeWalk(trace.status)
-            }`
-          : traceOn
-            ? 'traced: tap a strand'
-            : 'traced: off'}
-      </span>
-      {trace && trace.circuits > 0 ? (
-        <span data-testid="inf-circuits">
-          {trace.circuits} kept
+    <>
+      <div className="map-hud" data-testid="explorer-infinite-hud" role="status">
+        <span>{status?.mode === 'pending' || !status ? 'starting…' : status.mode}</span>
+        <span data-testid="inf-instances">{(cut?.count ?? 0).toLocaleString('en-US')} instances</span>
+        <span data-testid="inf-lod">
+          {cut
+            ? cut.cutLevel === 0
+              ? 'LOD: individual tiles'
+              : fillsOn
+                ? `LOD: level-${cut.cutLevel} glyphs`
+                : `LOD: level-${cut.cutLevel} glyphs — hidden (backgrounds off)`
+            : 'LOD: —'}
         </span>
-      ) : null}
-      {trace && (trace.found > 0 || trace.foundSkipped) ? (
-        <span data-testid="inf-found">
-          {trace.foundSkipped
-            ? 'find: zoom in to tiles'
-            : trace.foundStale
-              ? `${trace.found} circuits held from a closer view`
-              : `${trace.found} circuits on screen`}
+        <span data-testid="inf-depth">
+          {depth === null ? 'depth ~—' : `depth ~${depth.toFixed(1)} · chain ${cut?.ancestorLevel ?? '—'}`}
         </span>
-      ) : null}
-      <span data-testid="inf-draw">
-        query {cut ? cut.queryMs.toFixed(1) : '—'} ms · draw {draw ? draw.drawMs.toFixed(1) : '—'} ms
-        {draw ? ` · ${draw.drawCalls} call${draw.drawCalls === 1 ? '' : 's'}` : ''}
-      </span>
-      {status?.error ? <span className="map-hud-error">query failed: {status.error}</span> : null}
-    </div>
+        <span data-testid="inf-lines">
+          {!linesOn
+            ? 'lines: off'
+            : aggregate
+              ? 'lines: hidden (aggregate LOD)'
+              : `lines: ${(draw?.chordsDrawn ?? 0).toLocaleString('en-US')} chords`}
+        </span>
+        <span data-testid="inf-trace">
+          {trace?.active && trace.status
+            ? `traced: ${Math.round(trace.length).toLocaleString('en-US')} tiles long — ${
+                followOn && trace.status === 'frontier' ? 'chasing…' : describeWalk(trace.status)
+              }`
+            : traceOn
+              ? 'traced: tap a strand'
+              : 'traced: off'}
+        </span>
+        {trace && trace.circuits > 0 ? (
+          <span data-testid="inf-circuits">
+            {trace.circuits} kept
+          </span>
+        ) : null}
+        {trace && (trace.found > 0 || trace.foundSkipped) ? (
+          <span data-testid="inf-found">
+            {trace.foundSkipped
+              ? 'find: zoom in to tiles'
+              : trace.foundStale
+                ? `${trace.found} circuits held from a closer view`
+                : `${trace.found} circuits on screen`}
+          </span>
+        ) : null}
+        <span data-testid="inf-draw">
+          query {cut ? cut.queryMs.toFixed(1) : '—'} ms · draw {draw ? draw.drawMs.toFixed(1) : '—'} ms
+          {draw ? ` · ${draw.drawCalls} call${draw.drawCalls === 1 ? '' : 's'}` : ''}
+        </span>
+          {status?.error ? (
+            <span className="map-hud-error">query failed: {status.error}</span>
+          ) : null}
+      </div>
+      <TraceTicker tiles={trace?.tiles ?? []} colors={leafCss} />
+    </>
   );
 }
 

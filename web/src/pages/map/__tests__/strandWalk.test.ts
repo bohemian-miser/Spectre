@@ -20,6 +20,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+  LEAF_ORDER,
   comboToMatchingIndices,
   createUnrootedEngine,
   instanceAffine,
@@ -45,6 +46,8 @@ import {
   describeWalk,
   hitTestChord,
   isTerminal,
+  RECENT_TILES,
+  recentTiles,
   startTrail,
   trailGeometry,
   trailLength,
@@ -661,5 +664,74 @@ describe('hold window vs the memory backstop', () => {
     trail.count = TRAIL_MAX_POINTS;
     advanceWalk(trail, index, { covered: view });
     expect(trail.status).toBe('full');
+  });
+});
+
+describe('the tiles a walk crossed', () => {
+  const walkAcross = (steps: number): StrandTrail => {
+    const table = tableFor(OPEN_SUBSET, OPEN_COMBO);
+    const index = buildChordIndex(cutFor(rect(90)), table);
+    expect(index).not.toBeNull();
+    const seed = hitTestChord(index!, { x: 0, y: 0 }, 6);
+    expect(seed).not.toBeNull();
+    const trail = startTrail(seed!);
+    advanceWalk(trail, index, { maxSteps: steps });
+    return trail;
+  };
+
+  it('names a tile for every step, and only for steps taken', () => {
+    const trail = walkAcross(12);
+    expect(trail.steps).toBeGreaterThan(0);
+    const tiles = recentTiles(trail);
+    expect(tiles).toHaveLength(Math.min(trail.steps, RECENT_TILES));
+    // Every entry indexes a real leaf type, so it can be named and coloured.
+    expect(tiles.every((t) => Number.isInteger(t) && t >= 0 && t < LEAF_ORDER.length)).toBe(true);
+  });
+
+  it('reports them oldest first, so a shorter window is the tail of a longer one', () => {
+    const trail = walkAcross(20);
+    const all = recentTiles(trail);
+    expect(all.length).toBeGreaterThan(5);
+    expect(recentTiles(trail, 5)).toEqual(all.slice(-5));
+  });
+
+  it('names the tile the step actually crossed, not a neighbour', () => {
+    // Independently: the chord the walk stepped along must belong to a tile of
+    // the reported type, and that tile must really be in the cut.
+    const table = tableFor(OPEN_SUBSET, OPEN_COMBO);
+    const cut = cutFor(rect(90));
+    const index = buildChordIndex(cut, table)!;
+    const seed = hitTestChord(index, { x: 0, y: 0 }, 6)!;
+    const trail = startTrail(seed);
+
+    for (let step = 0; step < 8; step++) {
+      const from = trail.prev;
+      const at = trail.head;
+      const cont = continuationAt(index, at, from);
+      if (cont.kind !== 'step') break;
+      // The chord `at → cont.next` must exist among that leaf type's chords.
+      const owned = cutSegments(cut, table).some(
+        ([a, b]) =>
+          (near(a, at) && near(b, cont.next)) || (near(b, at) && near(a, cont.next)),
+      );
+      expect(owned).toBe(true);
+      expect(cont.leafType).toBeGreaterThanOrEqual(0);
+      expect(cont.leafType).toBeLessThan(LEAF_ORDER.length);
+      advanceWalk(trail, index, { maxSteps: 1 });
+      expect(recentTiles(trail).at(-1)).toBe(cont.leafType);
+    }
+  });
+
+  it('remembers only the tail of a long chase, without growing', () => {
+    const trail = walkAcross(RECENT_TILES + 80);
+    expect(trail.recent.length).toBe(RECENT_TILES);
+    expect(recentTiles(trail).length).toBeLessThanOrEqual(RECENT_TILES);
+    if (trail.steps > RECENT_TILES) expect(recentTiles(trail)).toHaveLength(RECENT_TILES);
+  });
+
+  it('is empty before the walk has stepped anywhere', () => {
+    const index = buildChordIndex(cutFor(rect(90)), tableFor(OPEN_SUBSET, OPEN_COMBO))!;
+    const trail = startTrail(hitTestChord(index, { x: 0, y: 0 }, 6)!);
+    expect(recentTiles(trail)).toEqual([]);
   });
 });
