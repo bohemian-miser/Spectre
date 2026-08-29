@@ -80,3 +80,44 @@ test('a deep link reproduces the scene, and the nav lists the page', async ({ pa
   });
   await expect(page.locator('nav a', { hasText: 'Supertiles' })).toHaveCount(1);
 });
+
+test('the rule controls weld and trace this supertile', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(String(e)));
+  await page.setViewportSize({ width: 1400, height: 1000 });
+  await page.goto('supertiles.html#/supertiles?lv=3&gap=0.35&ln=1&e=2578&c=0100101100');
+  await expect(page.locator('.supertile-view')).toBeVisible({ timeout: 30000 });
+
+  // The lines are drawn, and the HUD agrees with the analysis panel about
+  // what was found — two independent traces of the same patch.
+  await expect(page.locator('.supertile-strand').first()).toBeVisible({ timeout: 30000 });
+  const hud = await page.getByTestId('st-strands').textContent();
+  const circuits = Number(/(\d+) circuits/.exec(hud ?? '')?.[1]);
+  expect(circuits).toBeGreaterThan(0);
+  // The drawn lines come from a synchronous local trace and the panel from the
+  // worker, so the picture is ready first; wait for the panel to catch up.
+  await expect(page.locator('.stats-summary')).toContainText(`Circuits${circuits}`, {
+    timeout: 30000,
+  });
+  expect(errors).toEqual([]);
+});
+
+test('picking a circuit length isolates those strands', async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 1000 });
+  await page.goto('supertiles.html#/supertiles?lv=3&gap=0.5&ln=1&e=2578&c=0100101100&tl=0');
+  await expect(page.locator('.supertile-strand').first()).toBeVisible({ timeout: 30000 });
+  const all = await page.locator('.supertile-strand').count();
+
+  await page.locator('.stats-summary button').filter({ hasText: '×' }).first().click();
+  await page.waitForTimeout(500);
+  const lit = await page.locator('.supertile-strand[opacity="1"]').count();
+  expect(lit).toBeGreaterThan(0);
+  expect(lit).toBeLessThan(all);
+});
+
+test('a supertile too big to trace says so instead of hanging', async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 1000 });
+  await page.goto('supertiles.html#/supertiles?lv=6&ln=1&e=2578&c=0100101100');
+  await expect(page.getByTestId('st-strands')).toContainText('over', { timeout: 45000 });
+  await expect(page.locator('.supertile-strand')).toHaveCount(0);
+});

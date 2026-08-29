@@ -57,3 +57,8 @@ export type { SharePanelProps } from './controls/SharePanel';
 
 export { ContractSlider, contractToU, uToContract } from './controls/ContractSlider';
 export type { ContractSliderProps } from './controls/ContractSlider';
+
+export { StrandRuleControls } from './controls/StrandRuleControls';
+export type { StrandRuleControlsProps } from './controls/StrandRuleControls';
+export { SeamContractControls } from './controls/SeamContractControls';
+export type { SeamContractControlsProps } from './controls/SeamContractControls';

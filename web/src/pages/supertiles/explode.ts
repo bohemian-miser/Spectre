@@ -89,6 +89,18 @@ export interface Island {
   readonly depth: number;
   /** Placement in world space, after the push. */
   readonly xform: Affine;
+  /**
+   * Where the piece sits in the REAL tiling — its placement before any push.
+   * Anything computed against the true tiling (the strand lines, the circuit
+   * analysis) is built here and then moved by {@link offset}.
+   */
+  readonly trueXform: Affine;
+  /**
+   * Exploded position minus true position. Every push is a translation laid
+   * on top of the true placement, and translations compose, so a piece's whole
+   * displacement — however deeply nested — is this one vector.
+   */
+  readonly offset: Pt;
   /** Fractal boundary in world space, decimated for drawing. */
   readonly outline: readonly Pt[];
   /** Centre of the piece's box — the push direction and the label anchor. */
@@ -178,6 +190,8 @@ function placedCenter(node: TileNode, xform: Affine): Pt {
 interface Placement {
   readonly node: TileNode;
   readonly xform: Affine;
+  /** The same placement without any push — the piece's spot in the tiling. */
+  readonly trueXform: Affine;
   readonly id: string;
   readonly slot: number;
   readonly depth: number;
@@ -207,13 +221,14 @@ function planPlacements(
     const center = placedCenter(p.node, p.xform);
     const push = gap * NESTED_GAP_FALLOFF ** p.depth;
     const placed = kids.map((child) => {
-      const trueXform = mul(p.xform, child.xform);
+      const placedHere = mul(p.xform, child.xform);
       // Push straight out from the parent's centre towards the child's own.
-      const at = placedCenter(child.node, trueXform);
+      const at = placedCenter(child.node, placedHere);
       const shift = ttrans((at.x - center.x) * push, (at.y - center.y) * push);
       return {
         node: child.node,
-        xform: mul(shift, trueXform),
+        xform: mul(shift, placedHere),
+        trueXform: mul(p.trueXform, child.xform),
         id: p.id === '' ? String(child.pos) : `${p.id}.${child.pos}`,
         slot: child.pos,
         depth: p.depth + 1,
@@ -245,8 +260,9 @@ export function explodeSupertile(opts: ExplodeOptions): ExplodedLayout {
   const budget = Math.max(1_000, opts.outlineBudget ?? DEFAULT_OUTLINE_BUDGET);
 
   const node = buildSystem(family, level)[rootTile];
+  const view = levelMirror(level);
   const { order, childrenOfId } = planPlacements(
-    { node, xform: levelMirror(level), id: '', slot: -1, depth: 0, level },
+    { node, xform: view, trueXform: view, id: '', slot: -1, depth: 0, level },
     gap,
     depth,
   );
@@ -274,6 +290,8 @@ export function explodeSupertile(opts: ExplodeOptions): ExplodedLayout {
       level: p.level,
       depth: p.depth,
       xform: p.xform,
+      trueXform: p.trueXform,
+      offset: { x: p.xform[2] - p.trueXform[2], y: p.xform[5] - p.trueXform[5] },
       outline,
       center: boxCenter(boxOfPoints(outline)),
       tileCount: countTiles(p.node),
@@ -301,4 +319,9 @@ export function explodeSupertile(opts: ExplodeOptions): ExplodedLayout {
 /** The spectres inside one piece, already placed in world space. */
 export function islandTiles(island: Island): readonly TileInstance[] {
   return flatten(island.node, island.xform);
+}
+
+/** The same tiles where the REAL tiling puts them, before the piece was pushed. */
+export function islandTilesUnexploded(island: Island): readonly TileInstance[] {
+  return flatten(island.node, island.trueXform);
 }

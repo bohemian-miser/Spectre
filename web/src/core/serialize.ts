@@ -260,7 +260,8 @@ function maxMatchingIndex(
   return Math.max(0, matchingCount(n) - 1);
 }
 
-function normalizeMatching(
+/** Clamp a matching vector to what the family and subset actually allow. */
+export function normalizeMatching(
   family: TileFamilyId,
   subset: readonly number[],
   matching: readonly number[],
@@ -270,7 +271,8 @@ function normalizeMatching(
   );
 }
 
-function encodeContracts(c: EdgeContracts): string {
+/** `ct=` payload: `major.minor.t` per contract, exported for other pages' codecs. */
+export function encodeContracts(c: EdgeContracts): string {
   return Object.entries(c)
     .map(([major, v]) => [Number(major), v as EdgeContract] as const)
     .sort((a, b) => a[0] - b[0])
@@ -278,7 +280,11 @@ function encodeContracts(c: EdgeContracts): string {
     .join(';');
 }
 
-function decodeContracts(raw: string, family: TileFamilyId): EdgeContracts | undefined {
+/** Inverse of {@link encodeContracts}; unknown or malformed entries are dropped. */
+export function decodeContracts(
+  raw: string,
+  family: TileFamilyId,
+): EdgeContracts | undefined {
   const out: Record<number, EdgeContract> = {};
   let any = false;
   for (const part of raw.split(';')) {

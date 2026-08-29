@@ -134,6 +134,68 @@ describe('SupertilesPage', () => {
     expect(hash()).toContain('t=Psi');
   });
 
+  it('draws no strands and offers no analysis until the rule is switched on', async () => {
+    const { container } = render(<SupertilesPage />);
+    await settle();
+    expect(container.querySelectorAll('.supertile-strand')).toHaveLength(0);
+    expect(container.querySelector('[data-testid="st-analysis-off"]')?.textContent).toContain(
+      'Circuit lines',
+    );
+    // The rule controls are there from the start — picking a rule is the point.
+    expect(container.querySelector('.edge-subset-picker')).not.toBeNull();
+    expect(container.querySelector('.matching-grid')).not.toBeNull();
+  });
+
+  it('welds and traces the supertile once the rule is on', async () => {
+    window.history.replaceState(null, '', '/#/supertiles?lv=3&ln=1&e=2578&c=0100101100');
+    const { container } = render(<SupertilesPage />);
+    await settle();
+
+    // The strands are drawn…
+    expect(container.querySelectorAll('.supertile-strand').length).toBeGreaterThan(0);
+    // …and the HUD reports the same trace the panel will.
+    const hud = container.querySelector('[data-testid="st-strands"]')?.textContent ?? '';
+    expect(hud).toMatch(/\d+ circuits · \d+ wanderers/);
+    expect(container.querySelector('.stats-summary')).not.toBeNull();
+  });
+
+  it('moves the strands with their pieces when the gap opens', async () => {
+    // Same segments either way — regrouped, and drawn somewhere else. (That
+    // each run lands inside its own piece is pinned in strands.test.ts, which
+    // can check the geometry directly instead of through path strings.)
+    const drawn = async (gap: number): Promise<string[]> => {
+      cleanup();
+      window.history.replaceState(
+        null,
+        '',
+        `/#/supertiles?lv=3&gap=${gap}&ln=1&e=2578&c=0100101100`,
+      );
+      const { container } = render(<SupertilesPage />);
+      await settle();
+      return [...container.querySelectorAll('.supertile-strand')].map(
+        (p) => p.getAttribute('d') ?? '',
+      );
+    };
+
+    const tight = await drawn(0);
+    const wide = await drawn(1.2);
+    expect(tight.length).toBeGreaterThan(0);
+    expect(wide).toHaveLength(tight.length);
+    expect(wide.join('|')).not.toBe(tight.join('|'));
+  });
+
+  it('carries the rule in the hash', async () => {
+    window.history.replaceState(null, '', '/#/supertiles?ln=1&e=15&c=0000000000');
+    const { container } = render(<SupertilesPage />);
+    await settle();
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 600));
+    });
+    expect(hash()).toContain('ln=1');
+    expect(hash()).toContain('e=15');
+    expect(container.querySelectorAll('.supertile-strand').length).toBeGreaterThan(0);
+  });
+
   it('says nothing in the URL while everything is at its default', async () => {
     render(<SupertilesPage />);
     await settle();
