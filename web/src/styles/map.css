@@ -241,14 +241,106 @@
   font-size: 11px;
   line-height: 1.5;
   opacity: 0.75;
+  /* Grow the arriving chip out of nothing instead of appearing at full width:
+     the row is right-aligned, so a chip that pops into existence shoves
+     everything left in one jump. Widening it over a frame or two turns that
+     jump into a slide. Chips already on screen are untouched — they keep their
+     identity across publishes (see `steps`), so this only ever runs on the
+     newest one. */
+  animation: trace-tile-in 150ms ease-out;
+  overflow: hidden;
+  white-space: nowrap;
+}
+@keyframes trace-tile-in {
+  from {
+    /* A cap, not a width: the chip stops growing once its own text fits. */
+    max-width: 0;
+    padding-left: 0;
+    padding-right: 0;
+    margin-left: -3px;
+    opacity: 0;
+  }
+  to {
+    max-width: 90px;
+    padding-left: 6px;
+    padding-right: 6px;
+    margin-left: 0;
+    opacity: 0.75;
+  }
+}
+/* A chase at full speed crosses tiles far faster than the animation runs, and
+   anyone who asked for less motion should not get a strip of it. */
+@media (prefers-reduced-motion: reduce) {
+  .trace-tile {
+    animation: none;
+  }
 }
 .trace-tile.is-newest {
   opacity: 1;
   box-shadow: 0 0 0 1.5px #f4f6fb;
 }
 
+/* Transition graph — the whole chase's type-to-type counts, parked above the
+   ticker in the bottom-right corner. Same absolute-positioning rule as the
+   ticker and .map-hud: it must not touch the viewport's own layout. */
+.trace-graph {
+  position: absolute;
+  right: 8px;
+  /* Clear of the ticker, which sits at bottom: 34px and is ~26px tall. */
+  bottom: 66px;
+  width: 208px;
+  max-width: 46%;
+  padding: 4px;
+  border-radius: var(--radius);
+  /* Nearly opaque: the tiling underneath is bright, and a hundred thin curves
+     have no chance of reading through it. */
+  background: rgba(12, 15, 21, 0.93);
+  /* Edges are hover targets, so unlike the ticker this one takes the pointer.
+     It sits over the tiling, so keep it to the panel itself. */
+  pointer-events: auto;
+}
+/* With the ticker switched off there is nothing to sit above. */
+.trace-graph.is-low {
+  bottom: 34px;
+}
+.trace-graph svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+.trace-graph text {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 9px;
+  pointer-events: none;
+}
+.tg-line {
+  fill: none;
+  stroke-linecap: round;
+}
+/* Hover is resolved by nearest curve to the pointer (see TransitionGraph), so
+   the edges themselves take no pointer events — overlapping hit shapes were
+   the problem, not the solution. */
+.tg-edge {
+  pointer-events: none;
+}
+.trace-graph svg {
+  cursor: crosshair;
+}
+.tg-readout {
+  fill: #f4f6fb;
+  font-size: 10px;
+  paint-order: stroke;
+  stroke: rgba(16, 19, 26, 0.9);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
+
 @media (max-width: 780px) {
   .trace-ticker {
     font-size: 10px;
+  }
+  .trace-graph {
+    width: 150px;
   }
 }

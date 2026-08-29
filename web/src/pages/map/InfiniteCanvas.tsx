@@ -33,6 +33,8 @@ import {
 } from 'react';
 import {
   COS30,
+  DEFAULT_FIND_CEILING,
+  clampFindCeiling,
   SIN30,
   circuitLengthRgb,
   isAggregateType,
@@ -67,6 +69,7 @@ import {
   advanceWalk,
   buildChordIndex,
   recentTiles,
+  transitionCounts,
   hitTestChord,
   isTerminal,
   startTrail,
@@ -146,8 +149,17 @@ const FEED_BUDGET = 100_000;
  */
 const TICKER_TILES = 64;
 
-const FIND_MAX_INSTANCES = 30_000;
-const MAX_FOUND_CIRCUITS = 400;
+/*
+ * The find-all ceiling and its clamp live in `core/serialize`, next to the URL
+ * state that carries them, so the codec and this component cannot drift apart.
+ */
+
+/**
+ * Most circuits drawn at once. With `persistFound` the found set accumulates
+ * across the whole session, so this is what stops a long exploration from
+ * turning into thousands of draw calls; the longest survive.
+ */
+const MAX_FOUND_CIRCUITS = 1_200;
 /**
  * `zoomToCircuitView` aims at this fraction of the binding ceiling rather than
  * at the ceiling itself. The tile count a viewport holds is an area estimate,
@@ -200,6 +212,19 @@ export interface InfiniteTraceInfo {
    * however long the chase runs.
    */
   readonly tiles: readonly number[];
+  /**
+   * The whole chase's directed tile-type transition counts, row-major
+   * `from * TRANSITION_TYPES + to`. A fixed 100 counters however long the walk
+   * runs — unlike {@link tiles} this is not a window, so the graph that draws
+   * it shows every step ever taken by THIS chase, not just the recent ones.
+   */
+  readonly transitions: readonly number[];
+  /**
+   * Total steps the chase has taken, odometer-style. The ticker keys its chips
+   * off this so a sliding window keeps the SAME chip identities frame to
+   * frame — without it every publish looks like a whole new list.
+   */
+  readonly steps: number;
 }
 
 const NO_TRACE: InfiniteTraceInfo = Object.freeze({
@@ -212,6 +237,8 @@ const NO_TRACE: InfiniteTraceInfo = Object.freeze({
   foundSkipped: false,
   foundStale: false,
   tiles: Object.freeze([]) as readonly number[],
+  transitions: Object.freeze([]) as readonly number[],
+  steps: 0,
 });
 
 export interface InfiniteCanvasStatus {
@@ -288,7 +315,7 @@ export interface InfiniteCanvasProps {
    * Find EVERY circuit in the current display cut and colour each by its
    * length — the rooted analysis's weld+trace run over whatever is on screen,
    * refreshed as the camera moves. Needs a leaf cut of at most
-   * {@link FIND_MAX_INSTANCES} tiles; coarser views skip and say so.
+   * {@link findCeiling} tiles; coarser views skip and say so.
    */
   readonly findCircuits?: boolean;
   /**
@@ -299,6 +326,12 @@ export interface InfiniteCanvasProps {
    * individual tiles but appreciating the pattern does not.
    */
   readonly persistFound?: boolean;
+  /**
+   * Ceiling on the tiles find-all will analyse in one pass, and so the widest
+   * view `zoomToCircuitView` will park at. Higher shows more circuits at once
+   * and costs more time per cut. Defaults to {@link DEFAULT_FIND_CEILING}.
+   */
+  readonly findCeiling?: number;
   /**
    * Chase pace, in tiles per second — the walk explores that many tiles and
    * no more, so it can be watched tile by tile. null/undefined = full speed.
@@ -346,6 +379,7 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
     keepTails = false,
     findCircuits = false,
     persistFound = false,
+    findCeiling = DEFAULT_FIND_CEILING,
     followPace = null,
     traceSeed = null,
     onTraceSeed,
@@ -409,8 +443,12 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
   findOnRef.current = findCircuits;
   const persistFoundRef = useRef(persistFound);
   persistFoundRef.current = persistFound;
+  const findCeilingRef = useRef(clampFindCeiling(findCeiling));
+  findCeilingRef.current = clampFindCeiling(findCeiling);
   /** Circuits the find-all toggle carved out of the current display cut. */
   const foundRef = useRef<readonly TrailGeometry[]>([]);
+  /** Identities of everything in `foundRef`, so a re-find is not a duplicate. */
+  const foundKeysRef = useRef<Set<string>>(new Set());
   const foundInfoRef = useRef({ found: 0, skipped: false, stale: false });
   const followRafRef = useRef(0);
   const followLastRef = useRef(0);
@@ -515,6 +553,8 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
             foundSkipped: skipped,
             foundStale: stale,
             tiles: recentTiles(trail, TICKER_TILES),
+            transitions: transitionCounts(trail),
+            steps: trail.steps,
           }
         : circuits || found || skipped
           ? { ...NO_TRACE, circuits, found, foundSkipped: skipped, foundStale: stale }
@@ -605,6 +645,27 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
   );
 
   /**
+   * A found circuit's identity across cuts. The same loop found again from a
+   * different camera arrives with a different `origin` and may start at a
+   * different vertex, but not at a different place or a different length — so
+   * its absolute centroid and length name it. Quantised well inside the f32
+   * error on origin-relative coordinates, and well under the gap between two
+   * genuinely different circuits.
+   */
+  const circuitKey = useCallback((g: TrailGeometry): string => {
+    const n = Math.max(1, g.pointCount - 1); // the last point repeats the first
+    let sx = 0;
+    let sy = 0;
+    for (let i = 0; i < n; i++) {
+      sx += g.xy[i * 2];
+      sy += g.xy[i * 2 + 1];
+    }
+    const cx = g.origin.x + sx / n;
+    const cy = g.origin.y + sy / n;
+    return `${cx.toFixed(2)}:${cy.toFixed(2)}:${g.totalLength.toFixed(2)}`;
+  }, []);
+
+  /**
    * Weld + trace the whole display cut and colour every closed circuit by its
    * length — the same pipeline the rooted analysis runs, over whatever the
    * camera happens to hold. Synchronous by design: at the instance ceiling it
@@ -614,6 +675,7 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
     const had = foundRef.current.length > 0 || foundInfoRef.current.skipped;
     const apply = (geoms: readonly TrailGeometry[], skipped: boolean): void => {
       foundRef.current = geoms;
+      if (geoms.length === 0) foundKeysRef.current.clear();
       foundInfoRef.current = { found: geoms.length, skipped, stale: false };
       syncOverlays();
       publishTrace();
@@ -625,7 +687,7 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
       if (had) apply([], false);
       return;
     }
-    if (cut.cutLevel !== 0 || cut.truncated || cut.count > FIND_MAX_INSTANCES) {
+    if (cut.cutLevel !== 0 || cut.truncated || cut.count > findCeilingRef.current) {
       // Too coarse to FIND circuits — but the ones already found are
       // world-anchored, so they can go on being drawn while the camera pulls
       // back. That is the point of the persist toggle: finding needs
@@ -688,11 +750,35 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
         version: 1,
       });
     }
+    if (persistFoundRef.current) {
+      // "Keep them" means KEEP them: a circuit found here stays found when the
+      // camera moves on and this cut no longer contains it. Without the merge
+      // the set is only ever what is on screen right now, so coming back to a
+      // leaf cut silently threw away everything found anywhere else.
+      const merged = [...foundRef.current];
+      // Self-healing: the keys are only consulted here, so a run with the
+      // toggle OFF (which replaces the list wholesale) can leave them stale.
+      // Rebuilding on the mismatch keeps that from suppressing a real find.
+      if (foundKeysRef.current.size !== foundRef.current.length) {
+        foundKeysRef.current = new Set(foundRef.current.map(circuitKey));
+      }
+      const keys = foundKeysRef.current;
+      for (const g of geoms) {
+        const key = circuitKey(g);
+        if (keys.has(key)) continue;
+        keys.add(key);
+        merged.push(g);
+      }
+      geoms = merged;
+    }
     if (geoms.length > MAX_FOUND_CIRCUITS) {
       geoms = [...geoms].sort((a, b) => b.totalLength - a.totalLength).slice(0, MAX_FOUND_CIRCUITS);
+      // Whatever was dropped must be forgettable again, or it could never come
+      // back once the camera returns to it.
+      foundKeysRef.current = new Set(geoms.map(circuitKey));
     }
     apply(geoms, false);
-  }, [syncOverlays, publishTrace, scheduleDraw]);
+  }, [syncOverlays, publishTrace, scheduleDraw, circuitKey]);
   const recomputeFoundRef = useRef(recomputeFound);
   recomputeFoundRef.current = recomputeFound;
 
@@ -881,10 +967,18 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
     stopFollow();
     endPendingRef.current = null;
     replayRef.current = null;
-    if (!trailRef.current && keptRef.current.length === 0) return;
+    const hadFound = foundRef.current.length > 0;
+    if (!trailRef.current && keptRef.current.length === 0 && !hadFound) return;
     trailRef.current = null;
     rendererRef.current?.setTrail(null);
-    if (keptRef.current.length) setKept([]);
+    // Found circuits accumulate while "keep them" is on, so clearing has to
+    // let go of them too — otherwise there is no way back to an empty screen.
+    if (hadFound) {
+      foundRef.current = [];
+      foundKeysRef.current.clear();
+      foundInfoRef.current = { found: 0, skipped: false, stale: false };
+    }
+    if (keptRef.current.length || hadFound) setKept(keptRef.current.length ? [] : keptRef.current);
     publishSeed(null);
     publishTrace();
     scheduleDraw();
@@ -1366,7 +1460,7 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
         // query rect rather than the viewport — 1.2× per axis is 1.44× the
         // area, so sizing the viewport to the ceiling overshoots it by half
         // as much again.
-        const ceiling = Math.min(FIND_MAX_INSTANCES, worldRef.current.budget);
+        const ceiling = Math.min(findCeilingRef.current, worldRef.current.budget);
         const inViewport = (ceiling * CIRCUIT_VIEW_HEADROOM) / VIEW_MARGIN ** 2;
         const scale = scaleForTileCount(inViewport, width, height);
         stopInertia();

@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  DEFAULT_FIND_CEILING,
+  MAX_FIND_CEILING,
+  MIN_FIND_CEILING,
   CODEC_VERSION,
   DEFAULT_EXPLORER_STATE,
   DEFAULT_FLAGS,
@@ -374,6 +377,59 @@ describe('tap-to-trace in the URL', () => {
 
   it('leaves pre-trace links byte-identical', () => {
     for (const link of ['v=1', 'v=1&lv=4&e=2578&c=0100101100&md=infinite&no=1']) {
+      expect(encodeExplorerQuery(decodeExplorerQuery(link))).toBe(link);
+    }
+  });
+});
+
+describe('tk / tg / fx (ticker, transition graph, find ceiling)', () => {
+  it('says nothing while the ticker is on and the graph is off', () => {
+    const q = encodeExplorerQuery(DEFAULT_EXPLORER_STATE);
+    expect(q).not.toContain('tk=');
+    expect(q).not.toContain('tg=');
+    expect(q).not.toContain('fx=');
+  });
+
+  it('round-trips a hidden ticker and a shown graph, canonically', () => {
+    const q = encodeExplorerQuery({
+      ...DEFAULT_EXPLORER_STATE,
+      showTicker: false,
+      showTransitions: true,
+    });
+    expect(q).toContain('tk=0');
+    expect(q).toContain('tg=1');
+    const back = decodeExplorerQuery(q);
+    expect(back.showTicker).toBe(false);
+    expect(back.showTransitions).toBe(true);
+    expect(encodeExplorerQuery(back)).toBe(q);
+  });
+
+  it('omits a ticker that is on and a graph that is off, whichever way they got there', () => {
+    const q = encodeExplorerQuery({
+      ...DEFAULT_EXPLORER_STATE,
+      showTicker: true,
+      showTransitions: false,
+    });
+    expect(q).toBe(`v=${CODEC_VERSION}`);
+  });
+
+  it('round-trips a non-default find ceiling and clamps nonsense', () => {
+    const q = encodeExplorerQuery({ ...DEFAULT_EXPLORER_STATE, findCeiling: 120_000 });
+    expect(q).toContain('fx=120000');
+    expect(decodeExplorerQuery(q).findCeiling).toBe(120_000);
+    expect(encodeExplorerQuery(decodeExplorerQuery(q))).toBe(q);
+
+    // The default is the absence of the param, not a written-out value.
+    expect(
+      encodeExplorerQuery({ ...DEFAULT_EXPLORER_STATE, findCeiling: DEFAULT_FIND_CEILING }),
+    ).not.toContain('fx=');
+    expect(decodeExplorerQuery('v=1&fx=99999999').findCeiling).toBe(MAX_FIND_CEILING);
+    expect(decodeExplorerQuery('v=1&fx=1').findCeiling).toBe(MIN_FIND_CEILING);
+    expect(decodeExplorerQuery('v=1&fx=banana').findCeiling).toBeUndefined();
+  });
+
+  it('leaves links written before any of this byte-identical', () => {
+    for (const link of ['v=1', 'v=1&e=2578&c=0100101100&md=infinite&fc=1&pf=1']) {
       expect(encodeExplorerQuery(decodeExplorerQuery(link))).toBe(link);
     }
   });

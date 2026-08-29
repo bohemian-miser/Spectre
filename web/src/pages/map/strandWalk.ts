@@ -30,6 +30,7 @@
 
 import {
   COS30,
+  LEAF_ORDER,
   MIN_TRAIL_HOLD,
   SIN30,
   SPECTRE_PTS,
@@ -418,6 +419,12 @@ export function continuationAt(
 export const RECENT_TILES = 256;
 
 /**
+ * Leaf types a transition matrix is indexed by — the canonical `LEAF_ORDER`,
+ * the same indices the chord table and the ticker already speak in.
+ */
+export const TRANSITION_TYPES = LEAF_ORDER.length;
+
+/**
  * Why a walk is not currently advancing.
  *
  *  - `walking`   — more to do right now; the caller should come straight back;
@@ -512,6 +519,21 @@ export interface StrandTrail {
    * that history — only the tail end of it, for the ticker.
    */
   recent: Uint8Array;
+  /**
+   * How many times the walk stepped from one leaf type straight into another,
+   * as a dense row-major `from * TRANSITION_TYPES + to` matrix. Unlike
+   * {@link recent} this is the WHOLE chase, not a window: it is a fixed 100
+   * counters no matter how long the walk runs, so there is nothing to bound.
+   *
+   * A step contributes only once it has a predecessor, so a chase of `steps`
+   * tiles records `steps - 1` transitions.
+   */
+  transitions: Uint32Array;
+  /**
+   * Leaf type of the last step, or -1 before the first — the `from` half of
+   * the next transition.
+   */
+  lastType: number;
 }
 
 function grow(trail: StrandTrail, need: number): void {
@@ -558,6 +580,8 @@ export function startTrail(seed: ChordEnd): StrandTrail {
     anchor: seed.to,
     geom: null,
     recent: new Uint8Array(RECENT_TILES),
+    transitions: new Uint32Array(TRANSITION_TYPES * TRANSITION_TYPES),
+    lastType: -1,
   };
   push(trail, seed.to);
   push(trail, seed.at);
@@ -576,6 +600,15 @@ export function recentTiles(trail: StrandTrail, n: number = RECENT_TILES): numbe
     out.push(trail.recent[(trail.steps - i + RECENT_TILES * 2) % RECENT_TILES]);
   }
   return out;
+}
+
+/**
+ * The whole chase's directed transition counts, row-major
+ * `from * TRANSITION_TYPES + to` — a plain array, copied so a consumer holding
+ * it cannot be surprised by the walk mutating underneath.
+ */
+export function transitionCounts(trail: StrandTrail): number[] {
+  return Array.from(trail.transitions);
 }
 
 /** Length of the coloured line so far, in world units (tile edge = 1). */
@@ -679,6 +712,10 @@ export function advanceWalk(
     trail.head = cont.next;
     push(trail, cont.next);
     trail.recent[trail.steps % RECENT_TILES] = cont.leafType;
+    if (trail.lastType >= 0) {
+      trail.transitions[trail.lastType * TRANSITION_TYPES + cont.leafType]++;
+    }
+    trail.lastType = cont.leafType;
     trail.steps++;
     const dx = trail.head.x - trail.start.x;
     const dy = trail.head.y - trail.start.y;

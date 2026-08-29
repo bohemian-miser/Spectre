@@ -24,7 +24,13 @@ import {
   StrandRuleControls,
   type PanZoomApi,
 } from '../components';
-import { LEAF_ORDER, SUPER_RULES, TILE_NAMES, type TileTypeId } from '../core';
+import {
+  LEAF_ORDER,
+  SUPER_RULES,
+  TILE_NAMES,
+  normalizeMatchingVector,
+  type TileTypeId,
+} from '../core';
 import { useCircuitAnalysis } from '../hooks/useCircuitAnalysis';
 import { matchingVectorToRecord } from '../lib/matchingModel';
 import { tileColor } from '../lib/palette';
@@ -79,6 +85,38 @@ export function SupertilesPage(props: SupertilesPageProps): JSX.Element {
 
   const patch = useCallback((next: Partial<SupertilesUrlState>): void => {
     setState((prev) => ({ ...prev, ...next }));
+  }, []);
+
+  /**
+   * Change the seam subset, bringing the matching vector back into range for
+   * it. Dropping a class removes connection points, so an index that was valid
+   * a moment ago can be past the end — and the combo encoder rejects an
+   * out-of-range index exactly as it rejects a crossing one, which made a
+   * perfectly good rule report that it "crosses itself" and refuse to show a
+   * combination string. The Explorer has always normalized here; this view did
+   * not.
+   */
+  const changeSubset = useCallback((subset: readonly number[]): void => {
+    setState((prev) => ({
+      ...prev,
+      subset,
+      matching: normalizeMatchingVector('spectre', subset, prev.matching),
+      lines: true,
+    }));
+  }, []);
+
+  const toggleMajor = useCallback((major: number): void => {
+    setState((prev) => {
+      const subset = prev.subset.includes(major)
+        ? prev.subset.filter((m) => m !== major)
+        : [...prev.subset, major].sort((a, b) => a - b);
+      return {
+        ...prev,
+        subset,
+        matching: normalizeMatchingVector('spectre', subset, prev.matching),
+        lines: true,
+      };
+    });
   }, []);
 
   // --- URL --------------------------------------------------------------
@@ -387,15 +425,8 @@ export function SupertilesPage(props: SupertilesPageProps): JSX.Element {
           subset={state.subset}
           matching={state.matching}
           contracts={state.contracts}
-          onSubsetChange={(subset) => patch({ subset, lines: true })}
-          onToggleMajor={(major) =>
-            patch({
-              subset: state.subset.includes(major)
-                ? state.subset.filter((m) => m !== major)
-                : [...state.subset, major].sort((a, b) => a - b),
-              lines: true,
-            })
-          }
+          onSubsetChange={changeSubset}
+          onToggleMajor={toggleMajor}
           onMatchingChange={(tileType, index) =>
             patch({
               matching: LEAF_ORDER.map((t, i) => (t === tileType ? index : state.matching[i] ?? 0)),

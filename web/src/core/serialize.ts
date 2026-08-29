@@ -129,6 +129,22 @@ export interface ExplorerState {
    */
   readonly persistFound?: boolean;
   /**
+   * Show the ticker naming the tiles a chase crosses (`tk=0` when OFF).
+   * Default ON, so every link written before the toggle existed still shows
+   * the ticker. Read it as `state.showTicker ?? true`.
+   */
+  readonly showTicker?: boolean;
+  /**
+   * Show the tile-type transition graph above the ticker (`tg=1`). Additive:
+   * omitted when off (the default). Read it as `state.showTransitions ?? false`.
+   */
+  readonly showTransitions?: boolean;
+  /**
+   * Tiles find-all may analyse in one pass (`fx=`), which also sets where
+   * "circuit zoom" parks. Absent = {@link DEFAULT_FIND_CEILING}.
+   */
+  readonly findCeiling?: number;
+  /**
    * Chase pace in tiles per second (`fp=`). Absent = full speed (the
    * default); present = watch the walk explore tile by tile at this rate.
    */
@@ -189,6 +205,24 @@ export function clampTrailHold(hold: number): number {
  * Chase pace, in tiles per second, when the "full speed" toggle is off. The
  * ceiling is where individual tiles stop being followable by eye anyway.
  */
+/**
+ * Tiles find-all will weld and trace in one pass, and so the widest view
+ * "circuit zoom" parks at. The pass is synchronous, so this is really a time
+ * budget: a bigger one shows more circuits at once and costs more per cut.
+ */
+export const DEFAULT_FIND_CEILING = 30_000;
+export const MIN_FIND_CEILING = 2_000;
+export const MAX_FIND_CEILING = 250_000;
+/** Offered ceilings, cheapest first — roughly a doubling each step. */
+export const FIND_CEILINGS: readonly number[] = Object.freeze([
+  5_000, 10_000, 30_000, 60_000, 120_000, 250_000,
+]);
+
+export function clampFindCeiling(n: number): number {
+  if (!Number.isFinite(n)) return DEFAULT_FIND_CEILING;
+  return Math.min(MAX_FIND_CEILING, Math.max(MIN_FIND_CEILING, Math.round(n)));
+}
+
 export const DEFAULT_TRACE_PACE = 24;
 export const MIN_TRACE_PACE = 1;
 export const MAX_TRACE_PACE = 1000;
@@ -402,6 +436,11 @@ export function encodeExplorerState(s: ExplorerState): URLSearchParams {
   if (s.keepTails === false) q.set('kt', '0');
   if (s.findCircuits) q.set('fc', '1');
   if (s.persistFound) q.set('pf', '1');
+  if (s.showTicker === false) q.set('tk', '0');
+  if (s.showTransitions) q.set('tg', '1');
+  if (s.findCeiling !== undefined && clampFindCeiling(s.findCeiling) !== DEFAULT_FIND_CEILING) {
+    q.set('fx', String(clampFindCeiling(s.findCeiling)));
+  }
   if (s.pace !== undefined) q.set('fp', String(clampTracePace(s.pace)));
   if (s.traceSeed) q.set('ts', encodeTraceSeed(s.traceSeed));
   return q;
@@ -505,6 +544,12 @@ export function decodeExplorerState(q: URLSearchParams): ExplorerState {
   const findCircuits = fcRaw === '1' || fcRaw === 'true' ? true : undefined;
   const pfRaw = q.get('pf');
   const persistFound = pfRaw === '1' || pfRaw === 'true' ? true : undefined;
+  const tkRaw = q.get('tk');
+  const showTicker = tkRaw === '0' || tkRaw === 'false' ? false : undefined;
+  const tgRaw = q.get('tg');
+  const showTransitions = tgRaw === '1' || tgRaw === 'true' ? true : undefined;
+  const fxRaw = Number.parseInt(q.get('fx') ?? '', 10);
+  const findCeiling = Number.isFinite(fxRaw) ? clampFindCeiling(fxRaw) : undefined;
   const fpRaw = Number.parseInt(q.get('fp') ?? '', 10);
   const pace = Number.isFinite(fpRaw) ? clampTracePace(fpRaw) : undefined;
   const tsRaw = q.get('ts');
@@ -533,6 +578,9 @@ export function decodeExplorerState(q: URLSearchParams): ExplorerState {
     ...(keepTails === false ? { keepTails } : {}),
     ...(findCircuits ? { findCircuits } : {}),
     ...(persistFound ? { persistFound } : {}),
+    ...(showTicker === false ? { showTicker } : {}),
+    ...(showTransitions ? { showTransitions } : {}),
+    ...(findCeiling !== undefined && findCeiling !== DEFAULT_FIND_CEILING ? { findCeiling } : {}),
     ...(pace !== undefined ? { pace } : {}),
     ...(traceSeed ? { traceSeed } : {}),
   };

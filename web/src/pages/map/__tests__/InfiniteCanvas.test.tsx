@@ -144,6 +144,7 @@ interface HarnessProps {
   readonly keepTails?: boolean;
   readonly findCircuits?: boolean;
   readonly persistFound?: boolean;
+  readonly findCeiling?: number;
   readonly followPace?: number | null;
   readonly traceSeed?: readonly [number, number, number, number] | null;
   readonly onTraceSeed?: (seed: readonly [number, number, number, number] | null) => void;
@@ -168,6 +169,7 @@ function Harness(props: HarnessProps): JSX.Element {
       keepTails={props.keepTails ?? false}
       findCircuits={props.findCircuits ?? false}
       persistFound={props.persistFound ?? false}
+      findCeiling={props.findCeiling}
       followPace={props.followPace ?? null}
       traceSeed={props.traceSeed ?? null}
       onTraceSeed={props.onTraceSeed}
@@ -724,6 +726,101 @@ describe('InfiniteCanvas — circuits past their own zoom', () => {
     expect(m.status().cut?.cutLevel).toBe(0);
     expect(m.status().trace.foundSkipped).toBe(false);
     expect(m.status().trace.found).toBeGreaterThan(0);
+  });
+});
+
+describe('InfiniteCanvas — "keep them" means keep them', () => {
+  /**
+   * The reported bug: with the toggle on, circuits survived a zoom OUT but
+   * were thrown away the moment the camera came back to individual tiles,
+   * because the find pass replaced the whole set with whatever this cut held.
+   * Kept tails accumulate; found circuits have to as well.
+   */
+  it('accumulates circuits found in one place with those found in another', async () => {
+    const m = await mount({ chords: loopTable(), findCircuits: true, persistFound: true });
+    await settleUntil(() => m.status().trace.found > 0, 'the first circuits');
+    const here = m.status().trace.found;
+
+    // Somewhere else entirely, at the same (leaf) zoom.
+    act(() => m.api.current?.setCamera({ cx: 600, cy: 400 }));
+    await settleUntil(() => m.status().trace.found > here, 'circuits from the new neighbourhood');
+    const both = m.status().trace.found;
+    expect(both).toBeGreaterThan(here);
+    expect(m.renderer.circuitSets.at(-1)!.length).toBe(both);
+
+    // Coming back must not re-find the originals as duplicates, nor drop the
+    // ones found while away.
+    act(() => m.api.current?.setCamera({ cx: 0, cy: 0 }));
+    await settle();
+    await settle();
+    expect(m.status().trace.found).toBe(both);
+  });
+
+  it('without the toggle it still shows only what is on screen', async () => {
+    const m = await mount({ chords: loopTable(), findCircuits: true, persistFound: false });
+    await settleUntil(() => m.status().trace.found > 0, 'the first circuits');
+    const here = m.status().trace.found;
+
+    act(() => m.api.current?.setCamera({ cx: 600, cy: 400 }));
+    await settleUntil(() => m.status().trace.found > 0, 'circuits in the new view');
+    // A viewport's worth, not two viewports' worth.
+    expect(m.status().trace.found).toBeLessThan(here * 2);
+  });
+
+  it('clearing lets go of the accumulated circuits', async () => {
+    const m = await mount({ chords: loopTable(), findCircuits: true, persistFound: true });
+    await settleUntil(() => m.status().trace.found > 0, 'the first circuits');
+    act(() => m.api.current?.clearTrace());
+    await settle();
+    expect(m.renderer.circuitSets.at(-1)!.length).toBe(0);
+  });
+});
+
+describe('InfiniteCanvas — the find ceiling is adjustable', () => {
+  /**
+   * A view wide enough to hold more than the low ceiling but still made of
+   * individual tiles — so the only thing that can make find-all stand down is
+   * the ceiling itself, not the LOD cut.
+   */
+  // Measured: at this zoom the engine emits 4809 individual tiles (cutLevel 0),
+  // so it is comfortably over the low ceiling without tripping the LOD.
+  const WIDE = 4;
+  const LOW = 2000;
+
+  it('a low ceiling makes a leaf cut too expensive to analyse, and says so', async () => {
+    const m = await mount({ chords: loopTable(), findCircuits: true, findCeiling: LOW });
+    act(() => m.api.current?.setCamera({ scale: WIDE }));
+    await settleUntil(() => (m.status().cut?.count ?? 0) > LOW, 'a view wider than the ceiling');
+    // The premise: real tiles, just too many of them.
+    expect(m.status().cut?.cutLevel).toBe(0);
+    expect(m.status().cut!.count).toBeGreaterThan(LOW);
+    expect(m.status().trace.foundSkipped).toBe(true);
+    expect(m.status().trace.found).toBe(0);
+  });
+
+  it('raising it lets the very same view be analysed', async () => {
+    const m = await mount({ chords: loopTable(), findCircuits: true, findCeiling: 250_000 });
+    act(() => m.api.current?.setCamera({ scale: WIDE }));
+    await settleUntil(() => m.status().trace.found > 0, 'circuits under a high ceiling');
+    expect(m.status().cut!.count).toBeGreaterThan(LOW);
+    expect(m.status().trace.foundSkipped).toBe(false);
+  });
+
+  it('circuit zoom parks further out when the ceiling is higher', async () => {
+    const low = await mount({ chords: loopTable(), findCircuits: true, findCeiling: 5000 });
+    act(() => low.api.current?.setCamera({ scale: 0.05 }));
+    await settle();
+    const lowScale = low.api.current!.zoomToCircuitView();
+
+    const high = await mount({ chords: loopTable(), findCircuits: true, findCeiling: 120_000 });
+    act(() => high.api.current?.setCamera({ scale: 0.05 }));
+    await settle();
+    const highScale = high.api.current!.zoomToCircuitView();
+
+    expect(lowScale).not.toBeNull();
+    expect(highScale).not.toBeNull();
+    // More tiles per pass = a wider view still qualifies = zoomed further out.
+    expect(highScale!).toBeLessThan(lowScale!);
   });
 });
 

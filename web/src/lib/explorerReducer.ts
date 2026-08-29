@@ -8,17 +8,19 @@
 
 import {
   DEFAULT_EXPLORER_STATE,
+  DEFAULT_FIND_CEILING,
   DEFAULT_INSTANCE_BUDGET,
   DEFAULT_LINE_SCALE,
   DEFAULT_TRAIL_HOLD,
   MAX_LEVEL,
+  clampFindCeiling,
+  maxMatchingIndex,
+  normalizeMatchingVector,
   clampInstanceBudget,
   clampLineScale,
   clampTracePace,
   clampTrailHold,
-  connectionCount,
   leafOrder,
-  matchingCount,
   subsetToEdges,
   supportsInfiniteMode,
   type Camera,
@@ -73,6 +75,9 @@ export type ExplorerAction =
   | { readonly type: 'setKeepTails'; readonly keepTails: boolean }
   | { readonly type: 'setFindCircuits'; readonly findCircuits: boolean }
   | { readonly type: 'setPersistFound'; readonly persistFound: boolean }
+  | { readonly type: 'setShowTicker'; readonly showTicker: boolean }
+  | { readonly type: 'setShowTransitions'; readonly showTransitions: boolean }
+  | { readonly type: 'setFindCeiling'; readonly findCeiling: number }
   | { readonly type: 'setPace'; readonly pace: number | null }
   | {
       readonly type: 'setTraceSeed';
@@ -85,27 +90,13 @@ function clampInt(v: number, lo: number, hi: number): number {
 }
 
 /** Highest legal FULL matching index for a leaf under a subset. */
-export function maxMatchingIndex(
-  family: TileFamilyId,
-  type: TileTypeId,
-  subset: readonly number[],
-): number {
-  return Math.max(0, matchingCount(connectionCount(family, type, new Set(subset))) - 1);
-}
-
-/**
- * Re-shape and clamp the matching vector for a family/subset. Called after any
- * change that can invalidate indices (family swap, subset edit).
+/*
+ * `maxMatchingIndex` and `normalizeMatchingVector` moved to `core/matchings`
+ * so every page that edits a rule normalizes it the same way — the Supertiles
+ * view skipping this is what made a valid rule claim to cross itself. Still
+ * re-exported here, since this reducer is where callers look for them.
  */
-export function normalizeMatchingVector(
-  family: TileFamilyId,
-  subset: readonly number[],
-  matching: readonly number[],
-): readonly number[] {
-  return leafOrder(family).map((type, i) =>
-    clampInt(matching[i] ?? 0, 0, maxMatchingIndex(family, type, subset)),
-  );
-}
+export { maxMatchingIndex, normalizeMatchingVector };
 
 function sortedSubset(subset: readonly number[]): readonly number[] {
   return [...new Set(subset.filter((n) => Number.isInteger(n) && n >= 0 && n <= 9))].sort(
@@ -273,6 +264,37 @@ export function explorerReducer(state: ExplorerState, action: ExplorerAction): E
         return rest as ExplorerState;
       }
       return { ...state, persistFound: true };
+    }
+
+    // Default-ON, like the keep toggles: the ticker predates its own switch,
+    // so an omitted param has to keep meaning "showing".
+    case 'setShowTicker': {
+      if (action.showTicker === explorerShowTicker(state)) return state;
+      if (action.showTicker) {
+        const { showTicker: _t, ...rest } = state;
+        return rest as ExplorerState;
+      }
+      return { ...state, showTicker: false };
+    }
+
+    // Default-OFF: a hundred edges over the tiling is opt-in.
+    case 'setShowTransitions': {
+      if (action.showTransitions === explorerShowTransitions(state)) return state;
+      if (!action.showTransitions) {
+        const { showTransitions: _g, ...rest } = state;
+        return rest as ExplorerState;
+      }
+      return { ...state, showTransitions: true };
+    }
+
+    case 'setFindCeiling': {
+      const findCeiling = clampFindCeiling(action.findCeiling);
+      if (findCeiling === explorerFindCeiling(state)) return state;
+      if (findCeiling === DEFAULT_FIND_CEILING) {
+        const { findCeiling: _f, ...rest } = state;
+        return rest as ExplorerState;
+      }
+      return { ...state, findCeiling };
     }
 
     case 'setRootTile':
@@ -488,6 +510,23 @@ export function explorerFindCircuits(state: ExplorerState): boolean {
 /** Whether found circuits stay drawn once the camera outruns find-all. */
 export function explorerPersistFound(state: ExplorerState): boolean {
   return state.persistFound === true;
+}
+
+/** Ticker naming the tiles a chase crosses — ON unless `tk=0` says otherwise. */
+export function explorerShowTicker(state: ExplorerState): boolean {
+  return state.showTicker !== false;
+}
+
+/** Tiles find-all may analyse in one pass, and where circuit zoom parks. */
+export function explorerFindCeiling(state: ExplorerState): number {
+  return state.findCeiling === undefined
+    ? DEFAULT_FIND_CEILING
+    : clampFindCeiling(state.findCeiling);
+}
+
+/** Tile-type transition graph — OFF unless `tg=1` asks for it. */
+export function explorerShowTransitions(state: ExplorerState): boolean {
+  return state.showTransitions === true;
 }
 
 /** Chase pace in tiles/second, or null for full speed (the default). */
