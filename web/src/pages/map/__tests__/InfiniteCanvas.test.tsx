@@ -645,6 +645,36 @@ describe('InfiniteCanvas — kept tails, circuit colour, find-all', () => {
   });
 });
 
+describe('InfiniteCanvas — the tiles a chase crossed', () => {
+  it('reports them with the trace, newest last, for the ticker', async () => {
+    const m = await mount({});
+    const target = chordTargetOn(createCamera(0, 0, 36));
+    tap(m.host, target.x, target.y);
+    await settle();
+
+    const trace = m.status().trace;
+    expect(trace.active).toBe(true);
+    expect(trace.tiles.length).toBeGreaterThan(0);
+    // One name per step walked, up to the ring's own window.
+    expect(trace.tiles.length).toBeLessThanOrEqual(trace.length + 1);
+    expect(trace.tiles.every((t) => Number.isInteger(t) && t >= 0 && t < 10)).toBe(true);
+
+    // Walking further keeps the list growing from the same end.
+    const before = [...trace.tiles];
+    await settle();
+    const after = m.status().trace.tiles;
+    if (after.length > before.length) {
+      expect(after.slice(0, before.length)).toEqual(before);
+    }
+  });
+
+  it('has nothing to report before a strand is tapped', async () => {
+    const m = await mount({});
+    await settle();
+    expect(m.status().trace.tiles).toEqual([]);
+  });
+});
+
 describe('InfiniteCanvas — circuits past their own zoom', () => {
   it('drops found circuits when the view goes coarse, and holds them when asked', async () => {
     // Zoomed in far enough for a leaf cut, find-all finds circuits.

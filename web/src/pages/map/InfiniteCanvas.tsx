@@ -66,6 +66,7 @@ import {
   MAX_CHORD_REACH,
   advanceWalk,
   buildChordIndex,
+  recentTiles,
   hitTestChord,
   isTerminal,
   startTrail,
@@ -138,6 +139,13 @@ const FEED_BUDGET = 100_000;
  * many found circuits are drawn (each is its own trail pass; the LONGEST win
  * a seat when there are more).
  */
+/**
+ * Recent tiles handed to the HUD each publish. A ticker shows a few dozen; the
+ * walk's ring holds more, and copying only what is shown keeps the status
+ * object small on a status that is published many times a second.
+ */
+const TICKER_TILES = 64;
+
 const FIND_MAX_INSTANCES = 30_000;
 const MAX_FOUND_CIRCUITS = 400;
 /**
@@ -186,6 +194,12 @@ export interface InfiniteTraceInfo {
    * past what find-all can compute, and the persist toggle kept them.
    */
   readonly foundStale: boolean;
+  /**
+   * Leaf types of the tiles the last steps crossed, oldest first — what the
+   * ticker names. Bounded by the walk's own ring, so this stays the same size
+   * however long the chase runs.
+   */
+  readonly tiles: readonly number[];
 }
 
 const NO_TRACE: InfiniteTraceInfo = Object.freeze({
@@ -197,6 +211,7 @@ const NO_TRACE: InfiniteTraceInfo = Object.freeze({
   found: 0,
   foundSkipped: false,
   foundStale: false,
+  tiles: Object.freeze([]) as readonly number[],
 });
 
 export interface InfiniteCanvasStatus {
@@ -499,6 +514,7 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
             found,
             foundSkipped: skipped,
             foundStale: stale,
+            tiles: recentTiles(trail, TICKER_TILES),
           }
         : circuits || found || skipped
           ? { ...NO_TRACE, circuits, found, foundSkipped: skipped, foundStale: stale }
