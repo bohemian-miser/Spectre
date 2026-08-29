@@ -155,11 +155,39 @@ const TICKER_TILES = 64;
  */
 
 /**
- * Most circuits drawn at once. With `persistFound` the found set accumulates
- * across the whole session, so this is what stops a long exploration from
- * turning into thousands of draw calls; the longest survive.
+ * Most circuits drawn at once — a bound on draw calls, nothing more. Measured
+ * at 1.8 ms for 1202 calls, so this is generous rather than tight; the find
+ * pass that produces them costs hundreds of ms and is the real limit.
+ *
+ * What gets dropped when it binds matters more than the number. It must never
+ * be "the shortest": circuit length is exactly what the colours encode, so
+ * trimming by length quietly deletes a whole size class. A single screen at
+ * circuit zoom holds ~1150, so at this cap the on-screen set effectively never
+ * competes with itself.
  */
-const MAX_FOUND_CIRCUITS = 1_200;
+const MAX_FOUND_CIRCUITS = 4_000;
+
+/**
+ * A found circuit's centre in ABSOLUTE world coordinates. Its geometry is
+ * stored relative to the cut it was found in, so two sightings of the same
+ * loop from different cameras carry different `xy` and the same centre — which
+ * is what makes it usable both as an identity and as a distance.
+ */
+function circuitKey(g: TrailGeometry): string {
+  const c = circuitCentre(g);
+  return `${c.x.toFixed(2)}:${c.y.toFixed(2)}:${g.totalLength.toFixed(2)}`;
+}
+
+function circuitCentre(g: TrailGeometry): { x: number; y: number } {
+  const n = Math.max(1, g.pointCount - 1); // the last point repeats the first
+  let sx = 0;
+  let sy = 0;
+  for (let i = 0; i < n; i++) {
+    sx += g.xy[i * 2];
+    sy += g.xy[i * 2 + 1];
+  }
+  return { x: g.origin.x + sx / n, y: g.origin.y + sy / n };
+}
 /**
  * `zoomToCircuitView` aims at this fraction of the binding ceiling rather than
  * at the ceiling itself. The tile count a viewport holds is an area estimate,
@@ -652,19 +680,6 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
    * error on origin-relative coordinates, and well under the gap between two
    * genuinely different circuits.
    */
-  const circuitKey = useCallback((g: TrailGeometry): string => {
-    const n = Math.max(1, g.pointCount - 1); // the last point repeats the first
-    let sx = 0;
-    let sy = 0;
-    for (let i = 0; i < n; i++) {
-      sx += g.xy[i * 2];
-      sy += g.xy[i * 2 + 1];
-    }
-    const cx = g.origin.x + sx / n;
-    const cy = g.origin.y + sy / n;
-    return `${cx.toFixed(2)}:${cy.toFixed(2)}:${g.totalLength.toFixed(2)}`;
-  }, []);
-
   /**
    * Weld + trace the whole display cut and colour every closed circuit by its
    * length — the same pipeline the rooted analysis runs, over whatever the
@@ -750,6 +765,10 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
         version: 1,
       });
     }
+    // What this cut can see, by identity — which is also the set that must
+    // survive any trimming below.
+    const here = new Set(geoms.map(circuitKey));
+
     if (persistFoundRef.current) {
       // "Keep them" means KEEP them: a circuit found here stays found when the
       // camera moves on and this cut no longer contains it. Without the merge
@@ -771,14 +790,36 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
       }
       geoms = merged;
     }
+
     if (geoms.length > MAX_FOUND_CIRCUITS) {
-      geoms = [...geoms].sort((a, b) => b.totalLength - a.totalLength).slice(0, MAX_FOUND_CIRCUITS);
+      // Trimming by length was a bug: it always kept the longest, so once the
+      // accumulated set filled up, every short circuit found afterwards was
+      // evicted the moment it arrived — including ones in plain view. Nothing
+      // on screen may be dropped, and what IS dropped goes by distance from
+      // the camera, which has nothing to do with a circuit's size.
+      const cam = camRef.current;
+      const near = (g: TrailGeometry): number => {
+        const c = circuitCentre(g);
+        return (c.x - cam.cx) ** 2 + (c.y - cam.cy) ** 2;
+      };
+      const onScreen: TrailGeometry[] = [];
+      const rest: TrailGeometry[] = [];
+      for (const g of geoms) (here.has(circuitKey(g)) ? onScreen : rest).push(g);
+
+      if (onScreen.length >= MAX_FOUND_CIRCUITS) {
+        // One cut alone over the cap: keep what is nearest the middle of the
+        // view, still nothing to do with length.
+        geoms = onScreen.sort((a, b) => near(a) - near(b)).slice(0, MAX_FOUND_CIRCUITS);
+      } else {
+        rest.sort((a, b) => near(a) - near(b));
+        geoms = [...onScreen, ...rest.slice(0, MAX_FOUND_CIRCUITS - onScreen.length)];
+      }
       // Whatever was dropped must be forgettable again, or it could never come
       // back once the camera returns to it.
       foundKeysRef.current = new Set(geoms.map(circuitKey));
     }
     apply(geoms, false);
-  }, [syncOverlays, publishTrace, scheduleDraw, circuitKey]);
+  }, [syncOverlays, publishTrace, scheduleDraw]);
   const recomputeFoundRef = useRef(recomputeFound);
   recomputeFoundRef.current = recomputeFound;
 
@@ -803,6 +844,9 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
     if (!kind) return;
     const geom = trailGeometry(old);
     if (!geom) return;
+    // Same strand, traced again, is not a second strand.
+    const key = circuitKey(geom);
+    if (keptRef.current.some((k) => circuitKey(k.geom) === key)) return;
     setKept([...keptRef.current.slice(-(MAX_KEPT_CIRCUITS - 1)), { geom, kind }]);
   }, [setKept]);
 
@@ -891,10 +935,25 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
       if (trail.status === 'closed' && !trail.color) {
         // A closed circuit stops being a rainbow: it gets the solid ink of
         // its length, the same colour that circuit has everywhere else.
-        const rgb = circuitLengthRgb(trail.steps + 1);
+        // `steps` is the tile count now that the tapped chord is counted, so
+        // this is the circuit's length outright — no off-by-one to undo. Get
+        // it wrong and the live circuit wears a different colour from the one
+        // find-all gives the very same loop.
+        const rgb = circuitLengthRgb(trail.steps);
         trail.color = [rgb[0] / 255, rgb[1] / 255, rgb[2] / 255];
         trail.version++;
         trail.geom = null;
+        // Re-tracing a circuit that is already kept must not draw it twice.
+        // The two copies are identical, so they stack — and their stroke caps
+        // land at whichever chord each trace happened to start from, which is
+        // what made the second one look like an offset duplicate. The live
+        // trail is drawn anyway, so the kept copy of the SAME loop goes.
+        const geom = trailGeometry(trail);
+        if (geom) {
+          const key = circuitKey(geom);
+          const rest = keptRef.current.filter((k) => circuitKey(k.geom) !== key);
+          if (rest.length !== keptRef.current.length) setKept(rest);
+        }
       }
       if (trail.status === 'end' && !fromFeed) {
         trail.status = 'frontier';
@@ -1030,7 +1089,9 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
     const flip =
       Math.hypot(hit.at.x - seed[0], hit.at.y - seed[1]) >
       Math.hypot(hit.to.x - seed[0], hit.to.y - seed[1]);
-    const oriented: ChordEnd = flip ? { at: hit.to, to: hit.at } : hit;
+    // Flipping only swaps which end the walk leaves from; it is the same
+    // chord, so it keeps the same tile.
+    const oriented: ChordEnd = flip ? { at: hit.to, to: hit.at, leafType: hit.leafType } : hit;
     trailRef.current = startTrail(oriented);
     publishSeed(oriented);
     runWalk();

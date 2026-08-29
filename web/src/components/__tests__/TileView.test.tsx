@@ -33,9 +33,12 @@ describe('TileView DOM contract (§6.1)', () => {
     const groups = [...svg!.children].map((c) => c.getAttribute('class'));
     expect(groups).toEqual([
       'tile-fill',
+      // A watermark: under the seams and the chord it belongs to.
+      'tile-names',
       'meta-edges',
       'matching-chords',
       'overlays',
+      'major-numbers',
       'edge-labels',
     ]);
   });
@@ -116,6 +119,41 @@ describe('TileView DOM contract (§6.1)', () => {
       <TileView family="spectre" tileType="Delta" showEdgeLabels />,
     );
     expect(container.querySelectorAll('.edge-labels text')).toHaveLength(14);
+  });
+
+  it('names the tile and numbers its major classes when asked', () => {
+    const { container } = render(
+      <TileView
+        family="spectre"
+        tileType="Delta"
+        selectedEdges={new Set([2, 5, 7, 8])}
+        showTileName
+        showMajorNumbers
+      />,
+    );
+    expect(container.querySelector('[data-tile-name="Delta"]')).not.toBeNull();
+
+    const nums = [...container.querySelectorAll<SVGTextElement>('[data-major-number]')];
+    // One per physical edge, the same 14 the raw labels cover.
+    expect(nums).toHaveLength(14);
+    // Majors only: no minor suffix survives, so every label is a bare digit.
+    expect(nums.every((t) => /^\d+$/.test(t.textContent ?? ''))).toBe(true);
+
+    // In the rule vs out of it, and the out ones are much fainter.
+    const on = nums.filter((t) => t.getAttribute('data-major-on') === '1');
+    const off = nums.filter((t) => t.getAttribute('data-major-on') === '0');
+    expect(on.length).toBeGreaterThan(0);
+    expect(off.length).toBeGreaterThan(0);
+    expect(on.every((t) => new Set(['2', '5', '7', '8']).has(t.textContent ?? ''))).toBe(true);
+    expect(off.every((t) => !new Set(['2', '5', '7', '8']).has(t.textContent ?? ''))).toBe(true);
+    const alpha = (t: Element): number => Number(t.getAttribute('fill-opacity'));
+    expect(alpha(on[0])).toBeGreaterThan(alpha(off[0]) * 2);
+  });
+
+  it('draws neither label layer unless asked', () => {
+    const { container } = render(<TileView family="spectre" tileType="Delta" />);
+    expect(container.querySelector('[data-tile-name]')).toBeNull();
+    expect(container.querySelector('[data-major-number]')).toBeNull();
   });
 
   it('reports edge clicks with a resolved EdgeRef', () => {

@@ -116,6 +116,10 @@ export function MatchingSlider(props: MatchingSliderProps): JSX.Element | null {
         matchingIndex={normalized}
         ghostMatchings={ghostMatchings}
         markOdd
+        // Which tile is this, and which classes does it carry? Both were
+        // things you had to already know to read this panel.
+        showTileName
+        showMajorNumbers
         interaction={allowPairing ? 'chord-draw' : 'hover'}
         onChordDrawn={allowPairing ? onPair : undefined}
         onMatchingCycle={cycle}

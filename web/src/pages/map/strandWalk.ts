@@ -205,6 +205,13 @@ export interface ChordEnd {
   readonly at: Pt;
   /** The chord's other endpoint. */
   readonly to: Pt;
+  /**
+   * Leaf type of the tile this chord belongs to. The tapped chord is a tile
+   * the strand crosses just as much as every chord after it, so the ticker and
+   * the transition counts have to know it — without it both were short by
+   * exactly one, the very first one.
+   */
+  readonly leafType: number;
 }
 
 /**
@@ -280,8 +287,9 @@ export function hitTestChord(index: ChordIndex, world: Pt, maxDist: number): Cho
   let hitAtY = 0;
   let hitToX = 0;
   let hitToY = 0;
+  let hitType = 0;
   let found = false;
-  forEachNearbyChord(index, lx, ly, maxDist, (ax, ay, bx, by) => {
+  forEachNearbyChord(index, lx, ly, maxDist, (ax, ay, bx, by, leafType) => {
     const dx = bx - ax;
     const dy = by - ay;
     const len2 = dx * dx + dy * dy;
@@ -293,6 +301,7 @@ export function hitTestChord(index: ChordIndex, world: Pt, maxDist: number): Cho
     if (d2 >= best) return;
     best = d2;
     found = true;
+    hitType = leafType;
     // Head for whichever end the tap was closest to.
     if (t <= 0.5) {
       hitAtX = ax;
@@ -306,7 +315,9 @@ export function hitTestChord(index: ChordIndex, world: Pt, maxDist: number): Cho
       hitToY = ay;
     }
   });
-  return found ? { at: { x: hitAtX, y: hitAtY }, to: { x: hitToX, y: hitToY } } : null;
+  return found
+    ? { at: { x: hitAtX, y: hitAtY }, to: { x: hitToX, y: hitToY }, leafType: hitType }
+    : null;
 }
 
 /**
@@ -585,6 +596,12 @@ export function startTrail(seed: ChordEnd): StrandTrail {
   };
   push(trail, seed.to);
   push(trail, seed.at);
+  // The tapped chord is a tile crossed too. Counting it only from the first
+  // ONWARD step left the ticker and the transition matrix short by exactly
+  // one — a circuit of three tiles listed two.
+  trail.recent[0] = seed.leafType;
+  trail.lastType = seed.leafType;
+  trail.steps = 1;
   return trail;
 }
 

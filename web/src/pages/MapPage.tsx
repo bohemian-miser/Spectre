@@ -836,7 +836,7 @@ export function MapPage(props: MapPageProps): JSX.Element {
             </span>
             <span data-testid="hud-trace">
               {status.trace.active && status.trace.status
-                ? `traced: ${Math.round(status.trace.length).toLocaleString('en-US')} tiles long — ${
+                ? `traced: ${Math.round(status.trace.length).toLocaleString('en-US')} edges long — ${
                     follow && status.trace.status === 'frontier'
                       ? 'chasing…'
                       : describeWalk(status.trace.status)

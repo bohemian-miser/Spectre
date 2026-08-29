@@ -1377,7 +1377,7 @@ function InfiniteHud(props: {
         </span>
         <span data-testid="inf-trace">
           {trace?.active && trace.status
-            ? `traced: ${Math.round(trace.length).toLocaleString('en-US')} tiles long — ${
+            ? `traced: ${Math.round(trace.length).toLocaleString('en-US')} edges long — ${
                 followOn && trace.status === 'frontier' ? 'chasing…' : describeWalk(trace.status)
               }`
             : traceOn
