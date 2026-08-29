@@ -318,11 +318,28 @@ const NO_TRACE: InfiniteTraceInfo = Object.freeze({
 
 const NO_CHAINS = Object.freeze([]) as readonly Chain[];
 
+/**
+ * How much ink the current pick actually put on the plane, split by where it
+ * came from. A pick that draws nothing is a fact worth showing — a tile type
+ * the chase never crossed, or a pair this rule never makes — rather than
+ * something for the reader to mistake for a broken panel.
+ */
+export interface InfiniteHighlightInfo {
+  /** Marks from the current cut: the on-screen mode. */
+  readonly onScreen: number;
+  /** Marks from the traced path: the in-path mode, or a picked run. */
+  readonly inPath: number;
+}
+
+const NO_HIGHLIGHT: InfiniteHighlightInfo = Object.freeze({ onScreen: 0, inPath: 0 });
+
 export interface InfiniteCanvasStatus {
   readonly mode: InfiniteCanvasMode;
   readonly cut: InfiniteCutInfo | null;
   readonly draw: InfiniteDrawInfo | null;
   readonly trace: InfiniteTraceInfo;
+  /** What the current pick drew — see {@link InfiniteHighlightInfo}. */
+  readonly highlight: InfiniteHighlightInfo;
   readonly error: string | null;
   /** Viewport size in CSS px, so HUDs can report depth without measuring. */
   readonly size: { readonly width: number; readonly height: number };
@@ -530,6 +547,7 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
     cut: null,
     draw: null,
     trace: NO_TRACE,
+    highlight: NO_HIGHLIGHT,
     error: null,
     size: { width: 0, height: 0 },
   });
@@ -783,8 +801,20 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
   /** `trail.steps` the highlight was last read at, and when — see the refresh. */
   const highlightStampRef = useRef(0);
   const highlightAtRef = useRef(0);
+  /** Last published mark counts, so a walking chase does not publish per step. */
+  const marksRef = useRef<InfiniteHighlightInfo>(NO_HIGHLIGHT);
   /** Per-cut scan of every crossing, built only while the on-screen mode is on. */
   const transitionIndexRef = useRef<{ cut: ViewportCut; index: TransitionIndex } | null>(null);
+
+  const publishMarks = useCallback(
+    (next: InfiniteHighlightInfo): void => {
+      const held = marksRef.current;
+      if (held.onScreen === next.onScreen && held.inPath === next.inPath) return;
+      marksRef.current = next;
+      publish({ highlight: next });
+    },
+    [publish],
+  );
 
   const syncOverlays = useCallback((): void => {
     rendererRef.current?.setCircuits([
@@ -850,6 +880,7 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
 
     if (!sel || (!wantScreen && !wantPath && !forced)) {
       highlightStampRef.current = 0;
+      publishMarks(NO_HIGHLIGHT);
       if (!had) return;
       highlightsRef.current = [];
       rendererRef.current?.setHighlights(null);
@@ -859,6 +890,7 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
 
     const runs: Polyline[] = [];
     const trail = trailRef.current;
+    let fromScreen = 0;
 
     if (wantScreen && sel.kind !== 'chain') {
       const cut = lastCutRef.current;
@@ -882,6 +914,8 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
       }
     }
 
+    fromScreen = runs.length;
+
     if ((wantPath || forced) && trail) {
       if (sel.kind === 'pair') for (const e of pathTransitions(trail, sel.from, sel.to)) runs.push(e);
       else if (sel.kind === 'type') for (const r of pathTypeChords(trail, sel.type)) runs.push(r);
@@ -895,11 +929,12 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
     }
 
     highlightStampRef.current = trail ? trail.steps : 0;
+    publishMarks({ onScreen: fromScreen, inPath: runs.length - fromScreen });
     if (!had && out.length === 0) return;
     highlightsRef.current = out;
     rendererRef.current?.setHighlights(out);
     scheduleDraw();
-  }, [polylineGeometry, scheduleDraw, ensureIndex]);
+  }, [polylineGeometry, scheduleDraw, ensureIndex, publishMarks]);
   const recomputeHighlightsRef = useRef(recomputeHighlights);
   recomputeHighlightsRef.current = recomputeHighlights;
 

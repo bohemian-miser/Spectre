@@ -289,7 +289,7 @@ describe('TransitionGraph — picking things out', () => {
     fireEvent.mouseLeave(withBox(container));
 
     expect(out.list.at(-1)).toEqual({ kind: 'pair', from: indexOf('Phi'), to: indexOf('Gamma1') });
-    expect(queryByTestId('transition-pinned')?.textContent).toContain('Phi → Gamma1');
+    expect(queryByTestId('transition-picked')?.textContent).toContain('Phi → Gamma1');
     // The readout still names it with nothing under the pointer.
     expect(queryByTestId('transition-readout')?.textContent).toBe('Phi → Gamma1: 12');
   });
@@ -303,7 +303,7 @@ describe('TransitionGraph — picking things out', () => {
     fireEvent.mouseMove(box, labelAt(indexOf('Lambda')));
     fireEvent.click(box, labelAt(indexOf('Lambda')));
     expect(out.list.at(-1)).toEqual({ kind: 'type', type: indexOf('Lambda') });
-    expect(queryByTestId('transition-pinned')?.textContent).toContain('Lambda');
+    expect(queryByTestId('transition-picked')?.textContent).toContain('Lambda');
   });
 
   it('lets go when the background is clicked', () => {
@@ -312,7 +312,7 @@ describe('TransitionGraph — picking things out', () => {
       <TransitionGraph transitions={matrix({ 'Phi>Gamma1': 4 })} colors={colors} onSelect={out.onSelect} />,
     );
     clickEdge(container, 'Phi', 'Gamma1');
-    expect(queryByTestId('transition-pinned')).not.toBeNull();
+    expect(queryByTestId('transition-picked')).not.toBeNull();
 
     // A corner. The ring and its names are all within about 60 units of the
     // middle, so this is the one part that is background whatever the counts —
@@ -320,7 +320,7 @@ describe('TransitionGraph — picking things out', () => {
     const box = withBox(container);
     fireEvent.mouseMove(box, { clientX: 8, clientY: 8 });
     fireEvent.click(box, { clientX: 8, clientY: 8 });
-    expect(queryByTestId('transition-pinned')).toBeNull();
+    expect(queryByTestId('transition-picked')).toBeNull();
     expect(out.list.at(-1)).toBeNull();
   });
 
@@ -337,7 +337,7 @@ describe('TransitionGraph — picking things out', () => {
     clickEdge(container, 'Xi', 'Pi');
     fireEvent.mouseLeave(withBox(container));
     expect(out.list.at(-1)).toEqual({ kind: 'pair', from: indexOf('Xi'), to: indexOf('Pi') });
-    expect(queryByTestId('transition-pinned')?.textContent).toContain('Xi → Pi');
+    expect(queryByTestId('transition-picked')?.textContent).toContain('Xi → Pi');
   });
 
   /**
@@ -345,20 +345,24 @@ describe('TransitionGraph — picking things out', () => {
    * path marks are one linear read of the trail, so an explicit pick turns
    * them on rather than quietly needing a checkbox first.
    */
-  it('turns the path marks on when a pick would otherwise show nothing', () => {
+  it('turns BOTH marks on when a pick would otherwise show nothing', () => {
     const inPath = vi.fn();
+    const onScreen = vi.fn();
     const { container } = render(
       <TransitionGraph
         transitions={matrix({ 'Phi>Gamma1': 12 })}
         colors={colors}
         highlightOnScreen={false}
-        onToggleOnScreen={vi.fn()}
+        onToggleOnScreen={onScreen}
         highlightInPath={false}
         onToggleInPath={inPath}
       />,
     );
     clickEdge(container, 'Phi', 'Gamma1');
+    // "In path" alone is the narrow one: a short chase crosses five or six
+    // types, so most picks would still draw nothing and read as broken.
     expect(inPath).toHaveBeenCalledTimes(1);
+    expect(onScreen).toHaveBeenCalledTimes(1);
   });
 
   it('leaves the modes alone when one is already on', () => {
@@ -447,7 +451,7 @@ describe('TransitionGraph — ranked runs', () => {
     const seq = ['Phi', 'Gamma1', 'Xi'].map(indexOf);
     fireEvent.click(getByTestId(`chain-row-${seq.join(',')}`));
     expect(out.at(-1)).toEqual({ kind: 'chain', types: seq });
-    expect(getByTestId('transition-pinned').textContent).toContain('Phi Gamma1 Xi');
+    expect(getByTestId('transition-picked').textContent).toContain('Phi Gamma1 Xi');
   });
 
   it('previews a row on hover and falls back to the pin on leave', () => {
@@ -493,5 +497,100 @@ describe('TransitionGraph — ranked runs', () => {
     fireEvent.click(getByTestId('chain-more'));
     expect(getByTestId('chain-rows').children.length).toBe(450);
     expect(queryByTestId('chain-more')).toBeNull();
+  });
+});
+
+/**
+ * The panel draws all n² pairs, so all n² have to answer the pointer. Only
+ * eight of a hundred had a count on a short chase, and the other ninety-two
+ * ignored clicks entirely — which is not a design choice but a dead panel:
+ * "on screen" asks where a transition happens on the TILING, and the walk's
+ * counts have no say in that.
+ */
+describe('TransitionGraph — every drawn edge answers the pointer', () => {
+  it('picks up a pair the walk never made, when aimed at', () => {
+    const out: (GraphSelection | null)[] = [];
+    const { container, queryByTestId } = render(
+      <TransitionGraph
+        transitions={matrix({ 'Phi>Gamma1': 12 })}
+        colors={colors}
+        onSelect={(s) => out.push(s)}
+      />,
+    );
+    // Two adjacent types at the top of the ring: a short edge, well away from
+    // the one counted pair's own curve (a pair across the diameter passes
+    // close to a lot of things, including the middle).
+    hoverEdge(container, 'Delta', 'Theta'); // count 0
+    expect(out.at(-1)).toEqual({ kind: 'pair', from: indexOf('Delta'), to: indexOf('Theta') });
+    expect(queryByTestId('transition-readout')?.textContent).toBe('Delta → Theta: 0');
+
+    clickEdge(container, 'Delta', 'Theta');
+    fireEvent.mouseLeave(withBox(container));
+    expect(queryByTestId('transition-picked')?.getAttribute('data-pinned')).toBe('1');
+  });
+
+  /**
+   * …but a counted pair still wins the thicket. The reach for an unused pair
+   * is tight on purpose: aiming loosely in the middle of a hundred curves
+   * should land on one the chase actually made.
+   */
+  it('still prefers a pair the walk made when both are near', () => {
+    const { container, queryByTestId } = render(
+      <TransitionGraph transitions={matrix({ 'Phi>Gamma1': 12 })} colors={colors} />,
+    );
+    // Two units off the counted edge, in a part of the ring a dozen unused
+    // curves also cross: near enough to it that nothing unused is twice as
+    // close, so the pair the chase made keeps the pointer.
+    const d = lineOf(edgeFor(container, 'Phi', 'Gamma1')).getAttribute('d')!;
+    const [sx, sy, cx, cy, ex, ey] = nums(d);
+    fireEvent.mouseMove(withBox(container), {
+      clientX: (sx + 2 * cx + ex) / 4 + 2,
+      clientY: (sy + 2 * cy + ey) / 4 + 2,
+    });
+    expect(queryByTestId('transition-readout')?.textContent).toBe('Phi → Gamma1: 12');
+  });
+});
+
+describe('TransitionGraph — saying what was drawn', () => {
+  const withMarks = (marks: { onScreen: number; inPath: number }, on: boolean, path: boolean) =>
+    render(
+      <TransitionGraph
+        transitions={matrix({ 'Phi>Gamma1': 12 })}
+        colors={colors}
+        marks={marks}
+        highlightOnScreen={on}
+        onToggleOnScreen={vi.fn()}
+        highlightInPath={path}
+        onToggleInPath={vi.fn()}
+      />,
+    );
+
+  it('counts the marks each mode put on the plane', () => {
+    const r = withMarks({ onScreen: 60, inPath: 4 }, true, true);
+    hoverEdge(r.container, 'Phi', 'Gamma1');
+    expect(r.getByTestId('transition-marks').textContent).toBe('60 on screen · 4 in path');
+  });
+
+  it('says so when a pick drew nothing, rather than looking broken', () => {
+    const r = withMarks({ onScreen: 0, inPath: 0 }, true, true);
+    hoverEdge(r.container, 'Phi', 'Gamma1');
+    expect(r.getByTestId('transition-marks').textContent).toBe('none on screen · none in path');
+  });
+
+  it('reports only the modes that are on', () => {
+    const r = withMarks({ onScreen: 60, inPath: 0 }, true, false);
+    hoverEdge(r.container, 'Phi', 'Gamma1');
+    expect(r.getByTestId('transition-marks').textContent).toBe('60 on screen');
+  });
+
+  it('names what is under the pointer even before anything is pinned', () => {
+    const r = withMarks({ onScreen: 3, inPath: 1 }, true, true);
+    expect(r.queryByTestId('transition-picked')).toBeNull();
+    hoverEdge(r.container, 'Phi', 'Gamma1');
+    const bar = r.getByTestId('transition-picked');
+    expect(bar.getAttribute('data-pinned')).toBe('0');
+    expect(bar.textContent).toContain('Phi → Gamma1');
+    // Nothing to dismiss until it is pinned.
+    expect(r.queryByTestId('transition-unpin')).toBeNull();
   });
 });
