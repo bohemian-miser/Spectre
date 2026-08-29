@@ -430,6 +430,15 @@ export function continuationAt(
 export const RECENT_TILES = 256;
 
 /**
+ * The tile type of every chord the line passes through, oldest first — the
+ * whole drawn line, not a window. `types[k]` belongs to the chord between
+ * points `k` and `k + 1`.
+ */
+export function chordTypes(trail: StrandTrail): Uint8Array {
+  return trail.types.subarray(0, Math.max(0, trail.count - 1));
+}
+
+/**
  * Leaf types a transition matrix is indexed by — the canonical `LEAF_ORDER`,
  * the same indices the chord table and the ticker already speak in.
  */
@@ -524,12 +533,19 @@ export interface StrandTrail {
   /** Cached f32 geometry for the renderer (rebuilt only when it must be). */
   geom: TrailGeometry | null;
   /**
-   * The tiles the last {@link RECENT_TILES} steps crossed, as leaf-type bytes
-   * in a ring written at `steps % RECENT_TILES`. A ring rather than a per-step
-   * array on purpose: a chase can run to millions of steps, and nothing wants
-   * that history — only the tail end of it, for the ticker.
+   * Leaf type of every chord the line is drawn through, indexed the same way
+   * the chords are: chord `k` spans points `k` and `k + 1`, so `types[k]` is
+   * the tile that chord crosses and `count - 1` of them are in use.
+   *
+   * This was a 256-entry ring, on the reasoning that a chase can run to
+   * millions of steps and only the ticker's tail is wanted. Highlighting a
+   * transition where it happens needs the type at an arbitrary POINT of the
+   * line, not just at the end of it — and a byte per chord is ~4% on top of
+   * the 24 bytes of position and arc length each one already costs, so the
+   * ring was buying very little. Trimmed with the points, so it always
+   * describes exactly the line that is still there.
    */
-  recent: Uint8Array;
+  types: Uint8Array;
   /**
    * How many times the walk stepped from one leaf type straight into another,
    * as a dense row-major `from * TRANSITION_TYPES + to` matrix. Unlike
@@ -555,8 +571,11 @@ function grow(trail: StrandTrail, need: number): void {
   xy.set(trail.xy.subarray(0, trail.count * 2));
   const arc = new Float64Array(cap);
   arc.set(trail.arc.subarray(0, trail.count));
+  const types = new Uint8Array(cap);
+  types.set(trail.types.subarray(0, trail.count));
   trail.xy = xy;
   trail.arc = arc;
+  trail.types = types;
 }
 
 function push(trail: StrandTrail, p: Pt): void {
@@ -590,7 +609,7 @@ export function startTrail(seed: ChordEnd): StrandTrail {
     status: 'walking',
     anchor: seed.to,
     geom: null,
-    recent: new Uint8Array(RECENT_TILES),
+    types: new Uint8Array(1024),
     transitions: new Uint32Array(TRANSITION_TYPES * TRANSITION_TYPES),
     lastType: -1,
   };
@@ -599,7 +618,7 @@ export function startTrail(seed: ChordEnd): StrandTrail {
   // The tapped chord is a tile crossed too. Counting it only from the first
   // ONWARD step left the ticker and the transition matrix short by exactly
   // one — a circuit of three tiles listed two.
-  trail.recent[0] = seed.leafType;
+  trail.types[0] = seed.leafType;
   trail.lastType = seed.leafType;
   trail.steps = 1;
   return trail;
@@ -611,11 +630,10 @@ export function startTrail(seed: ChordEnd): StrandTrail {
  * that; empty before the first step.
  */
 export function recentTiles(trail: StrandTrail, n: number = RECENT_TILES): number[] {
-  const have = Math.min(trail.steps, RECENT_TILES, Math.max(0, Math.floor(n)));
+  const chords = Math.max(0, trail.count - 1);
+  const have = Math.min(chords, Math.max(0, Math.floor(n)));
   const out: number[] = [];
-  for (let i = have; i > 0; i--) {
-    out.push(trail.recent[(trail.steps - i + RECENT_TILES * 2) % RECENT_TILES]);
-  }
+  for (let i = chords - have; i < chords; i++) out.push(trail.types[i]);
   return out;
 }
 
@@ -651,6 +669,9 @@ export function trimTrail(trail: StrandTrail, maxPoints: number): StrandTrail {
   const drop = trail.count - max;
   trail.xy.copyWithin(0, drop * 2, trail.count * 2);
   trail.arc.copyWithin(0, drop, trail.count);
+  // Chord k spans points k and k+1, so dropping `drop` leading points drops
+  // the same number of leading chords.
+  trail.types.copyWithin(0, drop, trail.count);
   trail.count = max;
   trail.version++;
   trail.geom = null;
@@ -728,7 +749,9 @@ export function advanceWalk(
     trail.prev = trail.head;
     trail.head = cont.next;
     push(trail, cont.next);
-    trail.recent[trail.steps % RECENT_TILES] = cont.leafType;
+    // `count` already includes the point just pushed, so the chord that led
+    // here is the last one: index count - 2.
+    trail.types[trail.count - 2] = cont.leafType;
     if (trail.lastType >= 0) {
       trail.transitions[trail.lastType * TRANSITION_TYPES + cont.leafType]++;
     }

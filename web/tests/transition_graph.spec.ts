@@ -128,3 +128,90 @@ test('the map page carries the same pair', async ({ page }) => {
   await expect(page.getByTestId('map-show-transitions')).toBeChecked();
   await expect(page.getByTestId('map-show-ticker')).toBeChecked();
 });
+
+test('expands to four times the area, and back', async ({ page }) => {
+  await chase(page, `#/explorer?v=1&md=infinite&${RULE}&fp=8&tg=1`);
+  const panel = page.getByTestId('transition-graph');
+  await expect(panel).toBeVisible({ timeout: 30000 });
+  const small = (await panel.boundingBox())!.width;
+
+  await page.getByTestId('transition-expand').click();
+  await expect(panel).toHaveAttribute('data-expanded', '1');
+  const big = (await panel.boundingBox())!.width;
+  // Two times across each way is four times the area.
+  expect(big).toBeGreaterThan(small * 1.8);
+
+  await page.getByTestId('transition-expand').click();
+  await expect(panel).toHaveAttribute('data-expanded', '0');
+  expect((await panel.boundingBox())!.width).toBeCloseTo(small, 0);
+});
+
+/**
+ * The panel lives inside the map viewport, which takes a pointerdown to pan or
+ * to trace and captures the pointer for it. Clicking a control here must reach
+ * the control — and must not disturb the strand underneath.
+ */
+test('its controls take clicks without disturbing the tiling', async ({ page }) => {
+  await chase(page, `#/explorer?v=1&md=infinite&${RULE}&fp=8&tg=1`);
+  await expect(page.getByTestId('transition-graph')).toBeVisible({ timeout: 30000 });
+  const length = async (): Promise<number> => {
+    const t = (await page.getByTestId('inf-trace').textContent()) ?? '';
+    return Number(/traced: ([\d,]+) edges/.exec(t)?.[1]?.replace(/,/g, '') ?? -1);
+  };
+  const before = await length();
+  expect(before).toBeGreaterThan(0);
+
+  await page.getByTestId('highlight-on-screen').check();
+  await expect(page.getByTestId('highlight-on-screen')).toBeChecked();
+  await page.getByTestId('highlight-in-path').check();
+  await expect(page.getByTestId('highlight-in-path')).toBeChecked();
+
+  // The chase is still running, so the strand may be LONGER — but a click that
+  // fell through to the viewport would have started a new trace, which resets
+  // the length to a handful of edges.
+  expect(await length()).toBeGreaterThanOrEqual(before);
+  await expect(page.getByTestId('inf-trace')).not.toContainText('tap a strand');
+  await expect.poll(() => page.evaluate(() => window.location.hash)).toContain('hs=1');
+  expect(await page.evaluate(() => window.location.hash)).toContain('ht=1');
+});
+
+test('hovering an edge lights that transition on the tiling', async ({ page }) => {
+  await chase(page, `#/explorer?v=1&md=infinite&${RULE}&fp=8&tg=1&hs=1`);
+  const graph = page.getByTestId('transition-graph');
+  await expect(graph).toBeVisible({ timeout: 30000 });
+  const calls = async (): Promise<number> => {
+    const t = (await page.getByTestId('inf-draw').textContent()) ?? '';
+    return Number(/(\d+) calls/.exec(t)?.[1] ?? -1);
+  };
+  await expect.poll(calls).toBeGreaterThan(0);
+
+  await expect
+    .poll(async () =>
+      graph.locator('.tg-edge').evaluateAll((gs) =>
+        gs.filter((g) => Number((g as HTMLElement).dataset.count) > 0).length,
+      ),
+    )
+    .toBeGreaterThan(0);
+  const before = await calls();
+
+  const target = await graph.locator('.tg-edge').evaluateAll((gs) =>
+    gs
+      .map((g) => {
+        const d = (g as HTMLElement).dataset;
+        return {
+          count: Number(d.count),
+          d: g.querySelector('.tg-line')!.getAttribute('d')!,
+        };
+      })
+      .filter((e) => e.count > 0)
+      .sort((a, b) => b.count - a.count)[0],
+  );
+  const n = target.d.match(/-?\d+(\.\d+)?/g)!.map(Number);
+  const [sx, sy, cx, cy, ex, ey] = n;
+  const svg = (await graph.locator('svg').boundingBox())!;
+  const k = svg.width / 240;
+  await page.mouse.move(svg.x + ((sx + 2 * cx + ex) / 4) * k, svg.y + ((sy + 2 * cy + ey) / 4) * k);
+
+  // Every crossing of that pair in the cut becomes its own bit of ink.
+  await expect.poll(calls).toBeGreaterThan(before);
+});

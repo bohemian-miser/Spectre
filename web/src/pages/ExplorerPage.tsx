@@ -22,6 +22,7 @@ import {
   FAMILY_DISPLAY_NAMES,
   FIND_CEILINGS,
   FLAG,
+  MIN_FIND_CEILING,
   LINE_SCALE_STEP,
   MAX_TRAIL_HOLD,
   MIN_LINE_SCALE,
@@ -71,6 +72,9 @@ import {
   explorerPace,
   explorerPersistFound,
   explorerFindCeiling,
+  explorerFoundHold,
+  explorerHighlightInPath,
+  explorerHighlightOnScreen,
   explorerShowTicker,
   explorerShowTransitions,
   explorerTrace,
@@ -165,9 +169,17 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
   const keepTailsOn = explorerKeepTails(state);
   const findOn = explorerFindCircuits(state);
   const persistFoundOn = explorerPersistFound(state);
+  /**
+   * The graph edge under the pointer. Local rather than URL state: it changes
+   * as fast as the mouse moves and means nothing in a shared link.
+   */
+  const [hoverPair, setHoverPair] = useState<{ from: number; to: number } | null>(null);
   const tickerOn = explorerShowTicker(state);
   const transitionsOn = explorerShowTransitions(state);
   const findCeiling = explorerFindCeiling(state);
+  const foundHold = explorerFoundHold(state);
+  const hlScreen = explorerHighlightOnScreen(state);
+  const hlPath = explorerHighlightInPath(state);
   const pace = explorerPace(state);
   const infinite = mode === 'infinite';
   const infiniteAvailable = supportsInfiniteMode(family);
@@ -970,8 +982,12 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
           <span>Keep them when you zoom out</span>
         </label>
         <label className="control-row">
-          <span>Circuits per pass</span>
-          <select
+          <span>Tiles per find pass</span>
+          <input
+            type="number"
+            min={MIN_FIND_CEILING}
+            step={1000}
+            list="find-ceiling-suggestions"
             aria-label="How many tiles find-all may analyse at once"
             data-testid="find-ceiling"
             value={findCeiling}
@@ -979,13 +995,28 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
             onChange={(e) =>
               dispatch({ type: 'setFindCeiling', findCeiling: Number(e.target.value) })
             }
-          >
+          />
+          <datalist id="find-ceiling-suggestions">
             {FIND_CEILINGS.map((c) => (
-              <option key={c} value={c}>
-                {formatBudget(c)} tiles
-              </option>
+              <option key={c} value={c} />
             ))}
-          </select>
+          </datalist>
+        </label>
+        <label className="control-row">
+          <span>Circuits to hold</span>
+          <input
+            type="number"
+            min={0}
+            step={500}
+            aria-label="How many found circuits to keep, 0 for no limit"
+            data-testid="found-hold"
+            value={foundHold}
+            disabled={!infinite || !findOn}
+            onChange={(e) =>
+              dispatch({ type: 'setFoundHold', foundHold: Number(e.target.value) })
+            }
+          />
+          <span className="muted">0 = no limit</span>
         </label>
         <label className="control-row">
           <input
@@ -1173,6 +1204,10 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
             findCircuits={findOn && !!infiniteChords}
             persistFound={persistFoundOn}
             findCeiling={findCeiling}
+            foundHold={foundHold}
+            highlightPair={hoverPair}
+            highlightOnScreen={hlScreen}
+            highlightInPath={hlPath}
             followPace={pace}
             traceSeed={state.traceSeed ?? null}
             onTraceSeed={onTraceSeed}
@@ -1190,6 +1225,13 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
               leafCss={leafCss}
               tickerOn={tickerOn}
               transitionsOn={transitionsOn}
+              hlScreen={hlScreen}
+              hlPath={hlPath}
+              onToggleHlScreen={() =>
+                dispatch({ type: 'setHighlightOnScreen', on: !hlScreen })
+              }
+              onToggleHlPath={() => dispatch({ type: 'setHighlightInPath', on: !hlPath })}
+              onHoverPair={setHoverPair}
             />
           </InfiniteCanvas>
         ) : !heavy ? (
@@ -1319,9 +1361,15 @@ function InfiniteHud(props: {
   readonly leafCss: readonly string[];
   readonly tickerOn: boolean;
   readonly transitionsOn: boolean;
+  readonly hlScreen: boolean;
+  readonly hlPath: boolean;
+  onToggleHlScreen(): void;
+  onToggleHlPath(): void;
+  onHoverPair(pair: { from: number; to: number } | null): void;
 }): JSX.Element {
   const { subscribeRef, linesOn, traceOn, followOn, fillsOn, leafCss } = props;
-  const { tickerOn, transitionsOn } = props;
+  const { tickerOn, transitionsOn, hlScreen, hlPath } = props;
+  const { onToggleHlScreen, onToggleHlPath, onHoverPair } = props;
   const [status, setStatus] = useState<InfiniteCanvasStatus | null>(null);
   const latest = useRef<InfiniteCanvasStatus | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1411,6 +1459,11 @@ function InfiniteHud(props: {
           transitions={trace?.transitions ?? []}
           colors={leafCss}
           className={tickerOn ? undefined : 'is-low'}
+          onHoverPair={onHoverPair}
+          highlightOnScreen={hlScreen}
+          onToggleOnScreen={onToggleHlScreen}
+          highlightInPath={hlPath}
+          onToggleInPath={onToggleHlPath}
         />
       ) : null}
       {tickerOn ? (

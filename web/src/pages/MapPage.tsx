@@ -32,8 +32,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   DEFAULT_FIND_CEILING,
+  DEFAULT_FOUND_HOLD,
+  MIN_FIND_CEILING,
   FIND_CEILINGS,
   clampFindCeiling,
+  clampFoundHold,
   DEFAULT_LINE_SCALE,
   DEFAULT_TRACE_PACE,
   LEAF_ORDER,
@@ -126,6 +129,15 @@ export function MapPage(props: MapPageProps): JSX.Element {
   const [findCeiling, setFindCeiling] = useState<number>(
     clampFindCeiling(initial.findCeiling ?? DEFAULT_FIND_CEILING),
   );
+  const [foundHold, setFoundHold] = useState<number>(
+    clampFoundHold(initial.foundHold ?? DEFAULT_FOUND_HOLD),
+  );
+  const [highlightOnScreen, setHighlightOnScreen] = useState<boolean>(
+    initial.highlightOnScreen ?? false,
+  );
+  const [highlightInPath, setHighlightInPath] = useState<boolean>(initial.highlightInPath ?? false);
+  /** Graph edge under the pointer — too fast-moving to belong in the URL. */
+  const [hoverPair, setHoverPair] = useState<{ from: number; to: number } | null>(null);
   const [pace, setPace] = useState<number | null>(initial.pace ?? null);
   const [traceSeed, setTraceSeed] = useState<
     readonly [number, number, number, number] | null
@@ -179,6 +191,9 @@ export function MapPage(props: MapPageProps): JSX.Element {
     showTicker,
     showTransitions,
     findCeiling,
+    foundHold,
+    highlightOnScreen,
+    highlightInPath,
     pace,
     traceSeed,
     subset,
@@ -200,6 +215,9 @@ export function MapPage(props: MapPageProps): JSX.Element {
     showTicker,
     showTransitions,
     findCeiling,
+    foundHold,
+    highlightOnScreen,
+    highlightInPath,
     pace,
     traceSeed,
     subset,
@@ -253,6 +271,9 @@ export function MapPage(props: MapPageProps): JSX.Element {
       showTicker: w.showTicker,
       showTransitions: w.showTransitions,
       findCeiling: w.findCeiling,
+      foundHold: w.foundHold,
+      highlightOnScreen: w.highlightOnScreen,
+      highlightInPath: w.highlightInPath,
       pace: w.pace,
       traceSeed: w.traceSeed,
       subset: w.subset,
@@ -309,6 +330,9 @@ export function MapPage(props: MapPageProps): JSX.Element {
     showTicker,
     showTransitions,
     findCeiling,
+    foundHold,
+    highlightOnScreen,
+    highlightInPath,
     pace,
     traceSeed,
     subset,
@@ -344,6 +368,9 @@ export function MapPage(props: MapPageProps): JSX.Element {
         showTicker: w.showTicker,
         showTransitions: w.showTransitions,
         findCeiling: w.findCeiling,
+        foundHold: w.foundHold,
+        highlightOnScreen: w.highlightOnScreen,
+        highlightInPath: w.highlightInPath,
         pace: w.pace,
         traceSeed: w.traceSeed,
         subset: w.subset,
@@ -366,6 +393,9 @@ export function MapPage(props: MapPageProps): JSX.Element {
       setShowTicker(st.showTicker ?? true);
       setShowTransitions(st.showTransitions ?? false);
       setFindCeiling(clampFindCeiling(st.findCeiling ?? DEFAULT_FIND_CEILING));
+      setFoundHold(clampFoundHold(st.foundHold ?? DEFAULT_FOUND_HOLD));
+      setHighlightOnScreen(st.highlightOnScreen ?? false);
+      setHighlightInPath(st.highlightInPath ?? false);
       setPace(st.pace ?? null);
       setTraceSeed(st.traceSeed ?? null);
       setSubset(st.subset ?? []);
@@ -613,20 +643,37 @@ export function MapPage(props: MapPageProps): JSX.Element {
               <span>Keep them when you zoom out</span>
             </label>
             <label className="control-row">
-              <span>Circuits per pass</span>
-              <select
+              <span>Tiles per find pass</span>
+              <input
+                type="number"
+                min={MIN_FIND_CEILING}
+                step={1000}
+                list="map-find-ceiling-suggestions"
                 aria-label="How many tiles find-all may analyse at once"
                 data-testid="map-find-ceiling"
                 value={findCeiling}
                 disabled={!lines}
                 onChange={(e) => setFindCeiling(clampFindCeiling(Number(e.target.value)))}
-              >
+              />
+              <datalist id="map-find-ceiling-suggestions">
                 {FIND_CEILINGS.map((c) => (
-                  <option key={c} value={c}>
-                    {formatBudget(c)} tiles
-                  </option>
+                  <option key={c} value={c} />
                 ))}
-              </select>
+              </datalist>
+            </label>
+            <label className="control-row">
+              <span>Circuits to hold</span>
+              <input
+                type="number"
+                min={0}
+                step={500}
+                aria-label="How many found circuits to keep, 0 for no limit"
+                data-testid="map-found-hold"
+                value={foundHold}
+                disabled={!lines || !findCircuits}
+                onChange={(e) => setFoundHold(clampFoundHold(Number(e.target.value)))}
+              />
+              <span className="muted">0 = no limit</span>
             </label>
             <label className="control-row">
               <input
@@ -795,6 +842,10 @@ export function MapPage(props: MapPageProps): JSX.Element {
         findCircuits={lines && findCircuits}
         persistFound={persistFound}
         findCeiling={findCeiling}
+        foundHold={foundHold}
+        highlightPair={hoverPair}
+        highlightOnScreen={highlightOnScreen}
+        highlightInPath={highlightInPath}
         followPace={pace}
         traceSeed={lines && trace ? traceSeed : null}
         onTraceSeed={setTraceSeed}
@@ -873,6 +924,11 @@ export function MapPage(props: MapPageProps): JSX.Element {
             transitions={status.trace.transitions}
             colors={leafCss}
             className={showTicker ? undefined : 'is-low'}
+            onHoverPair={setHoverPair}
+            highlightOnScreen={highlightOnScreen}
+            onToggleOnScreen={() => setHighlightOnScreen((v) => !v)}
+            highlightInPath={highlightInPath}
+            onToggleInPath={() => setHighlightInPath((v) => !v)}
           />
         ) : null}
         {showTicker ? (

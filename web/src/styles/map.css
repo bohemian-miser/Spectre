@@ -303,6 +303,49 @@
 .trace-graph.is-low {
   bottom: 34px;
 }
+/* Expanded: four times the area, for reading a hundred curves rather than
+   just noticing them. Capped against the viewport so it can never grow past
+   what there is room for. */
+.trace-graph.is-big {
+  width: 416px;
+  max-width: 92%;
+}
+.tg-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 1px 3px 3px;
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 10px;
+  color: #c9d1e2;
+}
+.tg-controls label {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  cursor: pointer;
+}
+.tg-controls input {
+  margin: 0;
+  /* The panel is small; the default checkbox would dominate the row. */
+  width: 11px;
+  height: 11px;
+}
+.tg-expand {
+  margin-left: auto;
+  order: 9;
+  padding: 0 5px;
+  border: 1px solid rgba(244, 246, 251, 0.28);
+  border-radius: 4px;
+  background: transparent;
+  color: #c9d1e2;
+  font-size: 10px;
+  line-height: 1.5;
+  cursor: pointer;
+}
+.tg-expand:hover {
+  border-color: rgba(244, 246, 251, 0.6);
+}
 .trace-graph svg {
   display: block;
   width: 100%;

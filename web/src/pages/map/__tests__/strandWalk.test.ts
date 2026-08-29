@@ -47,6 +47,7 @@ import {
   hitTestChord,
   isTerminal,
   RECENT_TILES,
+  chordTypes,
   recentTiles,
   startTrail,
   transitionCounts,
@@ -724,11 +725,31 @@ describe('the tiles a walk crossed', () => {
     }
   });
 
-  it('remembers only the tail of a long chase, without growing', () => {
+  it('hands the ticker a bounded tail of a long chase', () => {
     const trail = walkAcross(RECENT_TILES + 80);
-    expect(trail.recent.length).toBe(RECENT_TILES);
-    expect(recentTiles(trail).length).toBeLessThanOrEqual(RECENT_TILES);
-    if (trail.steps > RECENT_TILES) expect(recentTiles(trail)).toHaveLength(RECENT_TILES);
+    expect(trail.steps).toBeGreaterThan(RECENT_TILES);
+    expect(recentTiles(trail)).toHaveLength(RECENT_TILES);
+    // …while the log itself covers the whole drawn line, which is what lets a
+    // transition be highlighted where it happened rather than only near the
+    // head of the walk.
+    expect(chordTypes(trail)).toHaveLength(trail.count - 1);
+    expect([...chordTypes(trail).slice(-RECENT_TILES)]).toEqual(recentTiles(trail));
+  });
+
+  it('trims the type log exactly with the points it describes', () => {
+    const table = tableFor(OPEN_SUBSET, OPEN_COMBO);
+    const index = buildChordIndex(cutFor(rect(90)), table)!;
+    const trail = startTrail(hitTestChord(index, { x: 0, y: 0 }, 6)!);
+    advanceWalk(trail, index, { maxSteps: 200 });
+    const before = [...chordTypes(trail)];
+    expect(before.length).toBeGreaterThan(60);
+
+    trimTrail(trail, 40);
+    const after = chordTypes(trail);
+    // One type per surviving chord, and they are the NEWEST ones — a log that
+    // trimmed differently from the points would mislabel every tile.
+    expect(after).toHaveLength(trail.count - 1);
+    expect([...after]).toEqual(before.slice(before.length - after.length));
   });
 
   it('names the tapped tile before the walk has stepped anywhere', () => {

@@ -6,7 +6,7 @@
  * directions of a pair must bow to opposite sides of the chord between them.
  */
 import { cleanup, fireEvent, render } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { LEAF_ORDER } from '../../../core';
 import { TransitionGraph } from '../TransitionGraph';
@@ -178,6 +178,61 @@ describe('TransitionGraph', () => {
     // nothing uncounted may claim the pointer.
     fireEvent.mouseMove(withBox(container), { clientX: 120, clientY: 120 });
     expect(queryByTestId('transition-readout')).toBeNull();
+  });
+
+  it('expands to four times the area and back', () => {
+    const { container, getByTestId } = render(
+      <TransitionGraph transitions={matrix({ 'Phi>Gamma1': 3 })} colors={colors} />,
+    );
+    const panel = container.querySelector('.trace-graph')!;
+    expect(panel.getAttribute('data-expanded')).toBe('0');
+    expect(panel.className).not.toContain('is-big');
+
+    fireEvent.click(getByTestId('transition-expand'));
+    expect(panel.getAttribute('data-expanded')).toBe('1');
+    expect(panel.className).toContain('is-big');
+
+    fireEvent.click(getByTestId('transition-expand'));
+    expect(panel.getAttribute('data-expanded')).toBe('0');
+  });
+
+  it('reports the hovered edge outward, and clears it on leave', () => {
+    const seen: ({ from: number; to: number } | null)[] = [];
+    const { container } = render(
+      <TransitionGraph
+        transitions={matrix({ 'Phi>Gamma1': 3 })}
+        colors={colors}
+        onHoverPair={(p) => seen.push(p)}
+      />,
+    );
+    seen.length = 0;
+    hoverEdge(container, 'Phi', 'Gamma1');
+    expect(seen.at(-1)).toEqual({ from: indexOf('Phi'), to: indexOf('Gamma1') });
+    fireEvent.mouseLeave(withBox(container));
+    expect(seen.at(-1)).toBeNull();
+  });
+
+  it('offers the highlight toggles only when the page handles them', () => {
+    const bare = render(<TransitionGraph transitions={matrix()} colors={colors} />);
+    expect(bare.queryByTestId('highlight-on-screen')).toBeNull();
+    cleanup();
+
+    const onScreen = vi.fn();
+    const inPath = vi.fn();
+    const wired = render(
+      <TransitionGraph
+        transitions={matrix()}
+        colors={colors}
+        highlightOnScreen
+        onToggleOnScreen={onScreen}
+        highlightInPath={false}
+        onToggleInPath={inPath}
+      />,
+    );
+    expect((wired.getByTestId('highlight-on-screen') as HTMLInputElement).checked).toBe(true);
+    expect((wired.getByTestId('highlight-in-path') as HTMLInputElement).checked).toBe(false);
+    fireEvent.click(wired.getByTestId('highlight-in-path'));
+    expect(inPath).toHaveBeenCalled();
   });
 
   it('renders nothing without a square matrix to draw', () => {

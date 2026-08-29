@@ -34,7 +34,11 @@ import {
 import {
   COS30,
   DEFAULT_FIND_CEILING,
+  DEFAULT_FOUND_HOLD,
+  type Rgb,
+  type ViewportCut,
   clampFindCeiling,
+  clampFoundHold,
   SIN30,
   circuitLengthRgb,
   isAggregateType,
@@ -62,6 +66,13 @@ import {
 } from './camera';
 import { CANVAS2D_MAX_INSTANCES } from './canvasRenderer';
 import type { LeafChordTable } from './chords';
+import {
+  buildTransitionIndex,
+  pairKey,
+  pathTransitions,
+  type Elbow,
+  type TransitionIndex,
+} from './transitions';
 import { createQueryScheduler, type QueryScheduler } from './queryScheduler';
 import { createMapRenderer } from './renderer';
 import {
@@ -70,6 +81,7 @@ import {
   buildChordIndex,
   recentTiles,
   transitionCounts,
+  TRANSITION_TYPES,
   hitTestChord,
   isTerminal,
   startTrail,
@@ -154,18 +166,11 @@ const TICKER_TILES = 64;
  * state that carries them, so the codec and this component cannot drift apart.
  */
 
-/**
- * Most circuits drawn at once — a bound on draw calls, nothing more. Measured
- * at 1.8 ms for 1202 calls, so this is generous rather than tight; the find
- * pass that produces them costs hundreds of ms and is the real limit.
- *
- * What gets dropped when it binds matters more than the number. It must never
- * be "the shortest": circuit length is exactly what the colours encode, so
- * trimming by length quietly deletes a whole size class. A single screen at
- * circuit zoom holds ~1150, so at this cap the on-screen set effectively never
- * competes with itself.
+/*
+ * There is no built-in cap on held circuits any more. It was the one thing
+ * that could silently lose a circuit that had genuinely been found, and how
+ * much memory to spend on them is the reader's call — see `foundHold`.
  */
-const MAX_FOUND_CIRCUITS = 4_000;
 
 /**
  * A found circuit's centre in ABSOLUTE world coordinates. Its geometry is
@@ -361,6 +366,25 @@ export interface InfiniteCanvasProps {
    */
   readonly findCeiling?: number;
   /**
+   * How many found circuits to hold while `persistFound` accumulates. 0 (the
+   * default) keeps every one. When a limit is set, nothing on screen is ever
+   * dropped for it — only accumulated circuits further from the camera.
+   */
+  readonly foundHold?: number;
+  /**
+   * A tile-type transition to pick out on the plane — the graph's hovered
+   * edge. Null clears it. Nothing is computed for it unless one of the two
+   * modes below is on, so a reader who is not using this pays nothing.
+   */
+  readonly highlightPair?: { readonly from: number; readonly to: number } | null;
+  /**
+   * Light up EVERY place in the current cut where that transition can happen,
+   * walked or not. Costs one continuation probe per chord end, once per cut.
+   */
+  readonly highlightOnScreen?: boolean;
+  /** Light up only the crossings the traced strand actually made. */
+  readonly highlightInPath?: boolean;
+  /**
    * Chase pace, in tiles per second — the walk explores that many tiles and
    * no more, so it can be watched tile by tile. null/undefined = full speed.
    */
@@ -408,6 +432,10 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
     findCircuits = false,
     persistFound = false,
     findCeiling = DEFAULT_FIND_CEILING,
+    foundHold = DEFAULT_FOUND_HOLD,
+    highlightPair = null,
+    highlightOnScreen = false,
+    highlightInPath = false,
     followPace = null,
     traceSeed = null,
     onTraceSeed,
@@ -473,6 +501,8 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
   persistFoundRef.current = persistFound;
   const findCeilingRef = useRef(clampFindCeiling(findCeiling));
   findCeilingRef.current = clampFindCeiling(findCeiling);
+  const foundHoldRef = useRef(clampFoundHold(foundHold));
+  foundHoldRef.current = clampFoundHold(foundHold);
   /** Circuits the find-all toggle carved out of the current display cut. */
   const foundRef = useRef<readonly TrailGeometry[]>([]);
   /** Identities of everything in `foundRef`, so a re-find is not a duplicate. */
@@ -657,12 +687,108 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
   }, [followTick]);
 
   /** Hand the renderer everything that stays lit: kept strands + found circuits. */
+  /** Elbows for the hovered transition, drawn over everything else. */
+  const highlightsRef = useRef<readonly TrailGeometry[]>([]);
+  /** Per-cut scan of every crossing, built only while the on-screen mode is on. */
+  const transitionIndexRef = useRef<{ cut: ViewportCut; index: TransitionIndex } | null>(null);
+
   const syncOverlays = useCallback((): void => {
     rendererRef.current?.setCircuits([
       ...keptRef.current.map((k) => k.geom),
       ...foundRef.current,
+      ...highlightsRef.current,
     ]);
   }, []);
+
+  const highlightPairRef = useRef(highlightPair);
+  highlightPairRef.current = highlightPair;
+  const highlightOnScreenRef = useRef(highlightOnScreen);
+  highlightOnScreenRef.current = highlightOnScreen;
+  const highlightInPathRef = useRef(highlightInPath);
+  highlightInPathRef.current = highlightInPath;
+
+  /** One elbow as drawable ink, anchored at its own joint so f32 stays exact. */
+  const elbowGeometry = useCallback((e: Elbow, rgb: Rgb): TrailGeometry => {
+    const origin = e[1];
+    const xy = new Float32Array(6);
+    const arc = new Float32Array(3);
+    let total = 0;
+    for (let i = 0; i < 3; i++) {
+      xy[i * 2] = e[i].x - origin.x;
+      xy[i * 2 + 1] = e[i].y - origin.y;
+      if (i > 0) total += Math.hypot(e[i].x - e[i - 1].x, e[i].y - e[i - 1].y);
+      arc[i] = total;
+    }
+    return {
+      color: [rgb[0] / 255, rgb[1] / 255, rgb[2] / 255],
+      origin,
+      xy,
+      arc,
+      pointCount: 3,
+      totalLength: total,
+      version: 1,
+    };
+  }, []);
+
+  /**
+   * Rebuild the hovered transition's ink. Cheap by construction: the on-screen
+   * side is a lookup into an index built once per cut, and the path side is one
+   * linear read of the trail. Both are skipped entirely when their mode is off,
+   * which is what keeps a reader who never hovers from paying for any of it.
+   */
+  const recomputeHighlights = useCallback((): void => {
+    const pair = highlightPairRef.current;
+    const wantScreen = highlightOnScreenRef.current;
+    const wantPath = highlightInPathRef.current;
+    const had = highlightsRef.current.length > 0;
+
+    if (!pair || (!wantScreen && !wantPath)) {
+      if (!had) return;
+      highlightsRef.current = [];
+      syncOverlays();
+      scheduleDraw();
+      return;
+    }
+
+    const leaf = styleRef.current?.leafColors;
+    // The graph draws each edge in its SOURCE type's colour; matching it here
+    // is what ties the hovered curve to the marks that appear on the tiling.
+    const rgb: Rgb = leaf?.[pair.from] ?? [244, 246, 251];
+    const out: TrailGeometry[] = [];
+
+    if (wantScreen) {
+      const cut = lastCutRef.current;
+      const table = chordsRef.current;
+      if (cut && table && table.chordCount > 0) {
+        let held = transitionIndexRef.current;
+        if (!held || held.cut !== cut) {
+          const index = buildChordIndex(cut, table);
+          held = index ? { cut, index: buildTransitionIndex(index, TRANSITION_TYPES) } : null;
+          transitionIndexRef.current = held;
+        }
+        const bucket = held?.index.byPair.get(pairKey(TRANSITION_TYPES, pair.from, pair.to));
+        if (bucket) for (const e of bucket) out.push(elbowGeometry(e, rgb));
+      }
+    }
+
+    if (wantPath && trailRef.current) {
+      for (const e of pathTransitions(trailRef.current, pair.from, pair.to)) {
+        out.push(elbowGeometry(e, rgb));
+      }
+    }
+
+    if (!had && out.length === 0) return;
+    highlightsRef.current = out;
+    syncOverlays();
+    scheduleDraw();
+  }, [elbowGeometry, syncOverlays, scheduleDraw]);
+  const recomputeHighlightsRef = useRef(recomputeHighlights);
+  recomputeHighlightsRef.current = recomputeHighlights;
+
+  // Hovering a different edge, or flipping either mode, is the whole trigger.
+  useEffect(() => {
+    recomputeHighlights();
+  }, [recomputeHighlights, highlightPair?.from, highlightPair?.to, highlightOnScreen, highlightInPath]);
 
   const setKept = useCallback(
     (next: readonly { geom: TrailGeometry; kind: 'circuit' | 'tail' }[]): void => {
@@ -791,7 +917,8 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
       geoms = merged;
     }
 
-    if (geoms.length > MAX_FOUND_CIRCUITS) {
+    const hold = foundHoldRef.current;
+    if (hold > 0 && geoms.length > hold) {
       // Trimming by length was a bug: it always kept the longest, so once the
       // accumulated set filled up, every short circuit found afterwards was
       // evicted the moment it arrived — including ones in plain view. Nothing
@@ -806,13 +933,13 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
       const rest: TrailGeometry[] = [];
       for (const g of geoms) (here.has(circuitKey(g)) ? onScreen : rest).push(g);
 
-      if (onScreen.length >= MAX_FOUND_CIRCUITS) {
+      if (onScreen.length >= hold) {
         // One cut alone over the cap: keep what is nearest the middle of the
         // view, still nothing to do with length.
-        geoms = onScreen.sort((a, b) => near(a) - near(b)).slice(0, MAX_FOUND_CIRCUITS);
+        geoms = onScreen.sort((a, b) => near(a) - near(b)).slice(0, hold);
       } else {
         rest.sort((a, b) => near(a) - near(b));
-        geoms = [...onScreen, ...rest.slice(0, MAX_FOUND_CIRCUITS - onScreen.length)];
+        geoms = [...onScreen, ...rest.slice(0, hold - onScreen.length)];
       }
       // Whatever was dropped must be forgettable again, or it could never come
       // back once the camera returns to it.
@@ -1146,6 +1273,9 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
           tryReplayRef.current?.(); // a shared-link seed may be waiting for this cut
         }
         recomputeFoundRef.current?.(); // find-all works per display cut
+        // The crossing scan belongs to a cut, so a new one retires it. Only
+        // rebuilt if something is actually being highlighted.
+        recomputeHighlightsRef.current?.();
       },
       onError: (err) => {
         publish({ error: err instanceof Error ? err.message : String(err) });
