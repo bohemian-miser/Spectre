@@ -246,8 +246,10 @@ export function ExplodedView(props: ExplodedViewProps): JSX.Element {
         <g className="supertile-pieces" strokeLinejoin="round">
           {pieces}
         </g>
-        {strandPaths ? <g className="supertile-strands">{strandPaths}</g> : null}
         {labels ? <g className="supertile-labels">{labels}</g> : null}
+        {/* Strands last, so a path is never hidden behind a piece's fill or a
+            piece's name — the path is the thing being looked at. */}
+        {strandPaths ? <g className="supertile-strands">{strandPaths}</g> : null}
       </g>
     </svg>
   );

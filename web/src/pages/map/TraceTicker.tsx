@@ -21,15 +21,27 @@ export interface TraceTickerProps {
   readonly colors: readonly string[];
   /** Most names to show; the rest of the ring is off the left edge. */
   readonly limit?: number;
+  /**
+   * The walk's step odometer — the step number of the NEWEST entry in
+   * `tiles`. Chips are keyed by their own step number, so as the window slides
+   * React keeps the chips that are still on screen instead of rebuilding the
+   * strip: only the arriving chip is new, and only it animates in. Without it
+   * an index-based key makes every chip a different chip on every frame, and
+   * the whole row snaps sideways each time a tile is crossed.
+   */
+  readonly steps?: number;
   readonly className?: string;
 }
 
 export const DEFAULT_TICKER_LIMIT = 48;
 
 export function TraceTicker(props: TraceTickerProps): JSX.Element | null {
-  const { tiles, colors, limit = DEFAULT_TICKER_LIMIT, className } = props;
+  const { tiles, colors, limit = DEFAULT_TICKER_LIMIT, steps, className } = props;
   if (tiles.length === 0) return null;
   const shown = tiles.slice(-Math.max(1, limit));
+  // Step number of the oldest chip on screen. Falls back to a plain index when
+  // no odometer was given, which keys correctly for a list that never slides.
+  const firstStep = (steps ?? shown.length) - shown.length;
 
   return (
     <div
@@ -43,7 +55,7 @@ export function TraceTicker(props: TraceTickerProps): JSX.Element | null {
         const name = LEAF_ORDER[type] ?? '?';
         return (
           <span
-            key={`${i}-${type}`}
+            key={firstStep + i}
             className={i === shown.length - 1 ? 'trace-tile is-newest' : 'trace-tile'}
             style={{ background: colors[type] ?? '#c8c8c8' }}
             // The colour carries the identity for anyone who can see it; the

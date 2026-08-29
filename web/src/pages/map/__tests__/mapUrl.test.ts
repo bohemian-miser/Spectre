@@ -6,6 +6,11 @@
 import { describe, expect, it } from 'vitest';
 import { MAX_SCALE, MIN_SCALE } from '../camera';
 import {
+  DEFAULT_FIND_CEILING,
+  MAX_FIND_CEILING,
+  MIN_FIND_CEILING,
+} from '../../../core';
+import {
   COMBO_LENGTH,
   DEFAULT_MAP_STATE,
   MAP_BUDGETS,
@@ -251,5 +256,44 @@ describe('kt / fc params (map codec)', () => {
     expect(q).toContain('pf=1');
     expect(encodeMapQuery({ ...base, persistFound: false })).not.toContain('pf=');
     expect(encodeMapQuery(back)).toBe(q);
+  });
+});
+
+describe('tk / tg / fx params (map codec)', () => {
+  it('says nothing while the ticker is on and the graph is off', () => {
+    const q = encodeMapQuery({ ...DEFAULT_MAP_STATE, lines: true });
+    expect(q).not.toContain('tk=');
+    expect(q).not.toContain('tg=');
+    expect(q).not.toContain('fx=');
+  });
+
+  it('round-trips a hidden ticker and a shown graph', () => {
+    const base = { ...DEFAULT_MAP_STATE, lines: true };
+    const q = encodeMapQuery({ ...base, showTicker: false, showTransitions: true });
+    expect(q).toContain('tk=0');
+    expect(q).toContain('tg=1');
+    const back = decodeMapQuery(q);
+    expect(back.showTicker).toBe(false);
+    expect(back.showTransitions).toBe(true);
+    expect(encodeMapQuery(back)).toBe(q);
+  });
+
+  it('round-trips a non-default find ceiling, and clamps a silly one', () => {
+    const base = { ...DEFAULT_MAP_STATE, lines: true };
+    const q = encodeMapQuery({ ...base, findCeiling: 120_000 });
+    expect(q).toContain('fx=120000');
+    expect(decodeMapQuery(q).findCeiling).toBe(120_000);
+    expect(encodeMapQuery(decodeMapQuery(q))).toBe(q);
+    // Out of range and nonsense both fall back inside the allowed span.
+    expect(decodeMapQuery('fx=99999999').findCeiling).toBe(MAX_FIND_CEILING);
+    expect(decodeMapQuery('fx=1').findCeiling).toBe(MIN_FIND_CEILING);
+    expect(decodeMapQuery('fx=banana').findCeiling).toBe(DEFAULT_FIND_CEILING);
+  });
+
+  it('a link written before these existed still decodes to the old picture', () => {
+    const back = decodeMapQuery('seed=1&z=36&ln=1&fc=1');
+    expect(back.showTicker).toBe(true);
+    expect(back.showTransitions).toBe(false);
+    expect(back.findCeiling).toBe(DEFAULT_FIND_CEILING);
   });
 });

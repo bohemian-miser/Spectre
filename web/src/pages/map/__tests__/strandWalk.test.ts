@@ -49,6 +49,8 @@ import {
   RECENT_TILES,
   recentTiles,
   startTrail,
+  transitionCounts,
+  TRANSITION_TYPES,
   trailGeometry,
   trailLength,
   trimTrail,
@@ -733,5 +735,73 @@ describe('the tiles a walk crossed', () => {
     const index = buildChordIndex(cutFor(rect(90)), tableFor(OPEN_SUBSET, OPEN_COMBO))!;
     const trail = startTrail(hitTestChord(index, { x: 0, y: 0 }, 6)!);
     expect(recentTiles(trail)).toEqual([]);
+  });
+
+  // The transition graph draws these. They are the whole chase rather than a
+  // window, so the load-bearing check is that they agree with the ring the
+  // ticker draws — two independent mechanisms over the same walk.
+  describe('transition counts', () => {
+    it('matches the tile sequence the ticker reports, pair for pair', () => {
+      const trail = walkAcross(60);
+      const tiles = recentTiles(trail);
+      // Short enough that the ring holds the WHOLE chase, so it is a complete
+      // reference to count against rather than a tail.
+      expect(tiles).toHaveLength(trail.steps);
+      expect(trail.steps).toBeLessThan(RECENT_TILES);
+
+      const expected = new Map<string, number>();
+      for (let i = 1; i < tiles.length; i++) {
+        const key = `${tiles[i - 1]}>${tiles[i]}`;
+        expected.set(key, (expected.get(key) ?? 0) + 1);
+      }
+
+      const counts = transitionCounts(trail);
+      expect(counts).toHaveLength(TRANSITION_TYPES * TRANSITION_TYPES);
+      for (let from = 0; from < TRANSITION_TYPES; from++) {
+        for (let to = 0; to < TRANSITION_TYPES; to++) {
+          expect(counts[from * TRANSITION_TYPES + to]).toBe(expected.get(`${from}>${to}`) ?? 0);
+        }
+      }
+      // Not a vacuous pass: this rule really does revisit type pairs.
+      expect(counts.filter((c) => c > 1).length).toBeGreaterThan(0);
+    });
+
+    it('counts one transition per step after the first', () => {
+      const trail = walkAcross(30);
+      const total = transitionCounts(trail).reduce((a, b) => a + b, 0);
+      expect(total).toBe(trail.steps - 1);
+    });
+
+    it('direction matters: A→B and B→A are counted apart', () => {
+      const trail = walkAcross(120);
+      const counts = transitionCounts(trail);
+      // Some ordered pair must be lopsided, or the graph's whole reason for
+      // bending the two directions apart would be decorative.
+      let asymmetric = false;
+      for (let a = 0; a < TRANSITION_TYPES && !asymmetric; a++) {
+        for (let b = a + 1; b < TRANSITION_TYPES; b++) {
+          if (counts[a * TRANSITION_TYPES + b] !== counts[b * TRANSITION_TYPES + a]) {
+            asymmetric = true;
+            break;
+          }
+        }
+      }
+      expect(asymmetric).toBe(true);
+    });
+
+    it('keeps counting past the ticker ring, and never grows', () => {
+      const trail = walkAcross(RECENT_TILES + 140);
+      expect(trail.steps).toBeGreaterThan(RECENT_TILES);
+      const counts = transitionCounts(trail);
+      // The ring forgot the early steps; the matrix did not.
+      expect(counts.reduce((a, b) => a + b, 0)).toBe(trail.steps - 1);
+      expect(trail.transitions.length).toBe(TRANSITION_TYPES * TRANSITION_TYPES);
+    });
+
+    it('is all zero before the walk has stepped anywhere', () => {
+      const index = buildChordIndex(cutFor(rect(90)), tableFor(OPEN_SUBSET, OPEN_COMBO))!;
+      const trail = startTrail(hitTestChord(index, { x: 0, y: 0 }, 6)!);
+      expect(transitionCounts(trail).every((c) => c === 0)).toBe(true);
+    });
   });
 });

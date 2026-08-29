@@ -138,18 +138,39 @@ export function circuitHueColor(step: number): string {
 }
 
 /**
- * Solid ink for a circuit of `length` segments, addressed by the LENGTH
- * itself rather than a patch-relative rank — so a circuit of a given length
- * is the same colour in every view, on every screen, and across shared
- * links. Hue and lightness advance along Roberts' R2 low-discrepancy
- * sequence (multipliers 1/ρ and 1/ρ² for the plastic number ρ), which is
- * irrational on both axes: two different lengths never share a colour, where
- * a fixed hue step would repeat exactly every 360/step lengths.
+ * Reference span for the hue ramp: lengths from 1 to 2^12 spread across it,
+ * longer ones sit at the far end. Circuits past this are vanishingly rare and
+ * all read as "very long", which is the honest thing for them to say.
+ */
+const LENGTH_HUE_SPAN = 12; // log2
+
+/**
+ * Solid ink for a circuit of `length` segments, addressed by the LENGTH itself
+ * rather than a patch-relative rank — so a circuit of a given length is the
+ * same colour in every view, on every screen, and across shared links.
+ *
+ * Hue RAMPS with log length rather than hashing it: warm for short circuits,
+ * cooling through green and blue as they get longer. A hash spreads adjacent
+ * lengths nicely but says nothing about distant ones, so a 400-unit circuit
+ * could come out the same colour as a 12-unit one — which is precisely the
+ * comparison the colour is there to make. Monotonic hue makes that collision
+ * impossible: two circuits of very different lengths are always far apart on
+ * the wheel.
+ *
+ * Log rather than linear because circuit lengths are spread over orders of
+ * magnitude; a linear ramp would give every short circuit the same red.
+ *
+ * That leaves NEIGHBOURING lengths close in hue, so lightness carries a fast
+ * low-discrepancy cycle (the golden ratio) to separate them. Hue says roughly
+ * how long; lightness makes "roughly" into "exactly".
  */
 export function circuitLengthRgb(length: number): Rgb {
-  const n = Math.abs(Math.round(length));
-  const h = (n * 0.7548776662466927) % 1;
-  const l = 0.38 + 0.26 * ((n * 0.5698402909980532) % 1);
+  const n = Math.max(1, Math.abs(Math.round(length)));
+  const t = Math.min(1, Math.log2(n) / LENGTH_HUE_SPAN);
+  // 0.02 → 0.82 turns: red-orange, yellow, green, cyan, blue, violet. Stops
+  // short of a full turn so the longest never wraps back onto the shortest.
+  const h = 0.02 + 0.8 * t;
+  const l = 0.42 + 0.22 * ((n * 0.6180339887498949) % 1);
   // hsl → rgb at s = 1.
   const a = Math.min(l, 1 - l);
   const f = (ch: number): number => {

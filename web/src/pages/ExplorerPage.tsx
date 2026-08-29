@@ -20,6 +20,7 @@ import {
   DEFAULT_TRACE_PACE,
   FAMILIES,
   FAMILY_DISPLAY_NAMES,
+  FIND_CEILINGS,
   FLAG,
   LINE_SCALE_STEP,
   MAX_TRAIL_HOLD,
@@ -69,6 +70,9 @@ import {
   explorerMode,
   explorerPace,
   explorerPersistFound,
+  explorerFindCeiling,
+  explorerShowTicker,
+  explorerShowTransitions,
   explorerTrace,
   explorerTrailHold,
   hasFlag,
@@ -92,6 +96,7 @@ import {
 import type { MapRenderStyle } from './map/rendererTypes';
 import { MAP_BUDGETS, formatBudget } from './map/mapUrl';
 import { TraceTicker } from './map/TraceTicker';
+import { TransitionGraph } from './map/TransitionGraph';
 import { DEFAULT_LINE_COLOR, LIGHT_LINE_COLOR } from './map/webglRenderer';
 import '../styles/map.css';
 
@@ -160,6 +165,9 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
   const keepTailsOn = explorerKeepTails(state);
   const findOn = explorerFindCircuits(state);
   const persistFoundOn = explorerPersistFound(state);
+  const tickerOn = explorerShowTicker(state);
+  const transitionsOn = explorerShowTransitions(state);
+  const findCeiling = explorerFindCeiling(state);
   const pace = explorerPace(state);
   const infinite = mode === 'infinite';
   const infiniteAvailable = supportsInfiniteMode(family);
@@ -961,6 +969,48 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
           />
           <span>Keep them when you zoom out</span>
         </label>
+        <label className="control-row">
+          <span>Circuits per pass</span>
+          <select
+            aria-label="How many tiles find-all may analyse at once"
+            data-testid="find-ceiling"
+            value={findCeiling}
+            disabled={!infinite}
+            onChange={(e) =>
+              dispatch({ type: 'setFindCeiling', findCeiling: Number(e.target.value) })
+            }
+          >
+            {FIND_CEILINGS.map((c) => (
+              <option key={c} value={c}>
+                {formatBudget(c)} tiles
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="control-row">
+          <input
+            type="checkbox"
+            aria-label="Show the ticker of tiles the chase crosses"
+            data-testid="show-ticker"
+            checked={tickerOn}
+            disabled={!infinite || !traceOn}
+            onChange={(e) => dispatch({ type: 'setShowTicker', showTicker: e.target.checked })}
+          />
+          <span>Name the tiles a chase crosses</span>
+        </label>
+        <label className="control-row">
+          <input
+            type="checkbox"
+            aria-label="Show the tile-type transition graph"
+            data-testid="show-transitions"
+            checked={transitionsOn}
+            disabled={!infinite || !traceOn}
+            onChange={(e) =>
+              dispatch({ type: 'setShowTransitions', showTransitions: e.target.checked })
+            }
+          />
+          <span>Graph which type follows which</span>
+        </label>
         {infinite ? (
           <>
             <p className="muted" role="note">
@@ -1122,6 +1172,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
             keepTails={keepTailsOn && traceOn && !!infiniteChords}
             findCircuits={findOn && !!infiniteChords}
             persistFound={persistFoundOn}
+            findCeiling={findCeiling}
             followPace={pace}
             traceSeed={state.traceSeed ?? null}
             onTraceSeed={onTraceSeed}
@@ -1137,6 +1188,8 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
               followOn={followOn && traceOn && !!infiniteChords}
               fillsOn={hasFlag(state, FLAG.BACKGROUNDS)}
               leafCss={leafCss}
+              tickerOn={tickerOn}
+              transitionsOn={transitionsOn}
             />
           </InfiniteCanvas>
         ) : !heavy ? (
@@ -1264,8 +1317,11 @@ function InfiniteHud(props: {
   readonly fillsOn: boolean;
   /** Tile colours for the ticker, in `LEAF_ORDER`. */
   readonly leafCss: readonly string[];
+  readonly tickerOn: boolean;
+  readonly transitionsOn: boolean;
 }): JSX.Element {
   const { subscribeRef, linesOn, traceOn, followOn, fillsOn, leafCss } = props;
+  const { tickerOn, transitionsOn } = props;
   const [status, setStatus] = useState<InfiniteCanvasStatus | null>(null);
   const latest = useRef<InfiniteCanvasStatus | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1350,7 +1406,16 @@ function InfiniteHud(props: {
             <span className="map-hud-error">query failed: {status.error}</span>
           ) : null}
       </div>
-      <TraceTicker tiles={trace?.tiles ?? []} colors={leafCss} />
+      {transitionsOn ? (
+        <TransitionGraph
+          transitions={trace?.transitions ?? []}
+          colors={leafCss}
+          className={tickerOn ? undefined : 'is-low'}
+        />
+      ) : null}
+      {tickerOn ? (
+        <TraceTicker tiles={trace?.tiles ?? []} colors={leafCss} steps={trace?.steps} />
+      ) : null}
     </>
   );
 }

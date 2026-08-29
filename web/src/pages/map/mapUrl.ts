@@ -17,11 +17,13 @@ import {
   DEFAULT_INSTANCE_BUDGET,
   DEFAULT_LINE_SCALE,
   DEFAULT_TRAIL_HOLD,
+  DEFAULT_FIND_CEILING,
   INSTANCE_BUDGETS,
   MAX_INSTANCE_BUDGET,
   MIN_INSTANCE_BUDGET,
   clampInstanceBudget,
   clampLineScale,
+  clampFindCeiling,
   clampTracePace,
   clampTrailHold,
   decodeTraceSeed,
@@ -81,6 +83,12 @@ export interface MapUrlState {
   readonly findCircuits?: boolean;
   /** Hold found circuits on screen past find-all's zoom (`pf=1`), default OFF. */
   readonly persistFound?: boolean;
+  /** Name the tiles a chase crosses along the bottom (`tk=0` when OFF). Default ON. */
+  readonly showTicker?: boolean;
+  /** Graph which tile type follows which (`tg=1`), default OFF. */
+  readonly showTransitions?: boolean;
+  /** Tiles find-all may analyse in one pass (`fx=`), and where circuit zoom parks. */
+  readonly findCeiling?: number;
   /** Chase pace in tiles/second (`fp=`); absent/null = full speed. */
   readonly pace?: number | null;
   /** The tapped chord the current trace grew from (`ts=`), for share links. */
@@ -126,6 +134,9 @@ export const DEFAULT_MAP_STATE: MapUrlState = {
   keepTails: true,
   findCircuits: false,
   persistFound: false,
+  showTicker: true,
+  showTransitions: false,
+  findCeiling: DEFAULT_FIND_CEILING,
   pace: null,
   traceSeed: null,
 };
@@ -183,6 +194,14 @@ export function encodeMapQuery(state: MapUrlState): string {
   if (state.keepTails === false) q.set('kt', '0');
   if (state.findCircuits) q.set('fc', '1');
   if (state.persistFound) q.set('pf', '1');
+  if (state.showTicker === false) q.set('tk', '0');
+  if (state.showTransitions) q.set('tg', '1');
+  if (
+    state.findCeiling !== undefined &&
+    clampFindCeiling(state.findCeiling) !== DEFAULT_FIND_CEILING
+  ) {
+    q.set('fx', String(clampFindCeiling(state.findCeiling)));
+  }
   if (state.pace != null) q.set('fp', String(clampTracePace(state.pace)));
   if (state.traceSeed) q.set('ts', encodeTraceSeed(state.traceSeed));
   return q.toString();
@@ -211,6 +230,9 @@ export function decodeMapQuery(query: string): MapUrlState {
   const ktRaw = q.get('kt');
   const fcRaw = q.get('fc');
   const pfRaw = q.get('pf');
+  const tkRaw = q.get('tk');
+  const tgRaw = q.get('tg');
+  const fxRaw = num('fx');
   const fpRaw = num('fp');
   const tsRaw = q.get('ts');
   const eRaw = q.get('e');
@@ -233,6 +255,9 @@ export function decodeMapQuery(query: string): MapUrlState {
     keepTails: !(ktRaw === '0' || ktRaw === 'false'),
     findCircuits: fcRaw === '1' || fcRaw === 'true',
     persistFound: pfRaw === '1' || pfRaw === 'true',
+    showTicker: !(tkRaw === '0' || tkRaw === 'false'),
+    showTransitions: tgRaw === '1' || tgRaw === 'true',
+    findCeiling: fxRaw === null ? DEFAULT_FIND_CEILING : clampFindCeiling(fxRaw),
     pace: fpRaw === null ? null : clampTracePace(fpRaw),
     traceSeed: tsRaw ? (decodeTraceSeed(tsRaw) ?? null) : null,
   };

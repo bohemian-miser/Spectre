@@ -12,6 +12,7 @@ import { useMemo } from 'react';
 import {
   formatComboShareString,
   leafOrder,
+  nonCrossingForTile,
   matchingIndicesToCombo,
   type ColorSchemeId,
   type EdgeContracts,
@@ -69,6 +70,22 @@ export function StrandRuleControls(props: StrandRuleControlsProps): JSX.Element 
     return digits === null ? null : formatComboShareString(subset, digits);
   }, [family, subset, matching]);
 
+  /**
+   * Which tiles are the reason there is no combination string. The encoder
+   * only says "no", so without this the message had to blame the whole set —
+   * and it blamed it for crossing even when the real trouble was an index left
+   * over from a wider subset.
+   */
+  const crossing = useMemo(() => {
+    if (combo !== null) return [];
+    const selected = new Set(subset);
+    return order.filter((type, i) => {
+      const nc = nonCrossingForTile(family, type, selected);
+      const want = matching[i] ?? 0;
+      return nc.length === 0 ? want !== 0 : !nc.includes(want);
+    });
+  }, [combo, family, order, subset, matching]);
+
   return (
     <>
       <fieldset>
@@ -91,8 +108,10 @@ export function StrandRuleControls(props: StrandRuleControlsProps): JSX.Element 
               Combination string: <code>{combo}</code>
             </>
           ) : (
-            <span className="muted">
-              This matching set crosses itself, so it has no combination string.
+            <span className="muted" data-testid="combo-crossing">
+              {crossing.length === 1
+                ? `${crossing[0]}’s matching crosses itself, so there is no combination string.`
+                : `These matchings cross themselves, so there is no combination string: ${crossing.join(', ')}.`}
             </span>
           )}
         </p>

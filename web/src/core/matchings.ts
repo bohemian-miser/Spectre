@@ -244,3 +244,40 @@ export function parseComboShareString(
 export function formatComboShareString(subset: readonly number[], combo: string): string {
   return `${[...subset].sort((a, b) => a - b).join('')}-${combo}`;
 }
+
+/**
+ * Largest valid matching index for one tile under a seam subset. The subset
+ * decides how many connection points the tile has, and that decides how many
+ * ways they can be paired up.
+ */
+export function maxMatchingIndex(
+  family: TileFamilyId,
+  type: TileTypeId,
+  subset: readonly number[],
+): number {
+  return Math.max(0, matchingCount(connectionCount(family, type, new Set(subset))) - 1);
+}
+
+/**
+ * Re-shape and clamp a matching vector for a family and seam subset. Must be
+ * called after ANY change that can invalidate indices — a family swap or, far
+ * more often, a subset edit: removing a seam class removes connection points,
+ * so an index that was valid a moment ago can now be past the end.
+ *
+ * Skipping this is not a cosmetic bug. `matchingIndicesToCombo` rejects an
+ * out-of-range index exactly as it rejects a crossing one, so a stale vector
+ * makes a perfectly good rule report that it "crosses itself" and refuse to
+ * produce a combination string.
+ */
+export function normalizeMatchingVector(
+  family: TileFamilyId,
+  subset: readonly number[],
+  matching: readonly number[],
+): readonly number[] {
+  return leafOrder(family).map((type, i) => {
+    const max = maxMatchingIndex(family, type, subset);
+    const want = Math.round(matching[i] ?? 0);
+    if (!Number.isFinite(want)) return 0;
+    return Math.min(max, Math.max(0, want));
+  });
+}

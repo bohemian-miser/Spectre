@@ -121,3 +121,54 @@ test('a supertile too big to trace says so instead of hanging', async ({ page })
   await expect(page.getByTestId('st-strands')).toContainText('over', { timeout: 45000 });
   await expect(page.locator('.supertile-strand')).toHaveCount(0);
 });
+
+/**
+ * Regression: narrowing the seam subset used to leave the matching vector
+ * holding indices that were valid for the WIDER subset. The combo encoder
+ * rejects an out-of-range index exactly as it rejects a crossing one, so the
+ * view claimed a perfectly good rule "crosses itself" — and `localChords`
+ * returns nothing for such an index, so some tiles quietly stopped drawing
+ * their strand at all.
+ */
+test('narrowing the edge rule keeps a combination string and keeps drawing', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(String(e)));
+  await page.setViewportSize({ width: 1400, height: 1000 });
+  await page.goto('supertiles.html#/supertiles?lv=2&gap=0.35&ln=1&e=012&c=');
+  await expect(page.locator('.supertile-view')).toBeVisible({ timeout: 30000 });
+  await expect(page.locator('.combo-readout')).toContainText('012-');
+
+  // Push every matching to its highest index, so there is something to go
+  // stale when the subset shrinks under it.
+  const sliders = page.locator('.matching-grid input[type="range"]');
+  const count = await sliders.count();
+  expect(count).toBeGreaterThan(0);
+  for (let i = 0; i < count; i++) {
+    const max = await sliders.nth(i).getAttribute('max');
+    await sliders.nth(i).fill(max ?? '0');
+  }
+  await expect(page.locator('.combo-readout')).toContainText('Combination string');
+  const drawnBefore = await page.locator('.supertile-strand').count();
+  expect(drawnBefore).toBeGreaterThan(0);
+
+  // Drop a class from the rule.
+  await page.locator('.edge-subset-picker button').filter({ hasText: /^2$/ }).first().click();
+
+  // Still a real rule with a real combination string, still drawing.
+  await expect(page.locator('.combo-readout')).toContainText('01-');
+  await expect(page.locator('.combo-readout')).not.toContainText('crosses itself');
+  await expect.poll(() => page.locator('.supertile-strand').count()).toBeGreaterThan(0);
+  expect(errors).toEqual([]);
+});
+
+test('strands draw over the pieces and their labels', async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 1000 });
+  await page.goto('supertiles.html#/supertiles?lv=3&gap=0.35&ln=1&e=2578&c=0100101100');
+  await expect(page.locator('.supertile-strand').first()).toBeVisible({ timeout: 30000 });
+  // Last in document order is last painted: the path is never buried under a
+  // tile fill or a piece name.
+  const order = await page
+    .locator('.supertile-camera')
+    .evaluate((g) => [...g.children].map((c) => c.getAttribute('class')));
+  expect(order[order.length - 1]).toBe('supertile-strands');
+});

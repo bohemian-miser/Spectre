@@ -13,6 +13,36 @@ afterEach(() => {
 });
 
 describe('TraceTicker', () => {
+  // The strip is right-aligned, so a chip appearing at full width shoves the
+  // row sideways in one jump. The fix is per-chip entry animation, which only
+  // works if React keeps the chips that were already there — i.e. if a chip's
+  // key is its own step, not its index in a sliding window.
+  it('keeps a chip identity as the window slides past it', () => {
+    const tiles = [0, 1, 2, 3];
+    const { container, rerender } = render(
+      <TraceTicker tiles={tiles} colors={colors} steps={4} limit={4} />,
+    );
+    const before = [...container.querySelectorAll('.trace-tile')];
+    // One more step: the window drops the oldest and gains one at the right.
+    rerender(<TraceTicker tiles={[1, 2, 3, 4]} colors={colors} steps={5} limit={4} />);
+    const after = [...container.querySelectorAll('.trace-tile')];
+
+    expect(after).toHaveLength(4);
+    // The three that survived are the SAME DOM nodes, shifted along — so they
+    // do not re-run the entry animation.
+    expect(after[0]).toBe(before[1]);
+    expect(after[1]).toBe(before[2]);
+    expect(after[2]).toBe(before[3]);
+    // Only the arriving chip is new.
+    expect(before).not.toContain(after[3]);
+    expect(after[3].textContent).toBe(LEAF_ORDER[4]);
+  });
+
+  it('still renders without an odometer', () => {
+    const { container } = render(<TraceTicker tiles={[0, 1]} colors={colors} />);
+    expect(container.querySelectorAll('.trace-tile')).toHaveLength(2);
+  });
+
   it('names each tile the walk crossed, in order', () => {
     const tiles = ['Delta', 'Psi', 'Gamma2'].map(indexOf);
     const { container } = render(<TraceTicker tiles={tiles} colors={colors} />);
