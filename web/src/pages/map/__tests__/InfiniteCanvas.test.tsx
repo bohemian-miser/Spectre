@@ -125,12 +125,17 @@ const chordsFor = (): LeafChordTable =>
  * Screen position of a chord's midpoint under `cam` — an unambiguous tap
  * target, found through the same engine query the component will run.
  */
-function chordTargetOn(cam: MapCamera, table: LeafChordTable = chordsFor()): { x: number; y: number } {
+function chordTargetOn(
+  cam: MapCamera,
+  table: LeafChordTable = chordsFor(),
+  /** World point to aim at; the view centre by default. */
+  at: { x: number; y: number } = { x: cam.cx, y: cam.cy },
+): { x: number; y: number } {
   const cut = createUnrootedEngine(SEED).query(viewRectFor(cam, WIDTH, HEIGHT), BUDGET);
   const index = buildChordIndex(cut, table);
   if (!index) throw new Error('no walkable cut at this camera');
-  const hit = hitTestChord(index, { x: cam.cx, y: cam.cy }, 5);
-  if (!hit) throw new Error('no chord near the view centre');
+  const hit = hitTestChord(index, at, 5);
+  if (!hit) throw new Error(`no chord near ${at.x},${at.y}`);
   const mid = { x: (hit.at.x + hit.to.x) / 2, y: (hit.at.y + hit.to.y) / 2 };
   return worldToScreen(cam, mid.x, mid.y, WIDTH, HEIGHT);
 }
@@ -442,6 +447,9 @@ describe('InfiniteCanvas — auto-follow', () => {
 });
 
 describe('InfiniteCanvas — kept circuits', () => {
+  /** A chord on a DIFFERENT loop from the one under the view centre. */
+  const OTHER_TARGET = chordTargetOn(createCamera(0, 0, 36), loopTable(), { x: 4, y: 2.5 });
+
   it('archives a closed circuit on the next tap and clears on demand', async () => {
     const m = await mount({ chords: loopTable(), keepCircuits: true });
     const target = chordTargetOn(createCamera(0, 0, 36), loopTable());
@@ -450,7 +458,9 @@ describe('InfiniteCanvas — kept circuits', () => {
     expect(m.status().trace.status).toBe('closed');
     expect(m.status().trace.circuits).toBe(0); // still the live trail
 
-    tap(m.host, target.x, target.y);
+    // A DIFFERENT circuit: re-tapping the same one is not a new strand, and
+    // re-drawing the loop already on screen is the bug this file guards.
+    tap(m.host, OTHER_TARGET.x, OTHER_TARGET.y);
     await settle();
     expect(m.status().trace.circuits).toBe(1);
     const kept = m.renderer.circuitSets.at(-1);
@@ -464,12 +474,56 @@ describe('InfiniteCanvas — kept circuits', () => {
     expect(m.renderer.circuitSets.at(-1)).toEqual([]);
   });
 
+  /**
+   * Reported: "if a circuit has just been highlighted and you click on the
+   * circuit, a copy gets added on top but offset a bit". The copies are in
+   * fact identical — same points, same length, same origin — so they stack,
+   * and each trace's stroke caps land at whichever chord it started from,
+   * which is what reads as an offset.
+   */
+  it('never draws the same circuit twice, however often it is re-tapped', async () => {
+    const m = await mount({ chords: loopTable(), keepCircuits: true });
+    const target = chordTargetOn(createCamera(0, 0, 36), loopTable());
+    for (let i = 0; i < 4; i++) {
+      tap(m.host, target.x, target.y);
+      await settle();
+    }
+    const kept = m.renderer.circuitSets.at(-1)!;
+    // One loop on screen, drawn once — plus the live trail tracing it, which
+    // is not in this list.
+    expect(kept.length).toBeLessThanOrEqual(1);
+    const keys = new Set(kept.map((g) => `${g.totalLength.toFixed(3)}@${g.origin.x.toFixed(3)}`));
+    expect(keys.size).toBe(kept.length);
+  });
+
+  it('colours a live circuit the same as find-all colours that very loop', async () => {
+    // The live trail derives its colour from its own step count; find-all
+    // derives it from the traced path's length. They are the same circuit, so
+    // they have to agree — an off-by-one in either shows up as two colours for
+    // one loop.
+    const live = await mount({ chords: loopTable(), keepCircuits: true });
+    const target = chordTargetOn(createCamera(0, 0, 36), loopTable());
+    tap(live.host, target.x, target.y);
+    await settleUntil(() => live.status().trace.status === 'closed', 'the circuit to close');
+    const liveGeom = live.renderer.trails.at(-1)!;
+    expect(liveGeom.color).toBeDefined();
+
+    const all = await mount({ chords: loopTable(), findCircuits: true });
+    await settleUntil(() => all.status().trace.found > 0, 'find-all to run');
+    const found = all.renderer.circuitSets.at(-1)!;
+    const match = found.find(
+      (g) => Math.abs(g.totalLength - liveGeom.totalLength) < 1e-6,
+    );
+    expect(match, 'find-all found the same-length loop').toBeDefined();
+    expect(liveGeom.color).toEqual(match!.color);
+  });
+
   it('does not archive with the toggle off, and dropping the toggle drops the kept', async () => {
     const m = await mount({ chords: loopTable(), keepCircuits: false });
     const target = chordTargetOn(createCamera(0, 0, 36), loopTable());
     tap(m.host, target.x, target.y);
     await settle();
-    tap(m.host, target.x, target.y);
+    tap(m.host, OTHER_TARGET.x, OTHER_TARGET.y);
     await settle();
     expect(m.status().trace.circuits).toBe(0);
 
@@ -765,6 +819,45 @@ describe('InfiniteCanvas — "keep them" means keep them', () => {
     await settleUntil(() => m.status().trace.found > 0, 'circuits in the new view');
     // A viewport's worth, not two viewports' worth.
     expect(m.status().trace.found).toBeLessThan(here * 2);
+  });
+
+  /**
+   * The regression the accumulation introduced: the trim kept the LONGEST
+   * circuits, so once the set filled up every short circuit found afterwards
+   * was evicted the instant it arrived — including ones in plain view. The
+   * user saw small circuits stop being coloured at all.
+   */
+  it('never drops a circuit that is on screen, whatever its size', async () => {
+    const m = await mount({ chords: loopTable(), findCircuits: true, persistFound: true });
+    await settleUntil(() => m.status().trace.found > 0, 'the first circuits');
+
+    // Wander, so the accumulated set grows well past what any one view holds.
+    for (const [cx, cy] of [[500, 320], [-460, 280], [640, -400], [-700, -260]]) {
+      act(() => m.api.current?.setCamera({ cx, cy }));
+      await settle();
+      await settle();
+    }
+    act(() => m.api.current?.setCamera({ cx: 0, cy: 0 }));
+    await settleUntil(() => m.status().trace.found > 0, 'the circuits here again');
+
+    // Everything the current cut can see must be drawn — including the short
+    // ones, which is precisely what the length-ordered trim used to lose.
+    const drawn = m.renderer.circuitSets.at(-1)!;
+    const lengths = drawn.map((g) => g.totalLength);
+    const shortest = Math.min(...lengths);
+    const longest = Math.max(...lengths);
+    expect(drawn.length).toBe(m.status().trace.found);
+    // A length-ordered cull collapses the spread; an honest set keeps it.
+    expect(longest).toBeGreaterThan(shortest);
+
+    // And the same view with the toggle off — the ground truth for "on screen"
+    // — must not contain a circuit the accumulated set is missing.
+    const solo = await mount({ chords: loopTable(), findCircuits: true, persistFound: false });
+    await settleUntil(() => solo.status().trace.found > 0, 'the same view alone');
+    const soloShortest = Math.min(
+      ...solo.renderer.circuitSets.at(-1)!.map((g) => g.totalLength),
+    );
+    expect(shortest).toBeLessThanOrEqual(soloShortest);
   });
 
   it('clearing lets go of the accumulated circuits', async () => {

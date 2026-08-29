@@ -81,7 +81,15 @@ export interface TileViewProps {
   readonly dimmed?: boolean;
   /** Pulse tiles that can never be fully paired (odd connection count). */
   readonly markOdd?: boolean;
-  readonly showLabelText?: boolean;
+  /**
+   * Small MAJOR-class numbers on every physical edge — majors only, so an edge
+   * carrying 7a and 7b just reads "7". Classes outside `selectedEdges` are
+   * drawn very faint rather than hidden, so the rule reads as a choice among
+   * all of them rather than a bare handful.
+   */
+  readonly showMajorNumbers?: boolean;
+  /** The tile's own name, faintly, over each part. */
+  readonly showTileName?: boolean;
 
   // interactivity
   readonly interaction?: TileInteraction;
@@ -126,6 +134,8 @@ export function TileView(props: TileViewProps): JSX.Element {
     contracts = DEFAULT_CONTRACTS,
     selectedEdges,
     showEdgeLabels = false,
+    showMajorNumbers = false,
+    showTileName = false,
     matchingIndex,
     matchingIndexByType,
     ghostMatchings = false,
@@ -262,6 +272,46 @@ export function TileView(props: TileViewProps): JSX.Element {
     return out;
   }, [parts, family, showEdgeLabels]);
 
+  /**
+   * Major-class numbers for every physical edge, whether or not the class is
+   * part of the rule — `physicalEdgeMidpoints` is asked for ALL majors and the
+   * selection only decides how loudly each is drawn.
+   */
+  const majorNumbers = useMemo(() => {
+    if (!showMajorNumbers) return [];
+    const out: { key: string; pt: Pt; text: string; color: string; on: boolean }[] = [];
+    for (const part of parts) {
+      const all = new Set(metaEdges(family, part.type).map((s) => s.major));
+      for (const mid of physicalEdgeMidpoints(family, part.type, all)) {
+        out.push({
+          key: `${part.type}.${mid.index}`,
+          pt: transPt(part.xform, mid.pt),
+          text: String(mid.label.major),
+          color: edgeClassColor(mid.label.major),
+          on: selectedEdges?.has(mid.label.major) ?? false,
+        });
+      }
+    }
+    return out;
+  }, [parts, family, showMajorNumbers, selectedEdges]);
+
+  const tileNames = useMemo(() => {
+    if (!showTileName) return [];
+    return parts.map((part) => {
+      // Centroid of the outline: close enough to "the middle of the tile" for
+      // a label, and it needs no extra geometry.
+      let sx = 0;
+      let sy = 0;
+      for (const p of part.pts) {
+        const q = transPt(part.xform, p);
+        sx += q.x;
+        sy += q.y;
+      }
+      const n = Math.max(1, part.pts.length);
+      return { key: part.type, pt: { x: sx / n, y: sy / n }, text: part.type };
+    });
+  }, [parts, showTileName]);
+
   const oddParts = useMemo(() => {
     if (!markOdd || !selectedEdges) return new Set<string>();
     const out = new Set<string>();
@@ -397,6 +447,27 @@ export function TileView(props: TileViewProps): JSX.Element {
             strokeWidth={Math.max(0.02, strokeUnit * 0.6)}
             strokeLinejoin="round"
           />
+        ))}
+      </g>
+
+      <g className="tile-names" pointerEvents="none">
+        {tileNames.map((t) => (
+          <text
+            key={t.key}
+            x={t.pt.x}
+            y={t.pt.y}
+            fontSize={0.42}
+            textAnchor="middle"
+            dominantBaseline="middle"
+            fill="#f4f6fb"
+            fillOpacity={0.34}
+            stroke="rgba(0,0,0,0.5)"
+            strokeWidth={0.03}
+            paintOrder="stroke"
+            data-tile-name={t.text}
+          >
+            {t.text}
+          </text>
         ))}
       </g>
 
@@ -542,6 +613,32 @@ export function TileView(props: TileViewProps): JSX.Element {
             />
           </>
         ) : null}
+      </g>
+
+      <g className="major-numbers" pointerEvents="none">
+        {majorNumbers.map((l) => (
+          <text
+            key={l.key}
+            x={l.pt.x}
+            y={l.pt.y}
+            fontSize={0.28}
+            textAnchor="middle"
+            dominantBaseline="middle"
+            fill={l.color}
+            // In the rule: legible. Out of it: present, but clearly not part
+            // of what is being edited.
+            fillOpacity={l.on ? 0.95 : 0.22}
+            stroke="rgba(0,0,0,0.6)"
+            strokeWidth={0.025}
+            paintOrder="stroke"
+            // Not `data-major`: the seam paths already use that for the
+            // class they belong to, and two meanings for one name is a trap.
+            data-major-number={l.text}
+            data-major-on={l.on ? '1' : '0'}
+          >
+            {l.text}
+          </text>
+        ))}
       </g>
 
       <g className="edge-labels">

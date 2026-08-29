@@ -731,10 +731,30 @@ describe('the tiles a walk crossed', () => {
     if (trail.steps > RECENT_TILES) expect(recentTiles(trail)).toHaveLength(RECENT_TILES);
   });
 
-  it('is empty before the walk has stepped anywhere', () => {
+  it('names the tapped tile before the walk has stepped anywhere', () => {
     const index = buildChordIndex(cutFor(rect(90)), tableFor(OPEN_SUBSET, OPEN_COMBO))!;
-    const trail = startTrail(hitTestChord(index, { x: 0, y: 0 }, 6)!);
-    expect(recentTiles(trail)).toEqual([]);
+    const hit = hitTestChord(index, { x: 0, y: 0 }, 6)!;
+    const trail = startTrail(hit);
+    // The tapped chord is a tile crossed, not a free starting position — the
+    // ticker used to open one tile short because it only counted onward steps.
+    expect(recentTiles(trail)).toEqual([hit.leafType]);
+    expect(trail.steps).toBe(1);
+  });
+
+  /**
+   * The reported symptom: "a circuit of length 3, I'm only seeing 2 tiles
+   * listed; for 5, only 4". One name per chord the line is drawn through —
+   * cross-checked against the polyline itself, which is the thing on screen.
+   */
+  it('lists one tile for every chord the line was drawn through', () => {
+    for (const steps of [1, 2, 5, 12, 40]) {
+      const trail = walkAcross(steps);
+      // startTrail lays down the tapped chord's two ends, and every step adds
+      // one more point — so the drawn line has exactly one more point than it
+      // has tiles.
+      expect(recentTiles(trail)).toHaveLength(trail.count - 1);
+      expect(trail.steps).toBe(trail.count - 1);
+    }
   });
 
   // The transition graph draws these. They are the whole chase rather than a
