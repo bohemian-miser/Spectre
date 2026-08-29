@@ -44,11 +44,12 @@ import {
 import { originRelativeCenter, type MapCamera } from './camera';
 import type { LeafChordTable } from './chords';
 import { GLYPH_LEVEL, buildGlyphMeshes, buildLeafMesh, glyphFitForCut } from './glyphs';
-import type {
-  MapRenderStats,
-  MapRenderStyle,
-  MapRenderer,
-  TrailGeometry,
+import {
+  HIGHLIGHT_WIDTH,
+  type MapRenderStats,
+  type MapRenderStyle,
+  type MapRenderer,
+  type TrailGeometry,
 } from './rendererTypes';
 
 /** Leaf outlines fade in between these zooms (CSS px per world unit). */
@@ -713,6 +714,7 @@ export function createWebGLRenderer(
   let lineScale = 1;
   let noOverlap = false;
   let trailScale = DEFAULT_TRAIL_SCALE;
+  let highlights: readonly TrailGeometry[] = [];
   const loc = (p: WebGLProgram, name: string): WebGLUniformLocation | null =>
     G.getUniformLocation(p, name);
   const uLeafView = loc(progLeaf, 'uView');
@@ -827,17 +829,23 @@ export function createWebGLRenderer(
     trailUploaded = trail.version;
   };
 
-  const setCircuits = (next: readonly TrailGeometry[] | null): void => {
-    if (disposed || contextLost) return;
-    circuits = (next ?? []).filter((c) => c.pointCount >= 2);
-    const keep = new Set(circuits);
+  /**
+   * Reconcile the GPU buffers against everything world-anchored we hold —
+   * kept circuits AND the highlight pass. Both live in the one map, so the
+   * sweep has to see both lists at once: dropping whatever the OTHER setter
+   * still holds is how a highlight would lose its buffers to a `setCircuits`
+   * (and vice versa) the moment a circuit was found.
+   */
+  const syncTrailBufs = (): void => {
+    const keep = new Set<TrailGeometry>(circuits);
+    for (const h of highlights) keep.add(h);
     for (const [geom, bufs] of circuitBufs) {
       if (!keep.has(geom)) {
         deleteTrailBuffers(bufs);
         circuitBufs.delete(geom);
       }
     }
-    for (const geom of circuits) {
+    for (const geom of keep) {
       if (circuitBufs.has(geom)) continue; // frozen geometry: upload once
       const bufs = makeTrailBuffers();
       G.bindBuffer(G.ARRAY_BUFFER, bufs.xy);
@@ -846,6 +854,18 @@ export function createWebGLRenderer(
       G.bufferData(G.ARRAY_BUFFER, geom.arc, G.STATIC_DRAW);
       circuitBufs.set(geom, bufs);
     }
+  };
+
+  const setCircuits = (next: readonly TrailGeometry[] | null): void => {
+    if (disposed || contextLost) return;
+    circuits = (next ?? []).filter((c) => c.pointCount >= 2);
+    syncTrailBufs();
+  };
+
+  const setHighlights = (next: readonly TrailGeometry[] | null): void => {
+    if (disposed || contextLost) return;
+    highlights = (next ?? []).filter((c) => c.pointCount >= 2);
+    syncTrailBufs();
   };
 
   const setStyle = (style: MapRenderStyle | null): void => {
@@ -1004,7 +1024,11 @@ export function createWebGLRenderer(
       // keep drawing at aggregate LOD (where a walk reads as its whole shape)
       // and while a query for a fresh viewport is still outstanding. Circuits
       // first, the live trail last, so the strand being traced stays on top.
-      const drawTrailPass = (geom: TrailGeometry, vao: WebGLVertexArrayObject): void => {
+      const drawTrailPass = (
+        geom: TrailGeometry,
+        vao: WebGLVertexArrayObject,
+        widen = 1,
+      ): void => {
         const off = originRelativeCenter(cam, geom.origin);
         G.useProgram(progTrail);
         G.uniform4f(
@@ -1015,7 +1039,7 @@ export function createWebGLRenderer(
           (-2 * cam.scale * dpr) / bh,
         );
         G.uniform2f(uTrailHalfRes, bw / 2, bh / 2);
-        G.uniform1f(uTrailHalfPx, (BASE_LINE_PX * lineScale * trailScale * dpr) / 2);
+        G.uniform1f(uTrailHalfPx, (BASE_LINE_PX * lineScale * trailScale * widen * dpr) / 2);
         G.uniform1f(uTrailTotal, geom.totalLength);
         G.uniform1f(uTrailAlpha, 1);
         const solid = geom.color;
@@ -1034,6 +1058,12 @@ export function createWebGLRenderer(
         if (bufs) drawTrailPass(geom, bufs.vao);
       }
       if (trail && trail.pointCount >= 2) drawTrailPass(trail, vaoTrail);
+      // Highlights last and wider — they lie ON the line they point at, so
+      // underneath at the same width they would be drawn over exactly.
+      for (const geom of highlights) {
+        const bufs = circuitBufs.get(geom);
+        if (bufs) drawTrailPass(geom, bufs.vao, HIGHLIGHT_WIDTH);
+      }
 
       G.bindVertexArray(null);
       G.finish(); // honest HUD timing (the page draws on demand, not in a loop)
@@ -1055,6 +1085,7 @@ export function createWebGLRenderer(
     setChords,
     setTrail,
     setCircuits,
+    setHighlights,
     setStyle,
     render,
     dispose(): void {

@@ -22,6 +22,12 @@ export type RendererMode = 'webgl2' | 'canvas2d';
  * moves. `version` changes exactly when the vertex data did, so a renderer can
  * skip re-uploading between frames.
  */
+/**
+ * How much wider a highlight draws than the strand under it. Enough to read as
+ * a band around the line rather than a redraw of it.
+ */
+export const HIGHLIGHT_WIDTH = 2.6;
+
 export interface TrailGeometry {
   /**
    * Solid ink (0..1 RGB) instead of the arc-length rainbow — how a CLOSED
@@ -119,6 +125,16 @@ export interface MapRenderer {
    * renderers upload each circuit once and reuse it forever after.
    */
   setCircuits(circuits: readonly TrailGeometry[] | null): void;
+  /**
+   * Adopt the highlight pass — short pieces of strand picked out by the
+   * transition graph (a crossing, a tile type, a repeated run of types).
+   *
+   * These are drawn LAST, over the live trail, and {@link HIGHLIGHT_WIDTH}
+   * times as wide. They have to be: a highlight lies exactly on top of the
+   * line it is pointing at, so drawn underneath at the same width it is
+   * invisible — which is what a highlight of the path being traced was.
+   */
+  setHighlights(highlights: readonly TrailGeometry[] | null): void;
   /** Override appearance (merged over the defaults). */
   setStyle(style: MapRenderStyle | null): void;
   /** Draw the current cut under `cam`. CSS-pixel size + devicePixelRatio. */

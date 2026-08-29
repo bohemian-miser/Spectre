@@ -101,6 +101,7 @@ import type { MapRenderStyle } from './map/rendererTypes';
 import { MAP_BUDGETS, formatBudget } from './map/mapUrl';
 import { TraceTicker } from './map/TraceTicker';
 import { TransitionGraph } from './map/TransitionGraph';
+import type { GraphSelection } from './map/transitions';
 import { DEFAULT_LINE_COLOR, LIGHT_LINE_COLOR } from './map/webglRenderer';
 import '../styles/map.css';
 
@@ -173,7 +174,9 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
    * The graph edge under the pointer. Local rather than URL state: it changes
    * as fast as the mouse moves and means nothing in a shared link.
    */
-  const [hoverPair, setHoverPair] = useState<{ from: number; to: number } | null>(null);
+  /** What the transition graph has picked out, and the run length it wants. */
+  const [graphPick, setGraphPick] = useState<GraphSelection | null>(null);
+  const [chainLength, setChainLength] = useState<number | null>(null);
   const tickerOn = explorerShowTicker(state);
   const transitionsOn = explorerShowTransitions(state);
   const findCeiling = explorerFindCeiling(state);
@@ -1205,9 +1208,10 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
             persistFound={persistFoundOn}
             findCeiling={findCeiling}
             foundHold={foundHold}
-            highlightPair={hoverPair}
+            highlight={graphPick}
             highlightOnScreen={hlScreen}
             highlightInPath={hlPath}
+            chainLength={chainLength}
             followPace={pace}
             traceSeed={state.traceSeed ?? null}
             onTraceSeed={onTraceSeed}
@@ -1231,7 +1235,8 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
                 dispatch({ type: 'setHighlightOnScreen', on: !hlScreen })
               }
               onToggleHlPath={() => dispatch({ type: 'setHighlightInPath', on: !hlPath })}
-              onHoverPair={setHoverPair}
+              onSelect={setGraphPick}
+              onChainLength={setChainLength}
             />
           </InfiniteCanvas>
         ) : !heavy ? (
@@ -1365,11 +1370,12 @@ function InfiniteHud(props: {
   readonly hlPath: boolean;
   onToggleHlScreen(): void;
   onToggleHlPath(): void;
-  onHoverPair(pair: { from: number; to: number } | null): void;
+  onSelect(selection: GraphSelection | null): void;
+  onChainLength(length: number | null): void;
 }): JSX.Element {
   const { subscribeRef, linesOn, traceOn, followOn, fillsOn, leafCss } = props;
   const { tickerOn, transitionsOn, hlScreen, hlPath } = props;
-  const { onToggleHlScreen, onToggleHlPath, onHoverPair } = props;
+  const { onToggleHlScreen, onToggleHlPath, onSelect, onChainLength } = props;
   const [status, setStatus] = useState<InfiniteCanvasStatus | null>(null);
   const latest = useRef<InfiniteCanvasStatus | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1459,7 +1465,10 @@ function InfiniteHud(props: {
           transitions={trace?.transitions ?? []}
           colors={leafCss}
           className={tickerOn ? undefined : 'is-low'}
-          onHoverPair={onHoverPair}
+          chains={trace?.chains ?? []}
+          chainLength={trace?.chainLength ?? 0}
+          onChainLength={onChainLength}
+          onSelect={onSelect}
           highlightOnScreen={hlScreen}
           onToggleOnScreen={onToggleHlScreen}
           highlightInPath={hlPath}

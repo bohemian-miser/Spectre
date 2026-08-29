@@ -68,9 +68,16 @@ import { CANVAS2D_MAX_INSTANCES } from './canvasRenderer';
 import type { LeafChordTable } from './chords';
 import {
   buildTransitionIndex,
+  chainCounts,
   pairKey,
+  pathChains,
   pathTransitions,
-  type Elbow,
+  pathTypeChords,
+  screenTypeChords,
+  selectionKey,
+  type Chain,
+  type GraphSelection,
+  type Polyline,
   type TransitionIndex,
 } from './transitions';
 import { createQueryScheduler, type QueryScheduler } from './queryScheduler';
@@ -78,6 +85,7 @@ import { createMapRenderer } from './renderer';
 import {
   MAX_CHORD_REACH,
   advanceWalk,
+  chordTypes,
   buildChordIndex,
   recentTiles,
   transitionCounts,
@@ -160,6 +168,30 @@ const FEED_BUDGET = 100_000;
  * object small on a status that is published many times a second.
  */
 const TICKER_TILES = 64;
+
+/**
+ * Ink for the highlight pass.
+ *
+ * Deliberately NOT the tile's own colour: a highlight has to read over bright
+ * per-flavour fills, over the near-black chord lines drawn on them, and over
+ * the rainbow of the live trail. One high-contrast ink at
+ * {@link HIGHLIGHT_WIDTH} does that everywhere; a Lambda-coloured band on a
+ * Lambda fill does not.
+ */
+const HIGHLIGHT_INK: Rgb = [255, 255, 255];
+
+/**
+ * How often the path's highlight is re-read while the chase is walking. The
+ * scan is linear in the path and a full-speed walk takes hundreds of steps a
+ * second, so it is worth a beat behind rather than per step.
+ */
+const HIGHLIGHT_REFRESH_MS = 150;
+
+/**
+ * How often the ranked run counts are recomputed while walking. Same bargain
+ * as above, and this one also sorts, so it gets a longer beat.
+ */
+const CHAIN_REFRESH_MS = 400;
 
 /*
  * The find-all ceiling and its clamp live in `core/serialize`, next to the URL
@@ -253,6 +285,14 @@ export interface InfiniteTraceInfo {
    */
   readonly transitions: readonly number[];
   /**
+   * Runs of consecutive tile types the chase made, commonest first — empty
+   * unless a `chainLength` is asked for. Length 2 is the ordered pairs above,
+   * ranked and named; longer is the n-gram the reader picked.
+   */
+  readonly chains: readonly Chain[];
+  /** The run length {@link chains} was counted at; 0 = not counted. */
+  readonly chainLength: number;
+  /**
    * Total steps the chase has taken, odometer-style. The ticker keys its chips
    * off this so a sliding window keeps the SAME chip identities frame to
    * frame — without it every publish looks like a whole new list.
@@ -271,8 +311,12 @@ const NO_TRACE: InfiniteTraceInfo = Object.freeze({
   foundStale: false,
   tiles: Object.freeze([]) as readonly number[],
   transitions: Object.freeze([]) as readonly number[],
+  chains: Object.freeze([]) as readonly Chain[],
+  chainLength: 0,
   steps: 0,
 });
+
+const NO_CHAINS = Object.freeze([]) as readonly Chain[];
 
 export interface InfiniteCanvasStatus {
   readonly mode: InfiniteCanvasMode;
@@ -372,11 +416,16 @@ export interface InfiniteCanvasProps {
    */
   readonly foundHold?: number;
   /**
-   * A tile-type transition to pick out on the plane — the graph's hovered
-   * edge. Null clears it. Nothing is computed for it unless one of the two
-   * modes below is on, so a reader who is not using this pays nothing.
+   * What the transition graph has picked out — a directed pair, a tile type,
+   * or a run of types the walk made. Null clears it. Nothing is computed for
+   * a pair or a type unless one of the two modes below is on, so a reader who
+   * is not using this pays nothing.
+   *
+   * A CHAIN is different: it can only have come from the ranked list, which is
+   * an explicit ask for one sequence, and it exists only along the path. So it
+   * always draws, toggles or no toggles.
    */
-  readonly highlightPair?: { readonly from: number; readonly to: number } | null;
+  readonly highlight?: GraphSelection | null;
   /**
    * Light up EVERY place in the current cut where that transition can happen,
    * walked or not. Costs one continuation probe per chord end, once per cut.
@@ -384,6 +433,12 @@ export interface InfiniteCanvasProps {
   readonly highlightOnScreen?: boolean;
   /** Light up only the crossings the traced strand actually made. */
   readonly highlightInPath?: boolean;
+  /**
+   * Length of the type runs to count along the traced path, for the ranked
+   * list — 2 is "ordered pairs". Null (the default) counts nothing, which is
+   * what keeps a reader who never opens that panel from paying for it.
+   */
+  readonly chainLength?: number | null;
   /**
    * Chase pace, in tiles per second — the walk explores that many tiles and
    * no more, so it can be watched tile by tile. null/undefined = full speed.
@@ -433,9 +488,10 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
     persistFound = false,
     findCeiling = DEFAULT_FIND_CEILING,
     foundHold = DEFAULT_FOUND_HOLD,
-    highlightPair = null,
+    highlight = null,
     highlightOnScreen = false,
     highlightInPath = false,
+    chainLength = null,
     followPace = null,
     traceSeed = null,
     onTraceSeed,
@@ -595,6 +651,39 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
   }, [scheduleDraw, requestQuery]);
 
   // --- traced strand -----------------------------------------------------------
+  const chainLengthRef = useRef(chainLength);
+  chainLengthRef.current = chainLength;
+  /** Last ranked count, with what it was counted from — see `CHAIN_REFRESH_MS`. */
+  const chainsRef = useRef<{ len: number; steps: number; at: number; list: readonly Chain[] }>({
+    len: 0,
+    steps: -1,
+    at: 0,
+    list: NO_CHAINS,
+  });
+
+  /**
+   * Ranked runs for the current path, recounted at most every
+   * {@link CHAIN_REFRESH_MS}. Nothing at all is counted unless a length has
+   * been asked for, and the same array is handed out between recounts so the
+   * panel below does not re-render on every step of the walk.
+   */
+  const chainsFor = useCallback((trail: StrandTrail): readonly Chain[] => {
+    const len = Math.floor(chainLengthRef.current ?? 0);
+    if (len < 1) {
+      if (chainsRef.current.list !== NO_CHAINS) {
+        chainsRef.current = { len: 0, steps: -1, at: 0, list: NO_CHAINS };
+      }
+      return NO_CHAINS;
+    }
+    const held = chainsRef.current;
+    const now = performance.now();
+    const fresh = held.len === len && (held.steps === trail.steps || now - held.at < CHAIN_REFRESH_MS);
+    if (fresh) return held.list;
+    const list = chainCounts(chordTypes(trail), len, TRANSITION_TYPES);
+    chainsRef.current = { len, steps: trail.steps, at: now, list };
+    return list;
+  }, []);
+
   const publishTrace = useCallback((): void => {
     const trail = trailRef.current;
     const circuits = keptRef.current.length;
@@ -612,13 +701,15 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
             foundStale: stale,
             tiles: recentTiles(trail, TICKER_TILES),
             transitions: transitionCounts(trail),
+            chains: chainsFor(trail),
+            chainLength: Math.max(0, Math.floor(chainLengthRef.current ?? 0)),
             steps: trail.steps,
           }
         : circuits || found || skipped
           ? { ...NO_TRACE, circuits, found, foundSkipped: skipped, foundStale: stale }
           : NO_TRACE,
     });
-  }, [publish]);
+  }, [publish, chainsFor]);
 
   /** The newest cut's chord index, built on first use and cached per cut. */
   const ensureIndex = useCallback((): ChordIndex | null => {
@@ -687,8 +778,11 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
   }, [followTick]);
 
   /** Hand the renderer everything that stays lit: kept strands + found circuits. */
-  /** Elbows for the hovered transition, drawn over everything else. */
+  /** Ink for what the graph picked out, drawn over everything else. */
   const highlightsRef = useRef<readonly TrailGeometry[]>([]);
+  /** `trail.steps` the highlight was last read at, and when — see the refresh. */
+  const highlightStampRef = useRef(0);
+  const highlightAtRef = useRef(0);
   /** Per-cut scan of every crossing, built only while the on-screen mode is on. */
   const transitionIndexRef = useRef<{ cut: ViewportCut; index: TransitionIndex } | null>(null);
 
@@ -696,27 +790,31 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
     rendererRef.current?.setCircuits([
       ...keptRef.current.map((k) => k.geom),
       ...foundRef.current,
-      ...highlightsRef.current,
     ]);
   }, []);
 
-  const highlightPairRef = useRef(highlightPair);
-  highlightPairRef.current = highlightPair;
+  const highlightRef = useRef(highlight);
+  highlightRef.current = highlight;
   const highlightOnScreenRef = useRef(highlightOnScreen);
   highlightOnScreenRef.current = highlightOnScreen;
   const highlightInPathRef = useRef(highlightInPath);
   highlightInPathRef.current = highlightInPath;
 
-  /** One elbow as drawable ink, anchored at its own joint so f32 stays exact. */
-  const elbowGeometry = useCallback((e: Elbow, rgb: Rgb): TrailGeometry => {
-    const origin = e[1];
-    const xy = new Float32Array(6);
-    const arc = new Float32Array(3);
+  /**
+   * One run of strand as drawable ink, anchored at its own first point so f32
+   * offsets stay exact however far from the origin the walk has gone.
+   */
+  const polylineGeometry = useCallback((pts: Polyline, rgb: Rgb): TrailGeometry | null => {
+    const n = pts.length;
+    if (n < 2) return null;
+    const origin = pts[0];
+    const xy = new Float32Array(n * 2);
+    const arc = new Float32Array(n);
     let total = 0;
-    for (let i = 0; i < 3; i++) {
-      xy[i * 2] = e[i].x - origin.x;
-      xy[i * 2 + 1] = e[i].y - origin.y;
-      if (i > 0) total += Math.hypot(e[i].x - e[i - 1].x, e[i].y - e[i - 1].y);
+    for (let i = 0; i < n; i++) {
+      xy[i * 2] = pts[i].x - origin.x;
+      xy[i * 2 + 1] = pts[i].y - origin.y;
+      if (i > 0) total += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
       arc[i] = total;
     }
     return {
@@ -724,71 +822,120 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
       origin,
       xy,
       arc,
-      pointCount: 3,
+      pointCount: n,
       totalLength: total,
       version: 1,
     };
   }, []);
 
   /**
-   * Rebuild the hovered transition's ink. Cheap by construction: the on-screen
-   * side is a lookup into an index built once per cut, and the path side is one
-   * linear read of the trail. Both are skipped entirely when their mode is off,
-   * which is what keeps a reader who never hovers from paying for any of it.
+   * Rebuild the picked-out ink. Cheap by construction: the on-screen side is a
+   * lookup into an index built once per cut, and the path side is one linear
+   * read of the trail. Both are skipped entirely when their mode is off, which
+   * is what keeps a reader who never hovers from paying for any of it.
+   *
+   * The result goes to its OWN renderer pass, not in with the kept circuits:
+   * a highlight lies exactly on top of the line it is pointing at, so drawn
+   * under the live trail at the same width it is drawn over completely —
+   * which is precisely what a highlight of the path being traced was.
    */
   const recomputeHighlights = useCallback((): void => {
-    const pair = highlightPairRef.current;
+    const sel = highlightRef.current;
     const wantScreen = highlightOnScreenRef.current;
     const wantPath = highlightInPathRef.current;
     const had = highlightsRef.current.length > 0;
+    // A chain came from the ranked list — an explicit ask for one sequence,
+    // and a fact about the path rather than the tiling. It never needs a mode.
+    const forced = sel?.kind === 'chain';
 
-    if (!pair || (!wantScreen && !wantPath)) {
+    if (!sel || (!wantScreen && !wantPath && !forced)) {
+      highlightStampRef.current = 0;
       if (!had) return;
       highlightsRef.current = [];
-      syncOverlays();
+      rendererRef.current?.setHighlights(null);
       scheduleDraw();
       return;
     }
 
-    const leaf = styleRef.current?.leafColors;
-    // The graph draws each edge in its SOURCE type's colour; matching it here
-    // is what ties the hovered curve to the marks that appear on the tiling.
-    const rgb: Rgb = leaf?.[pair.from] ?? [244, 246, 251];
-    const out: TrailGeometry[] = [];
+    const runs: Polyline[] = [];
+    const trail = trailRef.current;
 
-    if (wantScreen) {
+    if (wantScreen && sel.kind !== 'chain') {
       const cut = lastCutRef.current;
-      const table = chordsRef.current;
-      if (cut && table && table.chordCount > 0) {
-        let held = transitionIndexRef.current;
-        if (!held || held.cut !== cut) {
-          const index = buildChordIndex(cut, table);
-          held = index ? { cut, index: buildTransitionIndex(index, TRANSITION_TYPES) } : null;
-          transitionIndexRef.current = held;
+      const index = ensureIndex();
+      if (cut && index) {
+        if (sel.kind === 'pair') {
+          // The crossing scan probes a continuation per chord end, so it is
+          // built once per cut and hovering is then a map lookup.
+          let held = transitionIndexRef.current;
+          if (!held || held.cut !== cut) {
+            held = { cut, index: buildTransitionIndex(index, TRANSITION_TYPES) };
+            transitionIndexRef.current = held;
+          }
+          const bucket = held.index.byPair.get(pairKey(TRANSITION_TYPES, sel.from, sel.to));
+          if (bucket) for (const e of bucket) runs.push(e);
+        } else {
+          // A type is every chord inside a tile of that type — no probing at
+          // all, so this one is a single pass over the cut.
+          for (const run of screenTypeChords(index, sel.type)) runs.push(run);
         }
-        const bucket = held?.index.byPair.get(pairKey(TRANSITION_TYPES, pair.from, pair.to));
-        if (bucket) for (const e of bucket) out.push(elbowGeometry(e, rgb));
       }
     }
 
-    if (wantPath && trailRef.current) {
-      for (const e of pathTransitions(trailRef.current, pair.from, pair.to)) {
-        out.push(elbowGeometry(e, rgb));
-      }
+    if ((wantPath || forced) && trail) {
+      if (sel.kind === 'pair') for (const e of pathTransitions(trail, sel.from, sel.to)) runs.push(e);
+      else if (sel.kind === 'type') for (const r of pathTypeChords(trail, sel.type)) runs.push(r);
+      else for (const r of pathChains(trail, sel.types)) runs.push(r);
     }
 
+    const out: TrailGeometry[] = [];
+    for (const run of runs) {
+      const geom = polylineGeometry(run, HIGHLIGHT_INK);
+      if (geom) out.push(geom);
+    }
+
+    highlightStampRef.current = trail ? trail.steps : 0;
     if (!had && out.length === 0) return;
     highlightsRef.current = out;
-    syncOverlays();
+    rendererRef.current?.setHighlights(out);
     scheduleDraw();
-  }, [elbowGeometry, syncOverlays, scheduleDraw]);
+  }, [polylineGeometry, scheduleDraw, ensureIndex]);
   const recomputeHighlightsRef = useRef(recomputeHighlights);
   recomputeHighlightsRef.current = recomputeHighlights;
 
-  // Hovering a different edge, or flipping either mode, is the whole trigger.
+  // A different run length is a different count, and nothing else would ask
+  // for one: the walk republishes as it steps, but an idle chase does not.
+  useEffect(() => {
+    publishTrace();
+  }, [chainLength, publishTrace]);
+
+  // Hovering a different edge, picking a different one, or flipping either
+  // mode — the whole trigger, plus the walk itself (see `advanceAgainst`).
   useEffect(() => {
     recomputeHighlights();
-  }, [recomputeHighlights, highlightPair?.from, highlightPair?.to, highlightOnScreen, highlightInPath]);
+  }, [recomputeHighlights, selectionKey(highlight), highlightOnScreen, highlightInPath]);
+
+  /**
+   * Re-read the path's highlight as the chase grows.
+   *
+   * Without this the marks are computed once and then left behind by the very
+   * walk they describe — the reason highlighting "did nothing" on a chase that
+   * was still running. Throttled, because the scan is linear in the path and
+   * the walk can take hundreds of steps a second.
+   */
+  const refreshLiveHighlights = useCallback((): void => {
+    const sel = highlightRef.current;
+    if (!sel) return;
+    if (!highlightInPathRef.current && sel.kind !== 'chain') return;
+    const trail = trailRef.current;
+    if (!trail || trail.steps === highlightStampRef.current) return;
+    const now = performance.now();
+    if (now - highlightAtRef.current < HIGHLIGHT_REFRESH_MS) return;
+    highlightAtRef.current = now;
+    recomputeHighlightsRef.current?.();
+  }, []);
+  const refreshLiveHighlightsRef = useRef(refreshLiveHighlights);
+  refreshLiveHighlightsRef.current = refreshLiveHighlights;
 
   const setKept = useCallback(
     (next: readonly { geom: TrailGeometry; kind: 'circuit' | 'tail' }[]): void => {
@@ -1093,6 +1240,9 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
       }
       rendererRef.current?.setTrail(trailGeometry(trail));
       publishTrace();
+      // The marks describe the line that was just extended, so they have to be
+      // re-read here or they are left behind by the walk they describe.
+      refreshLiveHighlightsRef.current?.();
       scheduleDraw();
       if (fromFeed) {
         // Size the next feed to the walk's appetite: a full-speed walk that
@@ -1165,6 +1315,9 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
       foundInfoRef.current = { found: 0, skipped: false, stale: false };
     }
     if (keptRef.current.length || hadFound) setKept(keptRef.current.length ? [] : keptRef.current);
+    // The path's marks belong to a path that no longer exists.
+    highlightStampRef.current = 0;
+    recomputeHighlightsRef.current?.();
     publishSeed(null);
     publishTrace();
     scheduleDraw();

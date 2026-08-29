@@ -22,6 +22,7 @@ import { buildLeafChordTable, type LeafChordTable } from '../chords';
 import { InfiniteCanvas, type InfiniteCanvasApi, type InfiniteCanvasStatus } from '../InfiniteCanvas';
 import type { MapRenderStats, MapRenderStyle, MapRenderer, TrailGeometry } from '../rendererTypes';
 import { buildChordIndex, hitTestChord } from '../strandWalk';
+import type { GraphSelection } from '../transitions';
 import { createUnrootedEngine } from '../../../core';
 
 // Chase tests run the real engine synchronously in jsdom, and the follow
@@ -82,6 +83,7 @@ afterEach(() => {
 interface FakeRenderer extends MapRenderer {
   readonly trails: (TrailGeometry | null)[];
   readonly circuitSets: (readonly TrailGeometry[] | null)[];
+  readonly highlightSets: (readonly TrailGeometry[] | null)[];
   readonly cuts: ViewportCut[];
   frames: number;
 }
@@ -89,17 +91,20 @@ interface FakeRenderer extends MapRenderer {
 function makeRenderer(): FakeRenderer {
   const trails: (TrailGeometry | null)[] = [];
   const circuitSets: (readonly TrailGeometry[] | null)[] = [];
+  const highlightSets: (readonly TrailGeometry[] | null)[] = [];
   const cuts: ViewportCut[] = [];
   const r: FakeRenderer = {
     mode: 'webgl2',
     trails,
     circuitSets,
+    highlightSets,
     cuts,
     frames: 0,
     setCut: (cut) => cuts.push(cut),
     setChords: (_t: LeafChordTable | null) => {},
     setTrail: (t) => trails.push(t),
     setCircuits: (c) => circuitSets.push(c),
+    setHighlights: (h) => highlightSets.push(h),
     setStyle: (_s: MapRenderStyle | null) => {},
     render: (): MapRenderStats => {
       r.frames++;
@@ -120,6 +125,14 @@ function makeRenderer(): FakeRenderer {
 
 const chordsFor = (): LeafChordTable =>
   buildLeafChordTable(SUBSET, comboToMatchingIndices('spectre', SUBSET, COMBO));
+
+/**
+ * The default chord table, built ONCE. The component drops a trace when the
+ * rule changes under it, and identity is how it tells — so a harness that
+ * built a fresh table per render would silently clear the strand on every
+ * `rerender`, which is not what any of these tests mean by changing a prop.
+ */
+const DEFAULT_CHORDS = chordsFor();
 
 /**
  * Screen position of a chord's midpoint under `cam` — an unambiguous tap
@@ -150,9 +163,10 @@ interface HarnessProps {
   readonly findCircuits?: boolean;
   readonly persistFound?: boolean;
   readonly findCeiling?: number;
-  readonly highlightPair?: { from: number; to: number } | null;
+  readonly highlight?: GraphSelection | null;
   readonly highlightOnScreen?: boolean;
   readonly highlightInPath?: boolean;
+  readonly chainLength?: number | null;
   readonly followPace?: number | null;
   readonly traceSeed?: readonly [number, number, number, number] | null;
   readonly onTraceSeed?: (seed: readonly [number, number, number, number] | null) => void;
@@ -169,7 +183,7 @@ function Harness(props: HarnessProps): JSX.Element {
     <InfiniteCanvas
       seed={SEED}
       budget={BUDGET}
-      chords={props.chords === undefined ? chordsFor() : props.chords}
+      chords={props.chords === undefined ? DEFAULT_CHORDS : props.chords}
       trace={props.trace ?? true}
       follow={props.follow ?? false}
       followHold={props.followHold ?? null}
@@ -178,9 +192,10 @@ function Harness(props: HarnessProps): JSX.Element {
       findCircuits={props.findCircuits ?? false}
       persistFound={props.persistFound ?? false}
       findCeiling={props.findCeiling}
-      highlightPair={props.highlightPair ?? null}
+      highlight={props.highlight ?? null}
       highlightOnScreen={props.highlightOnScreen ?? false}
       highlightInPath={props.highlightInPath ?? false}
+      chainLength={props.chainLength ?? null}
       followPace={props.followPace ?? null}
       traceSeed={props.traceSeed ?? null}
       onTraceSeed={props.onTraceSeed}
@@ -923,7 +938,7 @@ describe('InfiniteCanvas — the find ceiling is adjustable', () => {
   });
 });
 
-describe('InfiniteCanvas — highlighting a transition', () => {
+describe('InfiniteCanvas — highlighting what the graph picked', () => {
   /** Leaf types of the first two chords the walk crosses, so the pair exists. */
   const walkedPair = async (props: Partial<HarnessProps> = {}) => {
     const m = await mount({ ...props });
@@ -934,40 +949,56 @@ describe('InfiniteCanvas — highlighting a transition', () => {
     expect(tiles.length).toBeGreaterThan(2);
     return { m, from: tiles[0], to: tiles[1] };
   };
+  const marks = (m: Awaited<ReturnType<typeof mount>>): readonly TrailGeometry[] =>
+    m.renderer.highlightSets.at(-1) ?? [];
 
   it('draws nothing while both modes are off, however the pointer moves', async () => {
     const { m, from, to } = await walkedPair();
-    const before = m.renderer.circuitSets.at(-1)?.length ?? 0;
-    await m.rerender({ highlightPair: { from, to } });
+    await m.rerender({ highlight: { kind: 'pair', from, to } });
     await settle();
     // The whole point of gating: hovering costs nothing until asked for.
-    expect(m.renderer.circuitSets.at(-1)?.length ?? 0).toBe(before);
+    expect(marks(m)).toHaveLength(0);
   });
 
   it('lights the crossings the strand made when asked for the path', async () => {
     const { m, from, to } = await walkedPair();
-    const before = m.renderer.circuitSets.at(-1)?.length ?? 0;
-    await m.rerender({ highlightPair: { from, to }, highlightInPath: true });
+    await m.rerender({ highlight: { kind: 'pair', from, to }, highlightInPath: true });
     await settle();
-    const after = m.renderer.circuitSets.at(-1)!.length;
-    expect(after).toBeGreaterThan(before);
+    expect(marks(m).length).toBeGreaterThan(0);
 
     // Each is a three-point elbow: arrive, cross, leave.
-    const added = m.renderer.circuitSets.at(-1)!.slice(before);
-    expect(added.every((g) => g.pointCount === 3)).toBe(true);
-    expect(added.every((g) => g.totalLength > 0)).toBe(true);
+    expect(marks(m).every((g) => g.pointCount === 3)).toBe(true);
+    expect(marks(m).every((g) => g.totalLength > 0)).toBe(true);
+  });
+
+  /**
+   * The bug this pass exists for: a highlight lies exactly on top of the line
+   * it points at, so in with the kept circuits — which both renderers draw
+   * BEFORE the live trail — the marks on the path being traced were drawn over
+   * completely. They have to reach the renderer as their own, later pass.
+   */
+  it('sends the marks to the highlight pass, never in with the circuits', async () => {
+    const { m, from, to } = await walkedPair({ keepCircuits: true });
+    const circuitsBefore = m.renderer.circuitSets.at(-1)?.length ?? 0;
+    await m.rerender({
+      highlight: { kind: 'pair', from, to },
+      highlightInPath: true,
+      keepCircuits: true,
+    });
+    await settle();
+    expect(marks(m).length).toBeGreaterThan(0);
+    expect(m.renderer.circuitSets.at(-1)?.length ?? 0).toBe(circuitsBefore);
   });
 
   it('lights every crossing in the cut when asked for the screen', async () => {
     const { m, from, to } = await walkedPair();
-    const before = m.renderer.circuitSets.at(-1)?.length ?? 0;
-    await m.rerender({ highlightPair: { from, to }, highlightInPath: true });
+    await m.rerender({ highlight: { kind: 'pair', from, to }, highlightInPath: true });
     await settle();
-    const inPath = m.renderer.circuitSets.at(-1)!.length - before;
+    const inPath = marks(m).length;
 
-    await m.rerender({ highlightPair: { from, to }, highlightOnScreen: true });
+    await m.rerender({ highlight: { kind: 'pair', from, to }, highlightOnScreen: true });
     await settle();
-    const onScreen = m.renderer.circuitSets.at(-1)!.length - before;
+    const onScreen = marks(m).length;
     // The strand used a few of the crossings the tiling offers; the screen has
     // all of them, so it must not be the smaller number.
     expect(onScreen).toBeGreaterThanOrEqual(inPath);
@@ -976,14 +1007,66 @@ describe('InfiniteCanvas — highlighting a transition', () => {
 
   it('clears when the pointer leaves the graph', async () => {
     const { m, from, to } = await walkedPair();
-    const before = m.renderer.circuitSets.at(-1)?.length ?? 0;
-    await m.rerender({ highlightPair: { from, to }, highlightOnScreen: true });
+    await m.rerender({ highlight: { kind: 'pair', from, to }, highlightOnScreen: true });
     await settle();
-    expect(m.renderer.circuitSets.at(-1)!.length).toBeGreaterThan(before);
+    expect(marks(m).length).toBeGreaterThan(0);
 
-    await m.rerender({ highlightPair: null, highlightOnScreen: true });
+    await m.rerender({ highlight: null, highlightOnScreen: true });
     await settle();
-    expect(m.renderer.circuitSets.at(-1)!.length).toBe(before);
+    expect(marks(m)).toHaveLength(0);
+  });
+
+  it('lights a whole tile type, on screen and along the path', async () => {
+    const { m, from } = await walkedPair();
+    await m.rerender({ highlight: { kind: 'type', type: from }, highlightInPath: true });
+    await settle();
+    const inPath = marks(m);
+    expect(inPath.length).toBeGreaterThan(0);
+    // A type is chords, not crossings: two points each, or more where the walk
+    // crossed two of that type in a row.
+    expect(inPath.every((g) => g.pointCount >= 2)).toBe(true);
+
+    await m.rerender({ highlight: { kind: 'type', type: from }, highlightOnScreen: true });
+    await settle();
+    // Every chord of that type in the cut, walked or not.
+    expect(marks(m).length).toBeGreaterThan(inPath.length);
+  });
+
+  it('lights a run of types wherever the path spelled it out', async () => {
+    const { m } = await walkedPair();
+    const tiles = m.status().trace.tiles;
+    const seq = [tiles[0], tiles[1], tiles[2]];
+    // A run comes from the ranked list, which is an explicit ask for one
+    // sequence — so unlike a pair it draws without either mode being on.
+    await m.rerender({ highlight: { kind: 'chain', types: seq } });
+    await settle();
+    const runs = marks(m);
+    expect(runs.length).toBeGreaterThan(0);
+    expect(runs.every((g) => g.pointCount >= seq.length + 1)).toBe(true);
+  });
+
+  it('counts the ranked runs only when a length is asked for', async () => {
+    const { m } = await walkedPair();
+    expect(m.status().trace.chains).toHaveLength(0);
+    expect(m.status().trace.chainLength).toBe(0);
+
+    await m.rerender({ chainLength: 2 });
+    await settle();
+    const chains = m.status().trace.chains;
+    expect(m.status().trace.chainLength).toBe(2);
+    expect(chains.length).toBeGreaterThan(0);
+
+    // Length 2 is the transition matrix, ranked and named — the two counts are
+    // computed by different code and must agree.
+    const matrix = m.status().trace.transitions;
+    const n = Math.round(Math.sqrt(matrix.length));
+    for (const c of chains) expect(c.count).toBe(matrix[c.types[0] * n + c.types[1]]);
+    const total = chains.reduce((a, c) => a + c.count, 0);
+    expect(total).toBe(matrix.reduce((a: number, b: number) => a + b, 0));
+    // Commonest first.
+    for (let i = 1; i < chains.length; i++) {
+      expect(chains[i - 1].count).toBeGreaterThanOrEqual(chains[i].count);
+    }
   });
 });
 

@@ -379,6 +379,153 @@
   stroke-linejoin: round;
 }
 
+/* --- the pinned pick ------------------------------------------------------ */
+
+/* What a click holds on to, so it is legible without the pointer on it. */
+.tg-pinned {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  padding: 2px 3px 3px;
+  border-bottom: 1px solid rgba(244, 246, 251, 0.14);
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 10px;
+  color: #e7ecf6;
+}
+.tg-pinned-name {
+  overflow: hidden;
+  flex: 1 1 auto;
+  color: #9aa6bd;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tg-pinned-count {
+  color: #f4f6fb;
+}
+.tg-pinned button {
+  padding: 0 4px;
+  border: 1px solid rgba(244, 246, 251, 0.28);
+  border-radius: 4px;
+  background: transparent;
+  color: #c9d1e2;
+  font: inherit;
+  cursor: pointer;
+}
+.tg-seq {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 1px;
+  font-size: 11px;
+  line-height: 1.15;
+}
+
+/* --- ranked runs ---------------------------------------------------------- */
+
+/* The ranked list is a list: it wants height, not the circle's square. */
+.trace-graph.is-tall {
+  top: 8px;
+  display: flex;
+  overflow: hidden;
+  flex-direction: column;
+}
+.tg-ranked {
+  display: flex;
+  overflow: hidden;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+/* 1 … 30, wrapped: every length is one click away rather than behind a stepper. */
+.tg-lengths {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 3px 1px;
+}
+.tg-lengths button {
+  min-width: 16px;
+  padding: 0 2px;
+  border: 1px solid rgba(244, 246, 251, 0.18);
+  border-radius: 3px;
+  background: transparent;
+  color: #9aa6bd;
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 9px;
+  line-height: 1.5;
+  cursor: pointer;
+}
+.tg-lengths button:hover {
+  border-color: rgba(244, 246, 251, 0.5);
+  color: #e7ecf6;
+}
+.tg-lengths button.is-on {
+  border-color: #f4f6fb;
+  background: rgba(244, 246, 251, 0.16);
+  color: #f4f6fb;
+}
+.tg-rank-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 2px 2px 3px;
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 9px;
+  color: #9aa6bd;
+}
+.tg-rank-head button {
+  padding: 0 4px;
+  border: 1px solid rgba(244, 246, 251, 0.18);
+  border-radius: 3px;
+  background: transparent;
+  color: #c9d1e2;
+  font: inherit;
+  cursor: pointer;
+}
+.tg-rows {
+  overflow-y: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.tg-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 1px 3px;
+  border-radius: 3px;
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 10px;
+  color: #c9d1e2;
+  cursor: pointer;
+}
+.tg-row:hover {
+  background: rgba(244, 246, 251, 0.1);
+}
+.tg-row.is-on {
+  background: rgba(244, 246, 251, 0.2);
+  color: #f4f6fb;
+}
+.tg-row-count {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+}
+.tg-more,
+.tg-empty {
+  margin: 3px 0 0;
+  padding: 2px;
+  border: 0;
+  background: transparent;
+  color: #9aa6bd;
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 9px;
+  text-align: center;
+  cursor: pointer;
+}
+
 @media (max-width: 780px) {
   .trace-ticker {
     font-size: 10px;
