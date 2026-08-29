@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+
+import { circuitHueColor } from '../colors';
 import {
   analyze,
   collectSegments,
@@ -240,8 +242,10 @@ describe('analyze on real tilings', () => {
     const lengths = [...a.circuitsByLength.keys()].sort((x, y) => x - y);
     expect(lengths.length).toBeGreaterThan(0);
     lengths.forEach((len, i) => {
-      expect(a.circuitColorByLength.get(len)).toBe(`hsl(${(i * 40) % 360}, 100%, 50%)`);
+      expect(a.circuitColorByLength.get(len)).toBe(circuitHueColor(i));
     });
+    // Ranked by length, and no two classes in one patch share a colour.
+    expect(new Set(lengths.map((len) => a.circuitColorByLength.get(len))).size).toBe(lengths.length);
     for (const [len, list] of a.circuitsByLength) {
       for (const path of list) {
         expect(pathLength(path)).toBe(len);
