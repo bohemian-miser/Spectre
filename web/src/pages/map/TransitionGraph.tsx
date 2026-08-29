@@ -20,7 +20,7 @@
  * the source type's colour, says which way round each one is.
  */
 
-import { useCallback, useId, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { LEAF_ORDER } from '../../core';
 
 export interface TransitionGraphProps {
@@ -33,6 +33,17 @@ export interface TransitionGraphProps {
   readonly colors: readonly string[];
   /** Type names, defaulting to `LEAF_ORDER`. */
   readonly names?: readonly string[];
+  /**
+   * The edge under the pointer, reported as it changes — what lets the view
+   * behind pick the same transition out on the tiling.
+   */
+  onHoverPair?(pair: { from: number; to: number } | null): void;
+  /** Light every place that transition can happen in the current view. */
+  readonly highlightOnScreen?: boolean;
+  onToggleOnScreen?(): void;
+  /** Light only the crossings the traced strand made. */
+  readonly highlightInPath?: boolean;
+  onToggleInPath?(): void;
   readonly className?: string;
 }
 
@@ -177,9 +188,21 @@ const HOVER_REACH = 16;
 
 export function TransitionGraph(props: TransitionGraphProps): JSX.Element | null {
   const { transitions, colors, names = LEAF_ORDER, className } = props;
+  const { onHoverPair, highlightOnScreen, onToggleOnScreen, highlightInPath, onToggleInPath } =
+    props;
   const uid = useId().replace(/:/g, '');
   const [hover, setHover] = useState<{ from: number; to: number } | null>(null);
+  const [expanded, setExpanded] = useState(false);
   const svgRef = useRef<SVGSVGElement | null>(null);
+
+  // Report the hovered edge outward, once per change rather than per pointer
+  // move — the listener's work is per-change, and a mousemove stream is not.
+  const hoverOut = useRef(onHoverPair);
+  hoverOut.current = onHoverPair;
+  useEffect(() => {
+    hoverOut.current?.(hover);
+  }, [hover?.from, hover?.to, hover]);
+  useEffect(() => () => hoverOut.current?.(null), []);
 
   const n = Math.round(Math.sqrt(transitions.length));
   const valid = n > 1 && n * n === transitions.length;
@@ -250,9 +273,54 @@ export function TransitionGraph(props: TransitionGraphProps): JSX.Element | null
 
   return (
     <div
-      className={['trace-graph', className ?? ''].filter(Boolean).join(' ')}
+      className={['trace-graph', expanded ? 'is-big' : '', className ?? '']
+        .filter(Boolean)
+        .join(' ')}
       data-testid="transition-graph"
+      data-expanded={expanded ? '1' : '0'}
+      // The panel sits INSIDE the map viewport, which takes a pointerdown to
+      // start a pan or a trace and captures the pointer for it. Without this
+      // a click on a control here is swallowed by that capture — and worse,
+      // it would also drag the tiling or start tracing a strand underneath.
+      onPointerDown={(e) => e.stopPropagation()}
+      onPointerUp={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
     >
+      <div className="tg-controls">
+        <button
+          type="button"
+          className="tg-expand"
+          data-testid="transition-expand"
+          aria-pressed={expanded}
+          aria-label={expanded ? 'Shrink the transition graph' : 'Expand the transition graph'}
+          title={expanded ? 'Shrink' : 'Expand'}
+          onClick={() => setExpanded((v) => !v)}
+        >
+          {expanded ? '\u2013' : '\u2b1c'}
+        </button>
+        {onToggleOnScreen ? (
+          <label title="Light every place this transition happens on screen">
+            <input
+              type="checkbox"
+              data-testid="highlight-on-screen"
+              checked={highlightOnScreen ?? false}
+              onChange={onToggleOnScreen}
+            />
+            <span>on screen</span>
+          </label>
+        ) : null}
+        {onToggleInPath ? (
+          <label title="Light only the crossings the traced strand made">
+            <input
+              type="checkbox"
+              data-testid="highlight-in-path"
+              checked={highlightInPath ?? false}
+              onChange={onToggleInPath}
+            />
+            <span>in path</span>
+          </label>
+        ) : null}
+      </div>
       <svg
         ref={svgRef}
         viewBox={`0 0 ${SIZE} ${SIZE}`}

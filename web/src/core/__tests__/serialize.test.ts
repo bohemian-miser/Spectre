@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_FIND_CEILING,
-  MAX_FIND_CEILING,
   MIN_FIND_CEILING,
   CODEC_VERSION,
   DEFAULT_EXPLORER_STATE,
@@ -423,9 +422,26 @@ describe('tk / tg / fx (ticker, transition graph, find ceiling)', () => {
     expect(
       encodeExplorerQuery({ ...DEFAULT_EXPLORER_STATE, findCeiling: DEFAULT_FIND_CEILING }),
     ).not.toContain('fx=');
-    expect(decodeExplorerQuery('v=1&fx=99999999').findCeiling).toBe(MAX_FIND_CEILING);
+    // Deliberately NO ceiling: a reader who wants a million-tile pass may have
+    // one, and pays for it in seconds rather than being told no.
+    expect(decodeExplorerQuery('v=1&fx=99999999').findCeiling).toBe(99_999_999);
     expect(decodeExplorerQuery('v=1&fx=1').findCeiling).toBe(MIN_FIND_CEILING);
     expect(decodeExplorerQuery('v=1&fx=banana').findCeiling).toBeUndefined();
+  });
+
+  it('round-trips the found-circuit hold, with 0 meaning no limit', () => {
+    const q = encodeExplorerQuery({ ...DEFAULT_EXPLORER_STATE, foundHold: 2500 });
+    expect(q).toContain('fh=2500');
+    expect(decodeExplorerQuery(q).foundHold).toBe(2500);
+    expect(encodeExplorerQuery(decodeExplorerQuery(q))).toBe(q);
+
+    // No limit is the default, so it is the ABSENCE of the param.
+    expect(encodeExplorerQuery({ ...DEFAULT_EXPLORER_STATE, foundHold: 0 })).not.toContain('fh=');
+    expect(decodeExplorerQuery('v=1').foundHold).toBeUndefined();
+    // A negative or nonsense hold normalizes to "no limit" — which this codec
+    // spells as the ABSENCE of the param, not as a written-out zero.
+    expect(decodeExplorerQuery('v=1&fh=-5').foundHold).toBeUndefined();
+    expect(encodeExplorerQuery(decodeExplorerQuery('v=1&fh=-5'))).toBe('v=1');
   });
 
   it('leaves links written before any of this byte-identical', () => {

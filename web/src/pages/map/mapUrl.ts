@@ -18,12 +18,14 @@ import {
   DEFAULT_LINE_SCALE,
   DEFAULT_TRAIL_HOLD,
   DEFAULT_FIND_CEILING,
+  DEFAULT_FOUND_HOLD,
   INSTANCE_BUDGETS,
   MAX_INSTANCE_BUDGET,
   MIN_INSTANCE_BUDGET,
   clampInstanceBudget,
   clampLineScale,
   clampFindCeiling,
+  clampFoundHold,
   clampTracePace,
   clampTrailHold,
   decodeTraceSeed,
@@ -89,6 +91,12 @@ export interface MapUrlState {
   readonly showTransitions?: boolean;
   /** Tiles find-all may analyse in one pass (`fx=`), and where circuit zoom parks. */
   readonly findCeiling?: number;
+  /** Found circuits "keep them" holds (`fh=`), 0 = no limit. */
+  readonly foundHold?: number;
+  /** Light the hovered transition everywhere on screen (`hs=1`), default OFF. */
+  readonly highlightOnScreen?: boolean;
+  /** …and only along the traced strand (`ht=1`), default OFF. */
+  readonly highlightInPath?: boolean;
   /** Chase pace in tiles/second (`fp=`); absent/null = full speed. */
   readonly pace?: number | null;
   /** The tapped chord the current trace grew from (`ts=`), for share links. */
@@ -137,6 +145,9 @@ export const DEFAULT_MAP_STATE: MapUrlState = {
   showTicker: true,
   showTransitions: false,
   findCeiling: DEFAULT_FIND_CEILING,
+  foundHold: DEFAULT_FOUND_HOLD,
+  highlightOnScreen: false,
+  highlightInPath: false,
   pace: null,
   traceSeed: null,
 };
@@ -202,6 +213,11 @@ export function encodeMapQuery(state: MapUrlState): string {
   ) {
     q.set('fx', String(clampFindCeiling(state.findCeiling)));
   }
+  if (state.foundHold !== undefined && clampFoundHold(state.foundHold) !== DEFAULT_FOUND_HOLD) {
+    q.set('fh', String(clampFoundHold(state.foundHold)));
+  }
+  if (state.highlightOnScreen) q.set('hs', '1');
+  if (state.highlightInPath) q.set('ht', '1');
   if (state.pace != null) q.set('fp', String(clampTracePace(state.pace)));
   if (state.traceSeed) q.set('ts', encodeTraceSeed(state.traceSeed));
   return q.toString();
@@ -233,6 +249,10 @@ export function decodeMapQuery(query: string): MapUrlState {
   const tkRaw = q.get('tk');
   const tgRaw = q.get('tg');
   const fxRaw = num('fx');
+  const fhRaw = num('fh');
+  const hsRaw = q.get('hs');
+  // `hp` is the trail hold window, so the path highlight is `ht`.
+  const htRaw = q.get('ht');
   const fpRaw = num('fp');
   const tsRaw = q.get('ts');
   const eRaw = q.get('e');
@@ -258,6 +278,9 @@ export function decodeMapQuery(query: string): MapUrlState {
     showTicker: !(tkRaw === '0' || tkRaw === 'false'),
     showTransitions: tgRaw === '1' || tgRaw === 'true',
     findCeiling: fxRaw === null ? DEFAULT_FIND_CEILING : clampFindCeiling(fxRaw),
+    foundHold: fhRaw === null ? DEFAULT_FOUND_HOLD : clampFoundHold(fhRaw),
+    highlightOnScreen: hsRaw === '1' || hsRaw === 'true',
+    highlightInPath: htRaw === '1' || htRaw === 'true',
     pace: fpRaw === null ? null : clampTracePace(fpRaw),
     traceSeed: tsRaw ? (decodeTraceSeed(tsRaw) ?? null) : null,
   };

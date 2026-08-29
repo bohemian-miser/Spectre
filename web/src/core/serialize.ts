@@ -145,6 +145,18 @@ export interface ExplorerState {
    */
   readonly findCeiling?: number;
   /**
+   * How many found circuits "keep them" holds (`fh=`), 0 = no limit. Absent =
+   * {@link DEFAULT_FOUND_HOLD}.
+   */
+  readonly foundHold?: number;
+  /**
+   * Light every place the hovered transition happens on screen (`hs=1`), and
+   * the same restricted to the traced strand (`ht=1`). Both additive: omitted
+   * when off, which is the default, because both cost work per cut.
+   */
+  readonly highlightOnScreen?: boolean;
+  readonly highlightInPath?: boolean;
+  /**
    * Chase pace in tiles per second (`fp=`). Absent = full speed (the
    * default); present = watch the walk explore tile by tile at this rate.
    */
@@ -211,16 +223,37 @@ export function clampTrailHold(hold: number): number {
  * budget: a bigger one shows more circuits at once and costs more per cut.
  */
 export const DEFAULT_FIND_CEILING = 30_000;
-export const MIN_FIND_CEILING = 2_000;
-export const MAX_FIND_CEILING = 250_000;
-/** Offered ceilings, cheapest first — roughly a doubling each step. */
+/**
+ * Floor only. There is deliberately no ceiling: how long a pass may take, and
+ * how much memory the result may use, is the reader's call and not something
+ * to be decided for them. The floor exists because a pass smaller than this
+ * cannot hold a circuit at all, so it would only ever report "zoom in".
+ */
+export const MIN_FIND_CEILING = 100;
+/** Suggestions for the input's datalist, cheapest first. Not limits. */
 export const FIND_CEILINGS: readonly number[] = Object.freeze([
-  5_000, 10_000, 30_000, 60_000, 120_000, 250_000,
+  5_000, 10_000, 30_000, 60_000, 120_000, 250_000, 1_000_000,
 ]);
 
 export function clampFindCeiling(n: number): number {
   if (!Number.isFinite(n)) return DEFAULT_FIND_CEILING;
-  return Math.min(MAX_FIND_CEILING, Math.max(MIN_FIND_CEILING, Math.round(n)));
+  return Math.max(MIN_FIND_CEILING, Math.round(n));
+}
+
+/**
+ * How many found circuits to hold on to while "keep them" accumulates —
+ * `0` meaning all of them, however many that turns out to be.
+ *
+ * A cap here is the one thing that can silently lose a circuit that was
+ * genuinely found, so the default is now "keep everything" and any limit is
+ * one the reader chose. Each held circuit costs a draw call and its own small
+ * vertex buffer; 1200 of them measured 1.8 ms of draw.
+ */
+export const DEFAULT_FOUND_HOLD = 0;
+
+export function clampFoundHold(n: number): number {
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return Math.round(n);
 }
 
 export const DEFAULT_TRACE_PACE = 24;
@@ -441,6 +474,11 @@ export function encodeExplorerState(s: ExplorerState): URLSearchParams {
   if (s.findCeiling !== undefined && clampFindCeiling(s.findCeiling) !== DEFAULT_FIND_CEILING) {
     q.set('fx', String(clampFindCeiling(s.findCeiling)));
   }
+  if (s.foundHold !== undefined && clampFoundHold(s.foundHold) !== DEFAULT_FOUND_HOLD) {
+    q.set('fh', String(clampFoundHold(s.foundHold)));
+  }
+  if (s.highlightOnScreen) q.set('hs', '1');
+  if (s.highlightInPath) q.set('ht', '1');
   if (s.pace !== undefined) q.set('fp', String(clampTracePace(s.pace)));
   if (s.traceSeed) q.set('ts', encodeTraceSeed(s.traceSeed));
   return q;
@@ -550,6 +588,13 @@ export function decodeExplorerState(q: URLSearchParams): ExplorerState {
   const showTransitions = tgRaw === '1' || tgRaw === 'true' ? true : undefined;
   const fxRaw = Number.parseInt(q.get('fx') ?? '', 10);
   const findCeiling = Number.isFinite(fxRaw) ? clampFindCeiling(fxRaw) : undefined;
+  const fhRaw = Number.parseInt(q.get('fh') ?? '', 10);
+  const foundHold = Number.isFinite(fhRaw) ? clampFoundHold(fhRaw) : undefined;
+  const hsRaw = q.get('hs');
+  const highlightOnScreen = hsRaw === '1' || hsRaw === 'true' ? true : undefined;
+  // `hp` is already the trail hold window; the path highlight is `ht`.
+  const htRaw = q.get('ht');
+  const highlightInPath = htRaw === '1' || htRaw === 'true' ? true : undefined;
   const fpRaw = Number.parseInt(q.get('fp') ?? '', 10);
   const pace = Number.isFinite(fpRaw) ? clampTracePace(fpRaw) : undefined;
   const tsRaw = q.get('ts');
@@ -581,6 +626,9 @@ export function decodeExplorerState(q: URLSearchParams): ExplorerState {
     ...(showTicker === false ? { showTicker } : {}),
     ...(showTransitions ? { showTransitions } : {}),
     ...(findCeiling !== undefined && findCeiling !== DEFAULT_FIND_CEILING ? { findCeiling } : {}),
+    ...(foundHold !== undefined && foundHold !== DEFAULT_FOUND_HOLD ? { foundHold } : {}),
+    ...(highlightOnScreen ? { highlightOnScreen } : {}),
+    ...(highlightInPath ? { highlightInPath } : {}),
     ...(pace !== undefined ? { pace } : {}),
     ...(traceSeed ? { traceSeed } : {}),
   };

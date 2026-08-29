@@ -9,11 +9,13 @@
 import {
   DEFAULT_EXPLORER_STATE,
   DEFAULT_FIND_CEILING,
+  DEFAULT_FOUND_HOLD,
   DEFAULT_INSTANCE_BUDGET,
   DEFAULT_LINE_SCALE,
   DEFAULT_TRAIL_HOLD,
   MAX_LEVEL,
   clampFindCeiling,
+  clampFoundHold,
   maxMatchingIndex,
   normalizeMatchingVector,
   clampInstanceBudget,
@@ -78,6 +80,9 @@ export type ExplorerAction =
   | { readonly type: 'setShowTicker'; readonly showTicker: boolean }
   | { readonly type: 'setShowTransitions'; readonly showTransitions: boolean }
   | { readonly type: 'setFindCeiling'; readonly findCeiling: number }
+  | { readonly type: 'setFoundHold'; readonly foundHold: number }
+  | { readonly type: 'setHighlightOnScreen'; readonly on: boolean }
+  | { readonly type: 'setHighlightInPath'; readonly on: boolean }
   | { readonly type: 'setPace'; readonly pace: number | null }
   | {
       readonly type: 'setTraceSeed';
@@ -295,6 +300,34 @@ export function explorerReducer(state: ExplorerState, action: ExplorerAction): E
         return rest as ExplorerState;
       }
       return { ...state, findCeiling };
+    }
+
+    case 'setFoundHold': {
+      const foundHold = clampFoundHold(action.foundHold);
+      if (foundHold === explorerFoundHold(state)) return state;
+      if (foundHold === DEFAULT_FOUND_HOLD) {
+        const { foundHold: _h, ...rest } = state;
+        return rest as ExplorerState;
+      }
+      return { ...state, foundHold };
+    }
+
+    case 'setHighlightOnScreen': {
+      if (action.on === explorerHighlightOnScreen(state)) return state;
+      if (!action.on) {
+        const { highlightOnScreen: _h, ...rest } = state;
+        return rest as ExplorerState;
+      }
+      return { ...state, highlightOnScreen: true };
+    }
+
+    case 'setHighlightInPath': {
+      if (action.on === explorerHighlightInPath(state)) return state;
+      if (!action.on) {
+        const { highlightInPath: _h, ...rest } = state;
+        return rest as ExplorerState;
+      }
+      return { ...state, highlightInPath: true };
     }
 
     case 'setRootTile':
@@ -522,6 +555,21 @@ export function explorerFindCeiling(state: ExplorerState): number {
   return state.findCeiling === undefined
     ? DEFAULT_FIND_CEILING
     : clampFindCeiling(state.findCeiling);
+}
+
+/** Found circuits held while accumulating; 0 = every one of them. */
+export function explorerFoundHold(state: ExplorerState): number {
+  return state.foundHold === undefined ? DEFAULT_FOUND_HOLD : clampFoundHold(state.foundHold);
+}
+
+/** Light the hovered transition everywhere on screen — OFF unless asked. */
+export function explorerHighlightOnScreen(state: ExplorerState): boolean {
+  return state.highlightOnScreen === true;
+}
+
+/** Light it only along the traced strand — OFF unless asked. */
+export function explorerHighlightInPath(state: ExplorerState): boolean {
+  return state.highlightInPath === true;
 }
 
 /** Tile-type transition graph — OFF unless `tg=1` asks for it. */

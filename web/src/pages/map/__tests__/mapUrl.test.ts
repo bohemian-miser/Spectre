@@ -7,7 +7,6 @@ import { describe, expect, it } from 'vitest';
 import { MAX_SCALE, MIN_SCALE } from '../camera';
 import {
   DEFAULT_FIND_CEILING,
-  MAX_FIND_CEILING,
   MIN_FIND_CEILING,
 } from '../../../core';
 import {
@@ -285,13 +284,24 @@ describe('tk / tg / fx params (map codec)', () => {
     expect(decodeMapQuery(q).findCeiling).toBe(120_000);
     expect(encodeMapQuery(decodeMapQuery(q))).toBe(q);
     // Out of range and nonsense both fall back inside the allowed span.
-    expect(decodeMapQuery('fx=99999999').findCeiling).toBe(MAX_FIND_CEILING);
+    // No ceiling by design — see MIN_FIND_CEILING's note.
+    expect(decodeMapQuery('fx=99999999').findCeiling).toBe(99_999_999);
     expect(decodeMapQuery('fx=1').findCeiling).toBe(MIN_FIND_CEILING);
     expect(decodeMapQuery('fx=banana').findCeiling).toBe(DEFAULT_FIND_CEILING);
   });
 
+  it('round-trips the found-circuit hold, with 0 meaning no limit', () => {
+    const base = { ...DEFAULT_MAP_STATE, lines: true };
+    const q = encodeMapQuery({ ...base, foundHold: 2500 });
+    expect(q).toContain('fh=2500');
+    expect(decodeMapQuery(q).foundHold).toBe(2500);
+    expect(encodeMapQuery(decodeMapQuery(q))).toBe(q);
+    expect(encodeMapQuery({ ...base, foundHold: 0 })).not.toContain('fh=');
+  });
+
   it('a link written before these existed still decodes to the old picture', () => {
     const back = decodeMapQuery('seed=1&z=36&ln=1&fc=1');
+    expect(back.foundHold).toBe(0);
     expect(back.showTicker).toBe(true);
     expect(back.showTransitions).toBe(false);
     expect(back.findCeiling).toBe(DEFAULT_FIND_CEILING);

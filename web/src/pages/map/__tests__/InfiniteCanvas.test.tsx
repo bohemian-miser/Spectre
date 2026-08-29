@@ -150,6 +150,9 @@ interface HarnessProps {
   readonly findCircuits?: boolean;
   readonly persistFound?: boolean;
   readonly findCeiling?: number;
+  readonly highlightPair?: { from: number; to: number } | null;
+  readonly highlightOnScreen?: boolean;
+  readonly highlightInPath?: boolean;
   readonly followPace?: number | null;
   readonly traceSeed?: readonly [number, number, number, number] | null;
   readonly onTraceSeed?: (seed: readonly [number, number, number, number] | null) => void;
@@ -175,6 +178,9 @@ function Harness(props: HarnessProps): JSX.Element {
       findCircuits={props.findCircuits ?? false}
       persistFound={props.persistFound ?? false}
       findCeiling={props.findCeiling}
+      highlightPair={props.highlightPair ?? null}
+      highlightOnScreen={props.highlightOnScreen ?? false}
+      highlightInPath={props.highlightInPath ?? false}
       followPace={props.followPace ?? null}
       traceSeed={props.traceSeed ?? null}
       onTraceSeed={props.onTraceSeed}
@@ -914,6 +920,70 @@ describe('InfiniteCanvas — the find ceiling is adjustable', () => {
     expect(highScale).not.toBeNull();
     // More tiles per pass = a wider view still qualifies = zoomed further out.
     expect(highScale!).toBeLessThan(lowScale!);
+  });
+});
+
+describe('InfiniteCanvas — highlighting a transition', () => {
+  /** Leaf types of the first two chords the walk crosses, so the pair exists. */
+  const walkedPair = async (props: Partial<HarnessProps> = {}) => {
+    const m = await mount({ ...props });
+    const target = chordTargetOn(createCamera(0, 0, 36));
+    tap(m.host, target.x, target.y);
+    await settle();
+    const tiles = m.status().trace.tiles;
+    expect(tiles.length).toBeGreaterThan(2);
+    return { m, from: tiles[0], to: tiles[1] };
+  };
+
+  it('draws nothing while both modes are off, however the pointer moves', async () => {
+    const { m, from, to } = await walkedPair();
+    const before = m.renderer.circuitSets.at(-1)?.length ?? 0;
+    await m.rerender({ highlightPair: { from, to } });
+    await settle();
+    // The whole point of gating: hovering costs nothing until asked for.
+    expect(m.renderer.circuitSets.at(-1)?.length ?? 0).toBe(before);
+  });
+
+  it('lights the crossings the strand made when asked for the path', async () => {
+    const { m, from, to } = await walkedPair();
+    const before = m.renderer.circuitSets.at(-1)?.length ?? 0;
+    await m.rerender({ highlightPair: { from, to }, highlightInPath: true });
+    await settle();
+    const after = m.renderer.circuitSets.at(-1)!.length;
+    expect(after).toBeGreaterThan(before);
+
+    // Each is a three-point elbow: arrive, cross, leave.
+    const added = m.renderer.circuitSets.at(-1)!.slice(before);
+    expect(added.every((g) => g.pointCount === 3)).toBe(true);
+    expect(added.every((g) => g.totalLength > 0)).toBe(true);
+  });
+
+  it('lights every crossing in the cut when asked for the screen', async () => {
+    const { m, from, to } = await walkedPair();
+    const before = m.renderer.circuitSets.at(-1)?.length ?? 0;
+    await m.rerender({ highlightPair: { from, to }, highlightInPath: true });
+    await settle();
+    const inPath = m.renderer.circuitSets.at(-1)!.length - before;
+
+    await m.rerender({ highlightPair: { from, to }, highlightOnScreen: true });
+    await settle();
+    const onScreen = m.renderer.circuitSets.at(-1)!.length - before;
+    // The strand used a few of the crossings the tiling offers; the screen has
+    // all of them, so it must not be the smaller number.
+    expect(onScreen).toBeGreaterThanOrEqual(inPath);
+    expect(onScreen).toBeGreaterThan(0);
+  });
+
+  it('clears when the pointer leaves the graph', async () => {
+    const { m, from, to } = await walkedPair();
+    const before = m.renderer.circuitSets.at(-1)?.length ?? 0;
+    await m.rerender({ highlightPair: { from, to }, highlightOnScreen: true });
+    await settle();
+    expect(m.renderer.circuitSets.at(-1)!.length).toBeGreaterThan(before);
+
+    await m.rerender({ highlightPair: null, highlightOnScreen: true });
+    await settle();
+    expect(m.renderer.circuitSets.at(-1)!.length).toBe(before);
   });
 });
 
