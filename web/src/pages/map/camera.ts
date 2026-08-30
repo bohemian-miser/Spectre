@@ -162,11 +162,20 @@ export function tilesAtLevel(level: number): number {
   return SUBSTITUTION_GROWTH ** Math.max(0, level);
 }
 
-/** Zoom (CSS px per world unit) whose viewport covers a level-`level` patch. */
-export function scaleForLevel(level: number, width: number, height: number): number {
+/**
+ * Zoom (CSS px per world unit) whose viewport covers a level-`level` patch.
+ * `tileArea` is the family's mean leaf area (`averageLeafArea`); it defaults
+ * to the spectre's so family-blind callers keep their old behaviour.
+ */
+export function scaleForLevel(
+  level: number,
+  width: number,
+  height: number,
+  tileArea: number = SPECTRE_TILE_AREA,
+): number {
   const w = Math.max(1, width);
   const h = Math.max(1, height);
-  const worldArea = tilesAtLevel(level) * SPECTRE_TILE_AREA;
+  const worldArea = tilesAtLevel(level) * tileArea;
   return clampScale(Math.sqrt((w * h) / worldArea));
 }
 
@@ -175,16 +184,26 @@ export function scaleForLevel(level: number, width: number, height: number): num
  * {@link scaleForLevel} addressed by a tile count instead of a level, for the
  * ceilings that are quoted in tiles (the trace index, the find-all pass).
  */
-export function scaleForTileCount(tiles: number, width: number, height: number): number {
+export function scaleForTileCount(
+  tiles: number,
+  width: number,
+  height: number,
+  tileArea: number = SPECTRE_TILE_AREA,
+): number {
   const w = Math.max(1, width);
   const h = Math.max(1, height);
-  return clampScale(Math.sqrt((w * h) / (Math.max(1, tiles) * SPECTRE_TILE_AREA)));
+  return clampScale(Math.sqrt((w * h) / (Math.max(1, tiles) * tileArea)));
 }
 
 /** Inverse of {@link scaleForLevel} (fractional; the HUD rounds it). */
-export function levelForScale(scale: number, width: number, height: number): number {
+export function levelForScale(
+  scale: number,
+  width: number,
+  height: number,
+  tileArea: number = SPECTRE_TILE_AREA,
+): number {
   const w = Math.max(1, width);
   const h = Math.max(1, height);
-  const tiles = (w * h) / (Math.max(MIN_SCALE, scale) ** 2 * SPECTRE_TILE_AREA);
+  const tiles = (w * h) / (Math.max(MIN_SCALE, scale) ** 2 * tileArea);
   return Math.log(Math.max(1, tiles)) / Math.log(SUBSTITUTION_GROWTH);
 }

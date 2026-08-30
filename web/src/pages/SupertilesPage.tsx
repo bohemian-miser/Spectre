@@ -177,7 +177,7 @@ export function SupertilesPage(props: SupertilesPageProps): JSX.Element {
   const chords = useMemo(
     () =>
       linesOn
-        ? buildLeafChordTable(deferred.subset, deferred.matching, deferred.contracts)
+        ? buildLeafChordTable('spectre', deferred.subset, deferred.matching, deferred.contracts)
         : null,
     [linesOn, deferred.subset, deferred.matching, deferred.contracts],
   );

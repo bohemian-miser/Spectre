@@ -37,6 +37,7 @@ import {
   DEFAULT_FOUND_HOLD,
   type Rgb,
   type ViewportCut,
+  averageLeafArea,
   clampFindCeiling,
   clampFoundHold,
   SIN30,
@@ -47,6 +48,7 @@ import {
   weldSegments,
   type Pt,
   type Segment,
+  type TileFamilyId,
   type UnrootedQueryRequest,
   type UnrootedQueryResponse,
   type ViewRect,
@@ -83,8 +85,8 @@ import {
 import { createQueryScheduler, type QueryScheduler } from './queryScheduler';
 import { createMapRenderer } from './renderer';
 import {
-  MAX_CHORD_REACH,
   advanceWalk,
+  chordReachOf,
   chordTypes,
   buildChordIndex,
   recentTiles,
@@ -279,9 +281,11 @@ export interface InfiniteTraceInfo {
   readonly tiles: readonly number[];
   /**
    * The whole chase's directed tile-type transition counts, row-major
-   * `from * TRANSITION_TYPES + to`. A fixed 100 counters however long the walk
-   * runs — unlike {@link tiles} this is not a window, so the graph that draws
-   * it shows every step ever taken by THIS chase, not just the recent ones.
+   * `from * n + to` where `n` is the walked family's leaf-type count (the
+   * matrix is square, so consumers recover `n` as `sqrt(length)`). A fixed
+   * `n²` counters however long the walk runs — unlike {@link tiles} this is
+   * not a window, so the graph that draws it shows every step ever taken by
+   * THIS chase, not just the recent ones.
    */
   readonly transitions: readonly number[];
   /**
@@ -372,6 +376,13 @@ export interface InfiniteCanvasApi {
 
 export interface InfiniteCanvasProps {
   readonly seed: number;
+  /**
+   * Tile family the engine generates. Treated as part of the world's identity
+   * — embedding pages remount the canvas (`key={family}`) on a change, so a
+   * live component never sees it move; it rides every worker query and picks
+   * the renderer's baked geometry.
+   */
+  readonly family?: TileFamilyId;
   readonly budget: number;
   /** Strand chords to draw, or null for tiles only. */
   readonly chords?: LeafChordTable | null;
@@ -493,6 +504,7 @@ export interface InfiniteCanvasProps {
 export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
   const {
     seed,
+    family = 'spectre',
     budget,
     chords = null,
     style = null,
@@ -518,7 +530,7 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
     rendererFactory,
     apiRef,
     className = 'map-viewport',
-    ariaLabel = 'Infinite spectre map — drag to pan, wheel or pinch to zoom',
+    ariaLabel = 'Infinite tiling map — drag to pan, wheel or pinch to zoom',
     children,
   } = props;
 
@@ -531,8 +543,8 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
   const size = useElementSize(hostRef);
 
   const camRef = useRef<MapCamera>(props.initialCamera ?? createCamera(0, 0, DEFAULT_SCALE));
-  const worldRef = useRef({ seed, budget });
-  worldRef.current = { seed, budget };
+  const worldRef = useRef({ seed, family, budget });
+  worldRef.current = { seed, family, budget };
   const sizeRef = useRef(size);
   sizeRef.current = size;
 
@@ -651,12 +663,13 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
     const scheduler = schedulerRef.current;
     const { width, height } = sizeRef.current;
     if (!scheduler || width <= 0 || height <= 0) return;
-    const { seed: s, budget: b } = worldRef.current;
+    const { seed: s, family: f, budget: b } = worldRef.current;
     const effBudget =
       rendererRef.current?.mode === 'canvas2d' ? Math.min(b, CANVAS2D_MAX_INSTANCES) : b;
     scheduler.request({
       id: ++reqSeqRef.current,
       seed: s >>> 0,
+      family: f,
       view: viewRectFor(camRef.current, width, height),
       budget: effBudget,
     });
@@ -697,7 +710,7 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
     const now = performance.now();
     const fresh = held.len === len && (held.steps === trail.steps || now - held.at < CHAIN_REFRESH_MS);
     if (fresh) return held.list;
-    const list = chainCounts(chordTypes(trail), len, TRANSITION_TYPES);
+    const list = chainCounts(chordTypes(trail), len, trail.typeCount);
     chainsRef.current = { len, steps: trail.steps, at: now, list };
     return list;
   }, []);
@@ -898,13 +911,15 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
       if (cut && index) {
         if (sel.kind === 'pair') {
           // The crossing scan probes a continuation per chord end, so it is
-          // built once per cut and hovering is then a map lookup.
+          // built once per cut and hovering is then a map lookup. Matrix
+          // width = the chord table's rows (the family's leaf-type count).
+          const nTypes = index.chords.rows;
           let held = transitionIndexRef.current;
           if (!held || held.cut !== cut) {
-            held = { cut, index: buildTransitionIndex(index, TRANSITION_TYPES) };
+            held = { cut, index: buildTransitionIndex(index, nTypes) };
             transitionIndexRef.current = held;
           }
-          const bucket = held.index.byPair.get(pairKey(TRANSITION_TYPES, sel.from, sel.to));
+          const bucket = held.index.byPair.get(pairKey(nTypes, sel.from, sel.to));
           if (bucket) for (const e of bucket) runs.push(e);
         } else {
           // A type is every chord inside a tile of that type — no probing at
@@ -1192,6 +1207,7 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
     scheduler.request({
       id: ++feedSeqRef.current,
       seed: worldRef.current.seed >>> 0,
+      family: worldRef.current.family,
       view: { cx: trail.head.x, cy: trail.head.y, halfW: half, halfH: half },
       budget: FEED_BUDGET,
     });
@@ -1375,7 +1391,7 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
       replayRef.current = null; // a real tap supersedes a shared-link seed
       // A circuit or tail the last walk finished stays lit under the new trace.
       archiveFinishedTrail();
-      trailRef.current = startTrail(hit);
+      trailRef.current = startTrail(hit, chordsRef.current?.rows ?? TRANSITION_TYPES);
       publishSeed(hit);
       runWalk();
       return true;
@@ -1407,7 +1423,7 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
     // Flipping only swaps which end the walk leaves from; it is the same
     // chord, so it keeps the same tile.
     const oriented: ChordEnd = flip ? { at: hit.to, to: hit.at, leafType: hit.leafType } : hit;
-    trailRef.current = startTrail(oriented);
+    trailRef.current = startTrail(oriented, chordsRef.current?.rows ?? TRANSITION_TYPES);
     publishSeed(oriented);
     runWalk();
   }, [ensureIndex, publishSeed, runWalk]);
@@ -1428,7 +1444,9 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
         return { res, ms: performance.now() - t0 };
       },
       onResult: ({ res, ms }, req) => {
-        if (res.seed !== (worldRef.current.seed >>> 0)) return; // stale seed
+        // Stale world: an old seed's (or old family's) cut must never land.
+        if (res.seed !== (worldRef.current.seed >>> 0)) return;
+        if (res.family !== worldRef.current.family) return;
         lastCutRef.current = res.cut;
         coveredRef.current = req.view;
         rendererRef.current?.setCut(res.cut);
@@ -1448,7 +1466,7 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
         // way must not cost a rebuild per query.
         const trail = trailRef.current;
         if (trail && !isTerminal(trail.status)) {
-          const reach = 2 * MAX_CHORD_REACH;
+          const reach = 2 * chordReachOf(chordsRef.current);
           const near =
             Math.abs(trail.head.x - req.view.cx) <= req.view.halfW + reach &&
             Math.abs(trail.head.y - req.view.cy) <= req.view.halfH + reach;
@@ -1485,6 +1503,7 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
       },
       onResult: ({ res }, req) => {
         if (res.seed !== (worldRef.current.seed >>> 0)) return;
+        if (res.family !== worldRef.current.family) return;
         const trail = trailRef.current;
         if (!trail || isTerminal(trail.status)) return;
         const table = chordsRef.current;
@@ -1527,6 +1546,7 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
       rendererFactory ??
       ((c: HTMLCanvasElement) =>
         createMapRenderer(c, {
+          family: worldRef.current.family,
           onContextLost: () => {
             rendererRef.current?.dispose();
             rendererRef.current = null;
@@ -1841,7 +1861,12 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
         // as much again.
         const ceiling = Math.min(findCeilingRef.current, worldRef.current.budget);
         const inViewport = (ceiling * CIRCUIT_VIEW_HEADROOM) / VIEW_MARGIN ** 2;
-        const scale = scaleForTileCount(inViewport, width, height);
+        const scale = scaleForTileCount(
+          inViewport,
+          width,
+          height,
+          averageLeafArea(worldRef.current.family),
+        );
         stopInertia();
         camRef.current = createCamera(camRef.current.cx, camRef.current.cy, scale);
         onCameraChanged();

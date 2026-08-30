@@ -1,6 +1,6 @@
 /**
  * Hash-URL codec for The Infinite Map —
- * `#/map?seed=&cx=&cy=&z=&budget=&ln=&e=&c=`.
+ * `#/map?seed=&f=&cx=&cy=&z=&budget=&ln=&e=&c=`.
  *
  * Same shape as `lib/urlState.ts` for the explorer: a pure string codec so the
  * round-trip property is testable in node, with the React side supplying
@@ -8,9 +8,11 @@
  * under encode→decode→encode) so the page can suppress no-op `replaceState`
  * calls and stay back/forward safe.
  *
- * `e` / `c` are byte-compatible with the Explorer's own edge-rule and
- * combination-string parameters (`core/serialize.ts`), so a rule copied from
- * the stats page or a shared Explorer link means the same thing here.
+ * `e` / `c` / `f` are byte-compatible with the Explorer's own edge-rule,
+ * combination-string and family parameters (`core/serialize.ts`), so a rule
+ * copied from the stats page or a shared Explorer link means the same thing
+ * here. `f` is written only when the family is not the spectre — every link
+ * from before families keeps meaning the spectre, byte for byte.
  */
 
 import {
@@ -19,6 +21,7 @@ import {
   DEFAULT_TRAIL_HOLD,
   DEFAULT_FIND_CEILING,
   DEFAULT_FOUND_HOLD,
+  FAMILIES,
   INSTANCE_BUDGETS,
   MAX_INSTANCE_BUDGET,
   MIN_INSTANCE_BUDGET,
@@ -31,9 +34,11 @@ import {
   decodeTraceSeed,
   edgesToSubset,
   encodeTraceSeed,
+  leafOrder,
   subsetFromString,
   subsetToEdges,
   subsetToString,
+  type TileFamilyId,
 } from '../../core';
 import { DEFAULT_SCALE, clampScale } from './camera';
 
@@ -45,6 +50,12 @@ export const MAP_ROUTE = '#/map';
 
 export interface MapUrlState {
   readonly seed: number;
+  /**
+   * Tile family of the world, ADDITIVE: optional on input (absent = spectre,
+   * so every pre-family state object and link keeps meaning what it meant),
+   * always present on anything `decodeMapQuery` returns.
+   */
+  readonly family?: TileFamilyId;
   readonly cx: number;
   readonly cy: number;
   /** CSS px per world unit (the camera zoom). */
@@ -118,11 +129,24 @@ export const MAX_BUDGET = MAX_INSTANCE_BUDGET;
  * `0100101100` is the CSV/notebook-verified combination that the stats page
  * and `docs/BIGMAP_INVESTIGATION.md` §4 both use, so switching lines on shows
  * a configuration with a known global answer rather than an arbitrary one.
+ * The verification is the SPECTRE's; other families default to the same edge
+ * classes with the all-zeros (index-0 matchings) combination, there being no
+ * notebook-verified rule for them yet.
  */
 export const DEFAULT_SUBSET: readonly number[] = [2, 5, 7, 8];
 export const DEFAULT_COMBO = '0100101100';
 /** Combination strings are one digit per leaf type (`LEAF_ORDER.length`). */
 export const COMBO_LENGTH = 10;
+
+/** One combo digit per leaf type of the family (9 for hex, 10 otherwise). */
+export function comboLength(family: TileFamilyId): number {
+  return leafOrder(family).length;
+}
+
+/** The family's default combination string (see {@link DEFAULT_COMBO}). */
+export function defaultCombo(family: TileFamilyId): string {
+  return family === 'spectre' ? DEFAULT_COMBO : '0'.repeat(comboLength(family));
+}
 
 export const DEFAULT_MAP_STATE: MapUrlState = {
   seed: 1,
@@ -152,13 +176,14 @@ export const DEFAULT_MAP_STATE: MapUrlState = {
   traceSeed: null,
 };
 
-/** Keep only base-36 digits and pad/trim to `COMBO_LENGTH`. */
-export function normalizeCombo(raw: string): string {
+/** Keep only base-36 digits and pad/trim to the family's combo length. */
+export function normalizeCombo(raw: string, family: TileFamilyId = 'spectre'): string {
+  const len = comboLength(family);
   const cleaned = raw
     .toLowerCase()
     .replace(/[^0-9a-z]/g, '')
-    .slice(0, COMBO_LENGTH);
-  return cleaned.padEnd(COMBO_LENGTH, '0');
+    .slice(0, len);
+  return cleaned.padEnd(len, '0');
 }
 
 /** World coordinates: fixed 3 decimals (0.4 px at max zoom), canonicalized. */
@@ -179,8 +204,12 @@ export function formatBudget(b: number): string {
 }
 
 export function encodeMapQuery(state: MapUrlState): string {
+  const family = state.family ?? 'spectre';
   const q = new URLSearchParams();
   q.set('seed', String(Math.floor(state.seed) >>> 0));
+  // Family is additive: only a non-spectre world writes it, so pre-family
+  // links (and the golden default encoding) stay byte-identical.
+  if (family !== 'spectre') q.set('f', family);
   q.set('cx', fmtCoord(state.cx));
   q.set('cy', fmtCoord(state.cy));
   q.set('z', fmtScale(clampScale(state.scale)));
@@ -189,11 +218,11 @@ export function encodeMapQuery(state: MapUrlState): string {
   // pre-stage-3 links keep encoding byte-identically.
   const lines = state.lines ?? false;
   const subset = subsetToString(edgesToMask(state.subset ?? DEFAULT_SUBSET));
-  const combo = normalizeCombo(state.combo ?? DEFAULT_COMBO);
+  const combo = normalizeCombo(state.combo ?? defaultCombo(family), family);
   const defaultSubset = subsetToString(edgesToMask(DEFAULT_SUBSET));
   if (lines) q.set('ln', '1');
   if (lines || subset !== defaultSubset) q.set('e', subset);
-  if (lines || combo !== DEFAULT_COMBO) q.set('c', combo);
+  if (lines || combo !== defaultCombo(family)) q.set('c', combo);
   const lw = clampLineScale(state.lineWidth ?? DEFAULT_LINE_SCALE);
   if (lw !== DEFAULT_LINE_SCALE) q.set('lw', String(lw));
   if (state.noOverlap) q.set('no', '1');
@@ -257,15 +286,22 @@ export function decodeMapQuery(query: string): MapUrlState {
   const tsRaw = q.get('ts');
   const eRaw = q.get('e');
   const cRaw = q.get('c');
+  // Family first: `e`/`c` decode in its context (combo length is per family).
+  const fRaw = q.get('f');
+  const family: TileFamilyId =
+    fRaw !== null && (FAMILIES as readonly string[]).includes(fRaw)
+      ? (fRaw as TileFamilyId)
+      : 'spectre';
   return {
     seed: seedRaw === null ? DEFAULT_MAP_STATE.seed : Math.floor(seedRaw) >>> 0,
+    family,
     cx: cx ?? DEFAULT_MAP_STATE.cx,
     cy: cy ?? DEFAULT_MAP_STATE.cy,
     scale: z === null ? DEFAULT_MAP_STATE.scale : clampScale(z),
     budget: budget === null ? DEFAULT_MAP_STATE.budget : clampBudget(budget),
     lines: lnRaw === null ? DEFAULT_MAP_STATE.lines : lnRaw === '1' || lnRaw === 'true',
     subset: eRaw === null ? DEFAULT_MAP_STATE.subset : subsetToEdges(subsetFromString(eRaw)),
-    combo: cRaw === null ? DEFAULT_MAP_STATE.combo : normalizeCombo(cRaw),
+    combo: cRaw === null ? defaultCombo(family) : normalizeCombo(cRaw, family),
     lineWidth: lwRaw === null ? DEFAULT_LINE_SCALE : clampLineScale(lwRaw),
     noOverlap: noRaw === '1' || noRaw === 'true',
     trace: !(trRaw === '0' || trRaw === 'false'),

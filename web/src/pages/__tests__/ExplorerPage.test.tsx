@@ -233,14 +233,14 @@ describe('ExplorerPage — infinite mode', () => {
     );
   });
 
-  it('is unavailable for families the un-rooted engine cannot generate', () => {
-    window.history.replaceState(null, '', '/#/explorer?v=1&f=hex');
+  it('is available for every family, hexagons included', () => {
+    window.history.replaceState(null, '', '/#/explorer?v=1&f=hex&md=infinite');
     const { container } = render(<ExplorerPage />);
-    expect(container.querySelector('[data-testid="mode-infinite"]')).toHaveProperty(
-      'disabled',
-      true,
-    );
-    expect(container.querySelector('#explorer-sidebar')?.textContent).toContain(
+    const button = container.querySelector('[data-testid="mode-infinite"]');
+    expect(button).toHaveProperty('disabled', false);
+    expect(button?.getAttribute('aria-checked')).toBe('true');
+    // The old "only generates Tile(1,1)" apology is gone with the gate.
+    expect(container.querySelector('#explorer-sidebar')?.textContent).not.toContain(
       'only generates',
     );
   });

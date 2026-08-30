@@ -1,8 +1,11 @@
 /**
- * Un-rooted (infinite-plane) spectre tile generation
- * (docs/TILE_ALGOS_INVESTIGATION.md section 5, docs/BIGMAP_INVESTIGATION.md
- * section 2 — the lazy-DAG viewport expansion of `web/spike/lazy-gen.ts`
- * re-based onto a typed lazy ancestor chain and exact Z[zeta12] transforms).
+ * Un-rooted (infinite-plane) tile generation for every family — spectre,
+ * hexagon, hat and turtle share one substitution combinatorics, so one engine
+ * serves all four; only the leaf geometry, the exact base quad, and the base
+ * Gamma pair differ (docs/TILE_ALGOS_INVESTIGATION.md section 5,
+ * docs/BIGMAP_INVESTIGATION.md section 2 — the lazy-DAG viewport expansion of
+ * `web/spike/lazy-gen.ts` re-based onto a typed lazy ancestor chain and exact
+ * Z[zeta12] transforms).
  *
  * Instead of expanding DOWN from a fixed level-9 root, the world is anchored
  * at a level-0 "seed" tile at the origin and the hierarchy grows UPWARD on
@@ -31,7 +34,14 @@
  */
 
 import type { Affine, Pt } from './geom';
-import { LEAF_ORDER, SPECTRE_PTS, TILE_NAMES, leafPts, type TileTypeId } from './families';
+import {
+  SPECTRE_PTS,
+  TILE_NAMES,
+  leafOrder,
+  leafPts,
+  type TileFamilyId,
+  type TileTypeId,
+} from './families';
 import { SUPER_RULES, buildSystem, type TileNode } from './tiles';
 import {
   COS30,
@@ -39,8 +49,8 @@ import {
   Z_COEFF_LIMIT,
   Z_IDENT,
   zAffineMaxAbsCoeff,
+  zBasePairXform,
   zConj,
-  zGamma2Xform,
   zInv,
   zMul,
   zRot,
@@ -102,16 +112,46 @@ export function clampInstanceBudget(budget: number): number {
 /** `type` byte values >= this are supertile aggregates: `128 + TILE_NAMES index`. */
 export const AGGREGATE_TYPE_BASE = 128;
 
-/** Exact area of one spectre tile (shoelace over `SPECTRE_PTS`). */
-export const SPECTRE_TILE_AREA = (() => {
+function shoelaceArea(pts: readonly Pt[]): number {
   let a = 0;
-  for (let i = 0; i < SPECTRE_PTS.length; ++i) {
-    const p = SPECTRE_PTS[i];
-    const q = SPECTRE_PTS[(i + 1) % SPECTRE_PTS.length];
+  for (let i = 0; i < pts.length; ++i) {
+    const p = pts[i];
+    const q = pts[(i + 1) % pts.length];
     a += p.x * q.y - q.x * p.y;
   }
   return Math.abs(a) / 2;
-})();
+}
+
+/** Exact area of one spectre tile (shoelace over `SPECTRE_PTS`). */
+export const SPECTRE_TILE_AREA = shoelaceArea(SPECTRE_PTS);
+
+const leafAreaCache = new Map<TileFamilyId, number>();
+
+/**
+ * Mean area of one leaf tile of a family, weighted by the substitution's
+ * stationary type distribution — the tiles-per-world-area density the LOD cut
+ * estimate needs. Every spectre leaf is congruent, so for that family this is
+ * exactly {@link SPECTRE_TILE_AREA}; the hat family mixes hats with (Gamma2)
+ * turtles, so its mean sits between the two shapes' areas.
+ */
+export function averageLeafArea(family: TileFamilyId): number {
+  const hit = leafAreaCache.get(family);
+  if (hit !== undefined) return hit;
+  const freq = stationaryTypeDistribution();
+  let weighted = 0;
+  let total = 0;
+  for (const type of leafOrder(family)) {
+    // Gamma1/Gamma2 are the two leaves of one Gamma metatile, so each carries
+    // the full Gamma frequency; hex's single Gamma leaf likewise.
+    const base = type === 'Gamma1' || type === 'Gamma2' ? 'Gamma' : type;
+    const w = freq[base as TileTypeId] ?? 0;
+    weighted += w * shoelaceArea(leafPts(family, type));
+    total += w;
+  }
+  const out = total > 0 ? weighted / total : SPECTRE_TILE_AREA;
+  leafAreaCache.set(family, out);
+  return out;
+}
 
 /**
  * Coverage margins: a query descends from the lowest chain ancestor whose
@@ -163,7 +203,18 @@ const COVER_PROBE_LIFT = 2;
  */
 const COVER_STABLE_WINDOW = 5;
 
-const LEAF_INDEX = new Map<TileTypeId, number>(LEAF_ORDER.map((t, i) => [t, i]));
+const leafIndexCache = new Map<TileFamilyId, Map<TileTypeId, number>>();
+
+/** `leafOrder(family)` as a type -> wire-byte lookup, memoized. */
+function leafIndexFor(family: TileFamilyId): Map<TileTypeId, number> {
+  let hit = leafIndexCache.get(family);
+  if (!hit) {
+    hit = new Map(leafOrder(family).map((t, i) => [t, i]));
+    leafIndexCache.set(family, hit);
+  }
+  return hit;
+}
+
 const META_INDEX = new Map<TileTypeId, number>(TILE_NAMES.map((t, i) => [t, i]));
 const LOG_GROWTH = Math.log(SUBSTITUTION_GROWTH);
 const HALF_SQRT3 = Math.sqrt(3) / 2;
@@ -228,14 +279,16 @@ interface BBox {
   maxY: number;
 }
 
+// Nodes are unique to their family (`buildSystem` caches per family:level),
+// so a per-node cache never mixes families even though the key omits it.
 const bboxCache = new WeakMap<TileNode, BBox>();
 
-function localBBox(node: TileNode): BBox {
+function localBBox(node: TileNode, family: TileFamilyId): BBox {
   const hit = bboxCache.get(node);
   if (hit) return hit;
   const box: BBox = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
   if (node.kind === 'leaf') {
-    for (const p of leafPts('spectre', node.type)) {
+    for (const p of leafPts(family, node.type)) {
       if (p.x < box.minX) box.minX = p.x;
       if (p.y < box.minY) box.minY = p.y;
       if (p.x > box.maxX) box.maxX = p.x;
@@ -243,7 +296,7 @@ function localBBox(node: TileNode): BBox {
     }
   } else {
     for (const child of node.children) {
-      const b = localBBox(child.node);
+      const b = localBBox(child.node, family);
       const T = child.xform;
       for (const [cx, cy] of [
         [b.minX, b.minY],
@@ -304,19 +357,33 @@ function buildComposeTable(children: readonly ZAffine[], cm: number): ComposeTab
   return { ck, cm, rt };
 }
 
-const composeTableCache: ComposeTable[] = []; // index level - 1
-let pairTableCache: ComposeTable | null = null;
+const composeTableCaches = new Map<TileFamilyId, ComposeTable[]>(); // index level - 1
+const pairTableCaches = new Map<TileFamilyId, ComposeTable>();
 
-function composeTable(level: number): ComposeTable {
-  while (composeTableCache.length < level) {
-    composeTableCache.push(buildComposeTable(zSupertileTransforms(composeTableCache.length + 1), 1));
+function composeTable(family: TileFamilyId, level: number): ComposeTable {
+  let cache = composeTableCaches.get(family);
+  if (!cache) {
+    cache = [];
+    composeTableCaches.set(family, cache);
   }
-  return composeTableCache[level - 1];
+  while (cache.length < level) {
+    cache.push(buildComposeTable(zSupertileTransforms(family, cache.length + 1), 1));
+  }
+  return cache[level - 1];
 }
 
-function pairTable(): ComposeTable {
-  if (!pairTableCache) pairTableCache = buildComposeTable([Z_IDENT, zGamma2Xform()], 0);
-  return pairTableCache;
+/**
+ * Level-0 Gamma pair table. The hexagon family has no pair (its Gamma is a
+ * single leaf), so the walk never asks for this there; asking anyway is a bug.
+ */
+function pairTable(family: TileFamilyId): ComposeTable {
+  const hit = pairTableCaches.get(family);
+  if (hit) return hit;
+  const pairXform = zBasePairXform(family);
+  if (!pairXform) throw new Error(`family ${family} has no base Gamma pair`);
+  const built = buildComposeTable([Z_IDENT, pairXform], 0);
+  pairTableCaches.set(family, built);
+  return built;
 }
 
 // ---------------------------------------------------------------------------
@@ -380,7 +447,7 @@ export interface ViewportCut {
 
 export interface UnrootedEngine {
   readonly seed: number;
-  readonly family: 'spectre';
+  readonly family: TileFamilyId;
   /** Type of the level-0 anchor tile (may be the composite 'Gamma' pair). */
   anchorType(): TileTypeId;
   /** Type of the anchor's ancestor at `level` (0 = the anchor itself). */
@@ -413,10 +480,15 @@ function weightedPick<T>(items: readonly T[], weights: readonly number[], u: num
   return items[items.length - 1];
 }
 
-export function createUnrootedEngine(seed: number): UnrootedEngine {
+export function createUnrootedEngine(
+  seed: number,
+  family: TileFamilyId = 'spectre',
+): UnrootedEngine {
   const normSeed = Math.floor(seed) >>> 0;
   const rng = splitmix32(normSeed);
   const freq = stationaryTypeDistribution();
+  const leafIndex = leafIndexFor(family);
+  const tileArea = averageLeafArea(family);
 
   // Anchor type: one stationary-weighted draw.
   const anchorType = weightedPick(
@@ -433,7 +505,7 @@ export function createUnrootedEngine(seed: number): UnrootedEngine {
   const typeAt = (level: number): TileTypeId =>
     level === 0 ? anchorType : chain[level - 1].parentType;
 
-  const nodeAt = (level: number): TileNode => buildSystem('spectre', level)[typeAt(level)];
+  const nodeAt = (level: number): TileNode => buildSystem(family, level)[typeAt(level)];
 
   function ensureLevel(level: number): void {
     if (level > UNROOTED_MAX_LEVEL) {
@@ -456,7 +528,10 @@ export function createUnrootedEngine(seed: number): UnrootedEngine {
       const step = weightedPick(candidates, weights, rng());
       const nextLevel = chain.length + 1;
       chain.push(step);
-      const X = zMul(zSupertileTransforms(nextLevel)[step.slot], anchorToAncestor[nextLevel - 1]);
+      const X = zMul(
+        zSupertileTransforms(family, nextLevel)[step.slot],
+        anchorToAncestor[nextLevel - 1],
+      );
       const W = zInv(X);
       if (zAffineMaxAbsCoeff(X) > Z_COEFF_LIMIT || zAffineMaxAbsCoeff(W) > Z_COEFF_LIMIT) {
         chain.pop();
@@ -470,7 +545,7 @@ export function createUnrootedEngine(seed: number): UnrootedEngine {
   function ancestorWorldBounds(level: number): { min: Pt; max: Pt } {
     ensureLevel(level);
     const W = worldOfAncestor[level];
-    const b = localBBox(nodeAt(level));
+    const b = localBBox(nodeAt(level), family);
     const c = COS30[W.k];
     const s = SIN30[W.k];
     const l00 = c;
@@ -576,7 +651,7 @@ export function createUnrootedEngine(seed: number): UnrootedEngine {
       const l01 = m ? si : -si;
       const l10 = si;
       const l11 = m ? -co : co;
-      const bb = localBBox(node);
+      const bb = localBBox(node, family);
       const xs0 = l00 * bb.minX;
       const xs1 = l00 * bb.maxX;
       const ys0 = l01 * bb.minY;
@@ -597,7 +672,7 @@ export function createUnrootedEngine(seed: number): UnrootedEngine {
         mark(nMinX, nMaxX, nMinY, nMaxY);
         return;
       }
-      const table = lvl >= 1 ? composeTable(lvl) : pairTable();
+      const table = lvl >= 1 ? composeTable(family, lvl) : pairTable(family);
       const childLevel = lvl >= 1 ? lvl - 1 : 0;
       for (const child of node.children) {
         const slot = child.pos;
@@ -630,7 +705,7 @@ export function createUnrootedEngine(seed: number): UnrootedEngine {
 
   function query(view: ViewRect, budget: number, opts: ViewportQueryOptions = {}): ViewportCut {
     if (!(budget >= 1)) throw new Error(`invalid budget ${budget}`);
-    const est = (4 * view.halfW * view.halfH) / SPECTRE_TILE_AREA;
+    const est = (4 * view.halfW * view.halfH) / tileArea;
     const cutEstimate = Math.max(0, Math.ceil(Math.log(Math.max(1, est / budget)) / LOG_GROWTH));
 
     let ancestorLevel: number;
@@ -734,7 +809,7 @@ export function createUnrootedEngine(seed: number): UnrootedEngine {
       const l01 = m ? si : -si;
       const l10 = si;
       const l11 = m ? -co : co;
-      const bb = localBBox(node);
+      const bb = localBBox(node, family);
       const xs0 = l00 * bb.minX;
       const xs1 = l00 * bb.maxX;
       const ys0 = l01 * bb.minY;
@@ -766,7 +841,7 @@ export function createUnrootedEngine(seed: number): UnrootedEngine {
         codeArr[n] = m ? ((k + 6) % 12) | 16 : k;
         typeArr[n] =
           node.kind === 'leaf'
-            ? (LEAF_INDEX.get(node.type) ?? 0)
+            ? (leafIndex.get(node.type) ?? 0)
             : AGGREGATE_TYPE_BASE + (META_INDEX.get(node.type) ?? 0);
         if (emitExact) {
           const e = n * 4;
@@ -783,7 +858,7 @@ export function createUnrootedEngine(seed: number): UnrootedEngine {
         return;
       }
 
-      const table = level >= 1 ? composeTable(level) : pairTable();
+      const table = level >= 1 ? composeTable(family, level) : pairTable(family);
       const cm = table.cm;
       const ck = table.ck;
       const rt = table.rt;
@@ -832,7 +907,7 @@ export function createUnrootedEngine(seed: number): UnrootedEngine {
 
   return {
     seed: normSeed,
-    family: 'spectre',
+    family,
     anchorType: () => anchorType,
     ancestorType: (level: number) => {
       ensureLevel(level);
@@ -883,11 +958,11 @@ export function isAggregateType(typeByte: number): boolean {
   return typeByte >= AGGREGATE_TYPE_BASE;
 }
 
-/** Map a `type` byte back to its `TileTypeId`. */
-export function instanceTypeId(typeByte: number): TileTypeId {
+/** Map a `type` byte back to its `TileTypeId` (leaf bytes are per family). */
+export function instanceTypeId(typeByte: number, family: TileFamilyId = 'spectre'): TileTypeId {
   return typeByte >= AGGREGATE_TYPE_BASE
     ? TILE_NAMES[typeByte - AGGREGATE_TYPE_BASE]
-    : LEAF_ORDER[typeByte];
+    : leafOrder(family)[typeByte];
 }
 
 // ---------------------------------------------------------------------------
@@ -898,6 +973,8 @@ export interface UnrootedQueryRequest {
   /** Echoed back for newest-wins cancellation in the client. */
   readonly id: number;
   readonly seed: number;
+  /** Tile family to generate; absent means spectre (pre-family requests). */
+  readonly family?: TileFamilyId;
   readonly view: ViewRect;
   readonly budget: number;
   readonly emitIds?: boolean;
@@ -907,17 +984,22 @@ export interface UnrootedQueryRequest {
 export interface UnrootedQueryResponse {
   readonly id: number;
   readonly seed: number;
+  /** Echoed so clients can drop cuts from a family that is no longer shown. */
+  readonly family: TileFamilyId;
   readonly cut: ViewportCut;
 }
 
-const engineCache = new Map<number, UnrootedEngine>();
+const engineCache = new Map<string, UnrootedEngine>();
 
-/** Get (or lazily create) the shared engine for a seed. */
-export function unrootedEngineFor(seed: number): UnrootedEngine {
-  const key = Math.floor(seed) >>> 0;
+/** Get (or lazily create) the shared engine for a (seed, family) world. */
+export function unrootedEngineFor(
+  seed: number,
+  family: TileFamilyId = 'spectre',
+): UnrootedEngine {
+  const key = `${family}:${Math.floor(seed) >>> 0}`;
   let engine = engineCache.get(key);
   if (!engine) {
-    engine = createUnrootedEngine(key);
+    engine = createUnrootedEngine(seed, family);
     engineCache.set(key, engine);
   }
   return engine;
@@ -925,10 +1007,10 @@ export function unrootedEngineFor(seed: number): UnrootedEngine {
 
 /** Pure request handler; `workers/tiling.worker.ts` is a thin shell around it. */
 export function runUnrootedQuery(req: UnrootedQueryRequest): UnrootedQueryResponse {
-  const engine = unrootedEngineFor(req.seed);
+  const engine = unrootedEngineFor(req.seed, req.family ?? 'spectre');
   const cut = engine.query(req.view, req.budget, {
     emitIds: req.emitIds,
     emitExact: req.emitExact,
   });
-  return { id: req.id, seed: engine.seed, cut };
+  return { id: req.id, seed: engine.seed, family: engine.family, cut };
 }

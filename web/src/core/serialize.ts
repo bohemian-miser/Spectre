@@ -35,16 +35,17 @@ export interface Camera {
  *  - `infinite`: the un-rooted engine (`core/unrooted.ts`) rendered through
  *    the Infinite Map's WebGL2 viewport. No root, no patch, no analysis —
  *    just tiles and the local strand lines, at any depth.
- *
- * The engine implements the SPECTRE family only, so `infinite` is offered
- * only while `family === 'spectre'`.
  */
 export type ExplorerMode = 'rooted' | 'infinite';
 
 export const EXPLORER_MODES: readonly ExplorerMode[] = ['rooted', 'infinite'];
 
-/** Families the un-rooted engine can actually generate. */
-export const INFINITE_MODE_FAMILIES: readonly TileFamilyId[] = ['spectre'];
+/**
+ * Families the un-rooted engine can actually generate — all of them, now that
+ * the engine, the exact arithmetic and the renderers take the family as a
+ * parameter. Kept as the single predicate so any future family lands here.
+ */
+export const INFINITE_MODE_FAMILIES: readonly TileFamilyId[] = FAMILIES;
 
 export function supportsInfiniteMode(family: TileFamilyId): boolean {
   return INFINITE_MODE_FAMILIES.includes(family);

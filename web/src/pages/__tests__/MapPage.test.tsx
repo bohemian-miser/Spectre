@@ -128,11 +128,12 @@ describe('MapPage', () => {
     expect(instances).toBeGreaterThan(0);
 
     // The engine cut is uploaded verbatim (3 instance buffers) and drawn as
-    // ONE instanced call whose instanceCount is exactly the cut count.
+    // ONE instanced call whose instanceCount is exactly the cut count. The
+    // leaf pass vertex-pulls its per-type mesh, so it is drawArraysInstanced.
     expect(gl.bufferData).toHaveBeenCalled();
-    expect(gl.drawElementsInstanced).toHaveBeenCalled();
-    const lastDraw = gl.drawElementsInstanced.mock.calls.at(-1) as unknown[];
-    expect(lastDraw[4]).toBe(instances);
+    expect(gl.drawArraysInstanced).toHaveBeenCalled();
+    const lastDraw = gl.drawArraysInstanced.mock.calls.at(-1) as unknown[];
+    expect(lastDraw[3]).toBe(instances);
 
     // Default zoom (36 px/unit) is past the outline threshold → 2 draw calls.
     expect(container.querySelector('[data-testid="hud-draw-ms"]')?.textContent).toContain(
@@ -375,5 +376,46 @@ describe('MapPage', () => {
     expect(api).toBeDefined();
     expect(api?.getCamera().cx).toBeCloseTo(50, 6);
     expect(api?.getCamera().scale).toBeCloseTo(20, 6);
+  });
+});
+
+describe('MapPage — tile families', () => {
+  it('reproduces an f=hex deep link: hex world, hex selector, hex help text', async () => {
+    window.history.replaceState(null, '', '/map.html#/map?seed=1&f=hex&cx=0&cy=0&z=36');
+    const gl = makeFakeGl();
+    stubContexts(gl, null);
+    const { container } = render(<MapPage forceSyncClient />);
+    await settle();
+
+    const select = container.querySelector('[data-testid="map-family"]') as HTMLSelectElement;
+    expect(select.value).toBe('hex');
+    expect(hudNumber(container, 'hud-instances')).toBeGreaterThan(0);
+    // The combo input speaks 9 digits for hex (single Gamma, no Gamma1/2).
+    const comboInput = container.querySelector('.map-combo-input') as HTMLInputElement;
+    expect(comboInput.maxLength).toBe(9);
+    expect(comboInput.value).toHaveLength(9);
+    expect(container.textContent).toContain('Hexagons');
+  });
+
+  it('switching family updates the URL and requeries the new world', async () => {
+    const gl = makeFakeGl();
+    stubContexts(gl, null);
+    const { container } = render(<MapPage forceSyncClient />);
+    await settle();
+    const before = hudNumber(container, 'hud-instances');
+    expect(before).toBeGreaterThan(0);
+
+    const select = container.querySelector('[data-testid="map-family"]') as HTMLSelectElement;
+    fireEvent.change(select, { target: { value: 'turtle' } });
+    await settle();
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 450)); // the debounced URL write
+    });
+
+    expect(window.location.hash).toContain('f=turtle');
+    // Turtle tiles are larger, so the same viewport holds fewer of them.
+    const after = hudNumber(container, 'hud-instances');
+    expect(after).toBeGreaterThan(0);
+    expect(after).not.toBe(before);
   });
 });

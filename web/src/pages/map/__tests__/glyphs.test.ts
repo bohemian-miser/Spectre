@@ -22,7 +22,9 @@ import {
   buildSystem,
   createUnrootedEngine,
   flatten,
+  countTiles,
   instanceAffine,
+  leafOrder,
   leafPts,
   transPt,
   type Pt,
@@ -32,7 +34,7 @@ import {
   MAX_GLYPH_POINTS,
   boundaryLoop,
   buildGlyphMeshes,
-  buildLeafMesh,
+  buildLeafAtlas,
   decimateLoop,
   earClip,
   fitSimilarity,
@@ -117,13 +119,11 @@ describe('instance decode → draw buffers', () => {
 
 describe('leaf mesh', () => {
   it('ear-clips the 14-gon into 12 triangles with the exact tile area', () => {
-    const mesh = buildLeafMesh();
-    expect(mesh.tris.length).toBe(12 * 3);
+    // The spectre atlas row 0 (Delta) is the mesh the leaf pass draws.
+    const atlas = buildLeafAtlas('spectre');
+    expect(atlas.fillVerts).toBe(12 * 3);
     let area = 0;
-    const flat: number[] = [];
-    for (let i = 0; i < mesh.tris.length; i++) {
-      flat.push(mesh.verts[mesh.tris[i] * 2], mesh.verts[mesh.tris[i] * 2 + 1]);
-    }
+    const flat = Array.from(atlas.fill.subarray(0, atlas.fillVerts * 2));
     for (let i = 0; i < flat.length; i += 6) area += triArea(flat, i);
     expect(area).toBeCloseTo(SPECTRE_TILE_AREA, 5); // verts are f32
 
@@ -236,8 +236,81 @@ describe('aggregate glyphs', () => {
 
   it('spectre outline sanity: SPECTRE_PTS is the leaf glyph source', () => {
     // Guards against the leaf path and the mesh diverging.
-    const mesh = buildLeafMesh();
-    expect(mesh.verts.length).toBe(SPECTRE_PTS.length * 2);
+    const atlas = buildLeafAtlas('spectre');
+    expect(atlas.outlineCounts[0]).toBe(SPECTRE_PTS.length);
+    expect(atlas.outlineVerts).toBe(SPECTRE_PTS.length);
     expect(earClip(SPECTRE_PTS)).toHaveLength((SPECTRE_PTS.length - 2) * 3);
+  });
+});
+
+describe('glyphs and leaf meshes across families', () => {
+  it('builds nine glyph meshes per family whose areas match their tile sums', () => {
+    for (const family of ['hex', 'hat', 'turtle'] as const) {
+      const meshes = buildGlyphMeshes(GLYPH_LEVEL, family);
+      expect(meshes).toHaveLength(TILE_NAMES.length);
+      const sys = buildSystem(family, GLYPH_LEVEL);
+      meshes.forEach((m, i) => {
+        expect(m.type).toBe(TILE_NAMES[i]);
+        expect(m.outline.length).toBeGreaterThanOrEqual(4);
+        expect(m.outline.length).toBeLessThanOrEqual(MAX_GLYPH_POINTS);
+        // The decimated boundary loses fractal detail but must stay within a
+        // few percent of the exact patch area (the sum of its leaf areas).
+        let exact = 0;
+        for (const inst of flatten(sys[TILE_NAMES[i]])) {
+          const pts = leafPts(family, inst.type).map((p) => transPt(inst.xform, p));
+          exact += Math.abs(polygonArea(pts));
+        }
+        expect(Math.abs(polygonArea(m.outline))).toBeGreaterThan(exact * 0.9);
+        expect(Math.abs(polygonArea(m.outline))).toBeLessThan(exact * 1.1);
+        expect(m.tileCount).toBe(countTiles(sys[TILE_NAMES[i]]));
+      });
+    }
+  });
+
+  it('leaf atlas rows follow leafOrder, and hat/turtle swap the Gamma2 shape', () => {
+    for (const family of ['spectre', 'hex', 'hat', 'turtle'] as const) {
+      const atlas = buildLeafAtlas(family);
+      const order = leafOrder(family);
+      expect(atlas.rows).toBe(order.length);
+      expect(atlas.fill.length).toBe(atlas.rows * atlas.fillVerts * 2);
+      expect(atlas.outline.length).toBe(atlas.rows * atlas.outlineVerts * 2);
+      order.forEach((type, row) => {
+        const pts = leafPts(family, type);
+        expect(atlas.outlineCounts[row]).toBe(pts.length);
+        // The row's outline starts with the true vertices before padding.
+        for (let i = 0; i < pts.length; i++) {
+          expect(atlas.outline[(row * atlas.outlineVerts + i) * 2]).toBeCloseTo(pts[i].x, 5);
+          expect(atlas.outline[(row * atlas.outlineVerts + i) * 2 + 1]).toBeCloseTo(pts[i].y, 5);
+        }
+        // Fill triangles cover the leaf's area exactly (ear-clip identity).
+        let triArea = 0;
+        const base = row * atlas.fillVerts * 2;
+        for (let v = 0; v + 5 < atlas.fillVerts * 2; v += 6) {
+          const ax = atlas.fill[base + v];
+          const ay = atlas.fill[base + v + 1];
+          const bx = atlas.fill[base + v + 2];
+          const by = atlas.fill[base + v + 3];
+          const cx = atlas.fill[base + v + 4];
+          const cy = atlas.fill[base + v + 5];
+          triArea += Math.abs((bx - ax) * (cy - ay) - (by - ay) * (cx - ax)) / 2;
+        }
+        expect(triArea).toBeCloseTo(Math.abs(polygonArea(pts as Pt[])), 5);
+      });
+      if (family === 'hat' || family === 'turtle') {
+        const g2 = order.indexOf('Gamma2');
+        const other = family === 'hat' ? 'turtle' : 'hat';
+        const swapped = leafPts(other, 'Delta');
+        expect(atlas.outlineCounts[g2]).toBe(swapped.length);
+        expect(atlas.outline[(g2 * atlas.outlineVerts) * 2]).toBeCloseTo(swapped[0].x, 5);
+      }
+    }
+  });
+
+  it('level fits are family-specific and keyed apart', () => {
+    const spectreFit = glyphFitForCut(2, GLYPH_LEVEL, 'spectre');
+    const hexFit = glyphFitForCut(2, GLYPH_LEVEL, 'hex');
+    // Same substitution => same scale ratio, but different quads => different
+    // translations; what matters is that the caches do not collide.
+    expect(spectreFit).not.toEqual(hexFit);
   });
 });

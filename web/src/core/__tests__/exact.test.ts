@@ -15,7 +15,7 @@ import {
   mul,
   type Affine,
 } from '../geom';
-import { SPECTRE_PTS } from '../families';
+import { FAMILIES, SPECTRE_PTS, leafOrder, leafPts } from '../families';
 import { buildSystem, flatten, type TileNode } from '../tiles';
 import {
   Z_COEFF_LIMIT,
@@ -28,11 +28,13 @@ import {
   zAffineKey,
   zAffineMaxAbsCoeff,
   zApply,
+  zBasePairXform,
   zConj,
   zEq,
   zGamma2Xform,
   zInv,
   zKey,
+  zLeafPts,
   zMul,
   zRot,
   zSpectrePts,
@@ -184,17 +186,19 @@ function zRotation2(): ZAffine {
 }
 
 describe('exact substitution system vs float oracle', () => {
-  it('supertile transforms match buildSystem child xforms at levels 1..5', () => {
-    for (let level = 1; level <= 5; ++level) {
-      const Ts = zSupertileTransforms(level);
-      expect(Ts).toHaveLength(8);
-      for (const T of Ts) expect(T.m).toBe(1); // every substitution child mirrors
-      const sys = buildSystem('spectre', level);
-      for (const label of ['Delta', 'Gamma', 'Sigma', 'Psi'] as const) {
-        const node = sys[label];
-        if (node.kind !== 'meta') throw new Error('supertile is not meta');
-        for (const child of node.children) {
-          expect(maxAffineDiff(zToAffine(Ts[child.pos]), child.xform)).toBeLessThan(1e-9);
+  it('supertile transforms match buildSystem child xforms at levels 1..5, every family', () => {
+    for (const family of FAMILIES) {
+      for (let level = 1; level <= 5; ++level) {
+        const Ts = zSupertileTransforms(family, level);
+        expect(Ts).toHaveLength(8);
+        for (const T of Ts) expect(T.m).toBe(1); // every substitution child mirrors
+        const sys = buildSystem(family, level);
+        for (const label of ['Delta', 'Gamma', 'Sigma', 'Psi'] as const) {
+          const node = sys[label];
+          if (node.kind !== 'meta') throw new Error('supertile is not meta');
+          for (const child of node.children) {
+            expect(maxAffineDiff(zToAffine(Ts[child.pos]), child.xform)).toBeLessThan(1e-9);
+          }
         }
       }
     }
@@ -205,6 +209,38 @@ describe('exact substitution system vs float oracle', () => {
     const gamma = base['Gamma'];
     if (gamma.kind !== 'meta') throw new Error('Gamma base is not meta');
     expect(maxAffineDiff(zToAffine(zGamma2Xform()), gamma.children[1].xform)).toBeLessThan(1e-12);
+  });
+
+  it('base pair transform matches buildBase for every family with a Gamma pair', () => {
+    for (const family of FAMILIES) {
+      const pair = zBasePairXform(family);
+      const gamma = buildSystem(family, 0)['Gamma'];
+      if (family === 'hex') {
+        expect(pair).toBeNull();
+        expect(gamma.kind).toBe('leaf'); // hex Gamma is one fused tile
+        continue;
+      }
+      if (gamma.kind !== 'meta') throw new Error('Gamma base is not meta');
+      expect(pair).not.toBeNull();
+      expect(maxAffineDiff(zToAffine(pair as ZAffine), gamma.children[1].xform)).toBeLessThan(
+        1e-12,
+      );
+    }
+  });
+
+  it('recovers every family leaf outline exactly from the float tables', () => {
+    for (const family of FAMILIES) {
+      for (const type of leafOrder(family)) {
+        const float = leafPts(family, type);
+        const exact = zLeafPts(family, type);
+        expect(exact).toHaveLength(float.length);
+        for (let i = 0; i < float.length; ++i) {
+          expect(Math.hypot(zX(exact[i]) - float[i].x, zY(exact[i]) - float[i].y)).toBeLessThan(
+            1e-9,
+          );
+        }
+      }
+    }
   });
 
   it('every leaf transform agrees with the float pipeline at level 4 (Delta and Gamma roots)', () => {
@@ -225,7 +261,7 @@ describe('exact substitution system vs float oracle', () => {
               ? child.pos === 0
                 ? Z_IDENT
                 : zGamma2Xform()
-              : zSupertileTransforms(depth)[child.pos];
+              : zSupertileTransforms('spectre', depth)[child.pos];
           walk(
             child.node,
             depth > 0 ? depth - 1 : 0,
@@ -250,7 +286,7 @@ describe('drift-free depth (the reason this module exists)', () => {
     let fc: Affine = IDENT;
     let drift = 0;
     for (let level = 24; level >= 1; --level) {
-      const child = zSupertileTransforms(level)[level % 2 ? 5 : 3];
+      const child = zSupertileTransforms('spectre', level)[level % 2 ? 5 : 3];
       zc = zMul(zc, child);
       fc = mul(fc, zToAffine(child));
       drift = Math.max(drift, maxAffineDiff(zToAffine(zc), fc));
@@ -272,7 +308,7 @@ describe('drift-free depth (the reason this module exists)', () => {
     let X: ZAffine = Z_IDENT;
     let prevWorld: ZAffine = Z_IDENT;
     for (let level = 1; level <= slots.length; ++level) {
-      const Ts = zSupertileTransforms(level)[slots[level - 1]];
+      const Ts = zSupertileTransforms('spectre', level)[slots[level - 1]];
       X = zMul(Ts, X);
       const world = zInv(X);
       expect(zAffineEq(zMul(world, Ts), prevWorld)).toBe(true);

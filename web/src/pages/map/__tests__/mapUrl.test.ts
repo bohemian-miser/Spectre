@@ -17,7 +17,9 @@ import {
   MAX_BUDGET,
   MIN_BUDGET,
   clampBudget,
+  comboLength,
   decodeMapQuery,
+  defaultCombo,
   encodeMapQuery,
   hashToMapState,
   mapStateToHash,
@@ -305,5 +307,71 @@ describe('tk / tg / fx params (map codec)', () => {
     expect(back.showTicker).toBe(true);
     expect(back.showTransitions).toBe(false);
     expect(back.findCeiling).toBe(DEFAULT_FIND_CEILING);
+  });
+});
+
+/**
+ * Tile family (`f=`) — additive exactly like the Explorer codec's: absent
+ * means spectre, so every link from before families keeps meaning what it
+ * meant, byte for byte.
+ */
+describe('tile family in the URL (map codec)', () => {
+  it('never writes f= for spectre — the golden default stays byte-identical', () => {
+    expect(encodeMapQuery(DEFAULT_MAP_STATE)).toBe('seed=1&cx=0&cy=0&z=36&budget=100000');
+    expect(encodeMapQuery({ ...DEFAULT_MAP_STATE, family: 'spectre' })).toBe(
+      'seed=1&cx=0&cy=0&z=36&budget=100000',
+    );
+    expect(decodeMapQuery('seed=1&z=36').family).toBe('spectre');
+  });
+
+  it('round-trips every family canonically', () => {
+    for (const family of ['hex', 'hat', 'turtle'] as const) {
+      const q = encodeMapQuery({ ...DEFAULT_MAP_STATE, family });
+      expect(q).toContain(`f=${family}`);
+      const back = decodeMapQuery(q);
+      expect(back.family).toBe(family);
+      expect(encodeMapQuery(back)).toBe(q);
+    }
+  });
+
+  it('falls back to spectre for junk families', () => {
+    expect(decodeMapQuery('seed=1&f=banana').family).toBe('spectre');
+    expect(decodeMapQuery('seed=1&f=').family).toBe('spectre');
+  });
+
+  it('sizes combos to the family: hex speaks 9 digits, the rest 10', () => {
+    expect(comboLength('hex')).toBe(9);
+    expect(comboLength('spectre')).toBe(COMBO_LENGTH);
+    expect(comboLength('hat')).toBe(10);
+    expect(normalizeCombo('01', 'hex')).toBe('010000000');
+    expect(normalizeCombo('0123456789ab', 'hex')).toBe('012345678');
+    // Decoding a hex link pads its combo to hex length, and stays canonical.
+    const back = decodeMapQuery('f=hex&ln=1&c=12');
+    expect(back.combo).toBe('120000000');
+    expect(encodeMapQuery(decodeMapQuery(encodeMapQuery(back)))).toBe(encodeMapQuery(back));
+  });
+
+  it('defaults the combo per family: verified rule for spectre, zeros elsewhere', () => {
+    expect(defaultCombo('spectre')).toBe('0100101100');
+    expect(defaultCombo('hex')).toBe('000000000');
+    expect(defaultCombo('turtle')).toBe('0000000000');
+    expect(decodeMapQuery('f=hex').combo).toBe('000000000');
+  });
+
+  it('keeps family alongside the strand rule without disturbing it', () => {
+    const state = {
+      ...DEFAULT_MAP_STATE,
+      family: 'hat' as const,
+      lines: true,
+      subset: [2, 5, 7, 8],
+      combo: '0100101100',
+    };
+    const q = encodeMapQuery(state);
+    const back = decodeMapQuery(q);
+    expect(back.family).toBe('hat');
+    expect(back.subset).toEqual([2, 5, 7, 8]);
+    expect(back.combo).toBe('0100101100');
+    expect(encodeMapQuery(back)).toBe(q);
+    expect(sameMapState(state, back)).toBe(true);
   });
 });

@@ -35,15 +35,16 @@
  */
 
 import {
-  LEAF_ORDER,
   TILE_NAMES,
   TILE_PALETTES,
+  leafOrder,
   type Rgb,
+  type TileFamilyId,
   type ViewportCut,
 } from '../../core';
 import { originRelativeCenter, type MapCamera } from './camera';
 import type { LeafChordTable } from './chords';
-import { GLYPH_LEVEL, buildGlyphMeshes, buildLeafMesh, glyphFitForCut } from './glyphs';
+import { GLYPH_LEVEL, buildGlyphMeshes, buildLeafAtlas, glyphFitForCut } from './glyphs';
 import {
   HIGHLIGHT_WIDTH,
   type MapRenderStats,
@@ -90,27 +91,42 @@ const DECODE_GLSL = `
   gl_Position = vec4((w.x + uView.x) * uView.z, (w.y + uView.y) * uView.w, 0.0, 1.0);
 `;
 
+/**
+ * Leaf fill pass — vertex-pulled from a per-type RG32F mesh table, the same
+ * pattern as the glyph pass. One shared mesh stopped being enough when
+ * families arrived: the hat family draws its Gamma2 leaves as turtles, so the
+ * polygon depends on the type byte. Padding rows repeat the last vertex
+ * (degenerate triangles, zero raster area).
+ */
 const VS_LEAF = `#version 300 es
-layout(location=0) in vec2 aVert;
 layout(location=1) in vec2 aPos;
 layout(location=2) in float aCode;
 layout(location=3) in float aType;
+uniform sampler2D uLeafTex;
 uniform vec4 uView;
 uniform vec3 uPalette[10];
 out vec3 vColor;
 void main() {
-  vec2 v = aVert;
+  int t = int(aType + 0.5);
+  vec2 v = texelFetch(uLeafTex, ivec2(gl_VertexID, t), 0).rg;
 ${DECODE_GLSL}
-  vColor = uPalette[int(aType + 0.5)];
+  vColor = uPalette[t];
 }`;
 
+/**
+ * Leaf outline pass — same per-type vertex pull over the outline table, drawn
+ * as `LINE_LOOP`; padded rows repeat the last point, and a zero-length
+ * segment rasterizes nothing.
+ */
 const VS_LEAF_LINE = `#version 300 es
-layout(location=0) in vec2 aVert;
 layout(location=1) in vec2 aPos;
 layout(location=2) in float aCode;
+layout(location=3) in float aType;
+uniform sampler2D uLeafTex;
 uniform vec4 uView;
 void main() {
-  vec2 v = aVert;
+  int t = int(aType + 0.5);
+  vec2 v = texelFetch(uLeafTex, ivec2(gl_VertexID, t), 0).rg;
 ${DECODE_GLSL}
 }`;
 
@@ -477,6 +493,12 @@ export function packPalette(colors: readonly Rgb[], slots: number): Float32Array
 export interface WebGLRendererOptions {
   /** Notified once if the GL context is irrecoverably lost. */
   readonly onContextLost?: () => void;
+  /**
+   * Tile family whose geometry (leaf meshes, glyph meshes, level fits) this
+   * renderer bakes. Fixed for the renderer's lifetime — a family switch
+   * recreates the renderer (the embedding canvas remounts per family).
+   */
+  readonly family?: TileFamilyId;
 }
 
 /** Returns null when a WebGL2 context cannot be created. */
@@ -496,6 +518,7 @@ export function createWebGLRenderer(
   }
   if (!gl) return null;
   const G = gl;
+  const family = opts.family ?? 'spectre';
 
   const compile = (type: number, src: string): WebGLShader => {
     const sh = G.createShader(type);
@@ -537,20 +560,30 @@ export function createWebGLRenderer(
   }
 
   // --- static geometry -----------------------------------------------------
-  const leaf = buildLeafMesh();
-  const vboVerts = G.createBuffer();
-  G.bindBuffer(G.ARRAY_BUFFER, vboVerts);
-  G.bufferData(G.ARRAY_BUFFER, leaf.verts, G.STATIC_DRAW);
-  const ibo = G.createBuffer();
-  G.bindBuffer(G.ELEMENT_ARRAY_BUFFER, ibo);
-  G.bufferData(G.ELEMENT_ARRAY_BUFFER, leaf.tris, G.STATIC_DRAW);
+  // Per-type leaf meshes: fills and outlines, vertex-pulled from RG32F tables
+  // (rows = leaf type bytes). Uploaded once — the family never changes for a
+  // live renderer.
+  const atlas = buildLeafAtlas(family);
+  const makeMeshTexture = (data: Float32Array, width: number, rows: number): WebGLTexture => {
+    const tex = G.createTexture();
+    G.activeTexture(G.TEXTURE0);
+    G.bindTexture(G.TEXTURE_2D, tex);
+    G.texParameteri(G.TEXTURE_2D, G.TEXTURE_MIN_FILTER, G.NEAREST);
+    G.texParameteri(G.TEXTURE_2D, G.TEXTURE_MAG_FILTER, G.NEAREST);
+    G.texParameteri(G.TEXTURE_2D, G.TEXTURE_WRAP_S, G.CLAMP_TO_EDGE);
+    G.texParameteri(G.TEXTURE_2D, G.TEXTURE_WRAP_T, G.CLAMP_TO_EDGE);
+    G.texImage2D(G.TEXTURE_2D, 0, G.RG32F, width, rows, 0, G.RG, G.FLOAT, data);
+    return tex;
+  };
+  const leafFillTex = makeMeshTexture(atlas.fill, atlas.fillVerts, atlas.rows);
+  const leafOutlineTex = makeMeshTexture(atlas.outline, atlas.outlineVerts, atlas.rows);
 
   // --- per-instance buffers (re-uploaded per cut) ----------------------------
   const vboPos = G.createBuffer();
   const vboCode = G.createBuffer();
   const vboType = G.createBuffer();
 
-  const bindInstanceAttrs = (withType: boolean): void => {
+  const bindInstanceAttrs = (): void => {
     G.bindBuffer(G.ARRAY_BUFFER, vboPos);
     G.enableVertexAttribArray(1);
     G.vertexAttribPointer(1, 2, G.FLOAT, false, 0, 0);
@@ -559,42 +592,25 @@ export function createWebGLRenderer(
     G.enableVertexAttribArray(2);
     G.vertexAttribPointer(2, 1, G.UNSIGNED_BYTE, false, 0, 0);
     G.vertexAttribDivisor(2, 1);
-    if (withType) {
-      G.bindBuffer(G.ARRAY_BUFFER, vboType);
-      G.enableVertexAttribArray(3);
-      G.vertexAttribPointer(3, 1, G.UNSIGNED_BYTE, false, 0, 0);
-      G.vertexAttribDivisor(3, 1);
-    }
+    G.bindBuffer(G.ARRAY_BUFFER, vboType);
+    G.enableVertexAttribArray(3);
+    G.vertexAttribPointer(3, 1, G.UNSIGNED_BYTE, false, 0, 0);
+    G.vertexAttribDivisor(3, 1);
   };
 
-  const vaoLeaf = G.createVertexArray();
-  G.bindVertexArray(vaoLeaf);
-  G.bindBuffer(G.ARRAY_BUFFER, vboVerts);
-  G.enableVertexAttribArray(0);
-  G.vertexAttribPointer(0, 2, G.FLOAT, false, 0, 0);
-  bindInstanceAttrs(true);
-  G.bindBuffer(G.ELEMENT_ARRAY_BUFFER, ibo);
-  G.bindVertexArray(null);
-
-  const vaoLine = G.createVertexArray();
-  G.bindVertexArray(vaoLine);
-  G.bindBuffer(G.ARRAY_BUFFER, vboVerts);
-  G.enableVertexAttribArray(0);
-  G.vertexAttribPointer(0, 2, G.FLOAT, false, 0, 0);
-  bindInstanceAttrs(false);
-  G.bindVertexArray(null);
-
-  // The glyph and chord passes both vertex-pull their geometry from a texture,
-  // so they need only the three per-instance attributes (no vertex buffer).
-  const vaoGlyph = G.createVertexArray();
-  G.bindVertexArray(vaoGlyph);
-  bindInstanceAttrs(true);
-  G.bindVertexArray(null);
-
-  const vaoChord = G.createVertexArray();
-  G.bindVertexArray(vaoChord);
-  bindInstanceAttrs(true);
-  G.bindVertexArray(null);
+  // Every tile pass vertex-pulls its geometry from a texture, so the VAOs
+  // hold only the three per-instance attributes (no vertex buffer at all).
+  const makeInstanceVao = (): WebGLVertexArrayObject => {
+    const vao = G.createVertexArray();
+    G.bindVertexArray(vao);
+    bindInstanceAttrs();
+    G.bindVertexArray(null);
+    return vao;
+  };
+  const vaoLeaf = makeInstanceVao();
+  const vaoLine = makeInstanceVao();
+  const vaoGlyph = makeInstanceVao();
+  const vaoChord = makeInstanceVao();
 
   // --- traced strand --------------------------------------------------------
   // Segment i reads points i and i+1, so ONE point buffer is bound twice at a
@@ -647,7 +663,7 @@ export function createWebGLRenderer(
 
   const ensureGlyphTexture = (): void => {
     if (glyphTex) return;
-    const meshes = buildGlyphMeshes(GLYPH_LEVEL);
+    const meshes = buildGlyphMeshes(GLYPH_LEVEL, family);
     let pad = 0;
     for (const m of meshes) pad = Math.max(pad, m.triVerts.length / 2);
     const data = new Float32Array(pad * 2 * meshes.length);
@@ -704,7 +720,8 @@ export function createWebGLRenderer(
   };
 
   // --- uniforms ---------------------------------------------------------------
-  const defaultLeafPalette = paletteVec(LEAF_ORDER);
+  const leafTypes = leafOrder(family);
+  const defaultLeafPalette = paletteVec(leafTypes);
   const defaultAggPalette = paletteVec(TILE_NAMES);
   let leafPalette = defaultLeafPalette;
   let aggPalette = defaultAggPalette;
@@ -719,8 +736,10 @@ export function createWebGLRenderer(
     G.getUniformLocation(p, name);
   const uLeafView = loc(progLeaf, 'uView');
   const uLeafPal = loc(progLeaf, 'uPalette');
+  const uLeafTexLoc = loc(progLeaf, 'uLeafTex');
   const uLineView = loc(progLine, 'uView');
   const uLineColor = loc(progLine, 'uLine');
+  const uLineTexLoc = loc(progLine, 'uLeafTex');
   const uGlyphView = loc(progGlyph, 'uView');
   const uGlyphPal = loc(progGlyph, 'uPalette');
   const uGlyphTexLoc = loc(progGlyph, 'uGlyphTex');
@@ -870,7 +889,7 @@ export function createWebGLRenderer(
 
   const setStyle = (style: MapRenderStyle | null): void => {
     leafPalette = style?.leafColors
-      ? packPalette(style.leafColors, LEAF_ORDER.length)
+      ? packPalette(style.leafColors, leafTypes.length)
       : defaultLeafPalette;
     aggPalette = style?.aggColors
       ? packPalette(style.aggColors, TILE_NAMES.length)
@@ -920,7 +939,7 @@ export function createWebGLRenderer(
             G.useProgram(progGlyph);
             G.uniform4f(uGlyphView, vx, vy, kx, ky);
             G.uniform3fv(uGlyphPal, aggPalette);
-            const fit = glyphFitForCut(cutLevel);
+            const fit = glyphFitForCut(cutLevel, GLYPH_LEVEL, family);
             G.uniform4f(uFitLin, fit[0], fit[1], fit[3], fit[4]);
             G.uniform2f(uFitOff, fit[2], fit[5]);
             G.activeTexture(G.TEXTURE0);
@@ -935,8 +954,11 @@ export function createWebGLRenderer(
             G.useProgram(progLeaf);
             G.uniform4f(uLeafView, vx, vy, kx, ky);
             G.uniform3fv(uLeafPal, leafPalette);
+            G.activeTexture(G.TEXTURE0);
+            G.bindTexture(G.TEXTURE_2D, leafFillTex);
+            G.uniform1i(uLeafTexLoc, 0);
             G.bindVertexArray(vaoLeaf);
-            G.drawElementsInstanced(G.TRIANGLES, leaf.tris.length, G.UNSIGNED_SHORT, 0, count);
+            G.drawArraysInstanced(G.TRIANGLES, 0, atlas.fillVerts, count);
             drawCalls++;
           }
 
@@ -945,10 +967,13 @@ export function createWebGLRenderer(
             G.useProgram(progLine);
             G.uniform4f(uLineView, vx, vy, kx, ky);
             G.uniform4f(uLineColor, 0.04, 0.05, 0.08, 0.85 * alpha);
+            G.activeTexture(G.TEXTURE0);
+            G.bindTexture(G.TEXTURE_2D, leafOutlineTex);
+            G.uniform1i(uLineTexLoc, 0);
             G.enable(G.BLEND);
             G.blendFunc(G.SRC_ALPHA, G.ONE_MINUS_SRC_ALPHA);
             G.bindVertexArray(vaoLine);
-            G.drawArraysInstanced(G.LINE_LOOP, 0, leaf.verts.length / 2, count);
+            G.drawArraysInstanced(G.LINE_LOOP, 0, atlas.outlineVerts, count);
             G.disable(G.BLEND);
             drawCalls++;
           }
@@ -1091,8 +1116,8 @@ export function createWebGLRenderer(
     dispose(): void {
       disposed = true;
       canvas.removeEventListener('webglcontextlost', onLost);
-      G.deleteBuffer(vboVerts);
-      G.deleteBuffer(ibo);
+      G.deleteTexture(leafFillTex);
+      G.deleteTexture(leafOutlineTex);
       G.deleteBuffer(vboPos);
       G.deleteBuffer(vboCode);
       G.deleteBuffer(vboType);

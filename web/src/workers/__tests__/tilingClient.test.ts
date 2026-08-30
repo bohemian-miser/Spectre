@@ -65,3 +65,29 @@ describe('tiling client', () => {
     expect(Array.from(a.cut.code)).toEqual(Array.from(b.cut.code));
   });
 });
+
+describe('tiling client — families', () => {
+  it('passes the family through and echoes it back', async () => {
+    const client = createTilingClient({ forceSync: true });
+    const hex = await client.query({ ...REQ, id: 20, family: 'hex' });
+    expect(hex.family).toBe('hex');
+    // Absent family means spectre — the pre-family request shape still works.
+    const spectre = await client.query({ ...REQ, id: 21 });
+    expect(spectre.family).toBe('spectre');
+    client.dispose();
+  });
+
+  it('interleaved families on one seed come from independent worlds', async () => {
+    const client = createTilingClient({ forceSync: true });
+    const before = await client.query({ ...REQ, id: 30 });
+    const hex = await client.query({ ...REQ, id: 31, family: 'hex' });
+    const after = await client.query({ ...REQ, id: 32 });
+    // The hex query must not have disturbed the spectre engine's world…
+    expect([...after.cut.pos]).toEqual([...before.cut.pos]);
+    expect([...after.cut.type]).toEqual([...before.cut.type]);
+    // …and the hex world is genuinely different geometry.
+    expect(hex.cut.count).not.toBe(0);
+    expect([...hex.cut.pos]).not.toEqual([...before.cut.pos]);
+    client.dispose();
+  });
+});

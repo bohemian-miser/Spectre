@@ -194,17 +194,19 @@ describe('explorer mode in the URL', () => {
     expect(encodeExplorerQuery(back)).toBe(query);
   });
 
-  it('refuses infinite mode for families the engine cannot generate', () => {
-    expect(supportsInfiniteMode('spectre')).toBe(true);
-    for (const f of FAMILIES.filter((x) => x !== 'spectre')) {
-      expect(supportsInfiniteMode(f)).toBe(false);
+  it('offers infinite mode for every family the engine now generates', () => {
+    for (const f of FAMILIES) {
+      expect(supportsInfiniteMode(f)).toBe(true);
       const encoded = encodeExplorerQuery({
         ...DEFAULT_EXPLORER_STATE,
         family: f,
         mode: 'infinite',
+        // Hex has 9 leaves: the matching vector must match the family or the
+        // codec would refuse the state for an unrelated reason.
+        matching: new Array(leafOrder(f).length).fill(0),
       });
-      expect(encoded).not.toContain('md=');
-      expect(decodeExplorerQuery(`v=1&f=${f}&md=infinite`).mode).toBeUndefined();
+      expect(encoded).toContain('md=infinite');
+      expect(decodeExplorerQuery(`v=1&f=${f}&md=infinite`).mode).toBe('infinite');
     }
     expect(EXPLORER_MODES).toEqual(['rooted', 'infinite']);
   });

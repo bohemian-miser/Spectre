@@ -17,11 +17,11 @@
 
 import {
   AGGREGATE_TYPE_BASE,
-  LEAF_ORDER,
-  SPECTRE_PTS,
   TILE_NAMES,
   TILE_PALETTES,
   instanceAffine,
+  leafOrder,
+  leafPts,
   mul,
   rainbow,
   rgbToCss,
@@ -29,6 +29,7 @@ import {
   type Pt,
   type Rgb,
   type Segment,
+  type TileFamilyId,
   type ViewportCut,
 } from '../../core';
 import { originRelativeCenter, type MapCamera } from './camera';
@@ -111,7 +112,10 @@ function cssRgba(c: readonly [number, number, number, number]): string {
 }
 
 /** Returns null when a 2D context cannot be created either. */
-export function createCanvas2dRenderer(canvas: HTMLCanvasElement): MapRenderer | null {
+export function createCanvas2dRenderer(
+  canvas: HTMLCanvasElement,
+  family: TileFamilyId = 'spectre',
+): MapRenderer | null {
   let ctx: CanvasRenderingContext2D | null = null;
   try {
     ctx = canvas.getContext('2d') as CanvasRenderingContext2D | null;
@@ -121,11 +125,14 @@ export function createCanvas2dRenderer(canvas: HTMLCanvasElement): MapRenderer |
   if (!ctx || typeof Path2D === 'undefined') return null;
   const C = ctx;
 
-  // Shared paths: leaf spectre + (lazily) the nine aggregate glyph outlines.
-  const leafPath = pathOf(SPECTRE_PTS);
+  // Shared paths: one leaf outline per type byte (the hat family's Gamma2 is
+  // a turtle, so a single shared path stopped being enough) + (lazily) the
+  // nine aggregate glyph outlines.
+  const leafTypes = leafOrder(family);
+  const leafPaths = leafTypes.map((t) => pathOf(leafPts(family, t)));
   let glyphPaths: Path2D[] | null = null;
 
-  const defaultLeafColors = LEAF_ORDER.map((t) =>
+  const defaultLeafColors = leafTypes.map((t) =>
     rgbToCss(TILE_PALETTES.bright[t] ?? [200, 200, 200]),
   );
   const defaultAggColors = TILE_NAMES.map((t) =>
@@ -191,7 +198,7 @@ export function createCanvas2dRenderer(canvas: HTMLCanvasElement): MapRenderer |
       else byType.set(t, [i]);
     }
     if (cut.cutLevel > 0 && !glyphPaths) {
-      glyphPaths = buildGlyphMeshes(GLYPH_LEVEL).map((m) => pathOf(m.outline));
+      glyphPaths = buildGlyphMeshes(GLYPH_LEVEL, family).map((m) => pathOf(m.outline));
     }
   };
 
@@ -211,7 +218,7 @@ export function createCanvas2dRenderer(canvas: HTMLCanvasElement): MapRenderer |
     const cut = cutRef;
     if (cut && cut.count > 0) {
       const aggregate = cut.cutLevel > 0;
-      const fit = aggregate ? glyphFitForCut(cut.cutLevel) : undefined;
+      const fit = aggregate ? glyphFitForCut(cut.cutLevel, GLYPH_LEVEL, family) : undefined;
       const outline =
         showOutlines &&
         !aggregate &&
@@ -227,7 +234,7 @@ export function createCanvas2dRenderer(canvas: HTMLCanvasElement): MapRenderer |
         for (const [typeByte, list] of byType) {
           const path = aggregate
             ? (glyphPaths as Path2D[])[typeByte - AGGREGATE_TYPE_BASE]
-            : leafPath;
+            : leafPaths[typeByte] ?? leafPaths[0];
           C.fillStyle = aggregate
             ? aggColors[typeByte - AGGREGATE_TYPE_BASE]
             : leafColors[typeByte] ?? '#c8c8c8';
@@ -279,7 +286,8 @@ export function createCanvas2dRenderer(canvas: HTMLCanvasElement): MapRenderer |
       if (outline && strokeAlpha > 0.02) {
         C.lineWidth = 0.06;
         C.strokeStyle = `rgba(10, 13, 20, ${(0.85 * strokeAlpha).toFixed(3)})`;
-        for (const [, list] of byType) {
+        for (const [typeByte, list] of byType) {
+          const path = leafPaths[typeByte] ?? leafPaths[0];
           for (const i of list) {
             const m = instanceScreenTransform(
               cam,
@@ -291,7 +299,7 @@ export function createCanvas2dRenderer(canvas: HTMLCanvasElement): MapRenderer |
               cut.code[i],
             );
             C.setTransform(dpr * m[0], dpr * m[3], dpr * m[1], dpr * m[4], dpr * m[2], dpr * m[5]);
-            C.stroke(leafPath);
+            C.stroke(path);
           }
         }
       }

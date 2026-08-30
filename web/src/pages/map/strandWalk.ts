@@ -86,13 +86,24 @@ export function snapEpsilonAt(p: Pt): number {
 }
 
 /**
- * Farthest a chord endpoint can sit from its tile's emitted position. Chord
- * ends are connection points on the outline, and distance to a convex
+ * Farthest a SPECTRE chord endpoint can sit from its tile's emitted position.
+ * Chord ends are connection points on the outline, and distance to a convex
  * combination is maximised at a vertex, so the vertex radius bounds them all.
- * This is what makes the neighbourhood probe below exhaustive rather than
- * hopeful.
+ * Family-aware code must use the chord table's own `reach` instead (turtle
+ * outlines reach ~6.25 world units against the spectre's ~4.2, and the hat
+ * family's Gamma2 IS a turtle) — this constant survives as the spectre value
+ * and the fallback where no table is at hand.
  */
 export const MAX_CHORD_REACH = SPECTRE_PTS.reduce((m, p) => Math.max(m, Math.hypot(p.x, p.y)), 0);
+
+/**
+ * The neighbourhood-probe bound for one chord table: the table's own reach
+ * (max vertex radius over the family's leaf outlines), which is what makes
+ * the probe exhaustive for every family rather than only for the spectre.
+ */
+export function chordReachOf(table: LeafChordTable | null | undefined): number {
+  return table?.reach ?? MAX_CHORD_REACH;
+}
 
 /** Grid cell size in world units (a tile edge is 1). */
 const CELL = 2;
@@ -231,7 +242,7 @@ function forEachNearbyChord(
   visit: (ax: number, ay: number, bx: number, by: number, leafType: number) => void,
 ): void {
   const { cut, chords, cols, rows, starts, items, minX, minY, origin } = index;
-  const probe = Math.ceil((reach + MAX_CHORD_REACH) / CELL);
+  const probe = Math.ceil((reach + chordReachOf(chords)) / CELL);
   const cx = Math.floor((localX - minX) / CELL);
   const cy = Math.floor((localY - minY) / CELL);
   const gy0 = Math.max(0, cy - probe);
@@ -439,8 +450,11 @@ export function chordTypes(trail: StrandTrail): Uint8Array {
 }
 
 /**
- * Leaf types a transition matrix is indexed by — the canonical `LEAF_ORDER`,
- * the same indices the chord table and the ticker already speak in.
+ * Leaf types a SPECTRE transition matrix is indexed by — `LEAF_ORDER`, the
+ * same indices the chord table and the ticker already speak in. This is also
+ * the default width for trails started without a family context; a trail's
+ * own matrix width is `trail.typeCount` (9 for hex, 10 otherwise), taken from
+ * the chord table it walks.
  */
 export const TRANSITION_TYPES = LEAF_ORDER.length;
 
@@ -547,10 +561,17 @@ export interface StrandTrail {
    */
   types: Uint8Array;
   /**
+   * Leaf types the transition matrix is indexed by — the walked family's
+   * `leafOrder` length, fixed at {@link startTrail}. The matrix and every
+   * consumer (graph, ranked runs) size themselves from this.
+   */
+  readonly typeCount: number;
+  /**
    * How many times the walk stepped from one leaf type straight into another,
-   * as a dense row-major `from * TRANSITION_TYPES + to` matrix. Unlike
-   * {@link recent} this is the WHOLE chase, not a window: it is a fixed 100
-   * counters no matter how long the walk runs, so there is nothing to bound.
+   * as a dense row-major `from * typeCount + to` matrix. Unlike
+   * {@link recent} this is the WHOLE chase, not a window: it is a fixed
+   * `typeCount²` counters no matter how long the walk runs, so there is
+   * nothing to bound.
    *
    * A step contributes only once it has a predecessor, so a chase of `steps`
    * tiles records `steps - 1` transitions.
@@ -596,7 +617,7 @@ function push(trail: StrandTrail, p: Pt): void {
  * first point and the near end its second, so the rainbow starts under the
  * pointer and the walk runs off the way the tap was aimed.
  */
-export function startTrail(seed: ChordEnd): StrandTrail {
+export function startTrail(seed: ChordEnd, typeCount: number = TRANSITION_TYPES): StrandTrail {
   const trail: StrandTrail = {
     xy: new Float64Array(2048),
     arc: new Float64Array(1024),
@@ -610,7 +631,8 @@ export function startTrail(seed: ChordEnd): StrandTrail {
     anchor: seed.to,
     geom: null,
     types: new Uint8Array(1024),
-    transitions: new Uint32Array(TRANSITION_TYPES * TRANSITION_TYPES),
+    typeCount,
+    transitions: new Uint32Array(typeCount * typeCount),
     lastType: -1,
   };
   push(trail, seed.to);
@@ -753,7 +775,7 @@ export function advanceWalk(
     // here is the last one: index count - 2.
     trail.types[trail.count - 2] = cont.leafType;
     if (trail.lastType >= 0) {
-      trail.transitions[trail.lastType * TRANSITION_TYPES + cont.leafType]++;
+      trail.transitions[trail.lastType * trail.typeCount + cont.leafType]++;
     }
     trail.lastType = cont.leafType;
     trail.steps++;
