@@ -19,7 +19,7 @@ import { STRAND_DRAW_BUDGET, buildExplodedStrands } from '../strands';
 /** The demo rule: every tile pairs up, and its circuits are well known. */
 const SUBSET = [2, 5, 7, 8];
 const COMBO = '0100101100';
-const table = () => buildLeafChordTable(SUBSET, comboToMatchingIndices('spectre', SUBSET, COMBO));
+const table = () => buildLeafChordTable('spectre', SUBSET, comboToMatchingIndices('spectre', SUBSET, COMBO));
 
 /** What the rooted analysis sees: the same patch, welded and traced whole. */
 function referenceTrace(level: number, rootTile = 'Delta') {
@@ -148,7 +148,7 @@ describe('buildExplodedStrands — limits', () => {
   it('draws nothing at all without a rule', () => {
     const layout = explodeSupertile({ level: 3, depth: 1 });
     expect(buildExplodedStrands(layout, null).runs).toEqual([]);
-    const empty = buildLeafChordTable([], comboToMatchingIndices('spectre', [], COMBO));
+    const empty = buildLeafChordTable('spectre', [], comboToMatchingIndices('spectre', [], COMBO));
     expect(buildExplodedStrands(layout, empty).runs).toEqual([]);
   });
 });

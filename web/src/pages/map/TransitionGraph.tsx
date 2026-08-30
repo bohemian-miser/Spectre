@@ -106,6 +106,8 @@ const GLYPHS: Readonly<Record<string, string>> = {
   Psi: 'Ψ',
   Gamma1: 'Γ₁',
   Gamma2: 'Γ₂',
+  // The hexagon family's Gamma is one fused tile, not the Mystic pair.
+  Gamma: 'Γ',
 };
 const glyphFor = (name: string | undefined): string =>
   (name && GLYPHS[name]) || (name ?? '?').slice(0, 2);

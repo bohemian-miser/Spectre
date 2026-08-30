@@ -32,12 +32,12 @@ import {
   SUBSTITUTION_GROWTH,
   TILE_NAMES,
   TILE_PALETTES,
+  averageLeafArea,
   hexToRgb,
   leafOrder,
   rgbToCss,
   mul,
   pathLength,
-  supportsInfiniteMode,
   svgMatrixString,
   type Path,
   type Rgb,
@@ -185,7 +185,6 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
   const hlPath = explorerHighlightInPath(state);
   const pace = explorerPace(state);
   const infinite = mode === 'infinite';
-  const infiniteAvailable = supportsInfiniteMode(family);
   const [shareNote, setShareNote] = useState<string | null>(null);
   const [shareFallback, setShareFallback] = useState<string | null>(null);
 
@@ -297,9 +296,9 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
   const infiniteChords = useMemo(
     () =>
       infinite && linesOn && state.subset.length
-        ? buildLeafChordTable(state.subset, state.matching, state.contracts)
+        ? buildLeafChordTable(family, state.subset, state.matching, state.contracts)
         : null,
-    [infinite, linesOn, state.subset, state.matching, state.contracts],
+    [infinite, linesOn, family, state.subset, state.matching, state.contracts],
   );
 
   const infiniteStyle = useMemo<MapRenderStyle>(() => {
@@ -317,7 +316,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
     };
     const fills = hasFlag(state, FLAG.BACKGROUNDS);
     return {
-      leafColors: leafOrder('spectre').map(colorOf),
+      leafColors: leafOrder(family).map(colorOf),
       aggColors: TILE_NAMES.map(colorOf),
       showFills: fills,
       showOutlines: hasFlag(state, FLAG.OUTLINES),
@@ -326,7 +325,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
       lineScale: lineWidth,
       noOverlap,
     };
-  }, [state.colorScheme, state.customColors, state.flags, lineWidth, noOverlap]);
+  }, [family, state.colorScheme, state.customColors, state.flags, lineWidth, noOverlap]);
 
   /** Tile colours for the trace ticker — the palette the tiles are drawn in. */
   const leafCss = useMemo(
@@ -342,14 +341,17 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
    * Free panning/zooming does not write back — the live depth is reported
    * separately from the engine's own LOD cut, which cannot be faked.
    */
-  const applyLevelZoom = useCallback((level: number): boolean => {
-    const api = infiniteApiRef.current;
-    if (!api) return false;
-    const { width, height } = api.getSize();
-    if (width <= 0 || height <= 0) return false;
-    api.setCamera({ scale: scaleForLevel(level, width, height) });
-    return true;
-  }, []);
+  const applyLevelZoom = useCallback(
+    (level: number): boolean => {
+      const api = infiniteApiRef.current;
+      if (!api) return false;
+      const { width, height } = api.getSize();
+      if (width <= 0 || height <= 0) return false;
+      api.setCamera({ scale: scaleForLevel(level, width, height, averageLeafArea(family)) });
+      return true;
+    },
+    [family],
+  );
 
   useEffect(() => {
     if (!infinite) {
@@ -616,7 +618,6 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
                 role="radio"
                 aria-checked={infinite}
                 className={infinite ? 'is-active' : ''}
-                disabled={!infiniteAvailable}
                 data-testid="mode-infinite"
                 onClick={() => dispatch({ type: 'setMode', mode: 'infinite' })}
               >
@@ -624,12 +625,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
               </button>
             </span>
           </div>
-          {!infiniteAvailable ? (
-            <p className="muted" role="note">
-              Infinite mode needs the un-rooted engine, which only generates{' '}
-              {FAMILY_DISPLAY_NAMES.spectre}. Switch the family back to use it.
-            </p>
-          ) : infinite ? (
+          {infinite ? (
             <>
               <p className="muted" role="note">
                 No root and no patch: the plane is expanded around the camera on demand (world seed{' '}
@@ -1194,9 +1190,11 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
       <div className="explorer-viewport" ref={viewportRef}>
         {infinite ? (
           <InfiniteCanvas
+            key={family}
             className="map-viewport explorer-infinite"
             ariaLabel="Infinite tiling viewport — drag to pan, wheel or pinch to zoom"
             seed={INFINITE_SEED}
+            family={family}
             budget={budget}
             chords={infiniteChords}
             trace={traceOn && !!infiniteChords}
@@ -1226,7 +1224,9 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
               traceOn={traceOn && !!infiniteChords}
               followOn={followOn && traceOn && !!infiniteChords}
               fillsOn={hasFlag(state, FLAG.BACKGROUNDS)}
+              leafNames={leafOrder(family)}
               leafCss={leafCss}
+              tileArea={averageLeafArea(family)}
               tickerOn={tickerOn}
               transitionsOn={transitionsOn}
               hlScreen={hlScreen}
@@ -1362,8 +1362,12 @@ function InfiniteHud(props: {
   readonly followOn: boolean;
   /** Tile backgrounds; with them off, supertile glyphs are not drawn either. */
   readonly fillsOn: boolean;
-  /** Tile colours for the ticker, in `LEAF_ORDER`. */
+  /** Leaf type names in wire-byte order (`leafOrder(family)`). */
+  readonly leafNames: readonly string[];
+  /** Tile colours for the ticker, in the same order as `leafNames`. */
   readonly leafCss: readonly string[];
+  /** Mean leaf area of the family (`averageLeafArea`) for the depth readout. */
+  readonly tileArea: number;
   readonly tickerOn: boolean;
   readonly transitionsOn: boolean;
   readonly hlScreen: boolean;
@@ -1373,7 +1377,7 @@ function InfiniteHud(props: {
   onSelect(selection: GraphSelection | null): void;
   onChainLength(length: number | null): void;
 }): JSX.Element {
-  const { subscribeRef, linesOn, traceOn, followOn, fillsOn, leafCss } = props;
+  const { subscribeRef, linesOn, traceOn, followOn, fillsOn, leafNames, leafCss, tileArea } = props;
   const { tickerOn, transitionsOn, hlScreen, hlPath } = props;
   const { onToggleHlScreen, onToggleHlPath, onSelect, onChainLength } = props;
   const [status, setStatus] = useState<InfiniteCanvasStatus | null>(null);
@@ -1402,7 +1406,7 @@ function InfiniteHud(props: {
   const aggregate = !!cut && cut.cutLevel > 0;
   const depth =
     draw && status && status.size.width > 0
-      ? levelForScale(draw.scale, status.size.width, status.size.height)
+      ? levelForScale(draw.scale, status.size.width, status.size.height, tileArea)
       : null;
 
   return (
@@ -1463,6 +1467,7 @@ function InfiniteHud(props: {
       {transitionsOn ? (
         <TransitionGraph
           transitions={trace?.transitions ?? []}
+          names={leafNames}
           colors={leafCss}
           className={tickerOn ? undefined : 'is-low'}
           chains={trace?.chains ?? []}
@@ -1477,7 +1482,12 @@ function InfiniteHud(props: {
         />
       ) : null}
       {tickerOn ? (
-        <TraceTicker tiles={trace?.tiles ?? []} colors={leafCss} steps={trace?.steps} />
+        <TraceTicker
+          tiles={trace?.tiles ?? []}
+          names={leafNames}
+          colors={leafCss}
+          steps={trace?.steps}
+        />
       ) : null}
     </>
   );

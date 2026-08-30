@@ -14,5 +14,7 @@ export function createMapRenderer(
   canvas: HTMLCanvasElement,
   opts: WebGLRendererOptions = {},
 ): MapRenderer | null {
-  return createWebGLRenderer(canvas, opts) ?? createCanvas2dRenderer(canvas);
+  return (
+    createWebGLRenderer(canvas, opts) ?? createCanvas2dRenderer(canvas, opts.family ?? 'spectre')
+  );
 }

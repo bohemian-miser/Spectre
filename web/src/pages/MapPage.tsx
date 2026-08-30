@@ -34,12 +34,13 @@ import {
   DEFAULT_FIND_CEILING,
   DEFAULT_FOUND_HOLD,
   MIN_FIND_CEILING,
+  FAMILIES,
+  FAMILY_DISPLAY_NAMES,
   FIND_CEILINGS,
   clampFindCeiling,
   clampFoundHold,
   DEFAULT_LINE_SCALE,
   DEFAULT_TRACE_PACE,
-  LEAF_ORDER,
   DEFAULT_TRAIL_HOLD,
   LINE_SCALE_STEP,
   MAX_TRAIL_HOLD,
@@ -50,8 +51,10 @@ import {
   TILE_PALETTES,
   comboToMatchingIndices,
   edgesToSubset,
+  leafOrder,
   rgbToCss,
   subsetToString,
+  type TileFamilyId,
 } from '../core';
 import { EdgeSubsetPicker } from '../components';
 import { copyText, shareLinkBase } from '../hooks/shareLink';
@@ -63,9 +66,10 @@ import {
   type InfiniteCanvasStatus,
 } from './map/InfiniteCanvas';
 import {
-  COMBO_LENGTH,
   DEFAULT_MAP_STATE,
   MAP_BUDGETS,
+  comboLength,
+  defaultCombo,
   formatBudget,
   hashToMapState,
   mapStateToHash,
@@ -112,6 +116,7 @@ export function MapPage(props: MapPageProps): JSX.Element {
 
   const [seed, setSeed] = useState<number>(initial.seed);
   const [seedDraft, setSeedDraft] = useState<string>(String(initial.seed));
+  const [family, setFamilyState] = useState<TileFamilyId>(initial.family ?? 'spectre');
   const [budget, setBudget] = useState<number>(initial.budget);
   const [lineWidth, setLineWidth] = useState<number>(initial.lineWidth ?? DEFAULT_LINE_SCALE);
   const [noOverlap, setNoOverlap] = useState<boolean>(initial.noOverlap ?? false);
@@ -151,7 +156,7 @@ export function MapPage(props: MapPageProps): JSX.Element {
     initial.subset ?? DEFAULT_MAP_STATE.subset ?? [],
   );
   const [combo, setCombo] = useState<string>(
-    normalizeCombo(initial.combo ?? DEFAULT_MAP_STATE.combo ?? ''),
+    normalizeCombo(initial.combo ?? defaultCombo(initial.family ?? 'spectre'), initial.family),
   );
   const [status, setStatus] = useState<InfiniteCanvasStatus>({
     mode: 'pending',
@@ -179,12 +184,12 @@ export function MapPage(props: MapPageProps): JSX.Element {
 
   const apiRef = useRef<InfiniteCanvasApi | null>(null);
   const camRef = useRef<MapCamera>(createCamera(initial.cx, initial.cy, initial.scale));
-  const initialCameraRef = useRef<MapCamera>(camRef.current);
   const statusRef = useRef(status);
   statusRef.current = status;
   const urlTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const worldRef = useRef({
     seed,
+    family,
     budget,
     lines,
     trace,
@@ -209,6 +214,7 @@ export function MapPage(props: MapPageProps): JSX.Element {
   });
   worldRef.current = {
     seed,
+    family,
     budget,
     lines,
     trace,
@@ -234,12 +240,12 @@ export function MapPage(props: MapPageProps): JSX.Element {
 
   // --- strand chords ----------------------------------------------------------
   const matching = useMemo(
-    () => comboToMatchingIndices('spectre', subset, combo),
-    [subset, combo],
+    () => comboToMatchingIndices(family, subset, combo),
+    [family, subset, combo],
   );
   const chords = useMemo<LeafChordTable | null>(
-    () => (lines ? buildLeafChordTable(subset, matching) : null),
-    [lines, subset, matching],
+    () => (lines ? buildLeafChordTable(family, subset, matching) : null),
+    [lines, family, subset, matching],
   );
 
   const renderStyle = useMemo<MapRenderStyle>(
@@ -247,10 +253,13 @@ export function MapPage(props: MapPageProps): JSX.Element {
     [lineWidth, noOverlap],
   );
 
+  /** Leaf type names in wire-byte order, for the ticker and the graph. */
+  const leafNames = useMemo(() => leafOrder(family), [family]);
+
   /** Tile colours for the ticker: the map draws the default palette. */
   const leafCss = useMemo(
-    () => LEAF_ORDER.map((t) => rgbToCss(TILE_PALETTES.bright[t] ?? [200, 200, 200])),
-    [],
+    () => leafNames.map((t) => rgbToCss(TILE_PALETTES.bright[t] ?? [200, 200, 200])),
+    [leafNames],
   );
 
   // --- URL ---------------------------------------------------------------------
@@ -260,6 +269,7 @@ export function MapPage(props: MapPageProps): JSX.Element {
     const w = worldRef.current;
     return mapStateToHash({
       seed: w.seed,
+      family: w.family,
       budget: w.budget,
       lineWidth: w.lineWidth,
       noOverlap: w.noOverlap,
@@ -324,6 +334,7 @@ export function MapPage(props: MapPageProps): JSX.Element {
     writeUrlSoon();
   }, [
     seed,
+    family,
     budget,
     lines,
     trace,
@@ -357,6 +368,7 @@ export function MapPage(props: MapPageProps): JSX.Element {
       const w = worldRef.current;
       const cur: MapUrlState = {
         seed: w.seed,
+        family: w.family,
         budget: w.budget,
         lineWidth: w.lineWidth,
         noOverlap: w.noOverlap,
@@ -383,8 +395,12 @@ export function MapPage(props: MapPageProps): JSX.Element {
         combo: w.combo,
       };
       if (sameMapState(st, cur)) return;
+      // The camera ref must lead the setters: a family change remounts the
+      // canvas, and the new mount reads its initial camera from this ref.
+      camRef.current = createCamera(st.cx, st.cy, st.scale);
       setSeed(st.seed);
       setSeedDraft(String(st.seed));
+      setFamilyState(st.family ?? 'spectre');
       setBudget(st.budget);
       setLineWidth(st.lineWidth ?? DEFAULT_LINE_SCALE);
       setNoOverlap(st.noOverlap ?? false);
@@ -405,7 +421,7 @@ export function MapPage(props: MapPageProps): JSX.Element {
       setPace(st.pace ?? null);
       setTraceSeed(st.traceSeed ?? null);
       setSubset(st.subset ?? []);
-      setCombo(normalizeCombo(st.combo ?? ''));
+      setCombo(normalizeCombo(st.combo ?? '', st.family));
       apiRef.current?.setCamera({ cx: st.cx, cy: st.cy, scale: st.scale });
     };
     window.addEventListener('hashchange', onHash);
@@ -458,6 +474,22 @@ export function MapPage(props: MapPageProps): JSX.Element {
     apiRef.current?.setCamera({ cx: 0, cy: 0, scale: DEFAULT_SCALE });
   }, []);
 
+  /**
+   * Switching family is switching worlds: the canvas remounts (`key`), so the
+   * trace, kept circuits and chord index die with it — but the page-side state
+   * that describes the old world has to go too, or a spectre chase seed and a
+   * ten-digit combo would be replayed into a hexagon tiling.
+   */
+  const setFamily = useCallback((next: TileFamilyId): void => {
+    if (next === worldRef.current.family) return;
+    setFamilyState(next);
+    setCombo((c) => normalizeCombo(c, next));
+    setTraceSeed(null);
+    setGraphPick(null);
+    setChainLength(null);
+    setStatus((s) => ({ ...s, cut: null })); // the old world's numbers no longer apply
+  }, []);
+
   // --- render -------------------------------------------------------------------------
   const hud = status.cut;
   const drawInfo = status.draw;
@@ -474,8 +506,8 @@ export function MapPage(props: MapPageProps): JSX.Element {
         <div className="map-title">
           <h1>The Infinite Map</h1>
           <p className="muted">
-            One endless spectre tiling per seed, expanded on demand around the camera — pan and
-            zoom without limits.
+            One endless {FAMILY_DISPLAY_NAMES[family]} tiling per seed, expanded on demand around
+            the camera — pan and zoom without limits.
           </p>
         </div>
         <form className="map-controls" onSubmit={onSeedSubmit}>
@@ -490,6 +522,21 @@ export function MapPage(props: MapPageProps): JSX.Element {
             />
           </label>
           <button type="submit">Reseed</button>
+          <label className="map-control">
+            <span>Family</span>
+            <select
+              aria-label="Tile family"
+              data-testid="map-family"
+              value={family}
+              onChange={(e) => setFamily(e.target.value as TileFamilyId)}
+            >
+              {FAMILIES.map((f) => (
+                <option key={f} value={f}>
+                  {FAMILY_DISPLAY_NAMES[f]}
+                </option>
+              ))}
+            </select>
+          </label>
           <label className="map-control">
             <span>Budget</span>
             <select
@@ -783,7 +830,7 @@ export function MapPage(props: MapPageProps): JSX.Element {
           </div>
 
           <EdgeSubsetPicker
-            family="spectre"
+            family={family}
             subset={subset}
             advanced={false}
             onSubsetChange={setSubset}
@@ -796,16 +843,16 @@ export function MapPage(props: MapPageProps): JSX.Element {
               className="map-combo-input"
               aria-label="Combination string"
               spellCheck={false}
-              maxLength={COMBO_LENGTH}
+              maxLength={comboLength(family)}
               value={combo}
-              onChange={(e) => setCombo(normalizeCombo(e.target.value))}
+              onChange={(e) => setCombo(normalizeCombo(e.target.value, family))}
             />
           </label>
           <p className="muted map-lines-help">
-            One digit per leaf type (Delta, Theta, Lambda, Xi, Pi, Sigma, Phi, Psi, Gamma2,
-            Gamma1) selecting that type&rsquo;s non-crossing matching — the same combination string
-            the stats page and the notebook CSVs use. Chords are drawn in ONE flat ink: they are
-            local geometry, not analysed circuits, so nothing here is coloured by circuit length.
+            One digit per leaf type ({leafNames.join(', ')}) selecting that type&rsquo;s
+            non-crossing matching — the same combination string the stats page and the notebook
+            CSVs use. Chords are drawn in ONE flat ink: they are local geometry, not analysed
+            circuits, so nothing here is coloured by circuit length.
           </p>
           <p className="muted map-lines-help">
             Tap or click a strand and it is followed onward in one direction, rainbow-coloured over
@@ -837,7 +884,9 @@ export function MapPage(props: MapPageProps): JSX.Element {
       )}
 
       <InfiniteCanvas
+        key={family}
         seed={seed}
+        family={family}
         budget={budget}
         chords={chords}
         trace={lines && trace}
@@ -857,7 +906,9 @@ export function MapPage(props: MapPageProps): JSX.Element {
         traceSeed={lines && trace ? traceSeed : null}
         onTraceSeed={setTraceSeed}
         style={renderStyle}
-        initialCamera={initialCameraRef.current}
+        // The live ref, not a load-time snapshot: a family switch remounts
+        // the canvas, and the view must stay where the user left it.
+        initialCamera={camRef.current}
         apiRef={apiRef}
         onCameraChange={onCameraChange}
         onStatusChange={setStatus}
@@ -929,6 +980,7 @@ export function MapPage(props: MapPageProps): JSX.Element {
         {showTransitions ? (
           <TransitionGraph
             transitions={status.trace.transitions}
+            names={leafNames}
             colors={leafCss}
             className={showTicker ? undefined : 'is-low'}
             chains={status.trace.chains}
@@ -943,7 +995,12 @@ export function MapPage(props: MapPageProps): JSX.Element {
           />
         ) : null}
         {showTicker ? (
-          <TraceTicker tiles={status.trace.tiles} colors={leafCss} steps={status.trace.steps} />
+          <TraceTicker
+            tiles={status.trace.tiles}
+            names={leafNames}
+            colors={leafCss}
+            steps={status.trace.steps}
+          />
         ) : null}
 
         {mode === 'canvas2d' && (

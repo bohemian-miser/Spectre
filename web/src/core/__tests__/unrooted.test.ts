@@ -86,7 +86,7 @@ function oracleNodes(rootType: TileTypeId, k: number, cutLevel: number): OracleI
     for (const child of node.children) {
       const zchild =
         level >= 1
-          ? zSupertileTransforms(level)[child.pos]
+          ? zSupertileTransforms('spectre', level)[child.pos]
           : child.pos === 0
             ? Z_IDENT
             : zGamma2Xform();
@@ -737,7 +737,11 @@ describe('exact welds at depth (drift-free deep zoom)', () => {
         const child = node.children.find((c) => c.pos === slot);
         if (!child) throw new Error(`bad slot ${slot} in id ${id}`);
         const zchild =
-          level >= 1 ? zSupertileTransforms(level)[slot] : slot === 0 ? Z_IDENT : zGamma2Xform();
+          level >= 1
+            ? zSupertileTransforms('spectre', level)[slot]
+            : slot === 0
+              ? Z_IDENT
+              : zGamma2Xform();
         fx = mul(fx, zToAffine(zchild));
         node = child.node;
         level = level >= 1 ? level - 1 : 0;

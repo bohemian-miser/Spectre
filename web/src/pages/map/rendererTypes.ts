@@ -51,7 +51,10 @@ export interface TrailGeometry {
  * per-flavour fills, fading outlines, white strand lines).
  */
 export interface MapRenderStyle {
-  /** Leaf fill colours in `LEAF_ORDER` order (0..255 per channel). */
+  /**
+   * Leaf fill colours in `leafOrder(family)` order for the renderer's family
+   * (0..255 per channel) — 9 entries for hex, 10 for the others.
+   */
   readonly leafColors?: readonly Rgb[];
   /** Aggregate glyph colours in `TILE_NAMES` order. */
   readonly aggColors?: readonly Rgb[];

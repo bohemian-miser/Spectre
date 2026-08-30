@@ -124,7 +124,7 @@ function makeRenderer(): FakeRenderer {
 }
 
 const chordsFor = (): LeafChordTable =>
-  buildLeafChordTable(SUBSET, comboToMatchingIndices('spectre', SUBSET, COMBO));
+  buildLeafChordTable('spectre', SUBSET, comboToMatchingIndices('spectre', SUBSET, COMBO));
 
 /**
  * The default chord table, built ONCE. The component drops a trace when the
@@ -347,7 +347,7 @@ describe('InfiniteCanvas — tap to trace', () => {
     expect(m.status().trace.active).toBe(true);
 
     await m.rerender({
-      chords: buildLeafChordTable([1, 5], comboToMatchingIndices('spectre', [1, 5], '0000000000')),
+      chords: buildLeafChordTable('spectre', [1, 5], comboToMatchingIndices('spectre', [1, 5], '0000000000')),
     });
     expect(m.status().trace.active).toBe(false);
     expect(m.renderer.trails.at(-1)).toBeNull();
@@ -410,7 +410,7 @@ describe('InfiniteCanvas — tap to trace', () => {
 // ---------------------------------------------------------------------------
 
 const loopTable = (): LeafChordTable =>
-  buildLeafChordTable([1, 5], comboToMatchingIndices('spectre', [1, 5], '0000000000'));
+  buildLeafChordTable('spectre', [1, 5], comboToMatchingIndices('spectre', [1, 5], '0000000000'));
 
 describe('InfiniteCanvas — auto-follow', () => {
   it('chases the head itself and never touches the zoom', async () => {
@@ -566,11 +566,11 @@ describe('InfiniteCanvas — dead-end confirmation', () => {
     // Rule [2]: odd connection counts, tiles contribute no chords beyond the
     // strand fragments — walks genuinely end at tile granularity.
     const m = await mount({
-      chords: buildLeafChordTable([2], comboToMatchingIndices('spectre', [2], '0000000000')),
+      chords: buildLeafChordTable('spectre', [2], comboToMatchingIndices('spectre', [2], '0000000000')),
     });
     const target = chordTargetOn(
       createCamera(0, 0, 36),
-      buildLeafChordTable([2], comboToMatchingIndices('spectre', [2], '0000000000')),
+      buildLeafChordTable('spectre', [2], comboToMatchingIndices('spectre', [2], '0000000000')),
     );
     tap(m.host, target.x, target.y);
     await settle();
@@ -665,7 +665,7 @@ describe('InfiniteCanvas — shareable trace seed', () => {
 
 describe('InfiniteCanvas — kept tails, circuit colour, find-all', () => {
   const oddTable = (): LeafChordTable =>
-    buildLeafChordTable([2], comboToMatchingIndices('spectre', [2], '0000000000'));
+    buildLeafChordTable('spectre', [2], comboToMatchingIndices('spectre', [2], '0000000000'));
 
   it('keeps a dead-ended strand under the keep-tails toggle', async () => {
     const m = await mount({ chords: oddTable(), keepTails: true });

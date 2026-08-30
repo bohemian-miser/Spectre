@@ -17,7 +17,12 @@ import { LEAF_ORDER } from '../../core';
 export interface TraceTickerProps {
   /** Recent steps' leaf-type indices, oldest first (`recentTiles`). */
   readonly tiles: readonly number[];
-  /** CSS colour per leaf type, in `LEAF_ORDER` — the tiles' own palette. */
+  /**
+   * Type names in wire-byte order — `leafOrder(family)` for the family being
+   * walked. Defaults to the spectre `LEAF_ORDER`.
+   */
+  readonly names?: readonly string[];
+  /** CSS colour per leaf type, in the same order as `names`. */
   readonly colors: readonly string[];
   /** Most names to show; the rest of the ring is off the left edge. */
   readonly limit?: number;
@@ -36,7 +41,7 @@ export interface TraceTickerProps {
 export const DEFAULT_TICKER_LIMIT = 48;
 
 export function TraceTicker(props: TraceTickerProps): JSX.Element | null {
-  const { tiles, colors, limit = DEFAULT_TICKER_LIMIT, steps, className } = props;
+  const { tiles, names = LEAF_ORDER, colors, limit = DEFAULT_TICKER_LIMIT, steps, className } = props;
   if (tiles.length === 0) return null;
   const shown = tiles.slice(-Math.max(1, limit));
   // Step number of the oldest chip on screen. Falls back to a plain index when
@@ -52,7 +57,7 @@ export function TraceTicker(props: TraceTickerProps): JSX.Element | null {
       aria-label="Tiles the traced strand has crossed"
     >
       {shown.map((type, i) => {
-        const name = LEAF_ORDER[type] ?? '?';
+        const name = names[type] ?? '?';
         return (
           <span
             key={firstStep + i}

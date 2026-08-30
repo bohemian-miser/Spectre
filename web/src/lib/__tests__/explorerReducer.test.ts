@@ -292,20 +292,22 @@ describe('renderer mode', () => {
     expect(run(inf, { type: 'setMode', mode: 'infinite' })).toBe(inf); // bail-out
   });
 
-  it('refuses infinite mode for families the un-rooted engine cannot generate', () => {
+  it('offers infinite mode for every family the un-rooted engine generates', () => {
     const hex = run(base, { type: 'setFamily', family: 'hex' });
     const tried = run(hex, { type: 'setMode', mode: 'infinite' });
-    expect(tried.mode).toBeUndefined();
-    expect(explorerMode(tried)).toBe('rooted');
+    expect(tried.mode).toBe('infinite');
+    expect(explorerMode(tried)).toBe('infinite');
   });
 
-  it('drops infinite mode when the family changes away from spectre', () => {
+  it('keeps infinite mode across a family change', () => {
     const inf = run(base, { type: 'setMode', mode: 'infinite' });
     const hex = run(inf, { type: 'setFamily', family: 'hex' });
-    expect('mode' in hex).toBe(false);
-    // and comes back only when explicitly re-selected
+    expect(hex.mode).toBe('infinite');
+    expect(explorerMode(hex)).toBe('infinite');
+    // ...and the matching vector was renormalized to the hex leaf order.
+    expect(hex.matching).toHaveLength(leafOrder('hex').length);
     const spectre = run(hex, { type: 'setFamily', family: 'spectre' });
-    expect(spectre.mode).toBeUndefined();
+    expect(spectre.mode).toBe('infinite');
   });
 });
 

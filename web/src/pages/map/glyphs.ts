@@ -1,5 +1,5 @@
 /**
- * Geometry for the instanced renderer: the leaf spectre mesh and the
+ * Geometry for the instanced renderer: the per-family leaf meshes and the
  * aggregate SUPERTILE GLYPHS (docs/BIGMAP_INVESTIGATION.md §3 "Aggregate
  * (far-LOD) drawing").
  *
@@ -20,13 +20,14 @@
  */
 
 import {
-  SPECTRE_PTS,
   TILE_NAMES,
   buildSystem,
   countTiles,
+  leafOrder,
   leafPts,
   type Affine,
   type Pt,
+  type TileFamilyId,
   type TileNode,
   type TileTypeId,
 } from '../../core';
@@ -145,15 +146,17 @@ const vKey = (x: number, y: number): number =>
   (Math.round(x * Q) + 0x40000) * 0x100000 + (Math.round(y * Q) + 0x40000);
 
 // Packed [ax, ay, bx, by] per surviving boundary segment, node-local frame.
+// Nodes are unique to their family (buildSystem caches per family:level), so
+// the per-node cache never mixes families even though the key omits it.
 const boundaryCache = new WeakMap<TileNode, Float64Array>();
 
 /** Outer-boundary segments of a supertile node, in its local frame. */
-export function boundarySegments(node: TileNode): Float64Array {
+export function boundarySegments(node: TileNode, family: TileFamilyId = 'spectre'): Float64Array {
   const hit = boundaryCache.get(node);
   if (hit) return hit;
   let out: Float64Array;
   if (node.kind === 'leaf') {
-    const pts = leafPts('spectre', node.type);
+    const pts = leafPts(family, node.type);
     out = new Float64Array(pts.length * 4);
     for (let i = 0; i < pts.length; i++) {
       const a = pts[i];
@@ -168,7 +171,7 @@ export function boundarySegments(node: TileNode): Float64Array {
     const seen = new Map<string, Float64Array | null>();
     for (const child of node.children) {
       const T = child.xform;
-      const segs = boundarySegments(child.node);
+      const segs = boundarySegments(child.node, family);
       for (let s = 0; s < segs.length; s += 4) {
         const ax = T[0] * segs[s] + T[1] * segs[s + 1] + T[2];
         const ay = T[3] * segs[s] + T[4] * segs[s + 1] + T[5];
@@ -196,8 +199,8 @@ export function boundarySegments(node: TileNode): Float64Array {
 }
 
 /** Chain a node's boundary segments into its (largest) closed loop. */
-export function boundaryLoop(node: TileNode): Pt[] {
-  const segs = boundarySegments(node);
+export function boundaryLoop(node: TileNode, family: TileFamilyId = 'spectre'): Pt[] {
+  const segs = boundarySegments(node, family);
   const m = segs.length / 4;
   const adj = new Map<number, number[]>();
   for (let s = 0; s < m; s++) {
@@ -357,15 +360,20 @@ export interface GlyphMesh {
   readonly tileCount: number;
 }
 
-let glyphMeshCache: { level: number; meshes: readonly GlyphMesh[] } | null = null;
+const glyphMeshCache = new Map<string, readonly GlyphMesh[]>();
 
-/** Build (once) the nine flavour glyph meshes at `level`. */
-export function buildGlyphMeshes(level: number = GLYPH_LEVEL): readonly GlyphMesh[] {
-  if (glyphMeshCache && glyphMeshCache.level === level) return glyphMeshCache.meshes;
-  const sys = buildSystem('spectre', level);
+/** Build (once per family) the nine flavour glyph meshes at `level`. */
+export function buildGlyphMeshes(
+  level: number = GLYPH_LEVEL,
+  family: TileFamilyId = 'spectre',
+): readonly GlyphMesh[] {
+  const key = `${family}:${level}`;
+  const hit = glyphMeshCache.get(key);
+  if (hit) return hit;
+  const sys = buildSystem(family, level);
   const meshes = TILE_NAMES.map((name, typeIndex) => {
     const node = sys[name];
-    const outline = decimateLoop(boundaryLoop(node));
+    const outline = decimateLoop(boundaryLoop(node, family));
     const tris = earClip(outline);
     const triVerts = new Float32Array(tris.length * 2);
     for (let i = 0; i < tris.length; i++) {
@@ -374,27 +382,93 @@ export function buildGlyphMeshes(level: number = GLYPH_LEVEL): readonly GlyphMes
     }
     return { typeIndex, type: name, outline, triVerts, tileCount: countTiles(node) };
   });
-  glyphMeshCache = { level, meshes };
-  return glyphMeshCache.meshes;
+  glyphMeshCache.set(key, meshes);
+  return meshes;
 }
 
-/** The leaf mesh: one spectre 14-gon, ear-clipped once. */
-export interface LeafMesh {
-  readonly verts: Float32Array; // x,y per outline vertex
-  readonly tris: Uint16Array; // ear-clip indices
+/**
+ * Per-leaf-type meshes for one family, vertex-pull-table shaped: one row per
+ * `leafOrder(family)` entry (= the engine's leaf type byte), fill triangles
+ * unrolled and padded to a common length (degenerate repeats of the last
+ * vertex — zero raster area), and outlines likewise padded by repeating the
+ * last point (zero-length `LINE_LOOP` segments draw nothing).
+ *
+ * This is what lets one instanced draw call fill ANY mix of leaf types — the
+ * hat family's Gamma2 is a turtle, so a single shared mesh stopped being
+ * enough the moment families arrived. For spectre/hex every row holds the
+ * same polygon and the table degenerates to the old single-mesh behaviour.
+ */
+export interface LeafAtlas {
+  readonly family: TileFamilyId;
+  /** Rows (= leaf type bytes = `leafOrder(family).length`). */
+  readonly rows: number;
+  /** Unrolled fill triangles per row, padded: `fillVerts` x,y pairs each. */
+  readonly fill: Float32Array;
+  readonly fillVerts: number;
+  /** Outline vertices per row, padded: `outlineVerts` x,y pairs each. */
+  readonly outline: Float32Array;
+  readonly outlineVerts: number;
+  /** Outline point count per row BEFORE padding (Canvas2D path building). */
+  readonly outlineCounts: readonly number[];
 }
 
-let leafMeshCache: LeafMesh | null = null;
+const leafAtlasCache = new Map<TileFamilyId, LeafAtlas>();
 
-export function buildLeafMesh(): LeafMesh {
-  if (leafMeshCache) return leafMeshCache;
-  const verts = new Float32Array(SPECTRE_PTS.length * 2);
-  SPECTRE_PTS.forEach((p, i) => {
-    verts[i * 2] = p.x;
-    verts[i * 2 + 1] = p.y;
+export function buildLeafAtlas(family: TileFamilyId): LeafAtlas {
+  const hit = leafAtlasCache.get(family);
+  if (hit) return hit;
+  const order = leafOrder(family);
+  const outlines = order.map((type) => leafPts(family, type));
+  const triLists = outlines.map((pts) => {
+    const tris = earClip(pts);
+    const verts = new Float32Array(tris.length * 2);
+    for (let i = 0; i < tris.length; i++) {
+      verts[i * 2] = pts[tris[i]].x;
+      verts[i * 2 + 1] = pts[tris[i]].y;
+    }
+    return verts;
   });
-  leafMeshCache = { verts, tris: new Uint16Array(earClip(SPECTRE_PTS)) };
-  return leafMeshCache;
+  let fillVerts = 0;
+  for (const t of triLists) fillVerts = Math.max(fillVerts, t.length / 2);
+  let outlineVerts = 0;
+  for (const o of outlines) outlineVerts = Math.max(outlineVerts, o.length);
+
+  const fill = new Float32Array(order.length * fillVerts * 2);
+  triLists.forEach((t, row) => {
+    const base = row * fillVerts * 2;
+    fill.set(t, base);
+    const lastX = t[t.length - 2];
+    const lastY = t[t.length - 1];
+    for (let v = t.length / 2; v < fillVerts; v++) {
+      fill[base + v * 2] = lastX;
+      fill[base + v * 2 + 1] = lastY;
+    }
+  });
+  const outline = new Float32Array(order.length * outlineVerts * 2);
+  outlines.forEach((pts, row) => {
+    const base = row * outlineVerts * 2;
+    pts.forEach((p, i) => {
+      outline[base + i * 2] = p.x;
+      outline[base + i * 2 + 1] = p.y;
+    });
+    const last = pts[pts.length - 1];
+    for (let v = pts.length; v < outlineVerts; v++) {
+      outline[base + v * 2] = last.x;
+      outline[base + v * 2 + 1] = last.y;
+    }
+  });
+
+  const atlas: LeafAtlas = {
+    family,
+    rows: order.length,
+    fill,
+    fillVerts,
+    outline,
+    outlineVerts,
+    outlineCounts: outlines.map((o) => o.length),
+  };
+  leafAtlasCache.set(family, atlas);
+  return atlas;
 }
 
 /**
@@ -464,13 +538,17 @@ const fitCache = new Map<string, Affine>();
  * flavours — `buildSupertiles` computes one superQuad per level). Always a
  * direct similarity (see the module note on mirror parity).
  */
-export function glyphFitForCut(cutLevel: number, glyphLevel: number = GLYPH_LEVEL): Affine {
+export function glyphFitForCut(
+  cutLevel: number,
+  glyphLevel: number = GLYPH_LEVEL,
+  family: TileFamilyId = 'spectre',
+): Affine {
   const c = Math.max(1, Math.round(cutLevel));
-  const key = `${glyphLevel}>${c}`;
+  const key = `${family}:${glyphLevel}>${c}`;
   const hit = fitCache.get(key);
   if (hit) return hit;
-  const srcQuad = buildSystem('spectre', glyphLevel)['Delta'].quad;
-  const dstQuad = buildSystem('spectre', c)['Delta'].quad;
+  const srcQuad = buildSystem(family, glyphLevel)['Delta'].quad;
+  const dstQuad = buildSystem(family, c)['Delta'].quad;
   const M = fitSimilarity(srcQuad, dstQuad);
   fitCache.set(key, M);
   return M;

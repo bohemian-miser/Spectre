@@ -42,7 +42,7 @@ const SUBSET = [2, 5, 7, 8];
 const COMBO = '0100101100';
 
 const tableFor = (): LeafChordTable =>
-  buildLeafChordTable(SUBSET, comboToMatchingIndices('spectre', SUBSET, COMBO));
+  buildLeafChordTable('spectre', SUBSET, comboToMatchingIndices('spectre', SUBSET, COMBO));
 
 const rect = (halfW: number): ViewRect => ({ cx: 0, cy: 0, halfW, halfH: halfW * 0.65 });
 const cutFor = (view: ViewRect, budget = 200_000): ViewportCut =>

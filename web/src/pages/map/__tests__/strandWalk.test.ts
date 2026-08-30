@@ -71,7 +71,7 @@ const LOOP_COMBO = '0000000000';
 const ODD_SUBSET = [2];
 
 function tableFor(subset: readonly number[], combo: string): LeafChordTable {
-  return buildLeafChordTable(subset, comboToMatchingIndices('spectre', subset, combo));
+  return buildLeafChordTable('spectre', subset, comboToMatchingIndices('spectre', subset, combo));
 }
 
 function cutFor(view: ViewRect, budget = 200_000): ViewportCut {
@@ -138,7 +138,7 @@ describe('chord index', () => {
     // A rule with no chords at all.
     const cut = cutFor(rect(10));
     expect(cut.cutLevel).toBe(0);
-    expect(buildChordIndex(cut, buildLeafChordTable([], []))).toBeNull();
+    expect(buildChordIndex(cut, buildLeafChordTable('spectre', [], []))).toBeNull();
 
     // And beyond the instance ceiling, where a tile is a few pixels anyway.
     expect(cut.count).toBeLessThan(TRACE_MAX_INSTANCES);
@@ -507,6 +507,7 @@ describe('crowded contracts (regression: "fails to find the edge next to it")', 
 
   function crowdedTable(): LeafChordTable {
     return buildLeafChordTable(
+      'spectre',
       OPEN_SUBSET,
       comboToMatchingIndices('spectre', OPEN_SUBSET, OPEN_COMBO),
       CROWDED_CONTRACTS,
@@ -550,6 +551,7 @@ describe('crowded contracts (regression: "fails to find the edge next to it")', 
 
   it('closure still uses the tight snap: loops close, near-misses do not', () => {
     const table = buildLeafChordTable(
+      'spectre',
       LOOP_SUBSET,
       comboToMatchingIndices('spectre', LOOP_SUBSET, LOOP_COMBO),
       { 1: { minor: 0, t: 0.1 }, 5: { minor: 0, t: 0.93 } },

@@ -20,6 +20,7 @@ import {
   createUnrootedEngine,
   instanceAffine,
   isAggregateType,
+  leafOrder,
   leafPts,
   localChords,
   pointKey,
@@ -28,7 +29,13 @@ import {
   type Pt,
   type Segment,
 } from '../../../core';
-import { CHORD_ROWS, CHORD_STRIDE, buildLeafChordTable, chordTableKey } from '../chords';
+import {
+  CHORD_ROWS,
+  CHORD_STRIDE,
+  buildLeafChordTable,
+  chordTableKey,
+  familyChordReach,
+} from '../chords';
 import { shaderDecodeWorld } from '../webglRenderer';
 
 const SUBSET = [2, 5, 7, 8];
@@ -55,7 +62,7 @@ function distanceToOutline(p: Pt, poly: readonly Pt[]): number {
 describe('leaf chord table', () => {
   it('packs exactly the localChords of every leaf type, padded with valid = 0', () => {
     const matching = matchingFor(SUBSET, COMBO);
-    const table = buildLeafChordTable(SUBSET, matching);
+    const table = buildLeafChordTable('spectre', SUBSET, matching);
 
     expect(table.rows).toBe(CHORD_ROWS);
     expect(table.rows).toBe(LEAF_ORDER.length);
@@ -89,7 +96,7 @@ describe('leaf chord table', () => {
 
   it('puts every chord endpoint on the tile outline', () => {
     const matching = matchingFor(SUBSET, COMBO);
-    const table = buildLeafChordTable(SUBSET, matching);
+    const table = buildLeafChordTable('spectre', SUBSET, matching);
     LEAF_ORDER.forEach((type, row) => {
       const poly = leafPts('spectre', type);
       for (const [a, b] of table.segments[row]) {
@@ -101,7 +108,7 @@ describe('leaf chord table', () => {
   });
 
   it('is empty for an empty subset and for a subset that pairs nothing', () => {
-    const empty = buildLeafChordTable([], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    const empty = buildLeafChordTable('spectre', [], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
     expect(empty.vertsPerInstance).toBe(0);
     expect(empty.chordCount).toBe(0);
     expect(empty.data.length).toBe(0);
@@ -109,19 +116,23 @@ describe('leaf chord table', () => {
 
     // Class 4 alone gives every spectre leaf either zero or one connection
     // point, so `localChords` refuses to pair anything (the tails story, §3.8).
-    const odd = buildLeafChordTable([4], matchingFor([4], '0000000000'));
+    const odd = buildLeafChordTable('spectre', [4], matchingFor([4], '0000000000'));
     expect(odd.chordCount).toBe(0);
     expect(odd.emptyTypes.length).toBe(CHORD_ROWS);
   });
 
   it('keys distinct configurations apart (memoization contract)', () => {
-    const a = chordTableKey(SUBSET, matchingFor(SUBSET, COMBO));
-    const b = chordTableKey(SUBSET, matchingFor(SUBSET, '0111001100'));
-    const c = chordTableKey([0, 2, 3, 6, 7, 8], matchingFor([0, 2, 3, 6, 7, 8], COMBO));
+    const a = chordTableKey('spectre', SUBSET, matchingFor(SUBSET, COMBO));
+    const b = chordTableKey('spectre', SUBSET, matchingFor(SUBSET, '0111001100'));
+    const c = chordTableKey('spectre', [0, 2, 3, 6, 7, 8], matchingFor([0, 2, 3, 6, 7, 8], COMBO));
     expect(a).not.toBe(b);
     expect(a).not.toBe(c);
-    expect(a).toBe(chordTableKey([8, 7, 5, 2], matchingFor(SUBSET, COMBO)));
-    expect(chordTableKey(SUBSET, [], DEFAULT_CONTRACTS)).not.toBe(chordTableKey(SUBSET, []));
+    expect(a).toBe(chordTableKey('spectre', [8, 7, 5, 2], matchingFor(SUBSET, COMBO)));
+    expect(chordTableKey('spectre', SUBSET, [], DEFAULT_CONTRACTS)).not.toBe(
+      chordTableKey('spectre', SUBSET, []),
+    );
+    // Same rule in another family is another table.
+    expect(a).not.toBe(chordTableKey('hex', SUBSET, matchingFor(SUBSET, COMBO)));
   });
 });
 
@@ -129,7 +140,7 @@ describe('chord buffers from a real ViewportCut', () => {
   const engine = createUnrootedEngine(1);
   const cut = engine.query({ cx: 0, cy: 0, halfW: 30, halfH: 20 }, 20_000);
   const matching = matchingFor(SUBSET, COMBO);
-  const table = buildLeafChordTable(SUBSET, matching);
+  const table = buildLeafChordTable('spectre', SUBSET, matching);
 
   /** What the renderers draw: each instance's chords, in world coordinates. */
   const worldChords = (): Segment[] => {
@@ -197,5 +208,47 @@ describe('chord buffers from a real ViewportCut', () => {
     // makes the drawn lines *strands* rather than disconnected doodles.)
     expect(degree.size).toBeGreaterThan(100);
     expect(paired / degree.size).toBeGreaterThan(0.75);
+  });
+});
+
+describe('chord tables across families', () => {
+  it('hex tables have 9 rows keyed by HEX_LEAF_ORDER and carry their reach', () => {
+    const order = leafOrder('hex');
+    const matching = comboToMatchingIndices('hex', [1, 5], '000000000');
+    const table = buildLeafChordTable('hex', [1, 5], matching);
+    expect(table.family).toBe('hex');
+    expect(table.rows).toBe(order.length);
+    expect(table.segments).toHaveLength(order.length);
+    expect(table.reach).toBeCloseTo(familyChordReach('hex'), 12);
+    // Every chord endpoint stays inside the declared reach.
+    for (const segs of table.segments) {
+      for (const [a, b] of segs) {
+        expect(Math.hypot(a.x, a.y)).toBeLessThanOrEqual(table.reach + 1e-9);
+        expect(Math.hypot(b.x, b.y)).toBeLessThanOrEqual(table.reach + 1e-9);
+      }
+    }
+  });
+
+  it('the hat/turtle reach covers the swapped Gamma2 shape', () => {
+    // A turtle vertex sits ~6.25 world units out; the hat family draws its
+    // Gamma2 leaves as turtles, so its reach must cover that (the old
+    // spectre constant ~4.15 silently under-probed).
+    const turtleReach = Math.max(
+      ...leafPts('turtle', 'Delta').map((p) => Math.hypot(p.x, p.y)),
+    );
+    expect(familyChordReach('hat')).toBeGreaterThanOrEqual(turtleReach);
+    expect(familyChordReach('turtle')).toBeGreaterThanOrEqual(turtleReach);
+    expect(familyChordReach('spectre')).toBeLessThan(turtleReach);
+  });
+
+  it('a hex engine cut indexes the hex table without gaps', () => {
+    const engine = createUnrootedEngine(1, 'hex');
+    const cut = engine.query({ cx: 0, cy: 0, halfW: 20, halfH: 15 }, 20_000);
+    const matching = comboToMatchingIndices('hex', [1, 5], '000000000');
+    const table = buildLeafChordTable('hex', [1, 5], matching);
+    for (let i = 0; i < cut.count; i++) {
+      expect(cut.type[i]).toBeLessThan(table.rows);
+      expect(table.segments[cut.type[i]]).toBeDefined();
+    }
   });
 });
