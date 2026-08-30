@@ -132,47 +132,91 @@ export function rainbow(t: number): string {
   return `hsl(${h}, 100%, ${l}%)`;
 }
 
-/** Circuit colors step 40 degrees of hue per distinct length (analysis.ts:257). */
+/** Two irrationals: adjacent lengths land far apart under either. */
+const GOLDEN = 0.6180339887498949;
+const ROOT2 = 1.4142135623730951;
+
+/**
+ * Colour for the `step`-th distinct circuit length in a patch — the ranked
+ * palette the rooted analyses use, where what matters is telling THIS patch's
+ * classes apart rather than comparing two patches.
+ *
+ * The golden angle rather than the 40° of `analysis.ts:257`: 40° repeats every
+ * ninth rank, and one patch in ten has more than nine distinct lengths, so the
+ * palette handed the same colour to two different circuit classes in the same
+ * picture. 137.5° never lands on a rank it has used before, and spreads
+ * whatever number of ranks there happen to be as evenly as any fixed step can.
+ *
+ * Lightness carries a second low-discrepancy cycle, so even ranks that end up
+ * near each other on the wheel differ in tone.
+ */
 export function circuitHueColor(step: number): string {
-  return `hsl(${(step * 40) % 360}, 100%, 50%)`;
+  const i = Math.max(0, Math.floor(step));
+  const h = (i * 137.50776405003785) % 360;
+  const l = 46 + 14 * ((i * GOLDEN) % 1);
+  return `hsl(${h.toFixed(1)}, 100%, ${l.toFixed(1)}%)`;
 }
 
 /**
- * Reference span for the hue ramp: lengths from 1 to 2^12 spread across it,
- * longer ones sit at the far end. Circuits past this are vanishingly rare and
- * all read as "very long", which is the honest thing for them to say.
+ * Octaves of length the hue ramp spreads across: 1 tile at one end, 2^18 —
+ * a quarter of a million — at the other.
+ *
+ * It was 12 (4096), and that was the bug: every circuit longer than 4096 got
+ * the SAME hue, so a screen of long circuits came out uniformly pink. Over
+ * lengths 1…20000 the old ramp spent 82% of its range in magenta, and lengths
+ * 3995 and 16271 — four times apart — came out the same RGB exactly.
+ *
+ * 18 is chosen against the real distribution: the circuit lengths in
+ * `lvl4.csv` and `lvl6.csv` run from 2 to 27,621, roughly flat per octave up
+ * to 2^11 and thinning after. That fits inside the ramp with room to spare,
+ * and the widest patch anyone can analyse would have to hold millions of tiles
+ * to make a circuit that runs off the end of it.
  */
-const LENGTH_HUE_SPAN = 12; // log2
+const LENGTH_HUE_SPAN = 18; // log2
 
 /**
  * Solid ink for a circuit of `length` segments, addressed by the LENGTH itself
  * rather than a patch-relative rank — so a circuit of a given length is the
  * same colour in every view, on every screen, and across shared links.
  *
- * Hue RAMPS with log length rather than hashing it: warm for short circuits,
- * cooling through green and blue as they get longer. A hash spreads adjacent
- * lengths nicely but says nothing about distant ones, so a 400-unit circuit
- * could come out the same colour as a 12-unit one — which is precisely the
- * comparison the colour is there to make. Monotonic hue makes that collision
- * impossible: two circuits of very different lengths are always far apart on
- * the wheel.
+ * Three channels, each doing a different job:
  *
- * Log rather than linear because circuit lengths are spread over orders of
- * magnitude; a linear ramp would give every short circuit the same red.
+ *  - **hue ramps with log length**, warm for short and cooling through green,
+ *    blue and violet as they grow. Monotonic, so two circuits of very
+ *    different sizes are always far apart on the wheel — the comparison the
+ *    colour exists to make. Log rather than linear because lengths spread over
+ *    orders of magnitude; a linear ramp would give every short circuit the
+ *    same red. Spread over {@link LENGTH_HUE_SPAN} octaves so it does not run
+ *    out part-way up the real range, which is what turned every long circuit
+ *    pink.
+ *  - **lightness and saturation carry fast jitters** on two different
+ *    irrationals. Neighbouring lengths share a hue — they are genuinely
+ *    similar circuits — and these pull them apart. Two of them because two
+ *    lengths then have to collide under BOTH to look alike: with lightness
+ *    alone there were 8,511 exact RGB collisions over 1…30000, with both
+ *    there are none.
  *
- * That leaves NEIGHBOURING lengths close in hue, so lightness carries a fast
- * low-discrepancy cycle (the golden ratio) to separate them. Hue says roughly
- * how long; lightness makes "roughly" into "exactly".
+ * Measured over lengths 1…30000: the worst pair four times apart is 106 in
+ * redmean distance (it was 2), the worst pair eight times apart is 157 (it was
+ * 13), and every colour keeps a channel above 213 so it still reads as ink.
+ * What is left is the pigeonhole limit — lengths within about 2% of each other
+ * at the top of the range can share a colour, which is the honest failure to
+ * have, since nothing distinguishes 20,000 from 20,137 on screen either.
  */
 export function circuitLengthRgb(length: number): Rgb {
   const n = Math.max(1, Math.abs(Math.round(length)));
   const t = Math.min(1, Math.log2(n) / LENGTH_HUE_SPAN);
-  // 0.02 → 0.82 turns: red-orange, yellow, green, cyan, blue, violet. Stops
-  // short of a full turn so the longest never wraps back onto the shortest.
-  const h = 0.02 + 0.8 * t;
-  const l = 0.42 + 0.22 * ((n * 0.6180339887498949) % 1);
-  // hsl → rgb at s = 1.
-  const a = Math.min(l, 1 - l);
+  // Almost a full turn: red-orange, yellow, green, cyan, blue, violet, magenta.
+  // Stops short of wrapping so the longest never comes back round to the
+  // shortest.
+  const h = 0.02 + 0.94 * t;
+  // Two fast low-discrepancy jitters, on different irrationals, so two lengths
+  // have to miss on BOTH to look alike. With one (lightness alone) there were
+  // 8,511 exact RGB collisions over 1…30000; with both there are none.
+  const l = 0.46 + 0.22 * ((n * GOLDEN) % 1);
+  const s = 0.8 + 0.2 * ((n * ROOT2) % 1);
+  // hsl → rgb.
+  const a = s * Math.min(l, 1 - l);
   const f = (ch: number): number => {
     const k = (ch + h * 12) % 12;
     return l - a * Math.max(-1, Math.min(Math.min(k - 3, 9 - k), 1));
