@@ -7,6 +7,7 @@
  */
 
 import {
+  ALL_FLAGS,
   DEFAULT_EXPLORER_STATE,
   DEFAULT_FIND_CEILING,
   DEFAULT_FOUND_HOLD,
@@ -69,7 +70,6 @@ export type ExplorerAction =
   | { readonly type: 'setMode'; readonly mode: ExplorerMode }
   | { readonly type: 'setBudget'; readonly budget: number }
   | { readonly type: 'setLineWidth'; readonly lineWidth: number }
-  | { readonly type: 'setNoOverlap'; readonly noOverlap: boolean }
   | { readonly type: 'setTrace'; readonly trace: boolean }
   | { readonly type: 'setFollow'; readonly follow: boolean }
   | { readonly type: 'setTrailHold'; readonly hold: number }
@@ -168,15 +168,6 @@ export function explorerReducer(state: ExplorerState, action: ExplorerAction): E
       return lineWidth === explorerLineWidth(state) ? state : { ...state, lineWidth };
     }
 
-    case 'setNoOverlap': {
-      if (action.noOverlap === !!state.noOverlap) return state;
-      if (!action.noOverlap) {
-        const { noOverlap: _n, ...rest } = state;
-        return rest as ExplorerState;
-      }
-      return { ...state, noOverlap: true };
-    }
-
     // Default-ON, so it is the FALSE value that has to be stored (the codec
     // writes `tc=0` for it) and turning it back on drops the key again.
     case 'setTrace': {
@@ -188,14 +179,14 @@ export function explorerReducer(state: ExplorerState, action: ExplorerAction): E
       return { ...state, trace: false };
     }
 
-    // Default-OFF, like `noOverlap`: only `follow: true` is ever stored.
+    // Default-ON, like `trace`: only `follow: false` is ever stored.
     case 'setFollow': {
       if (action.follow === explorerFollow(state)) return state;
-      if (!action.follow) {
+      if (action.follow) {
         const { follow: _f, ...rest } = state;
         return rest as ExplorerState;
       }
-      return { ...state, follow: true };
+      return { ...state, follow: false };
     }
 
     case 'setTrailHold': {
@@ -253,22 +244,22 @@ export function explorerReducer(state: ExplorerState, action: ExplorerAction): E
     // Default-OFF, like `follow`: only `findCircuits: true` is ever stored.
     case 'setFindCircuits': {
       if (action.findCircuits === explorerFindCircuits(state)) return state;
-      if (!action.findCircuits) {
+      if (action.findCircuits) {
         const { findCircuits: _f, ...rest } = state;
         return rest as ExplorerState;
       }
-      return { ...state, findCircuits: true };
+      return { ...state, findCircuits: false };
     }
 
-    // Default-OFF too: the found circuits are only held past their own zoom
-    // level when someone asks for it.
+    // Default-ON too: what find-all turned up stays on screen while the camera
+    // pulls back, rather than being dropped at the edge of its own zoom.
     case 'setPersistFound': {
       if (action.persistFound === explorerPersistFound(state)) return state;
-      if (!action.persistFound) {
+      if (action.persistFound) {
         const { persistFound: _p, ...rest } = state;
         return rest as ExplorerState;
       }
-      return { ...state, persistFound: true };
+      return { ...state, persistFound: false };
     }
 
     // Default-ON, like the keep toggles: the ticker predates its own switch,
@@ -414,7 +405,7 @@ export function explorerReducer(state: ExplorerState, action: ExplorerAction): E
     }
 
     case 'toggleFlag':
-      return { ...state, flags: (state.flags ^ action.flag) & 255 };
+      return { ...state, flags: (state.flags ^ action.flag) & ALL_FLAGS };
 
     case 'setColorScheme':
       return state.colorScheme === action.colorScheme
@@ -515,12 +506,12 @@ export function explorerTrace(state: ExplorerState): boolean {
   return state.trace !== false;
 }
 
-/** Whether the camera auto-follows the traced strand. Default OFF. */
+/** Whether the camera auto-follows the traced strand. Default ON. */
 export function explorerFollow(state: ExplorerState): boolean {
-  return state.follow === true;
+  return state.follow !== false;
 }
 
-/** Most trail points held while auto-following (the moving window). */
+/** Most trail points held while auto-following; 0 = the whole trail. */
 export function explorerTrailHold(state: ExplorerState): number {
   return state.hold === undefined ? DEFAULT_TRAIL_HOLD : clampTrailHold(state.hold);
 }
@@ -535,14 +526,14 @@ export function explorerKeepTails(state: ExplorerState): boolean {
   return state.keepTails !== false;
 }
 
-/** Whether every on-screen circuit is found and coloured. Default OFF. */
+/** Whether every on-screen circuit is found and coloured. Default ON. */
 export function explorerFindCircuits(state: ExplorerState): boolean {
-  return state.findCircuits === true;
+  return state.findCircuits !== false;
 }
 
-/** Whether found circuits stay drawn once the camera outruns find-all. */
+/** Whether found circuits stay drawn once the camera outruns find-all. ON. */
 export function explorerPersistFound(state: ExplorerState): boolean {
-  return state.persistFound === true;
+  return state.persistFound !== false;
 }
 
 /** Ticker naming the tiles a chase crosses — ON unless `tk=0` says otherwise. */

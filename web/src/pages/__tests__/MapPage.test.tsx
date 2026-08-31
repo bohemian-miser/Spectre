@@ -229,16 +229,21 @@ describe('MapPage', () => {
     expect(hudNumber(container, 'hud-instances')).toBeGreaterThan(0);
   });
 
-  it('draws strand lines as a third instanced pass when they are switched on', async () => {
+  /** Draw calls the HUD reports, e.g. `draw 0.2 ms · 5 calls` -> 5. */
+  const drawCalls = (container: HTMLElement): number => {
+    const text = container.querySelector('[data-testid="hud-draw-ms"]')?.textContent ?? '';
+    return Number((text.match(/(\d+) calls/u) ?? ['', '0'])[1]);
+  };
+
+  it('draws strand lines as an extra instanced pass when they are switched on', async () => {
     // Lines default OFF, so the map opens as bare tiles (2 calls at this zoom).
     const gl = makeFakeGl();
     stubContexts(gl, null);
     const { container } = render(<MapPage forceSyncClient />);
     await settle();
     expect(container.querySelector('[data-testid="hud-lines"]')?.textContent).toBe('lines: off');
-    expect(container.querySelector('[data-testid="hud-draw-ms"]')?.textContent).toContain(
-      '2 calls',
-    );
+    const bare = drawCalls(container);
+    expect(bare).toBe(2);
 
     const toggle = container.querySelector(
       'input[aria-label="Show strand lines"]',
@@ -246,10 +251,9 @@ describe('MapPage', () => {
     fireEvent.click(toggle);
     await settle();
 
-    // Third draw call, and the HUD reports real chords for the default rule.
-    expect(container.querySelector('[data-testid="hud-draw-ms"]')?.textContent).toContain(
-      '3 calls',
-    );
+    // At least one more pass for the chords (find-all, on by default, adds its
+    // own on top), and the HUD reports real chords for the default rule.
+    expect(drawCalls(container)).toBeGreaterThan(bare);
     const lines = container.querySelector('[data-testid="hud-lines"]')?.textContent ?? '';
     expect(lines).toMatch(/lines: [\d,]+ chords \(\d+\/tile\)/u);
     expect(Number((lines.match(/[\d,]+/) ?? ['0'])[0].replace(/,/g, ''))).toBeGreaterThan(0);
@@ -295,9 +299,7 @@ describe('MapPage', () => {
     expect(
       (container.querySelector('input[aria-label="Combination string"]') as HTMLInputElement).value,
     ).toBe('0001000010');
-    expect(container.querySelector('[data-testid="hud-draw-ms"]')?.textContent).toContain(
-      '3 calls',
-    );
+    expect(drawCalls(container)).toBeGreaterThan(2); // the chords are drawing
 
     fireEvent.change(
       container.querySelector('input[aria-label="Combination string"]') as HTMLInputElement,

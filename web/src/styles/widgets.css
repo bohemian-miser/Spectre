@@ -210,8 +210,19 @@ legend {
   gap: 8px;
   margin: 6px 0;
 }
+/* A checkbox row reads as one phrase — box then label — so it stays left.
+   Only label/control rows want the two ends pushed apart. */
+.control-row:has(> input[type='checkbox']:first-child) {
+  justify-content: flex-start;
+}
 .control-row > span {
   color: var(--muted);
+}
+/* Keep a label and its ⓘ on one line rather than letting the icon wrap. */
+.control-row > span:has(.info-tip) {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
 }
 select,
 input[type='number'],
@@ -449,4 +460,69 @@ button {
 }
 .contract-slider.is-pinned .contract-notch {
   opacity: 0.35;
+}
+
+/* --- InfoTip ------------------------------------------------------------ */
+/* The ⓘ that holds what used to be a paragraph of sidebar prose. */
+
+.info-tip {
+  display: inline-block;
+  flex: 0 0 auto;
+  margin-left: 4px;
+  vertical-align: middle;
+}
+/* The popover spans the ROW, not the icon: the sidebar is narrow enough that
+   anything anchored to a 16px button ends up hanging off one edge of it. */
+.control-row:has(.info-tip) {
+  position: relative;
+}
+.info-tip > summary {
+  list-style: none;
+  cursor: help;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  background: var(--panel-2);
+  font-size: 11px;
+  font-style: italic;
+  font-weight: 700;
+  line-height: 14px;
+  text-align: center;
+  user-select: none;
+}
+.info-tip > summary::-webkit-details-marker {
+  display: none;
+}
+.info-tip > summary:hover,
+.info-tip[open] > summary {
+  color: var(--text);
+  border-color: var(--accent);
+}
+.info-tip > summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+/* Floated over the panel so opening one does not shove the controls down. */
+.info-tip-body {
+  position: absolute;
+  z-index: 5;
+  left: 0;
+  right: 0;
+  top: calc(100% + 4px);
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel-2);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+.info-tip-body p {
+  margin: 0 0 6px;
+}
+.info-tip-body p:last-child {
+  margin-bottom: 0;
 }

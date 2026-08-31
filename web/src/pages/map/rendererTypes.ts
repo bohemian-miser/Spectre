@@ -71,13 +71,6 @@ export interface MapRenderStyle {
    */
   readonly lineScale?: number;
   /**
-   * Clip overlapping strands at the midpoint between their centrelines rather
-   * than letting the thicker one pile on top. Costs one extra pass over the
-   * chords; WebGL2 only (the Canvas2D fallback has no depth buffer to do it
-   * with, and ignores this).
-   */
-  readonly noOverlap?: boolean;
-  /**
    * Traced-strand thickness MULTIPLIER over the strand width, so the rainbow
    * reads as the same line the user tapped, only fatter (1.8 by default —
    * enough to cover the ink underneath without hiding its neighbours).

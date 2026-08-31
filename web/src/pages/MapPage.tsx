@@ -43,10 +43,9 @@ import {
   DEFAULT_TRACE_PACE,
   DEFAULT_TRAIL_HOLD,
   LINE_SCALE_STEP,
-  MAX_TRAIL_HOLD,
   MIN_LINE_SCALE,
   MIN_TRACE_PACE,
-  MIN_TRAIL_HOLD,
+  clampTrailHold,
   SUBSTITUTION_GROWTH,
   TILE_PALETTES,
   comboToMatchingIndices,
@@ -119,15 +118,14 @@ export function MapPage(props: MapPageProps): JSX.Element {
   const [family, setFamilyState] = useState<TileFamilyId>(initial.family ?? 'spectre');
   const [budget, setBudget] = useState<number>(initial.budget);
   const [lineWidth, setLineWidth] = useState<number>(initial.lineWidth ?? DEFAULT_LINE_SCALE);
-  const [noOverlap, setNoOverlap] = useState<boolean>(initial.noOverlap ?? false);
   const [lines, setLines] = useState<boolean>(initial.lines ?? false);
   const [trace, setTrace] = useState<boolean>(initial.trace ?? true);
-  const [follow, setFollow] = useState<boolean>(initial.follow ?? false);
+  const [follow, setFollow] = useState<boolean>(initial.follow ?? true);
   const [hold, setHold] = useState<number>(initial.hold ?? DEFAULT_TRAIL_HOLD);
   const [keepCircuits, setKeepCircuits] = useState<boolean>(initial.keepCircuits ?? true);
   const [keepTails, setKeepTails] = useState<boolean>(initial.keepTails ?? true);
-  const [findCircuits, setFindCircuits] = useState<boolean>(initial.findCircuits ?? false);
-  const [persistFound, setPersistFound] = useState<boolean>(initial.persistFound ?? false);
+  const [findCircuits, setFindCircuits] = useState<boolean>(initial.findCircuits ?? true);
+  const [persistFound, setPersistFound] = useState<boolean>(initial.persistFound ?? true);
   const [showTicker, setShowTicker] = useState<boolean>(initial.showTicker ?? true);
   const [showTransitions, setShowTransitions] = useState<boolean>(
     initial.showTransitions ?? false,
@@ -210,7 +208,6 @@ export function MapPage(props: MapPageProps): JSX.Element {
     subset,
     combo,
     lineWidth,
-    noOverlap,
   });
   worldRef.current = {
     seed,
@@ -235,7 +232,6 @@ export function MapPage(props: MapPageProps): JSX.Element {
     subset,
     combo,
     lineWidth,
-    noOverlap,
   };
 
   // --- strand chords ----------------------------------------------------------
@@ -249,8 +245,8 @@ export function MapPage(props: MapPageProps): JSX.Element {
   );
 
   const renderStyle = useMemo<MapRenderStyle>(
-    () => ({ lineScale: lineWidth, noOverlap }),
-    [lineWidth, noOverlap],
+    () => ({ lineScale: lineWidth }),
+    [lineWidth],
   );
 
   /** Leaf type names in wire-byte order, for the ticker and the graph. */
@@ -272,7 +268,6 @@ export function MapPage(props: MapPageProps): JSX.Element {
       family: w.family,
       budget: w.budget,
       lineWidth: w.lineWidth,
-      noOverlap: w.noOverlap,
       cx: cam.cx,
       cy: cam.cy,
       scale: cam.scale,
@@ -355,7 +350,6 @@ export function MapPage(props: MapPageProps): JSX.Element {
     subset,
     combo,
     lineWidth,
-    noOverlap,
     writeUrlSoon,
   ]);
 
@@ -371,8 +365,7 @@ export function MapPage(props: MapPageProps): JSX.Element {
         family: w.family,
         budget: w.budget,
         lineWidth: w.lineWidth,
-        noOverlap: w.noOverlap,
-        cx: cam.cx,
+          cx: cam.cx,
         cy: cam.cy,
         scale: cam.scale,
         lines: w.lines,
@@ -403,15 +396,14 @@ export function MapPage(props: MapPageProps): JSX.Element {
       setFamilyState(st.family ?? 'spectre');
       setBudget(st.budget);
       setLineWidth(st.lineWidth ?? DEFAULT_LINE_SCALE);
-      setNoOverlap(st.noOverlap ?? false);
       setLines(st.lines ?? false);
       setTrace(st.trace ?? true);
-      setFollow(st.follow ?? false);
+      setFollow(st.follow ?? true);
       setHold(st.hold ?? DEFAULT_TRAIL_HOLD);
       setKeepCircuits(st.keepCircuits ?? true);
       setKeepTails(st.keepTails ?? true);
-      setFindCircuits(st.findCircuits ?? false);
-      setPersistFound(st.persistFound ?? false);
+      setFindCircuits(st.findCircuits ?? true);
+      setPersistFound(st.persistFound ?? true);
       setShowTicker(st.showTicker ?? true);
       setShowTransitions(st.showTransitions ?? false);
       setFindCeiling(clampFindCeiling(st.findCeiling ?? DEFAULT_FIND_CEILING));
@@ -564,17 +556,6 @@ export function MapPage(props: MapPageProps): JSX.Element {
               onChange={(e) => setLineWidth(Number(e.target.value))}
             />
           </label>
-          <label className="map-control map-control-check">
-            <input
-              type="checkbox"
-              aria-label="Clip overlapping strands at the midpoint"
-              data-testid="map-no-overlap"
-              checked={noOverlap}
-              disabled={!lines}
-              onChange={(e) => setNoOverlap(e.target.checked)}
-            />
-            <span>Meet at midpoint</span>
-          </label>
           <button type="button" onClick={resetView}>
             Reset view
           </button>
@@ -637,16 +618,15 @@ export function MapPage(props: MapPageProps): JSX.Element {
               <span>Hold</span>
               <input
                 type="number"
-                aria-label="Most trail tiles held while following"
+                aria-label="Most trail tiles held while following, 0 for the whole trail"
                 data-testid="map-trail-hold"
-                min={MIN_TRAIL_HOLD}
-                max={MAX_TRAIL_HOLD}
+                min={0}
                 step={500}
                 value={hold}
                 disabled={!lines || !trace || !follow}
-                onChange={(e) => setHold(Number(e.target.value))}
+                onChange={(e) => setHold(clampTrailHold(Number(e.target.value)))}
               />
-              <span className="muted">tiles</span>
+              <span className="muted">tiles · 0 = all</span>
             </label>
           </div>
 
@@ -891,7 +871,7 @@ export function MapPage(props: MapPageProps): JSX.Element {
         chords={chords}
         trace={lines && trace}
         follow={lines && trace && follow}
-        followHold={hold}
+        followHold={hold > 0 ? hold : null}
         keepCircuits={lines && trace && keepCircuits}
         keepTails={lines && trace && keepTails}
         findCircuits={lines && findCircuits}

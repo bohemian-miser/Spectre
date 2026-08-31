@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  ALL_FLAGS,
   DEFAULT_EXPLORER_STATE,
   DEFAULT_INSTANCE_BUDGET,
   DEFAULT_LINE_SCALE,
@@ -7,7 +8,6 @@ import {
   DEFAULT_TRAIL_HOLD,
   FLAG,
   MAX_TRACE_PACE,
-  MAX_TRAIL_HOLD,
   MIN_TRAIL_HOLD,
   MAX_INSTANCE_BUDGET,
   MAX_LEVEL,
@@ -330,29 +330,32 @@ describe('tap-to-trace', () => {
 });
 
 describe('auto-follow / trail hold / kept circuits', () => {
-  it('follow is off by default and stores only the ON choice', () => {
-    expect(explorerFollow(base)).toBe(false);
+  it('follow is on by default and stores only the OFF choice', () => {
+    expect(explorerFollow(base)).toBe(true);
     expect('follow' in base).toBe(false);
 
-    const on = run(base, { type: 'setFollow', follow: true });
-    expect(on.follow).toBe(true);
-    expect(explorerFollow(on)).toBe(true);
-    expect(run(on, { type: 'setFollow', follow: true })).toBe(on); // bail-out
+    const off = run(base, { type: 'setFollow', follow: false });
+    expect(off.follow).toBe(false);
+    expect(explorerFollow(off)).toBe(false);
+    expect(run(off, { type: 'setFollow', follow: false })).toBe(off); // bail-out
 
-    const off = run(on, { type: 'setFollow', follow: false });
-    expect('follow' in off).toBe(false);
-    expect(run(base, { type: 'setFollow', follow: false })).toBe(base);
+    const on = run(off, { type: 'setFollow', follow: true });
+    expect('follow' in on).toBe(false);
+    expect(run(base, { type: 'setFollow', follow: true })).toBe(base);
   });
 
-  it('hold clamps into range and drops the key at the default', () => {
+  it('hold keeps the whole trail by default and has no ceiling', () => {
     expect(explorerTrailHold(base)).toBe(DEFAULT_TRAIL_HOLD);
+    expect(DEFAULT_TRAIL_HOLD).toBe(0); // 0 = every point the chase drew
 
     const set = run(base, { type: 'setTrailHold', hold: 1234 });
     expect(set.hold).toBe(1234);
     expect(explorerTrailHold(set)).toBe(1234);
 
-    expect(run(base, { type: 'setTrailHold', hold: 0 }).hold).toBe(MIN_TRAIL_HOLD);
-    expect(run(base, { type: 'setTrailHold', hold: 1e9 }).hold).toBe(MAX_TRAIL_HOLD);
+    // A window has a floor (below it there is no trail to see), but no cap:
+    // how much to hold on to is the reader's call.
+    expect(run(base, { type: 'setTrailHold', hold: 3 }).hold).toBe(MIN_TRAIL_HOLD);
+    expect(run(base, { type: 'setTrailHold', hold: 1e9 }).hold).toBe(1e9);
     expect(run(base, { type: 'setTrailHold', hold: Number.NaN })).toBe(base); // -> default, no key
 
     const back = run(set, { type: 'setTrailHold', hold: DEFAULT_TRAIL_HOLD });
@@ -412,23 +415,34 @@ describe('keep-tails and find-all toggles', () => {
     expect(run(base, { type: 'setKeepTails', keepTails: true })).toBe(base);
   });
 
-  it('find-all is off by default and stores only the ON choice', () => {
-    expect(explorerFindCircuits(base)).toBe(false);
-    expect('findCircuits' in base).toBe(false);
-    const on = run(base, { type: 'setFindCircuits', findCircuits: true });
-    expect(on.findCircuits).toBe(true);
-    const off = run(on, { type: 'setFindCircuits', findCircuits: false });
-    expect('findCircuits' in off).toBe(false);
-    expect(run(base, { type: 'setFindCircuits', findCircuits: false })).toBe(base);
+  it('carries every display flag, including the ninth', () => {
+    // `toggleFlag` used to mask with a hard-coded 255, which swallowed the
+    // first flag past bit 8 without a word.
+    const hidden = run(base, { type: 'toggleFlag', flag: FLAG.HIDE_STATS });
+    expect(hidden.flags & FLAG.HIDE_STATS).toBe(FLAG.HIDE_STATS);
+    expect(run(hidden, { type: 'toggleFlag', flag: FLAG.HIDE_STATS }).flags).toBe(base.flags);
+    // …and every bit of the mask is reachable, not just the low byte.
+    const all = run(base, { type: 'toggleFlag', flag: ALL_FLAGS ^ base.flags });
+    expect(all.flags).toBe(ALL_FLAGS);
   });
 
-  it('persist-found is off by default and stores only the ON choice', () => {
-    expect(explorerPersistFound(base)).toBe(false);
+  it('find-all is on by default and stores only the OFF choice', () => {
+    expect(explorerFindCircuits(base)).toBe(true);
+    expect('findCircuits' in base).toBe(false);
+    const off = run(base, { type: 'setFindCircuits', findCircuits: false });
+    expect(off.findCircuits).toBe(false);
+    const on = run(off, { type: 'setFindCircuits', findCircuits: true });
+    expect('findCircuits' in on).toBe(false);
+    expect(run(base, { type: 'setFindCircuits', findCircuits: true })).toBe(base);
+  });
+
+  it('persist-found is on by default and stores only the OFF choice', () => {
+    expect(explorerPersistFound(base)).toBe(true);
     expect('persistFound' in base).toBe(false);
-    const on = run(base, { type: 'setPersistFound', persistFound: true });
-    expect(explorerPersistFound(on)).toBe(true);
-    const off = run(on, { type: 'setPersistFound', persistFound: false });
-    expect('persistFound' in off).toBe(false);
-    expect(run(base, { type: 'setPersistFound', persistFound: false })).toBe(base);
+    const off = run(base, { type: 'setPersistFound', persistFound: false });
+    expect(explorerPersistFound(off)).toBe(false);
+    const on = run(off, { type: 'setPersistFound', persistFound: true });
+    expect('persistFound' in on).toBe(false);
+    expect(run(base, { type: 'setPersistFound', persistFound: true })).toBe(base);
   });
 });

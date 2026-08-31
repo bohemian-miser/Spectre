@@ -29,6 +29,7 @@ import {
 import { FAMILIES, leafOrder } from '../families';
 import { enumerateMatchings, nonCrossingForTile } from '../matchings';
 import { connectionCount } from '../edges';
+import { explorerFindCircuits, explorerPersistFound } from '../../lib/explorerReducer';
 import { subsetToEdges, validEdgeSubsets } from '../subsets';
 
 const q = (s: string): URLSearchParams => new URLSearchParams(s);
@@ -313,41 +314,6 @@ describe('line thickness in the URL', () => {
   });
 });
 
-/** Midpoint clipping (`no=`) — a plain additive boolean. */
-describe('midpoint clipping in the URL', () => {
-  it('is omitted when off and round-trips when on', () => {
-    expect(DEFAULT_EXPLORER_STATE.noOverlap).toBeUndefined();
-    expect(encodeExplorerQuery(DEFAULT_EXPLORER_STATE)).toBe(`v=${CODEC_VERSION}`);
-    const on = encodeExplorerQuery({ ...DEFAULT_EXPLORER_STATE, noOverlap: true });
-    expect(on).toBe(`v=${CODEC_VERSION}&no=1`);
-    const back = decodeExplorerQuery(on);
-    expect(back.noOverlap).toBe(true);
-    expect(encodeExplorerQuery(back)).toBe(on); // canonical
-  });
-
-  it('treats anything but 1/true as off', () => {
-    expect(decodeExplorerQuery('v=1&no=0').noOverlap).toBeUndefined();
-    expect(decodeExplorerQuery('v=1&no=yes').noOverlap).toBeUndefined();
-    expect(decodeExplorerQuery('v=1&no=true').noOverlap).toBe(true);
-    expect(encodeExplorerQuery({ ...DEFAULT_EXPLORER_STATE, noOverlap: false })).toBe(
-      `v=${CODEC_VERSION}`,
-    );
-  });
-
-  it('combines with the other strand params without disturbing them', () => {
-    const q = encodeExplorerQuery({
-      ...DEFAULT_EXPLORER_STATE,
-      lineWidth: 4,
-      noOverlap: true,
-      mode: 'infinite',
-    });
-    const back = decodeExplorerQuery(q);
-    expect(back.lineWidth).toBe(4);
-    expect(back.noOverlap).toBe(true);
-    expect(back.mode).toBe('infinite');
-    expect(encodeExplorerQuery(back)).toBe(q);
-  });
-});
 
 /**
  * Tap-to-trace (`tc=`) — additive the other way round from its neighbours: the
@@ -377,9 +343,18 @@ describe('tap-to-trace in the URL', () => {
   });
 
   it('leaves pre-trace links byte-identical', () => {
-    for (const link of ['v=1', 'v=1&lv=4&e=2578&c=0100101100&md=infinite&no=1']) {
+    for (const link of ['v=1', 'v=1&lv=4&e=2578&c=0100101100&md=infinite']) {
       expect(encodeExplorerQuery(decodeExplorerQuery(link))).toBe(link);
     }
+  });
+
+  it('drops `no=` from links written while midpoint clipping existed', () => {
+    // The feature is gone, so the key is read as junk and simply falls away
+    // rather than making the rest of an old link unreadable.
+    const back = decodeExplorerQuery('v=1&lv=4&e=2578&c=0100101100&md=infinite&no=1');
+    expect(back.level).toBe(4);
+    expect(back.mode).toBe('infinite');
+    expect(encodeExplorerQuery(back)).toBe('v=1&lv=4&e=2578&c=0100101100&md=infinite');
   });
 });
 
@@ -447,8 +422,17 @@ describe('tk / tg / fx (ticker, transition graph, find ceiling)', () => {
   });
 
   it('leaves links written before any of this byte-identical', () => {
-    for (const link of ['v=1', 'v=1&e=2578&c=0100101100&md=infinite&fc=1&pf=1']) {
+    for (const link of ['v=1', 'v=1&e=2578&c=0100101100&md=infinite']) {
       expect(encodeExplorerQuery(decodeExplorerQuery(link))).toBe(link);
     }
+  });
+
+  it('reads an old `fc=1&pf=1` link as the state it always meant', () => {
+    // Find-all and persist are default-ON now, so the keys that used to turn
+    // them on say nothing new and drop out of the canonical form.
+    const back = decodeExplorerQuery('v=1&e=2578&c=0100101100&md=infinite&fc=1&pf=1');
+    expect(explorerFindCircuits(back)).toBe(true);
+    expect(explorerPersistFound(back)).toBe(true);
+    expect(encodeExplorerQuery(back)).toBe('v=1&e=2578&c=0100101100&md=infinite');
   });
 });

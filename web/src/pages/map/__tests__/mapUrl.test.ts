@@ -143,24 +143,20 @@ describe('map url codec — strand lines', () => {
 });
 
 describe('map line controls', () => {
-  it('omits lw/no at their defaults and round-trips them otherwise', () => {
+  it('omits lw at its default and round-trips it otherwise', () => {
     const base = { ...DEFAULT_MAP_STATE, lines: true };
     expect(encodeMapQuery(base)).not.toContain('lw=');
-    expect(encodeMapQuery(base)).not.toContain('no=');
 
-    const q = encodeMapQuery({ ...base, lineWidth: 3.5, noOverlap: true });
+    const q = encodeMapQuery({ ...base, lineWidth: 3.5 });
     expect(q).toContain('lw=3.5');
-    expect(q).toContain('no=1');
     const back = decodeMapQuery(q);
     expect(back.lineWidth).toBe(3.5);
-    expect(back.noOverlap).toBe(true);
     expect(encodeMapQuery(back)).toBe(q); // canonical
   });
 
-  it('takes any weight, floors junk, and defaults the flag', () => {
+  it('takes any weight and floors junk', () => {
     expect(decodeMapQuery('lw=99').lineWidth).toBe(99); // no ceiling
     expect(decodeMapQuery('lw=abc').lineWidth).toBe(1);
-    expect(decodeMapQuery('').noOverlap).toBe(false);
   });
 
   it('writes `tr=` only to switch tap-to-trace OFF', () => {
@@ -187,21 +183,22 @@ describe('follow / hold / keep-circuits params', () => {
     expect(plain).not.toContain('hp=');
     expect(plain).not.toContain('kc=');
 
-    const q = encodeMapQuery({ ...base, follow: true, hold: 1234, keepCircuits: false });
-    expect(q).toContain('fw=1');
+    const q = encodeMapQuery({ ...base, follow: false, hold: 1234, keepCircuits: false });
+    expect(q).toContain('fw=0');
     expect(q).toContain('hp=1234');
     expect(q).toContain('kc=0');
     const back = decodeMapQuery(q);
-    expect(back.follow).toBe(true);
+    expect(back.follow).toBe(false);
     expect(back.hold).toBe(1234);
     expect(back.keepCircuits).toBe(false);
     expect(encodeMapQuery(back)).toBe(q); // canonical
   });
 
-  it('defaults: follow off, hold at the default, keep-circuits on', () => {
+  it('defaults: follow on, the whole trail held, keep-circuits on', () => {
     const d = decodeMapQuery('');
-    expect(d.follow).toBe(false);
+    expect(d.follow).toBe(true);
     expect(d.hold).toBe(DEFAULT_MAP_STATE.hold);
+    expect(d.hold).toBe(0); // 0 = keep all of it
     expect(d.keepCircuits).toBe(true);
     // Junk clamps rather than breaking the link.
     expect(decodeMapQuery('hp=abc').hold).toBe(DEFAULT_MAP_STATE.hold);
@@ -238,24 +235,24 @@ describe('pace / trace-seed params (map codec)', () => {
 });
 
 describe('kt / fc params (map codec)', () => {
-  it('round-trips keep-tails-off and find-all-on', () => {
+  it('round-trips keep-tails-off and find-all-off', () => {
     const base = { ...DEFAULT_MAP_STATE, lines: true };
     expect(encodeMapQuery(base)).not.toContain('kt=');
     expect(encodeMapQuery(base)).not.toContain('fc=');
     const q = encodeMapQuery({
       ...base,
       keepTails: false,
-      findCircuits: true,
-      persistFound: true,
+      findCircuits: false,
+      persistFound: false,
     });
     expect(q).toContain('kt=0');
-    expect(q).toContain('fc=1');
+    expect(q).toContain('fc=0');
     const back = decodeMapQuery(q);
     expect(back.keepTails).toBe(false);
-    expect(back.findCircuits).toBe(true);
-    expect(back.persistFound).toBe(true);
-    expect(q).toContain('pf=1');
-    expect(encodeMapQuery({ ...base, persistFound: false })).not.toContain('pf=');
+    expect(back.findCircuits).toBe(false);
+    expect(back.persistFound).toBe(false);
+    expect(q).toContain('pf=0');
+    expect(encodeMapQuery({ ...base, persistFound: true })).not.toContain('pf=');
     expect(encodeMapQuery(back)).toBe(q);
   });
 });

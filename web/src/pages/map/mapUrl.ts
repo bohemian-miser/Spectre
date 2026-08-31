@@ -75,7 +75,6 @@ export interface MapUrlState {
   /** Strand-line thickness multiplier (`lw=`), omitted at 1. */
   readonly lineWidth?: number;
   /** Clip overlapping strands at the midpoint (`no=1`), omitted when off. */
-  readonly noOverlap?: boolean;
   /**
    * Tap a strand to colour it (`tr=0` when OFF). Default ON, so only switching
    * it off writes a parameter — pre-existing links keep encoding unchanged.
@@ -83,7 +82,7 @@ export interface MapUrlState {
   readonly trace?: boolean;
   /** Auto-follow the traced strand (`fw=1`), omitted when off (the default). */
   readonly follow?: boolean;
-  /** Most trail points held while following (`hp=`), omitted at the default. */
+  /** Most trail points held while following (`hp=`), 0 = the whole trail. */
   readonly hold?: number;
   /**
    * Keep strands that close into circuits coloured (`kc=0` when OFF). Default
@@ -92,9 +91,9 @@ export interface MapUrlState {
   readonly keepCircuits?: boolean;
   /** Keep dead-ended strands (tails) coloured (`kt=0` when OFF). Default ON. */
   readonly keepTails?: boolean;
-  /** Find and colour every on-screen circuit (`fc=1`), default OFF. */
+  /** Find and colour every on-screen circuit (`fc=0` when OFF). Default ON. */
   readonly findCircuits?: boolean;
-  /** Hold found circuits on screen past find-all's zoom (`pf=1`), default OFF. */
+  /** Hold found circuits past find-all's zoom (`pf=0` when OFF). Default ON. */
   readonly persistFound?: boolean;
   /** Name the tiles a chase crosses along the bottom (`tk=0` when OFF). Default ON. */
   readonly showTicker?: boolean;
@@ -158,14 +157,13 @@ export const DEFAULT_MAP_STATE: MapUrlState = {
   subset: DEFAULT_SUBSET,
   combo: DEFAULT_COMBO,
   lineWidth: DEFAULT_LINE_SCALE,
-  noOverlap: false,
   trace: true,
-  follow: false,
+  follow: true,
   hold: DEFAULT_TRAIL_HOLD,
   keepCircuits: true,
   keepTails: true,
-  findCircuits: false,
-  persistFound: false,
+  findCircuits: true,
+  persistFound: true,
   showTicker: true,
   showTransitions: false,
   findCeiling: DEFAULT_FIND_CEILING,
@@ -225,15 +223,14 @@ export function encodeMapQuery(state: MapUrlState): string {
   if (lines || combo !== defaultCombo(family)) q.set('c', combo);
   const lw = clampLineScale(state.lineWidth ?? DEFAULT_LINE_SCALE);
   if (lw !== DEFAULT_LINE_SCALE) q.set('lw', String(lw));
-  if (state.noOverlap) q.set('no', '1');
   if (state.trace === false) q.set('tr', '0');
-  if (state.follow) q.set('fw', '1');
+  if (!state.follow) q.set('fw', '0');
   const hp = clampTrailHold(state.hold ?? DEFAULT_TRAIL_HOLD);
   if (hp !== DEFAULT_TRAIL_HOLD) q.set('hp', String(hp));
   if (state.keepCircuits === false) q.set('kc', '0');
   if (state.keepTails === false) q.set('kt', '0');
-  if (state.findCircuits) q.set('fc', '1');
-  if (state.persistFound) q.set('pf', '1');
+  if (!state.findCircuits) q.set('fc', '0');
+  if (!state.persistFound) q.set('pf', '0');
   if (state.showTicker === false) q.set('tk', '0');
   if (state.showTransitions) q.set('tg', '1');
   if (
@@ -267,7 +264,6 @@ export function decodeMapQuery(query: string): MapUrlState {
   const budget = num('budget');
   const lwRaw = num('lw');
   const lnRaw = q.get('ln');
-  const noRaw = q.get('no');
   const trRaw = q.get('tr');
   const fwRaw = q.get('fw');
   const hpRaw = num('hp');
@@ -303,14 +299,13 @@ export function decodeMapQuery(query: string): MapUrlState {
     subset: eRaw === null ? DEFAULT_MAP_STATE.subset : subsetToEdges(subsetFromString(eRaw)),
     combo: cRaw === null ? defaultCombo(family) : normalizeCombo(cRaw, family),
     lineWidth: lwRaw === null ? DEFAULT_LINE_SCALE : clampLineScale(lwRaw),
-    noOverlap: noRaw === '1' || noRaw === 'true',
     trace: !(trRaw === '0' || trRaw === 'false'),
-    follow: fwRaw === '1' || fwRaw === 'true',
+    follow: !(fwRaw === '0' || fwRaw === 'false'),
     hold: hpRaw === null ? DEFAULT_TRAIL_HOLD : clampTrailHold(hpRaw),
     keepCircuits: !(kcRaw === '0' || kcRaw === 'false'),
     keepTails: !(ktRaw === '0' || ktRaw === 'false'),
-    findCircuits: fcRaw === '1' || fcRaw === 'true',
-    persistFound: pfRaw === '1' || pfRaw === 'true',
+    findCircuits: !(fcRaw === '0' || fcRaw === 'false'),
+    persistFound: !(pfRaw === '0' || pfRaw === 'false'),
     showTicker: !(tkRaw === '0' || tkRaw === 'false'),
     showTransitions: tgRaw === '1' || tgRaw === 'true',
     findCeiling: fxRaw === null ? DEFAULT_FIND_CEILING : clampFindCeiling(fxRaw),

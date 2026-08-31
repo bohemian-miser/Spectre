@@ -296,7 +296,9 @@ test('clicking a name picks the whole tile type, and lights it on screen', async
  * which the circle cannot: it only draws pairs.
  */
 test('ranks runs of any length, and draws the one picked', async ({ page }) => {
-  await chase(page, `#/explorer?v=1&md=infinite&${RULE}&tg=1`);
+  // `fw=0`: auto-follow is on by default, and a chase that never stops keeps
+  // re-ranking the list underneath the buttons this test clicks.
+  await chase(page, `#/explorer?v=1&md=infinite&${RULE}&tg=1&fw=0`);
   const graph = page.getByTestId('transition-graph');
   await expect(graph).toBeVisible({ timeout: 30000 });
   const calls = async (): Promise<number> => {
