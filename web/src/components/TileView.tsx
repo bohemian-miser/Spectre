@@ -130,6 +130,8 @@ const PAD = 0.55;
 const SEAM_TRIM = 0.1;
 /** How far outside the tile a major-class number floats, in world units. */
 const NUMBER_OFFSET = 0.34;
+/** The same for a full edge label (`2.0A`), which is a wider thing to place. */
+const LABEL_OFFSET = 0.3;
 
 function numericSize(size: number | string | undefined): number {
   if (typeof size === 'number') return size;
@@ -177,7 +179,10 @@ export function TileView(props: TileViewProps): JSX.Element {
   const [drag, setDrag] = useState<{ from: EdgeRef; at: Pt; snap: EdgeRef | null } | null>(null);
 
   const parts = useMemo(() => tileParts(family, tileType), [family, tileType]);
-  const box: Box = useMemo(() => expandBox(tilePartsBox(parts), PAD), [parts]);
+  const box: Box = useMemo(
+    () => expandBox(tilePartsBox(parts), showEdgeLabels ? PAD + LABEL_OFFSET + 0.2 : PAD),
+    [parts, showEdgeLabels],
+  );
   const { width: vbW, height: vbH } = boxSize(box);
   const px = numericSize(size);
   const pxPerWorld = px / Math.max(vbW, vbH, 1e-6);
@@ -312,10 +317,18 @@ export function TileView(props: TileViewProps): JSX.Element {
     const out: { key: string; pt: Pt; text: string; color: string }[] = [];
     for (const part of parts) {
       const all = new Set(metaEdges(family, part.type).map((s) => s.major));
+      const outline = part.pts.map((q) => transPt(part.xform, q));
+      const n = outline.length;
       for (const mid of physicalEdgeMidpoints(family, part.type, all)) {
+        // Its own edge runs from vertex `index` to the next one round.
+        const a = outline[mid.index % n];
+        const b = outline[(mid.index + 1) % n];
+        const len = dist(a, b) || 1;
+        const at = transPt(part.xform, mid.pt);
+        const nrm = outwardNormal(at, { x: (b.x - a.x) / len, y: (b.y - a.y) / len }, outline);
         out.push({
           key: `${part.type}.${mid.index}`,
-          pt: transPt(part.xform, mid.pt),
+          pt: { x: at.x + nrm.x * LABEL_OFFSET, y: at.y + nrm.y * LABEL_OFFSET },
           text: mid.label.raw,
           color: edgeClassColor(mid.label.major),
         });
@@ -337,19 +350,10 @@ export function TileView(props: TileViewProps): JSX.Element {
     );
     return seams.map((entry) => {
       const { pt, dir } = midpointFrame(entry.polyline);
-      const outline = outlines.get(entry.ref.tileType) ?? [];
-      // Perpendicular to the seam, pointing whichever way leaves the tile —
-      // a probe just off the edge settles which of the two that is, and gets
-      // it right on the Spectre's concave corners too.
-      let nx = dir.y;
-      let ny = -dir.x;
-      if (pointInPolygon({ x: pt.x + nx * 0.08, y: pt.y + ny * 0.08 }, outline)) {
-        nx = -nx;
-        ny = -ny;
-      }
+      const nrm = outwardNormal(pt, dir, outlines.get(entry.ref.tileType) ?? []);
       return {
         key: entry.ref.metaEdgeId,
-        pt: { x: pt.x + nx * NUMBER_OFFSET, y: pt.y + ny * NUMBER_OFFSET },
+        pt: { x: pt.x + nrm.x * NUMBER_OFFSET, y: pt.y + nrm.y * NUMBER_OFFSET },
         text: String(entry.ref.major),
         color: entry.color,
         on: selectedEdges?.has(entry.ref.major) ?? false,
@@ -730,7 +734,7 @@ export function TileView(props: TileViewProps): JSX.Element {
             key={l.key}
             x={l.pt.x}
             y={l.pt.y}
-            fontSize={0.26}
+            fontSize={0.3}
             textAnchor="middle"
             dominantBaseline="middle"
             fill={l.color}
@@ -811,6 +815,18 @@ function trimPolyline(pts: readonly Pt[], trim: number): readonly Pt[] {
     if (acc > cut && acc < total - cut) middle.push(pts[i + 1]);
   }
   return [head, ...middle, tail];
+}
+
+/**
+ * Unit normal to `dir` at `pt` pointing OUT of the tile. A probe just off the
+ * edge settles which of the two perpendiculars that is, which gets the
+ * Spectre's concave corners right where a winding rule would not.
+ */
+function outwardNormal(pt: Pt, dir: Pt, outline: readonly Pt[]): Pt {
+  const n = { x: dir.y, y: -dir.x };
+  return pointInPolygon({ x: pt.x + n.x * 0.08, y: pt.y + n.y * 0.08 }, outline)
+    ? { x: -n.x, y: -n.y }
+    : n;
 }
 
 /** Ray-casting containment test — which side of a seam is out of the tile. */

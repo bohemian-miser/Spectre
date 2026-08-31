@@ -40,6 +40,8 @@ export interface MatchingSliderProps {
   readonly nonCrossingOnly?: boolean;
   onNonCrossingOnlyChange?(value: boolean): void;
   readonly ghostMatchings?: boolean;
+  /** Full edge labels (`2.0A`) in place of the bare class numbers. */
+  readonly showEdgeLabels?: boolean;
   readonly tileSize?: number;
   readonly curvy?: boolean;
   readonly colorScheme?: ColorSchemeId;
@@ -60,6 +62,7 @@ export function MatchingSlider(props: MatchingSliderProps): JSX.Element | null {
     nonCrossingOnly = false,
     onNonCrossingOnlyChange,
     ghostMatchings = true,
+    showEdgeLabels = false,
     tileSize = 130,
     curvy,
     colorScheme,
@@ -117,9 +120,11 @@ export function MatchingSlider(props: MatchingSliderProps): JSX.Element | null {
         ghostMatchings={ghostMatchings}
         markOdd
         // Which tile is this, and which classes does it carry? Both were
-        // things you had to already know to read this panel.
+        // things you had to already know to read this panel. Asking for the
+        // full labels swaps them in — two numbers per edge is just noise.
         showTileName
-        showMajorNumbers
+        showEdgeLabels={showEdgeLabels}
+        showMajorNumbers={!showEdgeLabels}
         interaction={allowPairing ? 'chord-draw' : 'hover'}
         onChordDrawn={allowPairing ? onPair : undefined}
         onMatchingCycle={cycle}
