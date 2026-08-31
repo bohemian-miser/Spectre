@@ -312,27 +312,21 @@ export function TileView(props: TileViewProps): JSX.Element {
   }, [parts, family, showEdgeLabels]);
 
   /**
-   * Major-class numbers for every physical edge, whether or not the class is
-   * part of the rule — `physicalEdgeMidpoints` is asked for ALL majors and the
-   * selection only decides how loudly each is drawn.
+   * One major-class number per SEAM, at the seam's halfway point, whether or
+   * not the class is part of the rule — the selection only decides how loudly
+   * each is drawn. Per seam, not per physical edge: a class-2 seam is three
+   * edges walking in single file, and "2 2 2" reads as three seams.
    */
   const majorNumbers = useMemo(() => {
     if (!showMajorNumbers) return [];
-    const out: { key: string; pt: Pt; text: string; color: string; on: boolean }[] = [];
-    for (const part of parts) {
-      const all = new Set(metaEdges(family, part.type).map((s) => s.major));
-      for (const mid of physicalEdgeMidpoints(family, part.type, all)) {
-        out.push({
-          key: `${part.type}.${mid.index}`,
-          pt: transPt(part.xform, mid.pt),
-          text: String(mid.label.major),
-          color: edgeClassColor(mid.label.major),
-          on: selectedEdges?.has(mid.label.major) ?? false,
-        });
-      }
-    }
-    return out;
-  }, [parts, family, showMajorNumbers, selectedEdges]);
+    return seams.map((entry) => ({
+      key: entry.ref.metaEdgeId,
+      pt: polylineMidpoint(entry.polyline),
+      text: String(entry.ref.major),
+      color: entry.color,
+      on: selectedEdges?.has(entry.ref.major) ?? false,
+    }));
+  }, [seams, showMajorNumbers, selectedEdges]);
 
   const tileNames = useMemo(() => {
     if (!showTileName) return [];
@@ -721,6 +715,27 @@ export function TileView(props: TileViewProps): JSX.Element {
       </g>
     </svg>
   );
+}
+
+/** Point halfway along a polyline's arc length (a vertex or mid-edge point). */
+function polylineMidpoint(pts: readonly Pt[]): Pt {
+  if (pts.length === 0) return { x: 0, y: 0 };
+  if (pts.length === 1) return pts[0];
+  let total = 0;
+  for (let i = 1; i < pts.length; i++) total += dist(pts[i - 1], pts[i]);
+  let remaining = total / 2;
+  for (let i = 1; i < pts.length; i++) {
+    const seg = dist(pts[i - 1], pts[i]);
+    if (seg >= remaining && seg > 0) {
+      const t = remaining / seg;
+      return {
+        x: pts[i - 1].x + (pts[i].x - pts[i - 1].x) * t,
+        y: pts[i - 1].y + (pts[i].y - pts[i - 1].y) * t,
+      };
+    }
+    remaining -= seg;
+  }
+  return pts[pts.length - 1];
 }
 
 /**
