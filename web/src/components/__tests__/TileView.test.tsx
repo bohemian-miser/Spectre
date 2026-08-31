@@ -15,12 +15,83 @@ import {
 import { TileView } from '../TileView';
 import { TilingView } from '../TilingView';
 import { CircuitLayer } from '../CircuitLayer';
+import { seamPolyline, tileParts } from '../../lib/tilingModel';
 import { MatchingSlider } from '../controls/MatchingSlider';
 import { EdgeClassLegend } from '../controls/EdgeClassLegend';
 
 afterEach(cleanup);
 
 const SUBSET = new Set([2, 5, 7, 8]);
+
+type P = { x: number; y: number };
+
+/** Vertices of an `M x y L x y …` path. */
+function pathPoints(d: string): P[] {
+  return [...d.matchAll(/[ML]\s*(-?[\d.]+)\s+(-?[\d.]+)/g)].map((m) => ({
+    x: Number(m[1]),
+    y: Number(m[2]),
+  }));
+}
+
+function polyLength(pts: readonly P[]): number {
+  let total = 0;
+  for (let i = 1; i < pts.length; i++) total += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+  return total;
+}
+
+/** The true (untrimmed) vertex chain of a tile's i-th seam. */
+function seamChain(type: TileTypeId, index: number): readonly P[] {
+  const pts = tileParts('spectre', type)[0].pts;
+  return seamPolyline(pts, metaEdges('spectre', type)[index]);
+}
+
+function seamEndpoints(type: TileTypeId): P[][] {
+  return metaEdges('spectre', type).map((_, i) => {
+    const chain = seamChain(type, i);
+    return [chain[0], chain[chain.length - 1]];
+  });
+}
+
+/** Smallest gap between any two seams' endpoints. */
+function closestPair(ends: readonly (readonly P[])[]): number {
+  let best = Infinity;
+  for (let i = 0; i < ends.length; i++) {
+    for (let j = i + 1; j < ends.length; j++) {
+      for (const a of ends[i]) {
+        for (const b of ends[j]) best = Math.min(best, Math.hypot(a.x - b.x, a.y - b.y));
+      }
+    }
+  }
+  return best;
+}
+
+/** The point halfway along a chain by arc length — a label's anchor. */
+function chainMidpoint(chain: readonly P[]): P {
+  let remaining = polyLength(chain) / 2;
+  for (let i = 1; i < chain.length; i++) {
+    const a = chain[i - 1];
+    const b = chain[i];
+    const seg = Math.hypot(b.x - a.x, b.y - a.y);
+    if (seg >= remaining && seg > 0) {
+      const t = remaining / seg;
+      return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+    }
+    remaining -= seg;
+  }
+  return chain[chain.length - 1];
+}
+
+function pointInPolygon(pt: P, poly: readonly P[]): boolean {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const a = poly[i];
+    const b = poly[j];
+    if (a.y > pt.y !== b.y > pt.y && pt.x < ((b.x - a.x) * (pt.y - a.y)) / (b.y - a.y) + a.x) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
 
 describe('TileView DOM contract (§6.1)', () => {
   it('renders the layer groups in order', () => {
@@ -183,6 +254,48 @@ describe('TileView DOM contract (§6.1)', () => {
     expect(off.every((t) => !new Set(['2', '5', '7', '8']).has(t.textContent ?? ''))).toBe(true);
     const alpha = (t: Element): number => Number(t.getAttribute('fill-opacity'));
     expect(alpha(on[0])).toBeGreaterThan(alpha(off[0]) * 2);
+  });
+
+  it('trims each drawn seam so neighbours read as two, not one long stroke', () => {
+    const { container } = render(<TileView family="spectre" tileType="Delta" />);
+    const drawn = [...container.querySelectorAll<SVGPathElement>('.meta-edge .edge-visual')].map(
+      (path) => pathPoints(path.getAttribute('d') ?? ''),
+    );
+    expect(drawn.length).toBe(metaEdges('spectre', 'Delta').length);
+
+    // The true seams run vertex-to-vertex and so share endpoints; the drawn
+    // ones must not, or two adjacent seams look like a single stroke.
+    const trueEnds = seamEndpoints('Delta');
+    expect(closestPair(trueEnds)).toBeLessThan(1e-9);
+    expect(closestPair(drawn.map((pts) => [pts[0], pts[pts.length - 1]]))).toBeGreaterThan(0.05);
+
+    // Trimmed, not truncated: every seam keeps most of its length.
+    drawn.forEach((pts, i) => {
+      const kept = polyLength(pts);
+      const full = polyLength(seamChain('Delta', i));
+      expect(kept).toBeLessThan(full);
+      expect(kept).toBeGreaterThan(full * 0.5);
+    });
+  });
+
+  it('floats each major number outside the tile, clear of the fill', () => {
+    const { container } = render(
+      <TileView family="spectre" tileType="Delta" showMajorNumbers />,
+    );
+    const outline = tileParts('spectre', 'Delta')[0].pts;
+    const nums = [...container.querySelectorAll<SVGTextElement>('[data-major-number]')];
+    expect(nums).toHaveLength(metaEdges('spectre', 'Delta').length);
+
+    for (const text of nums) {
+      const at = {
+        x: Number(text.getAttribute('x')),
+        y: Number(text.getAttribute('y')),
+      };
+      expect(pointInPolygon(at, outline), text.textContent ?? '').toBe(false);
+      // Just outside, not adrift: a fixed clearance from its seam's middle.
+      const mid = chainMidpoint(seamChain('Delta', nums.indexOf(text)));
+      expect(Math.hypot(at.x - mid.x, at.y - mid.y)).toBeCloseTo(0.34, 6);
+    }
   });
 
   it('draws neither label layer unless asked', () => {

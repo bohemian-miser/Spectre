@@ -113,12 +113,23 @@ export interface TileViewProps {
 interface SeamEntry {
   readonly ref: EdgeRef;
   readonly part: TilePart;
+  /** True seam geometry — what the dots, chords and labels are placed from. */
   readonly polyline: readonly Pt[];
+  /** The same seam pulled back from both ends, for stroking and hit-testing. */
+  readonly display: readonly Pt[];
   readonly dot: Pt | null;
   readonly color: string;
 }
 
 const PAD = 0.55;
+/**
+ * Gap left at each end of a drawn seam, in world units (a tile edge is 1).
+ * Two seams meeting at a vertex are two different handshakes, and drawn
+ * end-to-end they read as one long stroke.
+ */
+const SEAM_TRIM = 0.1;
+/** How far outside the tile a major-class number floats, in world units. */
+const NUMBER_OFFSET = 0.34;
 
 function numericSize(size: number | string | undefined): number {
   if (typeof size === 'number') return size;
@@ -185,6 +196,7 @@ export function TileView(props: TileViewProps): JSX.Element {
       all.forEach((seam: MetaEdge, index: number) => {
         const pointIndex = points.findIndex((p) => p.edge.id === seam.id);
         const local = seamPolyline(part.pts, seam);
+        const world = local.map((p) => transPt(part.xform, p));
         out.push({
           ref: {
             tileType: part.type,
@@ -196,7 +208,8 @@ export function TileView(props: TileViewProps): JSX.Element {
             pointIndex,
           },
           part,
-          polyline: local.map((p) => transPt(part.xform, p)),
+          polyline: world,
+          display: trimPolyline(world, SEAM_TRIM),
           dot: pointIndex >= 0 ? transPt(part.xform, points[pointIndex].pt) : null,
           color: edgeClassColor(seam.major),
         });
@@ -319,14 +332,30 @@ export function TileView(props: TileViewProps): JSX.Element {
    */
   const majorNumbers = useMemo(() => {
     if (!showMajorNumbers) return [];
-    return seams.map((entry) => ({
-      key: entry.ref.metaEdgeId,
-      pt: polylineMidpoint(entry.polyline),
-      text: String(entry.ref.major),
-      color: entry.color,
-      on: selectedEdges?.has(entry.ref.major) ?? false,
-    }));
-  }, [seams, showMajorNumbers, selectedEdges]);
+    const outlines = new Map<string, readonly Pt[]>(
+      parts.map((part) => [part.type, part.pts.map((q) => transPt(part.xform, q))]),
+    );
+    return seams.map((entry) => {
+      const { pt, dir } = midpointFrame(entry.polyline);
+      const outline = outlines.get(entry.ref.tileType) ?? [];
+      // Perpendicular to the seam, pointing whichever way leaves the tile —
+      // a probe just off the edge settles which of the two that is, and gets
+      // it right on the Spectre's concave corners too.
+      let nx = dir.y;
+      let ny = -dir.x;
+      if (pointInPolygon({ x: pt.x + nx * 0.08, y: pt.y + ny * 0.08 }, outline)) {
+        nx = -nx;
+        ny = -ny;
+      }
+      return {
+        key: entry.ref.metaEdgeId,
+        pt: { x: pt.x + nx * NUMBER_OFFSET, y: pt.y + ny * NUMBER_OFFSET },
+        text: String(entry.ref.major),
+        color: entry.color,
+        on: selectedEdges?.has(entry.ref.major) ?? false,
+      };
+    });
+  }, [seams, parts, showMajorNumbers, selectedEdges]);
 
   const tileNames = useMemo(() => {
     if (!showTileName) return [];
@@ -544,7 +573,7 @@ export function TileView(props: TileViewProps): JSX.Element {
             >
               <path
                 className="edge-hit"
-                d={polylineD(entry.polyline)}
+                d={polylineD(entry.display)}
                 fill="none"
                 stroke="transparent"
                 strokeWidth={hitWidth}
@@ -553,7 +582,7 @@ export function TileView(props: TileViewProps): JSX.Element {
               />
               <path
                 className="edge-visual"
-                d={polylineD(entry.polyline)}
+                d={polylineD(entry.display)}
                 fill="none"
                 stroke={entry.color}
                 strokeWidth={strokeUnit * 1.6}
@@ -674,13 +703,14 @@ export function TileView(props: TileViewProps): JSX.Element {
             key={l.key}
             x={l.pt.x}
             y={l.pt.y}
-            fontSize={0.28}
+            fontSize={0.38}
+            fontWeight={600}
             textAnchor="middle"
             dominantBaseline="middle"
             fill={l.color}
             // In the rule: legible. Out of it: present, but clearly not part
             // of what is being edited.
-            fillOpacity={l.on ? 0.95 : 0.22}
+            fillOpacity={l.on ? 0.95 : 0.38}
             stroke="rgba(0,0,0,0.6)"
             strokeWidth={0.025}
             paintOrder="stroke"
@@ -717,25 +747,86 @@ export function TileView(props: TileViewProps): JSX.Element {
   );
 }
 
-/** Point halfway along a polyline's arc length (a vertex or mid-edge point). */
-function polylineMidpoint(pts: readonly Pt[]): Pt {
-  if (pts.length === 0) return { x: 0, y: 0 };
-  if (pts.length === 1) return pts[0];
+/** Segment lengths of a polyline, and their total. */
+function arcLengths(pts: readonly Pt[]): { segs: number[]; total: number } {
+  const segs: number[] = [];
   let total = 0;
-  for (let i = 1; i < pts.length; i++) total += dist(pts[i - 1], pts[i]);
-  let remaining = total / 2;
   for (let i = 1; i < pts.length; i++) {
-    const seg = dist(pts[i - 1], pts[i]);
-    if (seg >= remaining && seg > 0) {
-      const t = remaining / seg;
+    const d = dist(pts[i - 1], pts[i]);
+    segs.push(d);
+    total += d;
+  }
+  return { segs, total };
+}
+
+/** The point a given arc length along a polyline, and the direction there. */
+function pointAtLength(
+  pts: readonly Pt[],
+  segs: readonly number[],
+  target: number,
+): { pt: Pt; dir: Pt } {
+  let remaining = target;
+  for (let i = 0; i < segs.length; i++) {
+    if (segs[i] > 0 && remaining <= segs[i]) {
+      const a = pts[i];
+      const b = pts[i + 1];
+      const t = remaining / segs[i];
       return {
-        x: pts[i - 1].x + (pts[i].x - pts[i - 1].x) * t,
-        y: pts[i - 1].y + (pts[i].y - pts[i - 1].y) * t,
+        pt: { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t },
+        dir: { x: (b.x - a.x) / segs[i], y: (b.y - a.y) / segs[i] },
       };
     }
-    remaining -= seg;
+    remaining -= segs[i];
   }
-  return pts[pts.length - 1];
+  const last = pts[pts.length - 1];
+  const prev = pts[pts.length - 2] ?? last;
+  const d = dist(prev, last) || 1;
+  return { pt: last, dir: { x: (last.x - prev.x) / d, y: (last.y - prev.y) / d } };
+}
+
+/** Halfway along a polyline: where a seam's number is anchored. */
+function midpointFrame(pts: readonly Pt[]): { pt: Pt; dir: Pt } {
+  if (pts.length === 0) return { pt: { x: 0, y: 0 }, dir: { x: 1, y: 0 } };
+  if (pts.length === 1) return { pt: pts[0], dir: { x: 1, y: 0 } };
+  const { segs, total } = arcLengths(pts);
+  if (total <= 0) return { pt: pts[0], dir: { x: 1, y: 0 } };
+  return pointAtLength(pts, segs, total / 2);
+}
+
+/**
+ * The polyline pulled back from both ends, keeping its middle vertices. Never
+ * eats more than a third of a seam, so class 8's single short edge survives.
+ */
+function trimPolyline(pts: readonly Pt[], trim: number): readonly Pt[] {
+  if (pts.length < 2 || trim <= 0) return pts;
+  const { segs, total } = arcLengths(pts);
+  if (total <= 0) return pts;
+  const cut = Math.min(trim, total / 3);
+  const head = pointAtLength(pts, segs, cut).pt;
+  const tail = pointAtLength(pts, segs, total - cut).pt;
+  const middle: Pt[] = [];
+  let acc = 0;
+  for (let i = 0; i < segs.length; i++) {
+    acc += segs[i];
+    if (acc > cut && acc < total - cut) middle.push(pts[i + 1]);
+  }
+  return [head, ...middle, tail];
+}
+
+/** Ray-casting containment test — which side of a seam is out of the tile. */
+function pointInPolygon(pt: Pt, poly: readonly Pt[]): boolean {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const a = poly[i];
+    const b = poly[j];
+    if (
+      a.y > pt.y !== b.y > pt.y &&
+      pt.x < ((b.x - a.x) * (pt.y - a.y)) / (b.y - a.y) + a.x
+    ) {
+      inside = !inside;
+    }
+  }
+  return inside;
 }
 
 /**
