@@ -83,7 +83,11 @@ body {
 .tile-view .meta-edge.is-highlighted .edge-visual {
   opacity: 1;
 }
-.tile-view .meta-edge:focus-visible {
+/* Plain :focus, not just :focus-visible: Chromium paints its default
+   `outline: auto` focus ring on SVG elements scaled by the viewBox transform,
+   so a pointer-down on a seam grew a giant two-tone disc over the tile.
+   Keyboard users keep the dashed seam cue below. */
+.tile-view .meta-edge:focus {
   outline: none;
 }
 .tile-view .meta-edge:focus-visible .edge-visual {
@@ -94,7 +98,9 @@ body {
   transition: r 120ms ease;
 }
 .tile-view .meta-edge.is-hovered .edge-dot {
-  r: 0.21;
+  /* px here means SVG user units (pre-transform), and CSS requires the unit —
+     a bare number is an invalid length and the grow-on-hover never fired. */
+  r: 0.21px;
 }
 .tile-view .landing-spot {
   animation: spectre-pulse 1.1s ease-in-out infinite;

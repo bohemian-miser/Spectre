@@ -78,10 +78,11 @@ describe('ExplainerPage', () => {
     expect(tiles.map((t) => t.getAttribute('data-tile-type'))).toEqual([...MATRIX_ROWS]);
     expect(lab.querySelectorAll('.tails-parity')).toHaveLength(MATRIX_ROWS.length);
 
-    // Every physical edge wears its bare major number; under the opening rule
+    // Every seam wears its bare major number once; under the opening rule
     // {2} the 2s are on and everything else is greyed out.
     const nums = [...lab.querySelectorAll('[data-major-number]')];
-    expect(nums.length).toBeGreaterThan(100);
+    expect(nums.length).toBeGreaterThan(50);
+    expect(nums.length).toBeLessThan(100); // one per seam, not per physical edge
     const on = nums.filter((t) => t.getAttribute('data-major-on') === '1');
     expect(on.length).toBeGreaterThan(0);
     expect(on.every((t) => t.textContent === '2')).toBe(true);

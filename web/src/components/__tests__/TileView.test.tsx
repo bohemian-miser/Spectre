@@ -168,8 +168,9 @@ describe('TileView DOM contract (§6.1)', () => {
     expect(container.querySelector('[data-tile-name="Delta"]')).not.toBeNull();
 
     const nums = [...container.querySelectorAll<SVGTextElement>('[data-major-number]')];
-    // One per physical edge, the same 14 the raw labels cover.
-    expect(nums).toHaveLength(14);
+    // One per SEAM — a three-edge seam wears a single number at its middle,
+    // not the same digit three times.
+    expect(nums).toHaveLength(metaEdges('spectre', 'Delta').length);
     // Majors only: no minor suffix survives, so every label is a bare digit.
     expect(nums.every((t) => /^\d+$/.test(t.textContent ?? ''))).toBe(true);
 
