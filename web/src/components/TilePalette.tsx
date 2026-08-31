@@ -36,7 +36,10 @@ export interface TilePaletteProps {
   readonly matchingIndexByType?: Readonly<Record<string, number>>;
   readonly overlaysByType?: Readonly<Record<string, readonly OverlayChord[]>>;
   readonly showEdgeLabels?: boolean;
+  readonly showMajorNumbers?: boolean;
+  readonly showTileName?: boolean;
   readonly ghostMatchings?: boolean;
+  readonly hangTails?: boolean;
   readonly markOdd?: boolean;
   readonly interaction?: TileInteraction;
   readonly dimmedTypes?: ReadonlySet<string>;
@@ -67,7 +70,10 @@ export function TilePalette(props: TilePaletteProps): JSX.Element {
     matchingIndexByType,
     overlaysByType,
     showEdgeLabels,
+    showMajorNumbers,
+    showTileName,
     ghostMatchings,
+    hangTails,
     markOdd,
     interaction = 'hover',
     dimmedTypes,
@@ -107,7 +113,10 @@ export function TilePalette(props: TilePaletteProps): JSX.Element {
             matchingIndexByType={matchingIndexByType}
             overlaysByType={overlaysByType}
             showEdgeLabels={showEdgeLabels}
+            showMajorNumbers={showMajorNumbers}
+            showTileName={showTileName}
             ghostMatchings={ghostMatchings}
+            hangTails={hangTails}
             markOdd={markOdd}
             dimmed={dimmedTypes?.has(type)}
             interaction={interaction}

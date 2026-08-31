@@ -3,9 +3,10 @@
  * charging in and one of them has nobody to leave with.
  *
  * The toggle draws the three-way join we are *not* allowing (that would be a
- * train station, not a weave); the default draws the honest pairing, with the
- * third crossing left dangling. Delta under class 1 is the same problem in its
- * purest form: one crossing, no partner, ever.
+ * train station, not a weave); the default lets `TileView` play matchmaker
+ * honestly — one pair, third crossing left dangling as a tail. Delta under
+ * class 1 is the same problem in its purest form: one crossing, no partner,
+ * ever.
  */
 
 import { useMemo, useState } from 'react';
@@ -26,13 +27,12 @@ export function SadTileFigure(): JSX.Element {
   const overlays: readonly OverlayChord[] = useMemo(() => {
     const [a, b, c] = thetaSeams;
     if (a === undefined || b === undefined || c === undefined) return [];
-    return showJunction
-      ? ([
-          [a, b],
-          [b, c],
-          [c, a],
-        ] as const)
-      : ([[a, b]] as const);
+    if (!showJunction) return [];
+    return [
+      [a, b],
+      [b, c],
+      [c, a],
+    ] as const;
   }, [thetaSeams, showJunction]);
 
   const thetaCount = crossingCount('Theta', thetaSelected);
@@ -54,6 +54,7 @@ export function SadTileFigure(): JSX.Element {
           size={260}
           selectedEdges={thetaSelected}
           overlays={overlays}
+          hangTails={!showJunction}
           markOdd
           interaction="hover"
           ariaLabel="Theta with three class-2 crossings"
@@ -76,6 +77,7 @@ export function SadTileFigure(): JSX.Element {
           tileType="Delta"
           size={260}
           selectedEdges={deltaSelected}
+          hangTails
           markOdd
           interaction="hover"
           ariaLabel="Delta with a single class-1 crossing"

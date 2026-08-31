@@ -27,6 +27,49 @@
   border: 1px solid var(--line);
 }
 
+/* --- rule lab (the single thing at the top) ------------------------------- */
+
+.tails-lab-grid {
+  display: grid;
+  grid-template-columns: minmax(300px, 470px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+@media (max-width: 880px) {
+  .tails-lab-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+/* Eleven columns have to fit beside the tiles without a scrollbar eating the
+   verdict column, so the lab's copy of the table runs tighter than stock. */
+.tails-lab .tails-table th,
+.tails-lab .tails-table td {
+  padding: 3px 4px;
+}
+.tails-lab .tails-table thead th button {
+  width: 22px;
+  height: 22px;
+}
+.tails-lab .tails-strip {
+  margin-top: 0;
+}
+.tails-lab > .muted {
+  font-size: 13px;
+  margin: 10px 0 0;
+}
+
+/* A selected class shows its seams in colour on every tile of the article —
+   the line coming from that edge starts by lighting the edge itself. */
+.tails .tile-view .meta-edge.is-selected .edge-visual {
+  opacity: 0.5;
+}
+
+/* The loose end of a hanging tail breathes, matching the patch renderer's
+   fraying-end markers. */
+.tails .chord-tail .tail-end {
+  animation: spectre-pulse 1.6s ease-in-out infinite;
+}
+
 /* --- hero ---------------------------------------------------------------- */
 
 .tails-hero h1 {
@@ -50,14 +93,6 @@
   color: var(--muted);
   font-style: italic;
   margin: 0 0 20px;
-}
-
-.tails-hero-patch {
-  margin: 22px 0;
-}
-.tails-hero-patch .muted {
-  font-size: 13px;
-  margin: 6px 0 0;
 }
 
 .tails-toc {
@@ -681,6 +716,9 @@
   .tails .tile-view .tile-shape.is-odd {
     animation: none;
     stroke: #ff3b30;
+  }
+  .tails .chord-tail .tail-end {
+    animation: none;
   }
 }
 

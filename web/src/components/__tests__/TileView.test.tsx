@@ -102,6 +102,40 @@ describe('TileView DOM contract (§6.1)', () => {
     expect(container.querySelectorAll('.matching-chords line.is-ghost').length).toBeGreaterThan(0);
   });
 
+  it('hangTails pairs what it can and dangles the leftover crossing', () => {
+    // Theta owns three class-2 seams: one happy pair, one tail.
+    const { container } = render(
+      <TileView family="spectre" tileType="Theta" selectedEdges={new Set([2])} hangTails />,
+    );
+    expect(container.querySelectorAll('circle.edge-dot')).toHaveLength(3);
+    expect(container.querySelectorAll('.matching-chords line')).toHaveLength(1);
+    const tails = container.querySelectorAll('.matching-chords .chord-tail');
+    expect(tails).toHaveLength(1);
+    expect(tails[0].querySelector('path.is-tail')).not.toBeNull();
+    expect(tails[0].querySelector('circle.tail-end')).not.toBeNull();
+  });
+
+  it('hangTails cannot invent a partner: Delta under {1} is one bare tail', () => {
+    const { container } = render(
+      <TileView family="spectre" tileType="Delta" selectedEdges={new Set([1])} hangTails />,
+    );
+    expect(container.querySelectorAll('.matching-chords line')).toHaveLength(0);
+    expect(container.querySelectorAll('.chord-tail')).toHaveLength(1);
+  });
+
+  it('draws no tail without hangTails, and none on tiles that pair up', () => {
+    const { container: odd } = render(
+      <TileView family="spectre" tileType="Theta" selectedEdges={new Set([2])} />,
+    );
+    expect(odd.querySelectorAll('.matching-chords line, .chord-tail')).toHaveLength(0);
+
+    const { container: even } = render(
+      <TileView family="spectre" tileType="Psi" selectedEdges={SUBSET} hangTails />,
+    );
+    expect(even.querySelectorAll('.chord-tail')).toHaveLength(0);
+    expect(even.querySelectorAll('.matching-chords line').length).toBeGreaterThan(0);
+  });
+
   it('renders the Mystic composite as two shapes with both leaves seams', () => {
     const { container } = render(
       <TileView family="spectre" tileType="Gamma" selectedEdges={SUBSET} />,

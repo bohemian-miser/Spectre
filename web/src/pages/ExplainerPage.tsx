@@ -15,7 +15,7 @@
 
 import { SECTIONS, explorerHref, pageHref } from './tails/presets';
 import { Figure } from './tails/Figure';
-import { PatchFigure } from './tails/PatchFigure';
+import { RuleLab } from './tails/RuleLab';
 import { TileAnatomyFigure } from './tails/TileAnatomyFigure';
 import { SeamHandshakeFigure } from './tails/SeamHandshakeFigure';
 import { ContractFigure } from './tails/ContractFigure';
@@ -23,7 +23,6 @@ import { FirstLinesFigure } from './tails/FirstLinesFigure';
 import { SadTileFigure } from './tails/SadTileFigure';
 import { PuzzleConsole } from './tails/PuzzleConsole';
 import { FingerprintFigure } from './tails/FingerprintFigure';
-import { MatrixExplorer } from './tails/MatrixExplorer';
 import { KernelGallery } from './tails/KernelGallery';
 import { MatchmakerFigure } from './tails/MatchmakerFigure';
 import { ProfileCrossfade } from './tails/ProfileCrossfade';
@@ -59,23 +58,15 @@ export function ExplainerPage(): JSX.Element {
           with a tail. It is a genuinely sad sight, and this page is about never seeing it again.
         </p>
 
-        <div className="tails-hero-patch">
-          <PatchFigure
-            idPrefix="tails-hero"
-            level={3}
-            subset={[]}
-            showLines={false}
-            showDots={false}
-            markOddTiles={false}
-            pannable
-            height={300}
-            ariaLabel="A patch of Spectre tiles"
-          />
-          <p className="muted">
-            A level-3 patch of Spectres — 559 tiles, no two neighbourhoods quite alike. Drag it
-            around; nothing is drawn on it yet.
-          </p>
-        </div>
+        <Figure
+          id="rule-lab"
+          title="The lab — pick a rule, watch every tile answer"
+          hint="Click a class chip, a matrix column, or any edge of any tile to build the rule. The rest of the page explains what you are looking at; the lab will still be here."
+          wide
+          caption="One rule, three views. The chips name the nine edge classes, the matrix does the bookkeeping, and the ten tiles draw the consequences: every edge wears its class number (faint until selected), selected edges send in a line, lines pair up where they can, and a tile with an odd count leaves a tail hanging."
+        >
+          <RuleLab />
+        </Figure>
 
         <nav className="tails-toc" aria-label="Contents">
           <h2>On this page</h2>
@@ -310,15 +301,13 @@ export function ExplainerPage(): JSX.Element {
           the kernel.
         </p>
 
-        <Figure
-          id="fig-matrix"
-          title="Figure 8 — the matrix, live"
-          hint="Click a column header to switch that class on; each row sums its selected entries mod 2."
-          wide
-          caption="Watch it work. {5} alone: column 5 is odd at Delta, Lambda, Xi, Sigma and Psi — five sad rows. {1, 5}: those five rows pick up a second odd from column 1 (1 + 1 = 0) while every other row adds evens (Pi gets 2 + 2). Ten happy rows."
-        >
-          <MatrixExplorer />
-        </Figure>
+        <p>
+          You have been using it all along: the <a href="#rule-lab">lab at the top of the page</a>{' '}
+          is exactly this matrix, live. Scroll back up and watch it work. {'{5}'} alone: column 5 is
+          odd at Delta, Lambda, Xi, Sigma and Psi — five sad rows. {'{1, 5}'}: those five rows pick
+          up a second odd from column 1 (1 + 1 = 0) while every other row adds evens (Pi gets 2 +
+          2). Ten happy rows, and every tail on the tiles disappears.
+        </p>
       </section>
 
       {/* ------------------------------------------------------------------ */}
@@ -344,7 +333,7 @@ export function ExplainerPage(): JSX.Element {
 
         <Figure
           id="fig-kernel"
-          title="Figure 9 — the kernel gallery"
+          title="Figure 8 — the kernel gallery"
           hint="Click two cards to combine them; the gallery names the card their symmetric difference lands on."
           wide
           caption="Every card is the same patch under a different rule. The ∅ card is cheekily blank; the eight-class card seethes with lines."
@@ -375,7 +364,7 @@ export function ExplainerPage(): JSX.Element {
 
         <Figure
           id="fig-matchmaker"
-          title="Figure 10 — the matchmaker"
+          title="Figure 9 — the matchmaker"
           hint="Scrub the slider, or drag from one crossing dot to another to re-pair them by hand."
           caption="Four crossings, three matchings. The faint strokes are the options not taken."
         >
@@ -394,7 +383,7 @@ export function ExplainerPage(): JSX.Element {
 
         <Figure
           id="fig-profiles"
-          title="Figure 11 — circuits vs. wanderers"
+          title="Figure 10 — circuits vs. wanderers"
           hint="Same rule, same tiles. Flip the profile and watch the drawing change its mind."
           wide
           caption="Profile B is the Explorer’s 2578-0100101100 — four tiles re-paired, and the lace collapses into one enormous wriggle. Push the level up and the longest wanderer keeps growing."
@@ -434,7 +423,7 @@ export function ExplainerPage(): JSX.Element {
 
         <Figure
           id="fig-coda"
-          title="Figure 12 — the same game, other floors"
+          title="Figure 11 — the same game, other floors"
           hint="Swap the floor, pick a rule, look for tails. This is the Explorer’s own control panel."
           wide
           caption="The kernel is a property of the tile tables, not of the Spectre. The marked-hexagon skeleton plays a slightly different game and lands on a different set of answers."

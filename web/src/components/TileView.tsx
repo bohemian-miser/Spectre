@@ -74,6 +74,12 @@ export interface TileViewProps {
   readonly matchingIndexByType?: Readonly<Record<string, number>>;
   /** Draw every other matching at low alpha (old thumbnail behaviour). */
   readonly ghostMatchings?: boolean;
+  /**
+   * When a part's crossings cannot all pair up (odd count), pair what can be
+   * paired and draw the leftover as a dangling stub — a tail. Without this,
+   * odd parts draw no strokes at all.
+   */
+  readonly hangTails?: boolean;
   readonly overlays?: readonly OverlayChord[];
   readonly overlaysByType?: Readonly<Record<string, readonly OverlayChord[]>>;
   /** Externally driven glow, e.g. palette-wide hover sync. */
@@ -139,6 +145,7 @@ export function TileView(props: TileViewProps): JSX.Element {
     matchingIndex,
     matchingIndexByType,
     ghostMatchings = false,
+    hangTails = false,
     overlays,
     overlaysByType,
     highlightMajors,
@@ -204,35 +211,67 @@ export function TileView(props: TileViewProps): JSX.Element {
     return m;
   }, [seams]);
 
-  /** Chords of the active matching, per part. */
-  const chords = useMemo(() => {
-    const out: { key: string; from: Pt; to: Pt; ghost: boolean }[] = [];
+  /**
+   * Chords of the active matching, per part — plus, with `hangTails`, the
+   * dangling stub of a part whose crossings cannot all pair up.
+   */
+  const { chords, tails } = useMemo(() => {
+    const chordsOut: { key: string; from: Pt; to: Pt; ghost: boolean }[] = [];
+    const tailsOut: { key: string; d: string; end: Pt }[] = [];
     for (const part of parts) {
       if (!selectedEdges) continue;
       const points = tileConnectionPoints(family, part.type, selectedEdges, contracts);
-      if (points.length < 2 || points.length % 2 !== 0) continue;
-      const all = enumerateMatchings(points.length);
-      const idx =
-        matchingIndexByType?.[part.type] ?? (parts.length === 1 ? matchingIndex ?? 0 : 0);
       const world = points.map((p) => transPt(part.xform, p.pt));
 
-      if (ghostMatchings) {
-        all.forEach((m, mi) => {
-          if (mi === idx) return;
-          m.forEach(([a, b], k) =>
-            out.push({ key: `g${part.type}.${mi}.${k}`, from: world[a], to: world[b], ghost: true }),
+      if (points.length >= 2 && points.length % 2 === 0) {
+        const all = enumerateMatchings(points.length);
+        const idx =
+          matchingIndexByType?.[part.type] ?? (parts.length === 1 ? matchingIndex ?? 0 : 0);
+
+        if (ghostMatchings) {
+          all.forEach((m, mi) => {
+            if (mi === idx) return;
+            m.forEach(([a, b], k) =>
+              chordsOut.push({
+                key: `g${part.type}.${mi}.${k}`,
+                from: world[a],
+                to: world[b],
+                ghost: true,
+              }),
+            );
+          });
+        }
+        const active = all[idx];
+        if (active) {
+          active.forEach(([a, b], k) =>
+            chordsOut.push({ key: `m${part.type}.${k}`, from: world[a], to: world[b], ghost: false }),
           );
-        });
-      }
-      const active = all[idx];
-      if (active) {
-        active.forEach(([a, b], k) =>
-          out.push({ key: `m${part.type}.${k}`, from: world[a], to: world[b], ghost: false }),
-        );
+        }
+      } else if (hangTails && points.length % 2 === 1) {
+        // Points come in cyclic order, so pairing neighbours (0,1), (2,3), …
+        // never crosses itself; the leftover crossing hangs.
+        for (let i = 0; i + 1 < world.length; i += 2) {
+          chordsOut.push({
+            key: `m${part.type}.${i}`,
+            from: world[i],
+            to: world[i + 1],
+            ghost: false,
+          });
+        }
+        tailsOut.push({ key: `t${part.type}`, ...tailStub(world[world.length - 1], part) });
       }
     }
-    return out;
-  }, [parts, family, selectedEdges, contracts, matchingIndex, matchingIndexByType, ghostMatchings]);
+    return { chords: chordsOut, tails: tailsOut };
+  }, [
+    parts,
+    family,
+    selectedEdges,
+    contracts,
+    matchingIndex,
+    matchingIndexByType,
+    ghostMatchings,
+    hangTails,
+  ]);
 
   /** User-drawn straight-line overlays, resolved through meta-edge indices. */
   const overlayChords = useMemo(() => {
@@ -562,6 +601,26 @@ export function TileView(props: TileViewProps): JSX.Element {
             pointerEvents="none"
           />
         ))}
+        {tails.map((t) => (
+          <g key={t.key} className="chord-tail" pointerEvents="none">
+            <path
+              className="chord is-tail"
+              d={t.d}
+              fill="none"
+              stroke="#111"
+              strokeOpacity={0.9}
+              strokeWidth={strokeUnit * 1.8}
+              strokeLinecap="round"
+            />
+            <circle
+              className="tail-end"
+              cx={t.end.x}
+              cy={t.end.y}
+              r={strokeUnit * 2.2}
+              fill="#ff3b30"
+            />
+          </g>
+        ))}
       </g>
 
       <g className="overlays">
@@ -662,6 +721,33 @@ export function TileView(props: TileViewProps): JSX.Element {
       </g>
     </svg>
   );
+}
+
+/**
+ * Path of a dangling tail: a stub from the unpaired crossing that heads for
+ * the part's interior, droops a little, and stops. `end` is where it gives up.
+ */
+function tailStub(from: Pt, part: TilePart): { d: string; end: Pt } {
+  let cx = 0;
+  let cy = 0;
+  for (const p of part.pts) {
+    const q = transPt(part.xform, p);
+    cx += q.x;
+    cy += q.y;
+  }
+  const n = Math.max(1, part.pts.length);
+  const dx = cx / n - from.x;
+  const dy = cy / n - from.y;
+  const reach = Math.hypot(dx, dy) || 1;
+  const len = Math.min(1.05, reach * 0.6);
+  const ux = dx / reach;
+  const uy = dy / reach;
+  const end: Pt = { x: from.x + ux * len, y: from.y + uy * len };
+  const bend: Pt = {
+    x: (from.x + end.x) / 2 - uy * len * 0.22,
+    y: (from.y + end.y) / 2 + ux * len * 0.22,
+  };
+  return { d: `M ${from.x} ${from.y} Q ${bend.x} ${bend.y} ${end.x} ${end.y}`, end };
 }
 
 /** Fallback dot position for overlay endpoints whose class is not selected. */

@@ -10,7 +10,7 @@
 import { act, cleanup, fireEvent, render } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import ExplainerPage from '../ExplainerPage';
-import { SECTIONS, maskDigits, maskOf } from '../tails/presets';
+import { MATRIX_ROWS, SECTIONS, fingerprint, maskDigits, maskOf } from '../tails/presets';
 
 afterEach(cleanup);
 
@@ -27,6 +27,7 @@ async function renderPage() {
 }
 
 const FIGURE_IDS = [
+  'rule-lab',
   'fig-anatomy',
   'fig-seam',
   'fig-contract',
@@ -34,7 +35,6 @@ const FIGURE_IDS = [
   'fig-sad',
   'fig-puzzle',
   'fig-fingerprints',
-  'fig-matrix',
   'fig-kernel',
   'fig-matchmaker',
   'fig-profiles',
@@ -59,11 +59,6 @@ describe('ExplainerPage', () => {
   it('mounts live tilings, single-tile widgets and a seam view', async () => {
     const { container } = await renderPage();
 
-    // Hero patch is a level-3, 559-tile Spectre patch.
-    const hero = container.querySelector('.tails-hero-patch svg.tiling-view');
-    expect(hero?.getAttribute('data-level')).toBe('3');
-    expect(hero?.getAttribute('data-tile-count')).toBe('559');
-
     // Kernel gallery: one patch per valid subset, plus the other figures'.
     expect(container.querySelectorAll('.tails-gallery-grid .tails-card')).toHaveLength(8);
     expect(container.querySelectorAll('svg.tiling-view').length).toBeGreaterThanOrEqual(12);
@@ -73,37 +68,87 @@ describe('ExplainerPage', () => {
     expect(container.querySelectorAll('.circuit-path').length).toBeGreaterThan(0);
   });
 
+  it('opens with the lab: all ten tiles wearing major numbers, faint until selected', async () => {
+    const { container } = await renderPage();
+    const lab = container.querySelector('figure#rule-lab') as HTMLElement;
+    expect(lab).not.toBeNull();
+
+    // The full cast, in matrix-row order, each with its parity badge.
+    const tiles = [...lab.querySelectorAll('svg.tile-view')];
+    expect(tiles.map((t) => t.getAttribute('data-tile-type'))).toEqual([...MATRIX_ROWS]);
+    expect(lab.querySelectorAll('.tails-parity')).toHaveLength(MATRIX_ROWS.length);
+
+    // Every physical edge wears its bare major number; under the opening rule
+    // {2} the 2s are on and everything else is greyed out.
+    const nums = [...lab.querySelectorAll('[data-major-number]')];
+    expect(nums.length).toBeGreaterThan(100);
+    const on = nums.filter((t) => t.getAttribute('data-major-on') === '1');
+    expect(on.length).toBeGreaterThan(0);
+    expect(on.every((t) => t.textContent === '2')).toBe(true);
+    expect(nums.some((t) => t.getAttribute('data-major-on') === '0')).toBe(true);
+
+    // Theta's three class-2 crossings: one pair joined, one tail hanging.
+    const theta = lab.querySelector('svg[data-tile-type="Theta"]') as SVGElement;
+    expect(theta.querySelectorAll('circle.edge-dot')).toHaveLength(3);
+    expect(theta.querySelectorAll('.matching-chords line')).toHaveLength(1);
+    expect(theta.querySelectorAll('.chord-tail')).toHaveLength(1);
+  });
+
+  it('toggles a class from a tile edge in the lab', async () => {
+    const { container } = await renderPage();
+    const lab = container.querySelector('figure#rule-lab') as HTMLElement;
+
+    // Clicking Theta's 2A seam switches class 2 off everywhere in the lab.
+    fireEvent.click(lab.querySelector('[data-edge-id="Theta/2A"]') as Element);
+    expect(lab.querySelector('.tails-table')?.getAttribute('data-mask')).toBe('0');
+    expect(lab.querySelectorAll('circle.edge-dot')).toHaveLength(0);
+    expect(lab.querySelectorAll('.chord-tail')).toHaveLength(0);
+  });
+
   it('shows Theta’s three class-2 crossings and the pairing that strands one', async () => {
     const { container } = await renderPage();
     const sad = container.querySelector('figure#fig-sad') as HTMLElement;
 
     const theta = sad.querySelector('svg[data-tile-type="Theta"]') as SVGElement;
     expect(theta.querySelectorAll('.edge-dot')).toHaveLength(3);
-    // One chord drawn: two crossings paired, one left dangling.
-    expect(theta.querySelectorAll('.overlay-chord')).toHaveLength(1);
+    // Honest matchmaking: two crossings paired, one left dangling as a tail.
+    expect(theta.querySelectorAll('.matching-chords line')).toHaveLength(1);
+    expect(theta.querySelectorAll('.chord-tail')).toHaveLength(1);
+    expect(theta.querySelectorAll('.overlay-chord')).toHaveLength(0);
 
     fireEvent.click(sad.querySelector('button.tails-chip') as Element);
     expect(theta.querySelectorAll('.overlay-chord')).toHaveLength(3); // the rejected junction
+    expect(theta.querySelectorAll('.chord-tail')).toHaveLength(0); // nothing dangles at a station
 
     // Delta under class 1 gets exactly one crossing and can never pair it.
     const delta = sad.querySelector('svg[data-tile-type="Delta"]') as SVGElement;
     expect(delta.querySelectorAll('.edge-dot')).toHaveLength(1);
+    expect(delta.querySelectorAll('.chord-tail')).toHaveLength(1);
   });
 
-  it('runs the matrix: {5} leaves five odd rows, {1,5} leaves none', async () => {
+  it('runs the matrix in the lab: {2} upsets its fingerprint, {1,5} upsets nobody', async () => {
     const { container } = await renderPage();
-    const matrix = container.querySelector('figure#fig-matrix') as HTMLElement;
+    const lab = container.querySelector('figure#rule-lab') as HTMLElement;
 
-    const parityCells = () => [...matrix.querySelectorAll('.tails-parity-cell')];
+    const parityCells = () => [...lab.querySelectorAll('.tails-parity-cell')];
     expect(parityCells()).toHaveLength(10);
-    expect(parityCells().filter((c) => c.textContent === '1')).toHaveLength(5);
+    // The opening rule {2} leaves exactly class 2's fingerprint odd.
+    expect(parityCells().filter((c) => c.textContent === '1')).toHaveLength(
+      fingerprint(2).length,
+    );
 
-    // Clicking column 1 adds class 1 to the rule — every row goes even.
-    const header = matrix.querySelector('thead th:nth-child(3) button') as Element;
-    expect(header.textContent).toBe('1');
-    fireEvent.click(header);
+    // Column headers toggle classes: swap {2} for {1, 5} — every row goes even
+    // and every hanging tail on the tiles disappears.
+    const header = (major: number) =>
+      lab.querySelector(`thead th:nth-child(${major + 2}) button`) as Element;
+    expect(header(2).textContent).toBe('2');
+    fireEvent.click(header(2));
+    fireEvent.click(header(1));
+    fireEvent.click(header(5));
     expect(parityCells().filter((c) => c.textContent === '1')).toHaveLength(0);
-    expect(matrix.textContent).toContain('yes');
+    expect(lab.textContent).toContain('yes');
+    expect(lab.querySelectorAll('.chord-tail')).toHaveLength(0);
+    expect(lab.querySelectorAll('.matching-chords line').length).toBeGreaterThan(0);
   });
 
   it('lets the puzzle console discover a clean rule without ever listing them', async () => {
