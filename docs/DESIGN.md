@@ -89,7 +89,7 @@ web/
       ExplainerPage.tsx          (§7.2; prose from docs/EXPLAINER_COPY.md)
       explainer/
         PuzzleConsole.tsx        512-subset console (beat 5)
-        MatrixExplorer.tsx       live GF(2) matrix widget (beat 6)
+        RuleLab.tsx              top-of-page rule lab: classes + live GF(2) matrix + all-tile cast
         KernelGallery.tsx        8 valid-subset cards (beat 7)
         ProfileCrossfade.tsx     circuits-vs-wanderers toggle (beat 9)
       StatsPage.tsx              (§7.3)

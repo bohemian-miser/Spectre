@@ -8,6 +8,8 @@ I want to draw all over my bathroom floor. Not freehand — with a rule. The flo
 
 *If* we're lucky. Because for some choices of rule, somewhere out there sits a tile whose lines can't all pair up. One end is left dangling, unfinished, going nowhere. A tile with a tail. It is a genuinely sad sight, and this page is about never seeing it again.
 
+> [WIDGET: the rule lab — the page's single control surface, at the top: nine class chips, the live count matrix, and all ten tile types side by side; every physical edge wears its major-class number, faint until the class is selected; toggling a class (chip, matrix column, or the edge itself) grows crossings, pairs lines up inside each tile, and leaves a tail hanging wherever the count is odd; no presets, so the kernel stays unspoiled]
+
 ## Meet the Spectre (briefly)
 
 The Spectre is the "chiral aperiodic monotile" discovered by David Smith, Joseph Samuel Myers, Craig Kaplan, and Chaim Goodman-Strauss ([arXiv:2305.17743](https://arxiv.org/abs/2305.17743)), the follow-up to their famous [hat](https://arxiv.org/abs/2303.10798). One shape, no reflections needed, and it tiles the plane — but only aperiodically. Kaplan's [Spectre page](https://cs.uwaterloo.ca/~csk/spectre/) tells that story beautifully; we only need one piece of machinery from the proof.
@@ -83,7 +85,7 @@ Read it mod 2 — evens are zeros, odds are ones. A subset of classes is a 0/1 v
 
 Watch it work. {5} alone: column 5 is odd at Delta, Lambda, Xi, Sigma, Psi — five sad rows. {1, 5}: those five rows pick up a second odd from column 1 (1 + 1 = 0) while every other row adds evens (Pi gets 2 + 2). Ten happy rows; {1, 5} is in the kernel.
 
-> [WIDGET: matrix explorer — the table above, live; hovering a column highlights those seams on a filmstrip of all ten tile types and shows that class's fingerprint; clicking column headers builds a subset, each row sums mod 2 in view, red for odd; preset buttons for {5} (five red rows) and {1,5} (all green)]
+> [WIDGET: none — the table above is already live at the top of the page: the rule lab *is* this matrix, so the section sends the reader back up to it with the {5} → {1,5} worked example]
 
 ## The eight answers
 
