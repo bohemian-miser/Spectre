@@ -743,6 +743,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
           curvy={curvy}
           nonCrossingOnly={nonCrossingOnly}
           highlightMajors={highlightMajors}
+          showEdgeLabels={hasFlag(state, FLAG.EDGE_LABELS)}
           onSubsetChange={(subset) => dispatch({ type: 'setSubset', subset })}
           onToggleMajor={(major) => dispatch({ type: 'toggleMajor', major })}
           onHoverMajor={setHoverMajor}
@@ -796,6 +797,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
               colorScheme={state.colorScheme}
               customColors={state.customColors}
               tileSize={104}
+              showEdgeLabels={hasFlag(state, FLAG.EDGE_LABELS)}
               interaction={tool === 'line' ? 'chord-draw' : 'edge-select'}
               onEdgeHover={setHoverEdge}
               onChordDrawn={tool === 'line' ? onChordDrawn : undefined}

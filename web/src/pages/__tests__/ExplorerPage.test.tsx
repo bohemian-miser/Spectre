@@ -41,6 +41,32 @@ describe('ExplorerPage', () => {
     expect(container.querySelector('.explorer-advanced')).not.toBeNull();
   });
 
+  it('draws full edge labels when the Edge labels toggle is on', () => {
+    // A rule gives the tiles connection points, which is what puts the
+    // per-tile matching editors (and so any labels) on screen at all.
+    window.history.replaceState(null, '', '/#/explorer?v=1&lv=1&e=2578');
+    const { container } = render(<ExplorerPage />);
+    const labelled = () => container.querySelectorAll('.edge-labels text');
+    const majors = () => container.querySelectorAll('[data-major-number]');
+
+    // Off by default: the matching editors wear bare class numbers.
+    expect(labelled()).toHaveLength(0);
+    expect(majors().length).toBeGreaterThan(0);
+
+    const toggle = [...container.querySelectorAll('.display-toggles label')].find((l) =>
+      l.textContent?.includes('Edge labels'),
+    ) as HTMLElement;
+    fireEvent.click(toggle.querySelector('input') as Element);
+
+    // On: every physical edge spells itself out, and the bare numbers stand
+    // down rather than double-labelling each edge.
+    const texts = [...labelled()].map((t) => t.textContent ?? '');
+    expect(texts.length).toBeGreaterThan(0);
+    expect(texts).toContain('1.0A');
+    expect(texts.every((t) => /^-?\d+\.\d+[A-Z]$/.test(t))).toBe(true);
+    expect(majors()).toHaveLength(0);
+  });
+
   it('steps the supertile level and re-renders the patch', () => {
     const { container } = render(<ExplorerPage />);
     fireEvent.click(container.querySelector('button[aria-label="More supertiles"]') as Element);

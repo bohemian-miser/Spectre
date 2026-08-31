@@ -36,6 +36,8 @@ export interface StrandRuleControlsProps {
   readonly nonCrossingOnly?: boolean;
   /** Classes to pick out in the picker (hover feedback from the page). */
   readonly highlightMajors?: ReadonlySet<number>;
+  /** Spell every edge out (`2.0A`) instead of its bare class number. */
+  readonly showEdgeLabels?: boolean;
   readonly tileSize?: number;
   onSubsetChange(subset: readonly number[]): void;
   onToggleMajor(major: number): void;
@@ -55,6 +57,7 @@ export function StrandRuleControls(props: StrandRuleControlsProps): JSX.Element 
     curvy = false,
     nonCrossingOnly = false,
     highlightMajors,
+    showEdgeLabels = false,
     tileSize = 116,
     onSubsetChange,
     onToggleMajor,
@@ -131,6 +134,7 @@ export function StrandRuleControls(props: StrandRuleControlsProps): JSX.Element 
               contracts={contracts}
               value={matching[i] ?? 0}
               nonCrossingOnly={nonCrossingOnly}
+              showEdgeLabels={showEdgeLabels}
               curvy={curvy}
               colorScheme={colorScheme}
               customColors={customColors}
