@@ -83,6 +83,12 @@ import {
   type TransitionIndex,
 } from './transitions';
 import { createQueryScheduler, type QueryScheduler } from './queryScheduler';
+import {
+  advanceFollowCamera,
+  createFollowCamera,
+  type FollowCameraState,
+} from './followCamera';
+import { canRecordCanvas, startCanvasRecording, type CanvasRecording } from './recording';
 import { createMapRenderer } from './renderer';
 import {
   advanceWalk,
@@ -124,13 +130,11 @@ const TAP_MAX_MS = 700;
 /** Tap target for picking a strand, in CSS px — a fingertip, not a pixel. */
 const TAP_PICK_RADIUS_PX = 16;
 
-/**
- * Follow-mode camera: exponential approach to the walk's head with this time
- * constant (ms), capped at {@link FOLLOW_MAX_VIEWPORTS_PER_S} so a head a
- * whole screen ahead is chased, not teleported to.
+/*
+ * The follow-mode camera itself — the dolly that rides the trail's arc, the
+ * look-ahead aim, the speed-scaled tracking cap — lives in `followCamera.ts`,
+ * pure and frame-tested; this component only owns its state's lifetime.
  */
-const FOLLOW_TAU_MS = 300;
-const FOLLOW_MAX_VIEWPORTS_PER_S = 0.9;
 
 /**
  * Most kept circuits. Each is a frozen geometry the renderers draw every
@@ -379,6 +383,21 @@ export interface InfiniteCanvasApi {
    * immediately before the read rather than a bare `toDataURL`.
    */
   captureFrame(): string | null;
+  /**
+   * Start recording the canvas to a movie (`recording.ts`: captureStream +
+   * MediaRecorder). Frames are captured whenever the canvas paints, at its
+   * backing resolution; DOM overlays (HUD, ticker, graph) are not part of the
+   * picture. Idempotent while already recording. `ok: false` carries the
+   * human-readable reason — an environment that cannot record refuses here
+   * rather than throwing later.
+   */
+  startRecording(): { ok: true; mimeType: string } | { ok: false; reason: string };
+  /**
+   * Finish recording and hand over the movie — complete once the promise
+   * resolves — or null when nothing was recording.
+   */
+  stopRecording(): Promise<{ blob: Blob; mimeType: string } | null>;
+  isRecording(): boolean;
 }
 
 export interface InfiniteCanvasProps {
@@ -572,6 +591,8 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
   });
   const reqSeqRef = useRef(0);
   const rafRef = useRef(0);
+  /** Live canvas recording, if any — owned here so unmount can release it. */
+  const recordingRef = useRef<CanvasRecording | null>(null);
   const inertiaRef = useRef(0);
   const pointersRef = useRef(new Map<number, { x: number; y: number }>());
   const velocityRef = useRef({ vx: 0, vy: 0, t: 0 });
@@ -603,6 +624,12 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
   const foundInfoRef = useRef({ found: 0, skipped: false, stale: false });
   const followRafRef = useRef(0);
   const followLastRef = useRef(0);
+  /**
+   * The follow camera's dolly (`followCamera.ts`), created on the first frame
+   * of a chase and dropped whenever the chase it rode ends or restarts — a
+   * stale dolly would glide along a trail that no longer means anything.
+   */
+  const followStateRef = useRef<FollowCameraState | null>(null);
   const paceRef = useRef(followPace);
   paceRef.current = followPace;
   const paceTokensRef = useRef(0);
@@ -761,24 +788,41 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
     return indexRef.current;
   }, []);
 
-  // --- follow (the camera chases the head) ------------------------------------
+  // --- follow (the camera rides the trail) ------------------------------------
   const stopFollow = useCallback((): void => {
     if (followRafRef.current) cancelAnimationFrame(followRafRef.current);
     followRafRef.current = 0;
   }, []);
 
   /**
-   * One follow frame: nudge the camera toward the walk's head. The loop
-   * re-arms itself while there is a live walk to chase; it never touches
-   * `scale`, so wheel/pinch zoom composes with it freely, and it holds still
-   * while a pointer is down so a drag is not fought over.
+   * One follow frame: advance the dolly along the trail and track its aim
+   * point (`followCamera.ts`). The loop re-arms itself while there is a walk
+   * to ride; a TERMINAL walk no longer stops it dead — the dolly glides on to
+   * the closure point (or dead end) and the loop stops once it has settled
+   * there, so a circuit's ending is centred rather than abandoned mid-flight.
+   * It never touches `scale`, so wheel/pinch zoom composes with it freely,
+   * and it holds still while a pointer is down so a drag is not fought over.
    */
   const followTick = useCallback((): void => {
     followRafRef.current = 0;
     const trail = trailRef.current;
-    if (!followOnRef.current || !trail || isTerminal(trail.status)) return;
+    if (!followOnRef.current || !trail) return;
+    // A chase that ended before this follow session began has nothing to
+    // glide to — only a dolly already in flight finishes its approach.
+    if (isTerminal(trail.status) && !followStateRef.current) return;
+    const state = followStateRef.current ?? (followStateRef.current = createFollowCamera(trail));
     followRafRef.current = requestAnimationFrame(followTick);
     if (pointersRef.current.size > 0) {
+      if (isTerminal(trail.status)) {
+        // The user grabbed the camera during the final glide: their pan wins
+        // outright — a finished chase must not tug the view back afterwards.
+        cancelAnimationFrame(followRafRef.current);
+        followRafRef.current = 0;
+        followStateRef.current = null;
+        return;
+      }
+      // A drag pauses a LIVE chase; the dolly holds too, so releasing
+      // resumes with the stately engage glide rather than a stale sprint.
       followLastRef.current = performance.now();
       return;
     }
@@ -787,30 +831,33 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
     followLastRef.current = now;
     const cam = camRef.current;
     const { width, height } = sizeRef.current;
-    const dx = trail.head.x - cam.cx;
-    const dy = trail.head.y - cam.cy;
-    const dist = Math.hypot(dx, dy);
-    // Converged (sub-pixel): keep ticking cheaply, but write nothing.
-    if (dist * cam.scale < 0.5) return;
-    let step = dist * (1 - Math.exp(-dt / FOLLOW_TAU_MS));
-    const viewportWorld = Math.min(width, height) / cam.scale;
-    const maxStep = ((FOLLOW_MAX_VIEWPORTS_PER_S * viewportWorld) / 1000) * dt;
-    // The gentle cap keeps a nearby chase watchable; once the head has pulled
-    // more than ~1.5 viewports ahead the exponential runs uncapped, so a
-    // full-throttle walk is caught up with instead of lost.
-    if (step > maxStep && dist < viewportWorld * 1.5) step = maxStep;
-    camRef.current = {
-      cx: cam.cx + (dx / dist) * step,
-      cy: cam.cy + (dy / dist) * step,
-      scale: cam.scale,
-    };
+    const frame = advanceFollowCamera(
+      state,
+      trail,
+      { x: cam.cx, y: cam.cy },
+      dt,
+      Math.min(width, height) / cam.scale,
+      cam.scale,
+    );
+    if (frame.settled) {
+      // Sub-pixel everywhere: write nothing. Once the walk is over as well,
+      // the ride is complete and the loop may stop for good.
+      if (isTerminal(trail.status)) {
+        cancelAnimationFrame(followRafRef.current);
+        followRafRef.current = 0;
+        followStateRef.current = null;
+      }
+      return;
+    }
+    camRef.current = { cx: frame.cx, cy: frame.cy, scale: cam.scale };
     onCameraChanged();
   }, [onCameraChanged]);
 
   const ensureFollow = useCallback((): void => {
     if (followRafRef.current) return;
     const trail = trailRef.current;
-    if (!followOnRef.current || !trail || isTerminal(trail.status)) return;
+    if (!followOnRef.current || !trail) return;
+    if (isTerminal(trail.status) && !followStateRef.current) return;
     followLastRef.current = performance.now();
     followRafRef.current = requestAnimationFrame(followTick);
   }, [followTick]);
@@ -1359,6 +1406,7 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
     if (walkRafRef.current) cancelAnimationFrame(walkRafRef.current);
     walkRafRef.current = 0;
     stopFollow();
+    followStateRef.current = null;
     endPendingRef.current = null;
     replayRef.current = null;
     const hadFound = foundRef.current.length > 0;
@@ -1398,7 +1446,12 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
       replayRef.current = null; // a real tap supersedes a shared-link seed
       // A circuit or tail the last walk finished stays lit under the new trace.
       archiveFinishedTrail();
-      trailRef.current = startTrail(hit, chordsRef.current?.rows ?? TRANSITION_TYPES);
+      const fresh = startTrail(hit, chordsRef.current?.rows ?? TRANSITION_TYPES);
+      trailRef.current = fresh;
+      // A new chase gets a fresh dolly NOW, not on the first follow frame: a
+      // tiny circuit can close inside the very first walk slice, and a dolly
+      // that does not exist yet would have nothing to glide to the closure.
+      followStateRef.current = followOnRef.current ? createFollowCamera(fresh) : null;
       publishSeed(hit);
       runWalk();
       return true;
@@ -1430,7 +1483,11 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
     // Flipping only swaps which end the walk leaves from; it is the same
     // chord, so it keeps the same tile.
     const oriented: ChordEnd = flip ? { at: hit.to, to: hit.at, leafType: hit.leafType } : hit;
-    trailRef.current = startTrail(oriented, chordsRef.current?.rows ?? TRANSITION_TYPES);
+    const fresh = startTrail(oriented, chordsRef.current?.rows ?? TRANSITION_TYPES);
+    trailRef.current = fresh;
+    // Same rule as a live tap: the dolly must exist before the first walk
+    // slice, or an instantly-closed circuit would never be glided to.
+    followStateRef.current = followOnRef.current ? createFollowCamera(fresh) : null;
     publishSeed(oriented);
     runWalk();
   }, [ensureIndex, publishSeed, runWalk]);
@@ -1586,6 +1643,16 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
     publish({ mode });
   }, [mode, publish]);
 
+  // A recording cannot outlive the canvas it captures: unmount releases the
+  // stream and discards the chunks (a page that wants the file stops first).
+  useEffect(
+    () => () => {
+      recordingRef.current?.cancel();
+      recordingRef.current = null;
+    },
+    [],
+  );
+
   // --- resize / seed / budget --------------------------------------------------
   useEffect(() => {
     publish({ size: { width: size.width, height: size.height } });
@@ -1622,6 +1689,9 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
   }, [trace, clearTrace]);
 
   useEffect(() => {
+    // Either way the toggle moved, the old dolly's ride is over — the next
+    // engage starts fresh, parked at the head, gliding in at the engage pace.
+    followStateRef.current = null;
     if (follow) {
       ensureFollow();
       maybeFeed();
@@ -1893,11 +1963,41 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
           return null; // tainted or context-lost
         }
       },
+      startRecording: () => {
+        const live = recordingRef.current;
+        if (live) return { ok: true, mimeType: live.mimeType };
+        const canvas = canvasRef.current;
+        if (!canvas || canvas.width === 0 || canvas.height === 0) {
+          return { ok: false, reason: 'the canvas has not laid out yet' };
+        }
+        if (!canRecordCanvas()) {
+          return {
+            ok: false,
+            reason: 'this browser cannot record a canvas (MediaRecorder unavailable)',
+          };
+        }
+        try {
+          recordingRef.current = startCanvasRecording(canvas);
+        } catch (err) {
+          return { ok: false, reason: err instanceof Error ? err.message : String(err) };
+        }
+        // The stream only carries frames the canvas paints from here on, so
+        // paint one now — a recording of a still view must not open blank.
+        scheduleDraw();
+        return { ok: true, mimeType: recordingRef.current.mimeType };
+      },
+      stopRecording: async () => {
+        const live = recordingRef.current;
+        if (!live) return null;
+        recordingRef.current = null;
+        return { blob: await live.stop(), mimeType: live.mimeType };
+      },
+      isRecording: () => recordingRef.current !== null,
     };
     return () => {
       apiRef.current = null;
     };
-  }, [apiRef, onCameraChanged, stopInertia, traceAt, clearTrace, draw]);
+  }, [apiRef, onCameraChanged, stopInertia, traceAt, clearTrace, draw, scheduleDraw]);
 
   return (
     <div

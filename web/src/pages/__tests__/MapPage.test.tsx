@@ -194,6 +194,93 @@ describe('MapPage', () => {
     expect(container.querySelector('select[aria-label="Instance budget"]')).not.toBeNull();
   });
 
+  it('refuses to record honestly where the browser cannot', async () => {
+    // Bare jsdom: no MediaRecorder, no captureStream. The button must say why
+    // instead of throwing or pretending.
+    const gl = makeFakeGl();
+    stubContexts(gl, null);
+    const { container } = render(<MapPage forceSyncClient />);
+    await settle();
+
+    const button = container.querySelector('[data-testid="map-record"]') as HTMLButtonElement;
+    expect(button.textContent).toContain('Record video');
+    fireEvent.click(button);
+    await settle();
+    expect(button.getAttribute('aria-pressed')).toBe('false');
+    expect(
+      container.querySelector('[data-testid="map-record-note"]')?.textContent,
+    ).toContain('Recording unavailable');
+  });
+
+  it('records the canvas and saves a named movie on stop', async () => {
+    // The recording pipeline, with the two browser pieces stood in for:
+    // captureStream hands out a stub track, MediaRecorder emits one chunk on
+    // stop. What is really under test is the wiring — negotiate, start, timer
+    // state, stop, blob → named download.
+    class FakeRecorder {
+      static isTypeSupported = (t: string): boolean => t === 'video/webm;codecs=vp9';
+      state = 'recording';
+      ondataavailable: ((e: { data: Blob }) => void) | null = null;
+      onstop: (() => void) | null = null;
+      onerror: ((e: unknown) => void) | null = null;
+      constructor(
+        public stream: unknown,
+        public options: { mimeType: string; videoBitsPerSecond: number },
+      ) {}
+      start(): void {}
+      stop(): void {
+        this.state = 'inactive';
+        this.ondataavailable?.({ data: new Blob(['movie-bytes'], { type: 'video/webm' }) });
+        this.onstop?.();
+      }
+    }
+    (globalThis as Record<string, unknown>).MediaRecorder = FakeRecorder;
+    const track = { stop: vi.fn() };
+    (HTMLCanvasElement.prototype as unknown as Record<string, unknown>).captureStream = vi
+      .fn()
+      .mockReturnValue({ getTracks: () => [track] });
+    const urls: string[] = [];
+    URL.createObjectURL = vi.fn((blob: Blob | MediaSource) => {
+      urls.push(String((blob as Blob).size));
+      return 'blob:fake';
+    });
+    URL.revokeObjectURL = vi.fn();
+    try {
+      const gl = makeFakeGl();
+      stubContexts(gl, null);
+      const { container } = render(<MapPage forceSyncClient />);
+      await settle();
+
+      const button = container.querySelector('[data-testid="map-record"]') as HTMLButtonElement;
+      fireEvent.click(button);
+      await settle();
+      expect(button.getAttribute('aria-pressed')).toBe('true');
+      expect(button.textContent).toContain('Stop & save');
+
+      fireEvent.click(button);
+      await settle();
+      expect(button.getAttribute('aria-pressed')).toBe('false');
+      const note = container.querySelector('[data-testid="map-record-note"]')?.textContent ?? '';
+      // Named by family, seed and stamp, with the negotiated extension.
+      expect(note).toMatch(/Saved spectre-map-seed1-\d{8}-\d{6}\.webm/u);
+      // The movie really went to the browser's download machinery…
+      expect(urls.length).toBe(1);
+      // …and the capture stream was released.
+      expect(track.stop).toHaveBeenCalled();
+      // downloadBlob revokes its object URL on a 1 s timer; let that fire
+      // while the stub still exists, or the revoke crashes a later test.
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 1100));
+      });
+      expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:fake');
+    } finally {
+      delete (globalThis as Record<string, unknown>).MediaRecorder;
+      delete (HTMLCanvasElement.prototype as unknown as Record<string, unknown>).captureStream;
+      delete (URL as unknown as Record<string, unknown>).createObjectURL;
+      delete (URL as unknown as Record<string, unknown>).revokeObjectURL;
+    }
+  });
+
   it('reproduces a deep link and mirrors reseeding back into the hash', async () => {
     window.history.replaceState(
       null,

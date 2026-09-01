@@ -449,6 +449,32 @@ describe('InfiniteCanvas — auto-follow', () => {
     expect(m.status().trace.length).toBeGreaterThanOrEqual(len);
   });
 
+  it('glides on to the closure when the chase ends, instead of freezing', async () => {
+    // A loop rule closes the tapped strand almost immediately — terminal
+    // before the first follow frame. The old chase stopped dead wherever the
+    // camera happened to be; the ride must finish instead, centring the
+    // closure point.
+    const m = await mount({ chords: loopTable(), follow: true });
+    // Off-centre on purpose: a glide of several world units has to happen —
+    // a tap at the middle would pass vacuously.
+    const target = chordTargetOn(createCamera(0, 0, 36), loopTable(), { x: 8, y: 4 });
+    tap(m.host, target.x, target.y);
+    await settleUntil(() => m.status().trace.status === 'closed', 'the circuit to close');
+
+    const headOf = (): { x: number; y: number } => {
+      const g = m.renderer.trails.at(-1)!;
+      return {
+        x: g.origin.x + g.xy[(g.pointCount - 1) * 2],
+        y: g.origin.y + g.xy[(g.pointCount - 1) * 2 + 1],
+      };
+    };
+    await settleUntil(() => {
+      const cam = m.api.current!.getCamera();
+      const h = headOf();
+      return Math.hypot(cam.cx - h.x, cam.cy - h.y) < 0.5;
+    }, 'the camera to centre the closure');
+  });
+
   it('holds at most the configured window while following', async () => {
     const m = await mount({ follow: true, followHold: 20 });
     const target = chordTargetOn(createCamera(0, 0, 36));
