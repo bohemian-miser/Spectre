@@ -372,6 +372,13 @@ export interface InfiniteCanvasApi {
    * Returns the scale it set, or null before the first layout.
    */
   zoomToCircuitView(): number | null;
+  /**
+   * The canvas as it stands, as a PNG data URL. The context is not created
+   * with `preserveDrawingBuffer` (it costs every frame), so the drawing buffer
+   * is only readable in the same task it was painted in — hence the redraw
+   * immediately before the read rather than a bare `toDataURL`.
+   */
+  captureFrame(): string | null;
 }
 
 export interface InfiniteCanvasProps {
@@ -1872,11 +1879,25 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
         onCameraChanged();
         return scale;
       },
+      captureFrame: () => {
+        const canvas = canvasRef.current;
+        if (!canvas || canvas.width === 0 || canvas.height === 0) return null;
+        if (rafRef.current) {
+          cancelAnimationFrame(rafRef.current);
+          rafRef.current = 0;
+        }
+        draw();
+        try {
+          return canvas.toDataURL('image/png');
+        } catch {
+          return null; // tainted or context-lost
+        }
+      },
     };
     return () => {
       apiRef.current = null;
     };
-  }, [apiRef, onCameraChanged, stopInertia, traceAt, clearTrace]);
+  }, [apiRef, onCameraChanged, stopInertia, traceAt, clearTrace, draw]);
 
   return (
     <div

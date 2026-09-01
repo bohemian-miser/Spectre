@@ -24,10 +24,8 @@ import {
   FLAG,
   MIN_FIND_CEILING,
   LINE_SCALE_STEP,
-  MAX_TRAIL_HOLD,
   MIN_LINE_SCALE,
   MIN_TRACE_PACE,
-  MIN_TRAIL_HOLD,
   MAX_LEVEL,
   SUBSTITUTION_GROWTH,
   TILE_NAMES,
@@ -48,6 +46,7 @@ import {
   CircuitLayer,
   ColorSchemePicker,
   DisplayToggles,
+  InfoTip,
   PanZoom,
   SeamContractControls,
   SharePanel,
@@ -162,7 +161,6 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
   const mode = explorerMode(state);
   const budget = explorerBudget(state);
   const lineWidth = explorerLineWidth(state);
-  const noOverlap = !!state.noOverlap;
   const traceOn = explorerTrace(state);
   const followOn = explorerFollow(state);
   const trailHold = explorerTrailHold(state);
@@ -323,9 +321,8 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
       // Flat ink, contrasting with whatever is behind it (no circuit colours).
       lineColor: fills ? DEFAULT_LINE_COLOR : LIGHT_LINE_COLOR,
       lineScale: lineWidth,
-      noOverlap,
     };
-  }, [family, state.colorScheme, state.customColors, state.flags, lineWidth, noOverlap]);
+  }, [family, state.colorScheme, state.customColors, state.flags, lineWidth]);
 
   /** Tile colours for the trace ticker — the palette the tiles are drawn in. */
   const leafCss = useMemo(
@@ -544,6 +541,20 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
   }, [liveSvg, family, state.rootTile, state.level, state.subset]);
 
   const onDownloadPng = useCallback(async () => {
+    const name = `${sceneFilename(family, state.rootTile, state.level, state.subset)}.png`;
+    // Infinite mode draws to a canvas, so the picture comes straight off it
+    // rather than through the SVG serializer.
+    const frame = infiniteApiRef.current?.captureFrame();
+    if (frame) {
+      try {
+        downloadBlob(await (await fetch(frame)).blob(), name);
+        setExportStatus('PNG downloaded');
+      } catch (err) {
+        setExportStatus(err instanceof Error ? err.message : 'PNG export failed');
+      }
+      return;
+    }
+
     const svg = liveSvg();
     const size = panRef.current?.size;
     if (!svg || !size) {
@@ -553,7 +564,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
     try {
       const text = serializeSceneSvg(svg, { width: size.width, height: size.height });
       const blob = await svgTextToPngBlob(text, size.width, size.height);
-      downloadBlob(blob, `${sceneFilename(family, state.rootTile, state.level, state.subset)}.png`);
+      downloadBlob(blob, name);
       setExportStatus('PNG downloaded');
     } catch (err) {
       setExportStatus(err instanceof Error ? err.message : 'PNG export failed');
@@ -627,14 +638,30 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
           </div>
           {infinite ? (
             <>
-              <p className="muted" role="note">
-                No root and no patch: the plane is expanded around the camera on demand (world seed{' '}
-                {INFINITE_SEED} — the{' '}
-                <a href={`${import.meta.env.BASE_URL}map.html`}>Infinite Map</a> owns the seed
-                control). Drag to pan, wheel to zoom.
-              </p>
+              <p className="muted">Drag to pan, wheel to zoom.</p>
               <label className="control-row">
-                <span>Budget</span>
+                <span>
+                  Budget
+                  <InfoTip label="the instance budget">
+                    <p>
+                      No root and no patch: the plane is expanded around the camera on demand
+                      (world seed {INFINITE_SEED} — the{' '}
+                      <a href={`${import.meta.env.BASE_URL}map.html`}>Infinite Map</a> owns the
+                      seed control).
+                    </p>
+                    <p>
+                      The budget is how many instances one query may emit. It only bites once the
+                      view holds more tiles than that — then the engine draws supertile glyphs
+                      instead, and a bigger budget buys back a level of real tiles. Zoomed in,
+                      where every tile is already drawn, raising it changes nothing.
+                    </p>
+                    <p>
+                      Past ~{formatBudget(HEAVY_BUDGET)}, expect the query rather than the frame
+                      to be the wait: the engine walk is single-threaded on the CPU, so a fast GPU
+                      does not speed it up.
+                    </p>
+                  </InfoTip>
+                </span>
                 <select
                   aria-label="Instance budget"
                   data-testid="infinite-budget"
@@ -648,14 +675,6 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
                   ))}
                 </select>
               </label>
-              <p className="muted" role="note">
-                How many instances one query may emit. It only bites once the view holds more tiles
-                than that — then the engine draws supertile glyphs instead, and a bigger budget buys
-                back a level of real tiles.{' '}
-                {budget >= HEAVY_BUDGET
-                  ? 'At this size expect the query, not the frame, to be the wait: the engine walk is single-threaded on the CPU, so a fast GPU does not speed it up.'
-                  : 'Zoomed in, where every tile is already drawn, raising it changes nothing.'}
-              </p>
             </>
           ) : null}
 
@@ -678,7 +697,20 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
           </label>
 
           <div className="control-row">
-            <span>Level</span>
+            <span>
+              Level
+              <InfoTip label="the level control">
+                <p>
+                  Rooted: how many substitution rounds the patch is grown for.
+                </p>
+                <p>
+                  In infinite mode it is a zoom preset instead — it parks the camera where the
+                  viewport covers about as many tiles as a level-{state.level} patch holds (one
+                  step = one substitution = ×2.81 zoom). Panning and wheel-zoom are free and do
+                  not change it.
+                </p>
+              </InfoTip>
+            </span>
             <span className="level-stepper">
               <button
                 type="button"
@@ -704,13 +736,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
               </em>
             </span>
           </div>
-          {infinite ? (
-            <p className="muted" role="note">
-              In infinite mode the level control is a zoom preset: it parks the camera where the
-              viewport covers about as many tiles as a level-{state.level} patch holds (one step =
-              one substitution = ×2.81 zoom). Panning and wheel-zoom are free and do not change it.
-            </p>
-          ) : beyondRooted ? (
+          {infinite ? null : beyondRooted ? (
             <p className="warning-badge" role="status">
               Level {state.level} is past what this view can materialize, so it is drawing level{' '}
               {ROOTED_MATERIALIZE_MAX}.{' '}
@@ -782,10 +808,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
             </button>
           </div>
           {tool === 'cursor' ? (
-            <p className="muted">
-              Pick “straight line”, then drag between two seams of a tile — the line repeats on
-              every copy of that tile in the tiling.
-            </p>
+            <p className="muted">Pick “straight line”, then drag between two seams of a tile.</p>
           ) : (
             <TilePalette
               family={family}
@@ -835,25 +858,6 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
         <label className="control-row">
           <input
             type="checkbox"
-            aria-label="Clip overlapping strands at the midpoint"
-            data-testid="no-overlap"
-            checked={noOverlap}
-            disabled={!infinite}
-            onChange={(e) => dispatch({ type: 'setNoOverlap', noOverlap: e.target.checked })}
-          />
-          <span>Meet at midpoint</span>
-        </label>
-        {!infinite ? (
-          <p className="muted" role="note">
-            Midpoint clipping is a GPU trick (a depth pre-pass over the strands), so it needs the
-            infinite view's WebGL renderer — the rooted patch draws SVG strokes, which simply
-            overlap.
-          </p>
-        ) : null}
-
-        <label className="control-row">
-          <input
-            type="checkbox"
             aria-label="Tap a strand to colour it"
             data-testid="trace-toggle"
             checked={traceOn}
@@ -876,30 +880,33 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
         {infinite ? (
           <>
             <label className="control-row">
-              <span>Hold</span>
+              <span>
+                Hold
+                <InfoTip label="the follow trail">
+                  <p>
+                    The camera chases the strand&rsquo;s head, feeding its own queries at any
+                    zoom. Wheel-zoom stays yours; dragging pauses the chase until you let go.
+                  </p>
+                  <p>
+                    Hold caps how many tiles of rainbow trail are kept behind the head —{' '}
+                    <strong>0 keeps all of it</strong>. Either way the chase itself can run
+                    forever, and still knows its start, so a circuit closes even after the start
+                    has scrolled away.
+                  </p>
+                </InfoTip>
+              </span>
               <input
                 type="number"
-                aria-label="Most trail tiles held while following"
+                aria-label="Most trail tiles held while following, 0 for the whole trail"
                 data-testid="trail-hold"
-                min={MIN_TRAIL_HOLD}
-                max={MAX_TRAIL_HOLD}
+                min={0}
                 step={500}
                 value={trailHold}
                 disabled={!traceOn || !followOn}
                 onChange={(e) => dispatch({ type: 'setTrailHold', hold: Number(e.target.value) })}
               />
-              <span className="muted">tiles of trail</span>
+              <span className="muted">tiles of trail · 0 = all</span>
             </label>
-            <p className="muted" role="note">
-              Auto-follow makes the camera chase the strand&rsquo;s head — the same walk panning by
-              hand feeds, driven for you, at any zoom (the chase feeds itself with its own
-              head-centred queries, so zooming out to glyphs does not stop it). Wheel-zoom stays
-              yours the whole time; dragging pauses the chase until you let go. While following,
-              the rainbow holds at most the last &ldquo;hold&rdquo; tiles and lets the tail go
-              behind it — the window bounds memory, not distance, so the chase itself can run
-              forever (and still knows its start, so a circuit closes even after the start left
-              the window).
-            </p>
             <label className="control-row">
               <input
                 type="checkbox"
@@ -967,7 +974,21 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
               dispatch({ type: 'setFindCircuits', findCircuits: e.target.checked })
             }
           />
-          <span>Find all circuits on screen</span>
+          <span>
+            Find all circuits on screen
+            <InfoTip label="finding circuits">
+              <p>
+                A traced strand that returns to its start is a circuit: it flips from the rainbow
+                to the solid colour of its length the moment it closes.
+              </p>
+              <p>
+                &ldquo;Find all&rdquo; welds and traces everything on screen instead. It needs
+                individual tiles, so <strong>Circuit zoom</strong> parks the camera at the widest
+                view that still has them; past that, &ldquo;keep them&rdquo; holds what was
+                already found while you pull further back.
+              </p>
+            </InfoTip>
+          </span>
         </label>
         <label className="control-row">
           <input
@@ -1045,15 +1066,6 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
         </label>
         {infinite ? (
           <>
-            <p className="muted" role="note">
-              A traced strand that comes back to its start is a circuit — it flips from the
-              rainbow to the solid colour of its length the moment it closes (the rainbow stays
-              for tails), and the keep toggles hold finished strands lit while you tap the next.
-              &ldquo;Find all&rdquo; welds and traces everything on screen and colours every
-              circuit by length. Finding them needs individual tiles, so &ldquo;Circuit
-              zoom&rdquo; parks the camera at the widest view that still has them; past that,
-              &ldquo;keep them&rdquo; holds the ones already found while you pull further back.
-            </p>
             <div className="control-row">
               <button
                 type="button"
@@ -1099,9 +1111,8 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
           </>
         ) : (
           <p className="muted" role="note">
-            Tracing follows a strand across tiles the un-rooted engine expands as you pan, so it
-            belongs to infinite mode. The rooted patch has an exact answer instead — Analysis
-            below traces every circuit in it at once.
+            Tracing belongs to infinite mode; the rooted patch has an exact answer instead — see
+            Analysis below.
           </p>
         )}
 
@@ -1122,8 +1133,13 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
             route={route}
             onDownloadSvg={onDownloadSvg}
             onDownloadPng={onDownloadPng}
-            downloadsDisabled={heavy}
-            downloadsHint="Switch to level 4 or below to export the SVG scene."
+            downloadsDisabled={heavy && !infinite}
+            svgDisabled={infinite}
+            downloadsHint={
+              infinite
+                ? 'The infinite view has no SVG scene — PNG saves what is on screen.'
+                : 'Switch to level 4 or below to export the SVG scene.'
+            }
           >
             <button type="button" onClick={pinCamera} className="share-pin">
               {pinned ? 'Unpin view' : 'Pin current view'}
@@ -1201,7 +1217,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
             chords={infiniteChords}
             trace={traceOn && !!infiniteChords}
             follow={followOn && traceOn && !!infiniteChords}
-            followHold={trailHold}
+            followHold={trailHold > 0 ? trailHold : null}
             keepCircuits={keepCircuitsOn && traceOn && !!infiniteChords}
             keepTails={keepTailsOn && traceOn && !!infiniteChords}
             findCircuits={findOn && !!infiniteChords}
@@ -1220,6 +1236,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
             apiRef={infiniteApiRef}
             onStatusChange={onInfiniteStatus}
           >
+            {hasFlag(state, FLAG.HIDE_STATS) ? null : (
             <InfiniteHud
               subscribeRef={infiniteHudSubRef}
               linesOn={linesOn && !!infiniteChords}
@@ -1240,6 +1257,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
               onSelect={setGraphPick}
               onChainLength={setChainLength}
             />
+            )}
           </InfiniteCanvas>
         ) : !heavy ? (
           <PanZoom

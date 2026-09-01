@@ -84,11 +84,6 @@ export interface ExplorerState {
    */
   readonly lineWidth?: number;
   /**
-   * Clip strands at the midpoint where they would overlap (`no=1`). Additive:
-   * omitted when off. Only the WebGL map views implement it.
-   */
-  readonly noOverlap?: boolean;
-  /**
    * Tap a strand in infinite mode to colour it (`tc=0` when OFF). Additive the
    * other way round from its neighbours — the default is ON, so only switching
    * it off writes a parameter and every pre-existing link still decodes to the
@@ -96,15 +91,15 @@ export interface ExplorerState {
    */
   readonly trace?: boolean;
   /**
-   * Auto-follow the traced strand (`fw=1`): the camera chases the walk's head
-   * and the walk feeds itself, no panning required. Additive: omitted when
-   * off (the default). Read it as `state.follow ?? false`.
+   * Auto-follow the traced strand (`fw=0` when OFF): the camera chases the
+   * walk's head and the walk feeds itself, no panning required. Default ON,
+   * like `trace`. Read it as `state.follow ?? true`.
    */
   readonly follow?: boolean;
   /**
-   * Most trail points the follow mode holds on to (`hp=`) — the moving window
-   * behind the chased head; older points are let go. Additive: omitted at
-   * {@link DEFAULT_TRAIL_HOLD}. Read it as `state.hold ?? DEFAULT_TRAIL_HOLD`.
+   * Most trail points the follow mode holds on to (`hp=`) — a moving window
+   * behind the chased head, `0` (the default) keeping all of it. Additive:
+   * omitted at {@link DEFAULT_TRAIL_HOLD}.
    */
   readonly hold?: number;
   /**
@@ -119,14 +114,15 @@ export interface ExplorerState {
    */
   readonly keepTails?: boolean;
   /**
-   * Find and colour every circuit on screen (`fc=1`). Additive: omitted when
-   * off (the default). Read it as `state.findCircuits ?? false`.
+   * Find and colour every circuit on screen (`fc=0` when OFF). Default ON:
+   * the point of the view is the circuits. Read it as
+   * `state.findCircuits ?? true`.
    */
   readonly findCircuits?: boolean;
   /**
    * Keep the circuits found at a leaf cut drawn when the camera zooms out past
-   * what find-all can analyse (`pf=1`). Additive: omitted when off (the
-   * default). Read it as `state.persistFound ?? false`.
+   * what find-all can analyse (`pf=0` when OFF). Default ON, so pulling back
+   * accumulates what was found rather than dropping it.
    */
   readonly persistFound?: boolean;
   /**
@@ -197,21 +193,22 @@ export function clampLineScale(scale: number): number {
 /**
  * Follow-mode trail window ("how many things the chase holds on to"): the
  * most trail points kept behind the head while auto-following, one point per
- * tile crossed. A windowed walk's LENGTH is unbounded — the window is what
- * bounds its memory — so the ceiling is only about how much the browser is
- * asked to hold and redraw (~40 bytes a point CPU-side plus the GPU copy:
- * the top value is ~0.5 GB, the same opt-in weight as the 10M instance
- * budget). It mirrors the un-windowed hard cap (`TRAIL_MAX_POINTS` in
- * `pages/map/strandWalk.ts`); the floor is the least a window can hold and
- * still look like a trail.
+ * tile crossed. `0` — the default — keeps the whole trail, so nothing the
+ * chase drew is thrown away behind it.
+ *
+ * There is deliberately no ceiling, as with {@link DEFAULT_FIND_CEILING}: a
+ * window costs ~40 bytes a point CPU-side plus the GPU copy, and how much of
+ * that to spend is the reader's call. `TRAIL_MAX_POINTS` in
+ * `pages/map/strandWalk.ts` still backstops the walk itself so a chase left
+ * running cannot take the tab down. The floor is the least a window can hold
+ * and still look like a trail.
  */
-export const DEFAULT_TRAIL_HOLD = 5000;
+export const DEFAULT_TRAIL_HOLD = 0;
 export const MIN_TRAIL_HOLD = 16;
-export const MAX_TRAIL_HOLD = 10_000_000;
 
 export function clampTrailHold(hold: number): number {
-  if (!Number.isFinite(hold)) return DEFAULT_TRAIL_HOLD;
-  return Math.max(MIN_TRAIL_HOLD, Math.min(MAX_TRAIL_HOLD, Math.round(hold)));
+  if (!Number.isFinite(hold) || hold <= 0) return 0;
+  return Math.max(MIN_TRAIL_HOLD, Math.round(hold));
 }
 
 /**
@@ -287,7 +284,20 @@ export const FLAG = {
   EDGE_LABELS: 32,
   CURVY: 64,
   NON_CROSSING_ONLY: 128,
+  /**
+   * Hide the stats readout over the view. Phrased as HIDE rather than SHOW so
+   * the default stays 23 and every link written before it still means what it
+   * meant.
+   */
+  HIDE_STATS: 256,
 } as const;
+
+/**
+ * Every bit `fl=` may carry. Derived, not written out: the codec and the
+ * reducer both clamp to it, and a hard-coded ceiling silently swallowed the
+ * ninth flag the day it was added.
+ */
+export const ALL_FLAGS: number = Object.values(FLAG).reduce((a, b) => a | b, 0);
 
 export const DEFAULT_FLAGS =
   FLAG.BACKGROUNDS | FLAG.OUTLINES | FLAG.LINES | FLAG.RAINBOW_TAILS; // 23
@@ -459,17 +469,16 @@ export function encodeExplorerState(s: ExplorerState): URLSearchParams {
     const lw = clampLineScale(s.lineWidth);
     if (lw !== DEFAULT_LINE_SCALE) q.set('lw', String(lw));
   }
-  if (s.noOverlap) q.set('no', '1');
   if (s.trace === false) q.set('tc', '0');
-  if (s.follow) q.set('fw', '1');
+  if (s.follow === false) q.set('fw', '0');
   if (s.hold !== undefined) {
     const hp = clampTrailHold(s.hold);
     if (hp !== DEFAULT_TRAIL_HOLD) q.set('hp', String(hp));
   }
   if (s.keepCircuits === false) q.set('kc', '0');
   if (s.keepTails === false) q.set('kt', '0');
-  if (s.findCircuits) q.set('fc', '1');
-  if (s.persistFound) q.set('pf', '1');
+  if (s.findCircuits === false) q.set('fc', '0');
+  if (s.persistFound === false) q.set('pf', '0');
   if (s.showTicker === false) q.set('tk', '0');
   if (s.showTransitions) q.set('tg', '1');
   if (s.findCeiling !== undefined && clampFindCeiling(s.findCeiling) !== DEFAULT_FIND_CEILING) {
@@ -527,7 +536,7 @@ export function decodeExplorerState(q: URLSearchParams): ExplorerState {
   matching = normalizeMatching(family, subset, matching);
 
   const flNum = Number.parseInt(q.get('fl') ?? '', 10);
-  const flags = Number.isFinite(flNum) ? clampInt(flNum, 0, 255) : d.flags;
+  const flags = Number.isFinite(flNum) ? clampInt(flNum, 0, ALL_FLAGS) : d.flags;
 
   const csRaw = q.get('cs');
   const colorScheme = (COLOR_SCHEME_IDS as readonly string[]).includes(csRaw ?? '')
@@ -564,12 +573,10 @@ export function decodeExplorerState(q: URLSearchParams): ExplorerState {
 
   const lwRaw = Number.parseFloat(q.get('lw') ?? '');
   const lineWidth = Number.isFinite(lwRaw) ? clampLineScale(lwRaw) : undefined;
-  const noRaw = q.get('no');
-  const noOverlap = noRaw === '1' || noRaw === 'true' ? true : undefined;
   const tcRaw = q.get('tc');
   const trace = tcRaw === '0' || tcRaw === 'false' ? false : undefined;
   const fwRaw = q.get('fw');
-  const follow = fwRaw === '1' || fwRaw === 'true' ? true : undefined;
+  const follow = fwRaw === '0' || fwRaw === 'false' ? false : undefined;
   const hpRaw = Number.parseInt(q.get('hp') ?? '', 10);
   const hold =
     Number.isFinite(hpRaw) && clampTrailHold(hpRaw) !== DEFAULT_TRAIL_HOLD
@@ -580,9 +587,9 @@ export function decodeExplorerState(q: URLSearchParams): ExplorerState {
   const ktRaw = q.get('kt');
   const keepTails = ktRaw === '0' || ktRaw === 'false' ? false : undefined;
   const fcRaw = q.get('fc');
-  const findCircuits = fcRaw === '1' || fcRaw === 'true' ? true : undefined;
+  const findCircuits = fcRaw === '0' || fcRaw === 'false' ? false : undefined;
   const pfRaw = q.get('pf');
-  const persistFound = pfRaw === '1' || pfRaw === 'true' ? true : undefined;
+  const persistFound = pfRaw === '0' || pfRaw === 'false' ? false : undefined;
   const tkRaw = q.get('tk');
   const showTicker = tkRaw === '0' || tkRaw === 'false' ? false : undefined;
   const tgRaw = q.get('tg');
@@ -616,14 +623,13 @@ export function decodeExplorerState(q: URLSearchParams): ExplorerState {
     ...(mode ? { mode } : {}),
     ...(budget !== undefined ? { budget } : {}),
     ...(lineWidth !== undefined ? { lineWidth } : {}),
-    ...(noOverlap ? { noOverlap } : {}),
     ...(trace === false ? { trace } : {}),
-    ...(follow ? { follow } : {}),
+    ...(follow === false ? { follow } : {}),
     ...(hold !== undefined ? { hold } : {}),
     ...(keepCircuits === false ? { keepCircuits } : {}),
     ...(keepTails === false ? { keepTails } : {}),
-    ...(findCircuits ? { findCircuits } : {}),
-    ...(persistFound ? { persistFound } : {}),
+    ...(findCircuits === false ? { findCircuits } : {}),
+    ...(persistFound === false ? { persistFound } : {}),
     ...(showTicker === false ? { showTicker } : {}),
     ...(showTransitions ? { showTransitions } : {}),
     ...(findCeiling !== undefined && findCeiling !== DEFAULT_FIND_CEILING ? { findCeiling } : {}),

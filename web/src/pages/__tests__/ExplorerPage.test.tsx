@@ -67,6 +67,81 @@ describe('ExplorerPage', () => {
     expect(majors()).toHaveLength(0);
   });
 
+  it('opens with circuits found, followed and held on screen', () => {
+    window.history.replaceState(null, '', '/#/explorer?v=1&md=infinite&e=2578');
+    const { container } = render(<ExplorerPage />);
+
+    const checked = (id: string): boolean =>
+      (container.querySelector(`[data-testid="${id}"]`) as HTMLInputElement).checked;
+    expect(checked('follow-toggle')).toBe(true);
+    expect(checked('find-circuits')).toBe(true);
+    expect(checked('persist-found')).toBe(true);
+
+    // The whole trail is kept, and there is no ceiling on the box.
+    const hold = container.querySelector('[data-testid="trail-hold"]') as HTMLInputElement;
+    expect(hold.value).toBe('0');
+    expect(hold.getAttribute('max')).toBeNull();
+
+    // None of that is worth a URL parameter while it is the default.
+    expect(window.location.hash).not.toMatch(/(fw|fc|pf|hp)=/);
+  });
+
+  it('has no midpoint-clipping control left to offer', () => {
+    window.history.replaceState(null, '', '/#/explorer?v=1&md=infinite');
+    const { container } = render(<ExplorerPage />);
+    expect(container.querySelector('[data-testid="no-overlap"]')).toBeNull();
+    expect(container.textContent).not.toContain('Meet at midpoint');
+  });
+
+  it('keeps its explanations behind info tips instead of in the sidebar', () => {
+    window.history.replaceState(null, '', '/#/explorer?v=1&md=infinite&e=2578');
+    const { container } = render(<ExplorerPage />);
+
+    const tips = [...container.querySelectorAll('.info-tip')];
+    expect(tips.length).toBeGreaterThanOrEqual(4);
+    // Each is a labelled disclosure, closed until asked.
+    for (const tip of tips) {
+      expect((tip as HTMLDetailsElement).open).toBe(false);
+      expect(tip.querySelector('summary')?.getAttribute('aria-label')).toMatch(/^About /u);
+    }
+
+    // The prose that used to sit in the sidebar now lives inside one of them.
+    const sidebar = container.querySelector('.explorer-sidebar') as HTMLElement;
+    expect(sidebar.querySelectorAll('p[role="note"]')).toHaveLength(0);
+    expect(
+      [...tips].some((t) => (t.textContent ?? '').includes('chases the strand')),
+    ).toBe(true);
+  });
+
+  it('hides the stats readout on request', () => {
+    window.history.replaceState(null, '', '/#/explorer?v=1&md=infinite&e=2578');
+    const { container } = render(<ExplorerPage />);
+    expect(container.querySelector('[data-testid="explorer-infinite-hud"]')).not.toBeNull();
+
+    const toggle = [...container.querySelectorAll('.display-toggles label')].find((l) =>
+      l.textContent?.includes('Hide stats'),
+    ) as HTMLElement;
+    fireEvent.click(toggle.querySelector('input') as Element);
+    expect(container.querySelector('[data-testid="explorer-infinite-hud"]')).toBeNull();
+  });
+
+  it('offers a PNG of the infinite view, where there is no SVG to serialize', () => {
+    window.history.replaceState(null, '', '/#/explorer?v=1&md=infinite&e=2578');
+    const { container } = render(<ExplorerPage />);
+    const button = [...container.querySelectorAll('button')].find((b) =>
+      b.textContent?.includes('PNG'),
+    ) as HTMLButtonElement;
+    expect(button).toBeDefined();
+    expect(button.disabled).toBe(false);
+
+    // The SVG export has nothing to work from in this mode and says so.
+    const svg = [...container.querySelectorAll('button')].find((b) =>
+      b.textContent?.includes('SVG'),
+    ) as HTMLButtonElement;
+    expect(svg.disabled).toBe(true);
+    expect(svg.title).toContain('no SVG scene');
+  });
+
   it('steps the supertile level and re-renders the patch', () => {
     const { container } = render(<ExplorerPage />);
     fireEvent.click(container.querySelector('button[aria-label="More supertiles"]') as Element);

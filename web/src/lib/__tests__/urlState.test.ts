@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+  ALL_FLAGS,
   DEFAULT_EXPLORER_STATE,
   FAMILIES,
+  FLAG,
   TILE_NAMES,
   leafOrder,
   validEdgeSubsets,
@@ -162,23 +164,37 @@ describe('follow / hold / keep-circuits params (explorer codec)', () => {
   it('encodes fw/hp/kc additively and round-trips', () => {
     expect(stateToQuery(inf)).not.toMatch(/(^|&)(fw|hp|kc)=/);
 
-    const s: ExplorerState = { ...inf, follow: true, hold: 1234, keepCircuits: false };
+    const s: ExplorerState = { ...inf, follow: false, hold: 1234, keepCircuits: false };
     const q = stateToQuery(s);
-    expect(q).toContain('fw=1');
+    expect(q).toContain('fw=0');
     expect(q).toContain('hp=1234');
     expect(q).toContain('kc=0');
     const back = hashToState(stateToHash(s));
-    expect(back.follow).toBe(true);
+    expect(back.follow).toBe(false);
     expect(back.hold).toBe(1234);
     expect(back.keepCircuits).toBe(false);
     expect(stateToQuery(back)).toBe(q); // canonical
   });
 
   it('drops all three keys at their defaults on decode', () => {
-    const back = hashToState('#/explorer?v=1&md=infinite&fw=0&hp=5000&kc=1');
+    const back = hashToState('#/explorer?v=1&md=infinite&fw=1&hp=0&kc=1');
     expect('follow' in back).toBe(false);
     expect('hold' in back).toBe(false);
     expect('keepCircuits' in back).toBe(false);
+  });
+});
+
+describe('display flags in the URL', () => {
+  it('round-trips every bit, including the ninth', () => {
+    // `fl=` was clamped to 255, so the first flag past bit 8 never survived.
+    const s: ExplorerState = { ...DEFAULT_EXPLORER_STATE, flags: ALL_FLAGS };
+    expect(hashToState(stateToHash(s)).flags).toBe(ALL_FLAGS);
+    const hidden: ExplorerState = {
+      ...DEFAULT_EXPLORER_STATE,
+      flags: DEFAULT_EXPLORER_STATE.flags | FLAG.HIDE_STATS,
+    };
+    expect(stateToQuery(hidden)).toContain(`fl=${DEFAULT_EXPLORER_STATE.flags | FLAG.HIDE_STATS}`);
+    expect(hashToState(stateToHash(hidden)).flags & FLAG.HIDE_STATS).toBe(FLAG.HIDE_STATS);
   });
 });
 
@@ -207,24 +223,24 @@ describe('pace / trace-seed params (explorer codec)', () => {
 
 describe('kt / fc params (explorer codec)', () => {
   const inf: ExplorerState = { ...DEFAULT_EXPLORER_STATE, mode: 'infinite' };
-  it('round-trips keep-tails-off and find-all-on', () => {
+  it('round-trips keep-tails-off and find-all-off', () => {
     expect(stateToQuery(inf)).not.toMatch(/(^|&)(kt|fc)=/);
     const s: ExplorerState = {
       ...inf,
       keepTails: false,
-      findCircuits: true,
-      persistFound: true,
+      findCircuits: false,
+      persistFound: false,
     };
     const q = stateToQuery(s);
     expect(q).toContain('kt=0');
-    expect(q).toContain('fc=1');
+    expect(q).toContain('fc=0');
     const back = hashToState(stateToHash(s));
     expect(back.keepTails).toBe(false);
-    expect(back.findCircuits).toBe(true);
-    expect(back.persistFound).toBe(true);
-    expect(stateToQuery(s)).toContain('pf=1');
-    // Off is the default and writes nothing.
-    expect(stateToQuery({ ...s, persistFound: false })).not.toContain('pf=');
+    expect(back.findCircuits).toBe(false);
+    expect(back.persistFound).toBe(false);
+    expect(stateToQuery(s)).toContain('pf=0');
+    // On is the default and writes nothing.
+    expect(stateToQuery({ ...s, persistFound: true })).not.toContain('pf=');
     expect(stateToQuery(back)).toBe(q);
   });
 });

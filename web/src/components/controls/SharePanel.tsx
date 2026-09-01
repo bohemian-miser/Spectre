@@ -26,8 +26,10 @@ export interface SharePanelProps {
   onDownloadSvg?(): void | Promise<void>;
   /** Rasterise the live scene to PNG. Button hidden when omitted. */
   onDownloadPng?(): void | Promise<void>;
-  /** Disable both downloads (e.g. the canvas renderer is active). */
+  /** Disable both downloads (e.g. the scene is too heavy to serialize). */
   readonly downloadsDisabled?: boolean;
+  /** Disable the SVG one alone — the canvas view can still give a PNG. */
+  readonly svgDisabled?: boolean;
   readonly downloadsHint?: string;
   /** Extra rows (the explorer adds its "include camera" checkbox here). */
   readonly children?: ReactNode;
@@ -45,6 +47,7 @@ export function SharePanel(props: SharePanelProps): JSX.Element {
     onDownloadSvg,
     onDownloadPng,
     downloadsDisabled = false,
+    svgDisabled = false,
     downloadsHint,
     children,
   } = props;
@@ -81,8 +84,8 @@ export function SharePanel(props: SharePanelProps): JSX.Element {
       {onDownloadSvg ? (
         <button
           type="button"
-          disabled={downloadsDisabled}
-          title={downloadsDisabled ? downloadsHint : 'Download the scene as SVG'}
+          disabled={downloadsDisabled || svgDisabled}
+          title={downloadsDisabled || svgDisabled ? downloadsHint : 'Download the scene as SVG'}
           onClick={() => void onDownloadSvg()}
         >
           Download SVG

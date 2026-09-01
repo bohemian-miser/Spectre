@@ -3,8 +3,11 @@ import { expect, test } from '@playwright/test';
 /**
  * Finding circuits needs a cut of individual tiles, but SEEING the pattern
  * they make does not. "Circuit zoom" parks the camera at the widest view that
- * still qualifies; the persist toggle then holds what was found while the
- * camera pulls further back.
+ * still qualifies; holding what was found is what keeps them on screen while
+ * the camera pulls further back.
+ *
+ * Both are on by default, so these tests say `pf=0` when they want the view
+ * that has genuinely nothing to show.
  */
 const RULE = 'e=2578&c=0100101100';
 
@@ -12,8 +15,9 @@ test('circuit zoom lands on a view find-all can actually analyse', async ({ page
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   await page.setViewportSize({ width: 1280, height: 900 });
-  // lv=8 is far past what find-all can do: it opens on supertile glyphs.
-  await page.goto(`#/explorer?v=1&md=infinite&${RULE}&fc=1&lv=8`);
+  // lv=8 is far past what find-all can do: it opens on supertile glyphs, and
+  // `pf=0` means nothing found on the way there is being held over it.
+  await page.goto(`#/explorer?v=1&md=infinite&${RULE}&pf=0&lv=8`);
   await expect(page.getByTestId('inf-instances')).not.toHaveText('0 instances', { timeout: 30000 });
   await page.waitForTimeout(1200);
   await expect(page.getByTestId('inf-found')).toHaveText('find: zoom in to tiles');
@@ -26,12 +30,12 @@ test('circuit zoom lands on a view find-all can actually analyse', async ({ page
   expect(errors).toEqual([]);
 });
 
-test('found circuits are dropped on zoom-out, and held when asked', async ({ page }) => {
+test('found circuits are held on zoom-out, and dropped when switched off', async ({ page }) => {
   // Real engine work at three different zooms, so the default budget is tight
   // even when nothing is wrong.
   test.setTimeout(90_000);
   await page.setViewportSize({ width: 1280, height: 900 });
-  await page.goto(`#/explorer?v=1&md=infinite&${RULE}&fc=1&lv=4`);
+  await page.goto(`#/explorer?v=1&md=infinite&${RULE}&lv=4`);
   await expect(page.getByTestId('inf-instances')).not.toHaveText('0 instances', { timeout: 30000 });
 
   const viewport = page.locator('.explorer-infinite');
@@ -57,21 +61,21 @@ test('found circuits are dropped on zoom-out, and held when asked', async ({ pag
 
   await toCircuitView();
 
-  // Without the toggle, a coarse view has nothing to show.
-  await zoomOut();
-  await expect(page.getByTestId('inf-found')).toHaveText('find: zoom in to tiles', {
-    timeout: 30000,
-  });
-
-  // With it, the same circuits stay lit — and the HUD says they are held.
-  await toCircuitView();
-  await page.getByTestId('persist-found').check();
+  // By default the circuits stay lit past their own zoom — the HUD says they
+  // are held, and they are really being drawn, not just counted.
   await zoomOut();
   await expect(page.getByTestId('inf-found')).toContainText('held from a closer view', {
     timeout: 30000,
   });
-  // They are really being drawn, not just counted.
   await expect(page.getByTestId('inf-draw')).not.toContainText('· 0 calls');
+
+  // Switch holding off and a coarse view has nothing to show again.
+  await toCircuitView();
+  await page.getByTestId('persist-found').uncheck();
+  await zoomOut();
+  await expect(page.getByTestId('inf-found')).toHaveText('find: zoom in to tiles', {
+    timeout: 30000,
+  });
 });
 
 test('the map page offers the same pair', async ({ page }) => {

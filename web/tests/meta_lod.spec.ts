@@ -11,8 +11,10 @@ import { expect, test } from '@playwright/test';
  * lines, rainbow tails); 22 is the same with backgrounds cleared.
  */
 const RULE = 'e=2578&c=0100101100';
+// `fc=0` keeps find-all out of it: it is on by default now, and circuits held
+// from a closer view are ink of their own, which would muddy "nothing drew".
 const aggregate = (flags: number): string =>
-  `#/explorer?v=1&md=infinite&${RULE}&lv=7&fl=${flags}`;
+  `#/explorer?v=1&md=infinite&${RULE}&lv=7&fl=${flags}&fc=0`;
 
 async function settleHud(page: import('@playwright/test').Page, hash: string): Promise<void> {
   await page.setViewportSize({ width: 1200, height: 800 });

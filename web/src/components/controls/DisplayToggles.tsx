@@ -22,6 +22,7 @@ const ITEMS: readonly { flag: number; label: string }[] = [
   { flag: FLAG.EDGE_LABELS, label: 'Edge labels' },
   { flag: FLAG.CURVY, label: 'Curvy tiles' },
   { flag: FLAG.NON_CROSSING_ONLY, label: 'Non-crossing only' },
+  { flag: FLAG.HIDE_STATS, label: 'Hide stats' },
 ];
 
 export function DisplayToggles(props: DisplayTogglesProps): JSX.Element {

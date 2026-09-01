@@ -43,6 +43,9 @@ export type { EdgeSubsetPickerProps } from './controls/EdgeSubsetPicker';
 export { MatchingSlider, MatchingEditor } from './controls/MatchingSlider';
 export type { MatchingSliderProps } from './controls/MatchingSlider';
 
+export { InfoTip } from './controls/InfoTip';
+export type { InfoTipProps } from './controls/InfoTip';
+
 export { DisplayToggles } from './controls/DisplayToggles';
 export type { DisplayTogglesProps } from './controls/DisplayToggles';
 
