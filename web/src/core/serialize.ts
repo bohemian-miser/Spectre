@@ -159,6 +159,13 @@ export interface ExplorerState {
    */
   readonly pace?: number;
   /**
+   * Follow-camera damping multiplier (`fd=`). Scales how heavily the chase
+   * camera's motion is smoothed — 1 is the built-in tuning, higher floats
+   * (and trails further behind at pace), lower snaps. Absent =
+   * {@link DEFAULT_FOLLOW_DAMPING}.
+   */
+  readonly damping?: number;
+  /**
    * The tapped chord a trace grew from (`ts=`): world coordinates
    * `[atX, atY, toX, toY]`, three decimals. Present while a strand is being
    * traced, so the link replays the same chase from the same chord.
@@ -261,6 +268,26 @@ export const MAX_TRACE_PACE = 1000;
 export function clampTracePace(pace: number): number {
   if (!Number.isFinite(pace)) return DEFAULT_TRACE_PACE;
   return Math.max(MIN_TRACE_PACE, Math.min(MAX_TRACE_PACE, Math.round(pace)));
+}
+
+/**
+ * Follow-camera damping (`fd=`): a multiplier on the follow camera's
+ * smoothing time constants (`pages/map/followCamera.ts`). 1 is the tuned
+ * default; up is floatier and trails further behind at pace, down is tighter.
+ * The bounds keep every setting usable — the floor is near-rigid tracking,
+ * the ceiling still settles within a few seconds, and the camera's
+ * viewport-relative catch-up clamps deliberately do NOT scale with it, so no
+ * damping ever loses the head. Snapped to 0.05 so the URL stays short and
+ * slider positions are exact.
+ */
+export const DEFAULT_FOLLOW_DAMPING = 1;
+export const MIN_FOLLOW_DAMPING = 0.25;
+export const MAX_FOLLOW_DAMPING = 3;
+
+export function clampFollowDamping(damping: number): number {
+  if (!Number.isFinite(damping)) return DEFAULT_FOLLOW_DAMPING;
+  const snapped = Math.round(damping * 20) / 20;
+  return Math.max(MIN_FOLLOW_DAMPING, Math.min(MAX_FOLLOW_DAMPING, snapped));
 }
 
 /** `ts=` codec: 4 world coordinates at 3 decimals, comma-joined. */
@@ -490,6 +517,9 @@ export function encodeExplorerState(s: ExplorerState): URLSearchParams {
   if (s.highlightOnScreen) q.set('hs', '1');
   if (s.highlightInPath) q.set('ht', '1');
   if (s.pace !== undefined) q.set('fp', String(clampTracePace(s.pace)));
+  if (s.damping !== undefined && clampFollowDamping(s.damping) !== DEFAULT_FOLLOW_DAMPING) {
+    q.set('fd', String(clampFollowDamping(s.damping)));
+  }
   if (s.traceSeed) q.set('ts', encodeTraceSeed(s.traceSeed));
   return q;
 }
@@ -605,6 +635,8 @@ export function decodeExplorerState(q: URLSearchParams): ExplorerState {
   const highlightInPath = htRaw === '1' || htRaw === 'true' ? true : undefined;
   const fpRaw = Number.parseInt(q.get('fp') ?? '', 10);
   const pace = Number.isFinite(fpRaw) ? clampTracePace(fpRaw) : undefined;
+  const fdRaw = Number.parseFloat(q.get('fd') ?? '');
+  const damping = Number.isFinite(fdRaw) ? clampFollowDamping(fdRaw) : undefined;
   const tsRaw = q.get('ts');
   const traceSeed = tsRaw ? decodeTraceSeed(tsRaw) : undefined;
 
@@ -637,6 +669,7 @@ export function decodeExplorerState(q: URLSearchParams): ExplorerState {
     ...(highlightOnScreen ? { highlightOnScreen } : {}),
     ...(highlightInPath ? { highlightInPath } : {}),
     ...(pace !== undefined ? { pace } : {}),
+    ...(damping !== undefined && damping !== DEFAULT_FOLLOW_DAMPING ? { damping } : {}),
     ...(traceSeed ? { traceSeed } : {}),
   };
   return state;

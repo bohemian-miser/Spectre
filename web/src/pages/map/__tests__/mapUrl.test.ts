@@ -234,6 +234,28 @@ describe('pace / trace-seed params (map codec)', () => {
   });
 });
 
+describe('fd param — follow-camera damping (map codec)', () => {
+  it('is additive: the tuned default writes nothing, other values round-trip', () => {
+    const base = { ...DEFAULT_MAP_STATE, lines: true };
+    expect(encodeMapQuery(base)).not.toContain('fd=');
+    expect(encodeMapQuery({ ...base, damping: 1 })).not.toContain('fd=');
+
+    const q = encodeMapQuery({ ...base, damping: 1.8 });
+    expect(q).toContain('fd=1.8');
+    const back = decodeMapQuery(q);
+    expect(back.damping).toBe(1.8);
+    expect(encodeMapQuery(back)).toBe(q); // canonical
+  });
+
+  it('clamps and snaps rather than breaking the link', () => {
+    expect(decodeMapQuery('fd=99').damping).toBe(3); // ceiling
+    expect(decodeMapQuery('fd=0').damping).toBe(0.25); // floor
+    expect(decodeMapQuery('fd=1.234').damping).toBe(1.25); // snapped to 0.05
+    expect(decodeMapQuery('fd=abc').damping).toBe(1); // junk = default
+    expect(decodeMapQuery('').damping).toBe(1);
+  });
+});
+
 describe('kt / fc params (map codec)', () => {
   it('round-trips keep-tails-off and find-all-off', () => {
     const base = { ...DEFAULT_MAP_STATE, lines: true };

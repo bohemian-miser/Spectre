@@ -283,6 +283,38 @@ describe('ExplorerPage — infinite mode', () => {
     expect(window.location.hash).toContain('md=infinite');
   });
 
+  it('offers the damping slider and the record button in infinite mode', async () => {
+    window.history.replaceState(null, '', '/#/explorer?v=1&e=2578&md=infinite');
+    const { container } = render(<ExplorerPage />);
+
+    const slider = container.querySelector('[data-testid="damping-slider"]') as HTMLInputElement;
+    expect(slider).not.toBeNull();
+    expect(slider.value).toBe('1'); // the tuned default
+    fireEvent.change(slider, { target: { value: '2' } });
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 400));
+    });
+    expect(window.location.hash).toContain('fd=2');
+
+    // jsdom has no MediaRecorder: the record button refuses honestly.
+    const record = container.querySelector('[data-testid="explorer-record"]') as HTMLButtonElement;
+    expect(record.textContent).toContain('Record video');
+    fireEvent.click(record);
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 50));
+    });
+    expect(record.getAttribute('aria-pressed')).toBe('false');
+    expect(
+      container.querySelector('[data-testid="explorer-record-note"]')?.textContent,
+    ).toContain('Recording unavailable');
+
+    // Rooted mode has no canvas to record and no chase camera to damp.
+    window.history.replaceState(null, '', '/#/explorer?v=1&e=2578');
+    const rooted = render(<ExplorerPage />);
+    expect(rooted.container.querySelector('[data-testid="explorer-record"]')).toBeNull();
+    expect(rooted.container.querySelector('[data-testid="damping-slider"]')).toBeNull();
+  });
+
   it('offers tap-to-trace in infinite mode only, and keeps the choice in the hash', async () => {
     window.history.replaceState(null, '', '/#/explorer?v=1&e=2578&md=infinite');
     const { container } = render(<ExplorerPage />);

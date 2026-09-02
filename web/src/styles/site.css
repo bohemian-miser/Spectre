@@ -116,3 +116,12 @@ body,
 .site-footer a {
   color: var(--muted);
 }
+
+/* The canvas-recording toggle (map header, Explorer sidebar): it wears its
+   state — red while a take is running, tabular digits so the live timer does
+   not wobble the layout. */
+button.map-record.is-recording {
+  border-color: #d24a43;
+  color: #e66158;
+  font-variant-numeric: tabular-nums;
+}
