@@ -947,23 +947,28 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
             ) : null}
             <label className="control-row">
               <span>Damping</span>
+              {/* Log-scaled: the range spans 0.25×–30×, and the everyday
+                  settings all live under 3× — a linear track would cram them
+                  into its first tenth. */}
               <input
                 type="range"
                 aria-label="Follow-camera damping"
                 data-testid="damping-slider"
-                min={MIN_FOLLOW_DAMPING}
-                max={MAX_FOLLOW_DAMPING}
-                step={0.05}
-                value={damping}
+                min={Math.log(MIN_FOLLOW_DAMPING)}
+                max={Math.log(MAX_FOLLOW_DAMPING)}
+                step="any"
+                value={Math.log(damping)}
                 disabled={!traceOn || !followOn}
                 onChange={(e) =>
                   dispatch({
                     type: 'setDamping',
-                    damping: clampFollowDamping(Number(e.target.value)),
+                    damping: clampFollowDamping(Math.exp(Number(e.target.value))),
                   })
                 }
               />
-              <span className="muted">{damping.toFixed(2)}×</span>
+              <span className="muted">
+                {damping >= 10 ? damping.toFixed(1) : damping.toFixed(2)}×
+              </span>
             </label>
             <div className="control-row">
               <button

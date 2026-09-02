@@ -14,3 +14,5 @@ web/test-results/
 .claude/
 # Scratch verification scripts written by browser-check runs
 web/.verify-*
+
+node_modules/

@@ -248,7 +248,7 @@ describe('fd param — follow-camera damping (map codec)', () => {
   });
 
   it('clamps and snaps rather than breaking the link', () => {
-    expect(decodeMapQuery('fd=99').damping).toBe(3); // ceiling
+    expect(decodeMapQuery('fd=99').damping).toBe(30); // ceiling
     expect(decodeMapQuery('fd=0').damping).toBe(0.25); // floor
     expect(decodeMapQuery('fd=1.234').damping).toBe(1.25); // snapped to 0.05
     expect(decodeMapQuery('fd=abc').damping).toBe(1); // junk = default

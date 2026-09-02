@@ -102,6 +102,20 @@ export const FOLLOW_TRACK_TAU_MS = 80;
 export const FOLLOW_ENGAGE_VIEWPORTS_PER_S = 1.1;
 
 /**
+ * The catch-up floor: heavy damping must float, never lose the head. A
+ * heavily damped tracker's exponential alone would trail a fast chase by
+ * `speed × constant` — screens beyond the viewport at the 30× ceiling — so
+ * once the camera is more than {@link FOLLOW_CATCHUP_START_VIEWPORTS} behind
+ * its aim, its rate blends CONTINUOUSLY up toward this un-scaled constant
+ * (fully by start + span), which bounds the steady lag in viewport terms
+ * whatever the damping. The blend only ever raises the rate — at light
+ * damping the damped rate is already the faster one and nothing changes.
+ */
+export const FOLLOW_CATCHUP_TAU_MS = 300;
+export const FOLLOW_CATCHUP_START_VIEWPORTS = 0.5;
+export const FOLLOW_CATCHUP_SPAN_VIEWPORTS = 0.75;
+
+/**
  * The tracker's step cap scales with the chase's own speed by this factor, so
  * steady tracking is NEVER the thing being capped — that was the yo-yo: a cap
  * below the chase speed made the camera fall behind until the catch-up rule
@@ -254,10 +268,17 @@ export function advanceFollowCamera(
   // Never further behind than the catch-up bound, and never off the trimmed
   // window's tail.
   arc = Math.max(arc, total - FOLLOW_DOLLY_MAX_BEHIND_VIEWPORTS * viewMinWorld, first);
+  // The rate the dolly ACTUALLY moved at, clamps included. At light damping
+  // this equals the spring's own velocity; at heavy damping the max-behind
+  // clamp is what drives the dolly, and the spring's internal velocity does
+  // not see that — feeding the lead from the spring would collapse the
+  // feed-forward exactly when the damping (and so the lag it cancels) is
+  // largest.
+  const movedRate = Math.max(0, arc - state.arc) / dt;
   state.arc = arc;
   state.speed = Math.max(0, damped.velocity);
   state.leadSpeed +=
-    (state.speed - state.leadSpeed) * (1 - Math.exp(-(dt * 1000) / (FOLLOW_LEAD_TAU_MS * d)));
+    (movedRate - state.leadSpeed) * (1 - Math.exp(-(dt * 1000) / (FOLLOW_LEAD_TAU_MS * d)));
 
   // --- stage 2: the aim -----------------------------------------------------
   // The lead scales with the damping because the lag it cancels does: a
@@ -277,8 +298,17 @@ export function advanceFollowCamera(
     state.speed * scale < FOLLOW_SETTLE_PX_PER_S;
   if (settled || dist === 0) return { cx: cam.x, cy: cam.y, settled };
 
-  let step = dist * (1 - Math.exp(-(dt * 1000) / (FOLLOW_TRACK_TAU_MS * d)));
   const distViewports = viewMinWorld > 0 ? dist / viewMinWorld : 0;
+  const dampedRate = 1 - Math.exp(-(dt * 1000) / (FOLLOW_TRACK_TAU_MS * d));
+  // The catch-up floor (see the constants above): past half a viewport the
+  // rate blends toward the un-scaled constant — upward only, so light
+  // damping (whose own rate is faster) is untouched.
+  const catchupRate = 1 - Math.exp(-(dt * 1000) / FOLLOW_CATCHUP_TAU_MS);
+  const blend = Math.min(
+    1,
+    Math.max(0, (distViewports - FOLLOW_CATCHUP_START_VIEWPORTS) / FOLLOW_CATCHUP_SPAN_VIEWPORTS),
+  );
+  let step = dist * (dampedRate + Math.max(0, catchupRate - dampedRate) * blend);
   const capViewportsPerS = Math.max(
     FOLLOW_ENGAGE_VIEWPORTS_PER_S,
     viewMinWorld > 0 ? (FOLLOW_CAP_SPEED_FACTOR * state.speed) / viewMinWorld : 0,
