@@ -237,7 +237,7 @@ describe('fd param — follow-camera damping (explorer codec)', () => {
 
   it('junk drops cleanly and out-of-range values clamp', () => {
     expect('damping' in hashToState('#/explorer?v=1&fd=abc')).toBe(false);
-    expect(hashToState('#/explorer?v=1&fd=99').damping).toBe(3);
+    expect(hashToState('#/explorer?v=1&fd=99').damping).toBe(30);
     expect(hashToState('#/explorer?v=1&fd=0').damping).toBe(0.25);
     expect(hashToState('#/explorer?v=1&fd=1.234').damping).toBe(1.25); // snapped
   });

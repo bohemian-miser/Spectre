@@ -275,14 +275,15 @@ export function clampTracePace(pace: number): number {
  * smoothing time constants (`pages/map/followCamera.ts`). 1 is the tuned
  * default; up is floatier and trails further behind at pace, down is tighter.
  * The bounds keep every setting usable — the floor is near-rigid tracking,
- * the ceiling still settles within a few seconds, and the camera's
- * viewport-relative catch-up clamps deliberately do NOT scale with it, so no
- * damping ever loses the head. Snapped to 0.05 so the URL stays short and
- * slider positions are exact.
+ * and the ceiling (a ~9-second dolly constant: extreme cinematic drift) stays
+ * honest because the camera's viewport-relative catch-up rules deliberately
+ * do NOT scale with it: past half a viewport of lag the tracker blends up to
+ * an un-damped catch-up rate, so no damping ever loses the head. Snapped to
+ * 0.05 so the URL stays short and slider positions are exact.
  */
 export const DEFAULT_FOLLOW_DAMPING = 1;
 export const MIN_FOLLOW_DAMPING = 0.25;
-export const MAX_FOLLOW_DAMPING = 3;
+export const MAX_FOLLOW_DAMPING = 30;
 
 export function clampFollowDamping(damping: number): number {
   if (!Number.isFinite(damping)) return DEFAULT_FOLLOW_DAMPING;

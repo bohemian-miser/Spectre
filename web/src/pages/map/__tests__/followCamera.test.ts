@@ -315,6 +315,8 @@ describe('advanceFollowCamera — damping', () => {
     expect(tuned).toBeLessThan(floaty);
     // Omitting the parameter IS the tuned default.
     expect(engageFrames()).toBe(tuned);
+    // The 30× ceiling is an extreme drift, but it still arrives and settles.
+    expect(engageFrames(30)).toBeGreaterThan(floaty);
   });
 
   it('trails further at heavier damping, and the un-scaled clamps still bound it', () => {
@@ -326,6 +328,11 @@ describe('advanceFollowCamera — damping', () => {
     // The dolly clamp and tracker do not float away with the damping: even
     // the heaviest setting keeps the head within reach of the viewport.
     expect(floaty).toBeLessThan(VIEW_MIN * (FOLLOW_DOLLY_MAX_BEHIND_VIEWPORTS + 0.5));
+    // At the 30× ceiling the tracker's own exponential would trail a 30 u/s
+    // chase by ~3.5 viewports — the catch-up floor is what bounds it instead.
+    const extreme = steadyLag(30);
+    expect(extreme).toBeGreaterThan(floaty);
+    expect(extreme).toBeLessThan(VIEW_MIN * 1.3);
   });
 });
 

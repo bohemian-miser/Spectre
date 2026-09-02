@@ -287,14 +287,23 @@ describe('ExplorerPage — infinite mode', () => {
     window.history.replaceState(null, '', '/#/explorer?v=1&e=2578&md=infinite');
     const { container } = render(<ExplorerPage />);
 
+    // The slider is log-positioned (0.25×–30× is unusable on a linear track):
+    // its VALUE is ln(damping), so the tuned 1× default sits at 0.
     const slider = container.querySelector('[data-testid="damping-slider"]') as HTMLInputElement;
     expect(slider).not.toBeNull();
-    expect(slider.value).toBe('1'); // the tuned default
-    fireEvent.change(slider, { target: { value: '2' } });
+    expect(Number(slider.value)).toBe(0);
+    fireEvent.change(slider, { target: { value: String(Math.log(2)) } });
     await act(async () => {
       await new Promise((r) => setTimeout(r, 400));
     });
     expect(window.location.hash).toContain('fd=2');
+
+    // The new 30× ceiling is genuinely reachable from the track's far end.
+    fireEvent.change(slider, { target: { value: String(Math.log(30)) } });
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 400));
+    });
+    expect(window.location.hash).toContain('fd=30');
 
     // jsdom has no MediaRecorder: the record button refuses honestly.
     const record = container.querySelector('[data-testid="explorer-record"]') as HTMLButtonElement;

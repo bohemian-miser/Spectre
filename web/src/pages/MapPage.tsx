@@ -666,18 +666,23 @@ export function MapPage(props: MapPageProps): JSX.Element {
             </label>
             <label className="control-row">
               <span>Damping</span>
+              {/* Log-scaled: the range spans 0.25×–30×, and the everyday
+                  settings all live under 3× — a linear track would cram them
+                  into its first tenth. */}
               <input
                 type="range"
                 aria-label="Follow-camera damping"
                 data-testid="map-damping"
-                min={MIN_FOLLOW_DAMPING}
-                max={MAX_FOLLOW_DAMPING}
-                step={0.05}
-                value={damping}
+                min={Math.log(MIN_FOLLOW_DAMPING)}
+                max={Math.log(MAX_FOLLOW_DAMPING)}
+                step="any"
+                value={Math.log(damping)}
                 disabled={!lines || !trace || !follow}
-                onChange={(e) => setDamping(clampFollowDamping(Number(e.target.value)))}
+                onChange={(e) => setDamping(clampFollowDamping(Math.exp(Number(e.target.value))))}
               />
-              <span className="muted">{damping.toFixed(2)}×</span>
+              <span className="muted">
+                {damping >= 10 ? damping.toFixed(1) : damping.toFixed(2)}×
+              </span>
             </label>
           </div>
 
