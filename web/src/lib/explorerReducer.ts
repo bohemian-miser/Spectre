@@ -21,7 +21,9 @@ import {
   normalizeMatchingVector,
   clampInstanceBudget,
   clampLineScale,
+  clampFollowDamping,
   clampTracePace,
+  DEFAULT_FOLLOW_DAMPING,
   clampTrailHold,
   leafOrder,
   subsetToEdges,
@@ -84,6 +86,7 @@ export type ExplorerAction =
   | { readonly type: 'setHighlightOnScreen'; readonly on: boolean }
   | { readonly type: 'setHighlightInPath'; readonly on: boolean }
   | { readonly type: 'setPace'; readonly pace: number | null }
+  | { readonly type: 'setDamping'; readonly damping: number }
   | {
       readonly type: 'setTraceSeed';
       readonly traceSeed: readonly [number, number, number, number] | null;
@@ -208,6 +211,17 @@ export function explorerReducer(state: ExplorerState, action: ExplorerAction): E
       }
       const pace = clampTracePace(action.pace);
       return pace === state.pace ? state : { ...state, pace };
+    }
+
+    // The tuned default is stored as no key at all, like the pace.
+    case 'setDamping': {
+      const damping = clampFollowDamping(action.damping);
+      if (damping === DEFAULT_FOLLOW_DAMPING) {
+        if (state.damping === undefined) return state;
+        const { damping: _d, ...rest } = state;
+        return rest as ExplorerState;
+      }
+      return damping === state.damping ? state : { ...state, damping };
     }
 
     case 'setTraceSeed': {
@@ -571,6 +585,11 @@ export function explorerShowTransitions(state: ExplorerState): boolean {
 /** Chase pace in tiles/second, or null for full speed (the default). */
 export function explorerPace(state: ExplorerState): number | null {
   return state.pace === undefined ? null : clampTracePace(state.pace);
+}
+
+/** Follow-camera damping multiplier; 1 (the tuned default) when unset. */
+export function explorerDamping(state: ExplorerState): number {
+  return state.damping === undefined ? DEFAULT_FOLLOW_DAMPING : clampFollowDamping(state.damping);
 }
 
 /** Convenience selector: `subset` as a Set for the core APIs. */

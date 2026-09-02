@@ -56,9 +56,12 @@ export interface TrailArcView {
 
 /**
  * Dolly time constant (SmoothDamp smoothTime, ms): how long a burst or stall
- * in the walk takes to become full speed or full stop. The one knob that
- * trades butter for lag — a critically damped tracker follows a steady chase
- * `speed × this` behind, which stage 2 then mostly cancels.
+ * in the walk takes to become full speed or full stop. The knob that trades
+ * butter for lag — a critically damped tracker follows a steady chase
+ * `speed × this` behind, which stage 2 then mostly cancels. This and the
+ * three constants below are BASE values: {@link advanceFollowCamera}'s
+ * `damping` multiplier scales all four together, so the user's one slider
+ * moves the whole feel without disturbing the tuned ratios.
  */
 export const FOLLOW_ARC_SMOOTH_MS = 300;
 
@@ -219,6 +222,13 @@ export interface FollowFrame {
  * yardstick every viewport-relative rule here is quoted in. Passing the live
  * value each frame is what makes wheel zoom compose freely with the follow:
  * a zoom changes the yardstick, never the state.
+ *
+ * `damping` scales all four smoothing constants together (the dolly's, the
+ * lead's and its filter's, the tracker's), so one knob moves the whole feel
+ * between snappy and floaty without disturbing their tuned ratios. The
+ * viewport-relative clamps and caps deliberately do NOT scale: however heavy
+ * the damping, the dolly can never fall more than a viewport behind and a
+ * runaway head is still caught.
  */
 export function advanceFollowCamera(
   state: FollowCameraState,
@@ -227,14 +237,16 @@ export function advanceFollowCamera(
   dtMs: number,
   viewMinWorld: number,
   scale: number,
+  damping = 1,
 ): FollowFrame {
   if (trail.count === 0) return { cx: cam.x, cy: cam.y, settled: true };
   const dt = Math.min(0.064, Math.max(0.001, dtMs / 1000));
+  const d = Number.isFinite(damping) ? Math.max(0.05, damping) : 1;
   const first = trail.arc[0];
   const total = trail.arc[trail.count - 1];
 
   // --- stage 1: the dolly ---------------------------------------------------
-  const damped = smoothDamp(state.arc, total, state.speed, FOLLOW_ARC_SMOOTH_MS / 1000, dt);
+  const damped = smoothDamp(state.arc, total, state.speed, (FOLLOW_ARC_SMOOTH_MS / 1000) * d, dt);
   // The trail only ever grows forward; the dolly must too — a camera that
   // backs up along the line it just travelled reads as broken, whatever a
   // spring's residual wobble says.
@@ -245,10 +257,13 @@ export function advanceFollowCamera(
   state.arc = arc;
   state.speed = Math.max(0, damped.velocity);
   state.leadSpeed +=
-    (state.speed - state.leadSpeed) * (1 - Math.exp(-(dt * 1000) / FOLLOW_LEAD_TAU_MS));
+    (state.speed - state.leadSpeed) * (1 - Math.exp(-(dt * 1000) / (FOLLOW_LEAD_TAU_MS * d)));
 
   // --- stage 2: the aim -----------------------------------------------------
-  const aimArc = Math.min(total, arc + state.leadSpeed * FOLLOW_LEAD_S);
+  // The lead scales with the damping because the lag it cancels does: a
+  // floatier dolly trails further, and its lead reaches correspondingly
+  // further forward, keeping the head near the same place in the frame.
+  const aimArc = Math.min(total, arc + state.leadSpeed * FOLLOW_LEAD_S * d);
   const aim = pointAtArc(trail, aimArc);
 
   // --- stage 3: the tracker -------------------------------------------------
@@ -262,7 +277,7 @@ export function advanceFollowCamera(
     state.speed * scale < FOLLOW_SETTLE_PX_PER_S;
   if (settled || dist === 0) return { cx: cam.x, cy: cam.y, settled };
 
-  let step = dist * (1 - Math.exp(-(dt * 1000) / FOLLOW_TRACK_TAU_MS));
+  let step = dist * (1 - Math.exp(-(dt * 1000) / (FOLLOW_TRACK_TAU_MS * d)));
   const distViewports = viewMinWorld > 0 ? dist / viewMinWorld : 0;
   const capViewportsPerS = Math.max(
     FOLLOW_ENGAGE_VIEWPORTS_PER_S,

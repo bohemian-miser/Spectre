@@ -24,9 +24,12 @@ import {
   FLAG,
   MIN_FIND_CEILING,
   LINE_SCALE_STEP,
+  MAX_FOLLOW_DAMPING,
+  MIN_FOLLOW_DAMPING,
   MIN_LINE_SCALE,
   MIN_TRACE_PACE,
   MAX_LEVEL,
+  clampFollowDamping,
   SUBSTITUTION_GROWTH,
   TILE_NAMES,
   TILE_PALETTES,
@@ -62,6 +65,7 @@ import { useCircuitAnalysis } from '../hooks/useCircuitAnalysis';
 import { useExplorerStore } from '../hooks/useExplorerState';
 import {
   explorerBudget,
+  explorerDamping,
   explorerFollow,
   explorerFindCircuits,
   explorerKeepCircuits,
@@ -98,6 +102,7 @@ import {
 } from './map/InfiniteCanvas';
 import type { MapRenderStyle } from './map/rendererTypes';
 import { MAP_BUDGETS, formatBudget } from './map/mapUrl';
+import { recordingLabel, useCanvasRecording } from './map/useRecording';
 import { TraceTicker } from './map/TraceTicker';
 import { TransitionGraph } from './map/TransitionGraph';
 import type { GraphSelection } from './map/transitions';
@@ -182,6 +187,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
   const hlScreen = explorerHighlightOnScreen(state);
   const hlPath = explorerHighlightInPath(state);
   const pace = explorerPace(state);
+  const damping = explorerDamping(state);
   const infinite = mode === 'infinite';
   const [shareNote, setShareNote] = useState<string | null>(null);
   const [shareFallback, setShareFallback] = useState<string | null>(null);
@@ -288,6 +294,8 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
   const infiniteApiRef = useRef<InfiniteCanvasApi | null>(null);
   const infiniteStatusRef = useRef<InfiniteCanvasStatus | null>(null);
   const infiniteHudSubRef = useRef<((s: InfiniteCanvasStatus) => void) | null>(null);
+  /** Record-the-canvas wiring, shared with the map page (`map/useRecording`). */
+  const rec = useCanvasRecording(infiniteApiRef, family, INFINITE_SEED);
   const pendingLevelRef = useRef<number | null>(null);
 
   /** Strand chords: local geometry, identical to what the rooted view draws. */
@@ -937,6 +945,43 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
                 <span className="muted">{pace} tiles/s</span>
               </label>
             ) : null}
+            <label className="control-row">
+              <span>Damping</span>
+              <input
+                type="range"
+                aria-label="Follow-camera damping"
+                data-testid="damping-slider"
+                min={MIN_FOLLOW_DAMPING}
+                max={MAX_FOLLOW_DAMPING}
+                step={0.05}
+                value={damping}
+                disabled={!traceOn || !followOn}
+                onChange={(e) =>
+                  dispatch({
+                    type: 'setDamping',
+                    damping: clampFollowDamping(Number(e.target.value)),
+                  })
+                }
+              />
+              <span className="muted">{damping.toFixed(2)}×</span>
+            </label>
+            <div className="control-row">
+              <button
+                type="button"
+                className={rec.recording ? 'map-record is-recording' : 'map-record'}
+                data-testid="explorer-record"
+                aria-pressed={rec.recording}
+                title="Record the canvas — tiles, strands and the chase — to a movie file"
+                onClick={rec.toggle}
+              >
+                {recordingLabel(rec.recording, rec.elapsed)}
+              </button>
+            </div>
+            {rec.note ? (
+              <p className="muted" role="status" data-testid="explorer-record-note">
+                {rec.note}
+              </p>
+            ) : null}
           </>
         ) : null}
         <label className="control-row">
@@ -1229,6 +1274,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
             highlightInPath={hlPath}
             chainLength={chainLength}
             followPace={pace}
+            followDamping={damping}
             traceSeed={state.traceSeed ?? null}
             onTraceSeed={onTraceSeed}
             style={infiniteStyle}

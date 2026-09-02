@@ -499,6 +499,12 @@ export interface InfiniteCanvasProps {
    */
   readonly followPace?: number | null;
   /**
+   * Follow-camera damping multiplier (`followCamera.ts`): 1 is the tuned
+   * default, higher floats, lower snaps. Applied live — moving a slider
+   * mid-chase changes the feel of the very next frame.
+   */
+  readonly followDamping?: number;
+  /**
    * A tapped chord to replay a trace from: world coordinates
    * `[atX, atY, toX, toY]` (the shareable-link seed). When set and nothing is
    * traced yet, the camera jumps there and the trace starts as soon as a leaf
@@ -548,6 +554,7 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
     highlightInPath = false,
     chainLength = null,
     followPace = null,
+    followDamping = 1,
     traceSeed = null,
     onTraceSeed,
     onCameraChange,
@@ -632,6 +639,8 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
   const followStateRef = useRef<FollowCameraState | null>(null);
   const paceRef = useRef(followPace);
   paceRef.current = followPace;
+  const dampingRef = useRef(followDamping);
+  dampingRef.current = followDamping;
   const paceTokensRef = useRef(0);
   const paceLastRef = useRef(0);
   const feedSchedulerRef = useRef<QueryScheduler<UnrootedQueryRequest> | null>(null);
@@ -838,6 +847,7 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
       dt,
       Math.min(width, height) / cam.scale,
       cam.scale,
+      dampingRef.current,
     );
     if (frame.settled) {
       // Sub-pixel everywhere: write nothing. Once the walk is over as well,

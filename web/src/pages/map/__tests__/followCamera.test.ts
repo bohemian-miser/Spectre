@@ -62,7 +62,7 @@ interface Sim {
   frame(): void;
 }
 
-function makeSim(trail: TestTrail, camAt?: { x: number; y: number }): Sim {
+function makeSim(trail: TestTrail, camAt?: { x: number; y: number }, damping?: number): Sim {
   const head = { x: trail.xy[(trail.count - 1) * 2], y: trail.xy[(trail.count - 1) * 2 + 1] };
   const sim: Sim = {
     trail,
@@ -71,7 +71,10 @@ function makeSim(trail: TestTrail, camAt?: { x: number; y: number }): Sim {
     steps: [],
     settled: false,
     frame() {
-      const out = advanceFollowCamera(sim.state, trail, sim.cam, DT, VIEW_MIN, SCALE);
+      const out =
+        damping === undefined
+          ? advanceFollowCamera(sim.state, trail, sim.cam, DT, VIEW_MIN, SCALE)
+          : advanceFollowCamera(sim.state, trail, sim.cam, DT, VIEW_MIN, SCALE, damping);
       sim.steps.push(Math.hypot(out.cx - sim.cam.x, out.cy - sim.cam.y));
       sim.cam = { x: out.cx, y: out.cy };
       sim.settled = out.settled;
@@ -270,6 +273,59 @@ describe('advanceFollowCamera — steady pace', () => {
     for (let i = 1; i < sim.steps.length; i++) {
       expect(sim.steps[i]).toBeLessThanOrEqual(sim.steps[i - 1] * 1.1 + 1e-4);
     }
+  });
+});
+
+describe('advanceFollowCamera — damping', () => {
+  /** Frames a cold engage takes to settle on a stationary head. */
+  const engageFrames = (damping?: number): number => {
+    const sim = makeSim(line(10), { x: -8, y: 0 }, damping);
+    let frames = 0;
+    while (!sim.settled && frames < 3000) {
+      sim.frame();
+      frames++;
+    }
+    expect(sim.settled).toBe(true);
+    return frames;
+  };
+
+  /** Mean camera-to-head lag once a 30 u/s chase has warmed up. */
+  const steadyLag = (damping: number): number => {
+    const trail = line(2);
+    const sim = makeSim(trail, undefined, damping);
+    const v = 30;
+    let head = 2;
+    const lags: number[] = [];
+    for (let i = 0; i < 600; i++) {
+      head += (v * DT) / 1000;
+      while (trail.arc[trail.count - 1] < head) {
+        trail.push(Math.min(trail.xy[(trail.count - 1) * 2] + 1, head), 0);
+      }
+      sim.frame();
+      if (i > 300) lags.push(head - sim.cam.x);
+    }
+    return lags.reduce((a, b) => a + b, 0) / lags.length;
+  };
+
+  it('scales the whole feel: lower snaps, higher floats, and all of it settles', () => {
+    const tight = engageFrames(0.25);
+    const tuned = engageFrames(1);
+    const floaty = engageFrames(3);
+    expect(tight).toBeLessThan(tuned);
+    expect(tuned).toBeLessThan(floaty);
+    // Omitting the parameter IS the tuned default.
+    expect(engageFrames()).toBe(tuned);
+  });
+
+  it('trails further at heavier damping, and the un-scaled clamps still bound it', () => {
+    const tight = steadyLag(0.5);
+    const tuned = steadyLag(1);
+    const floaty = steadyLag(2.5);
+    expect(tight).toBeLessThan(tuned);
+    expect(tuned).toBeLessThan(floaty);
+    // The dolly clamp and tracker do not float away with the damping: even
+    // the heaviest setting keeps the head within reach of the viewport.
+    expect(floaty).toBeLessThan(VIEW_MIN * (FOLLOW_DOLLY_MAX_BEHIND_VIEWPORTS + 0.5));
   });
 });
 

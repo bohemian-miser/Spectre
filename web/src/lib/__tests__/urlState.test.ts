@@ -221,6 +221,28 @@ describe('pace / trace-seed params (explorer codec)', () => {
   });
 });
 
+describe('fd param — follow-camera damping (explorer codec)', () => {
+  const inf: ExplorerState = { ...DEFAULT_EXPLORER_STATE, mode: 'infinite' };
+
+  it('is additive: the tuned default writes nothing, other values round-trip', () => {
+    expect(stateToQuery(inf)).not.toMatch(/(^|&)fd=/);
+    expect(stateToQuery({ ...inf, damping: 1 })).not.toMatch(/(^|&)fd=/);
+
+    const q = stateToQuery({ ...inf, damping: 1.8 });
+    expect(q).toContain('fd=1.8');
+    const back = hashToState(stateToHash({ ...inf, damping: 1.8 }));
+    expect(back.damping).toBe(1.8);
+    expect(stateToQuery(back)).toBe(q); // canonical
+  });
+
+  it('junk drops cleanly and out-of-range values clamp', () => {
+    expect('damping' in hashToState('#/explorer?v=1&fd=abc')).toBe(false);
+    expect(hashToState('#/explorer?v=1&fd=99').damping).toBe(3);
+    expect(hashToState('#/explorer?v=1&fd=0').damping).toBe(0.25);
+    expect(hashToState('#/explorer?v=1&fd=1.234').damping).toBe(1.25); // snapped
+  });
+});
+
 describe('kt / fc params (explorer codec)', () => {
   const inf: ExplorerState = { ...DEFAULT_EXPLORER_STATE, mode: 'infinite' };
   it('round-trips keep-tails-off and find-all-off', () => {

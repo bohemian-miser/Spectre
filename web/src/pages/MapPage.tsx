@@ -39,12 +39,16 @@ import {
   FIND_CEILINGS,
   clampFindCeiling,
   clampFoundHold,
+  DEFAULT_FOLLOW_DAMPING,
   DEFAULT_LINE_SCALE,
   DEFAULT_TRACE_PACE,
   DEFAULT_TRAIL_HOLD,
   LINE_SCALE_STEP,
+  MAX_FOLLOW_DAMPING,
+  MIN_FOLLOW_DAMPING,
   MIN_LINE_SCALE,
   MIN_TRACE_PACE,
+  clampFollowDamping,
   clampTrailHold,
   SUBSTITUTION_GROWTH,
   TILE_PALETTES,
@@ -77,8 +81,7 @@ import {
   type MapUrlState,
 } from './map/mapUrl';
 import { CANVAS2D_MAX_INSTANCES } from './map/canvasRenderer';
-import { recordingFilename } from './map/recording';
-import { downloadBlob } from './sceneDownload';
+import { recordingLabel, useCanvasRecording } from './map/useRecording';
 import { TraceTicker } from './map/TraceTicker';
 import { TransitionGraph } from './map/TransitionGraph';
 import type { GraphSelection } from './map/transitions';
@@ -147,6 +150,9 @@ export function MapPage(props: MapPageProps): JSX.Element {
   const [graphPick, setGraphPick] = useState<GraphSelection | null>(null);
   const [chainLength, setChainLength] = useState<number | null>(null);
   const [pace, setPace] = useState<number | null>(initial.pace ?? null);
+  const [damping, setDamping] = useState<number>(
+    clampFollowDamping(initial.damping ?? DEFAULT_FOLLOW_DAMPING),
+  );
   const [traceSeed, setTraceSeed] = useState<
     readonly [number, number, number, number] | null
   >(initial.traceSeed ?? null);
@@ -206,6 +212,7 @@ export function MapPage(props: MapPageProps): JSX.Element {
     highlightOnScreen,
     highlightInPath,
     pace,
+    damping,
     traceSeed,
     subset,
     combo,
@@ -230,6 +237,7 @@ export function MapPage(props: MapPageProps): JSX.Element {
     highlightOnScreen,
     highlightInPath,
     pace,
+    damping,
     traceSeed,
     subset,
     combo,
@@ -288,6 +296,7 @@ export function MapPage(props: MapPageProps): JSX.Element {
       highlightOnScreen: w.highlightOnScreen,
       highlightInPath: w.highlightInPath,
       pace: w.pace,
+      damping: w.damping,
       traceSeed: w.traceSeed,
       subset: w.subset,
       combo: w.combo,
@@ -348,6 +357,7 @@ export function MapPage(props: MapPageProps): JSX.Element {
     highlightOnScreen,
     highlightInPath,
     pace,
+    damping,
     traceSeed,
     subset,
     combo,
@@ -413,6 +423,7 @@ export function MapPage(props: MapPageProps): JSX.Element {
       setHighlightOnScreen(st.highlightOnScreen ?? false);
       setHighlightInPath(st.highlightInPath ?? false);
       setPace(st.pace ?? null);
+      setDamping(clampFollowDamping(st.damping ?? DEFAULT_FOLLOW_DAMPING));
       setTraceSeed(st.traceSeed ?? null);
       setSubset(st.subset ?? []);
       setCombo(normalizeCombo(st.combo ?? '', st.family));
@@ -468,55 +479,9 @@ export function MapPage(props: MapPageProps): JSX.Element {
     apiRef.current?.setCamera({ cx: 0, cy: 0, scale: DEFAULT_SCALE });
   }, []);
 
-  // --- video recording --------------------------------------------------------
-  /** Wall-clock start of the live recording, or null when idle. */
-  const [recordingSince, setRecordingSince] = useState<number | null>(null);
-  const [recordingNote, setRecordingNote] = useState<string | null>(null);
-  const [recordingElapsed, setRecordingElapsed] = useState(0);
-
-  useEffect(() => {
-    if (recordingSince === null) return;
-    setRecordingElapsed(0);
-    const timer = setInterval(
-      () => setRecordingElapsed(Math.floor((Date.now() - recordingSince) / 1000)),
-      500,
-    );
-    return () => clearInterval(timer);
-  }, [recordingSince]);
-
-  /** Finish the live recording and hand the file to the browser's downloads. */
-  const stopAndSaveRecording = useCallback(async (): Promise<void> => {
-    const api = apiRef.current;
-    setRecordingSince(null);
-    if (!api?.isRecording()) return;
-    try {
-      const out = await api.stopRecording();
-      if (!out) return;
-      const name = recordingFilename(worldRef.current.family, worldRef.current.seed, out.mimeType);
-      downloadBlob(out.blob, name);
-      setRecordingNote(`Saved ${name} (${(out.blob.size / 1e6).toFixed(1)} MB).`);
-    } catch (err) {
-      setRecordingNote(
-        `Recording failed: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
-  }, []);
-
-  const toggleRecording = useCallback((): void => {
-    const api = apiRef.current;
-    if (!api) return;
-    if (api.isRecording()) {
-      void stopAndSaveRecording();
-      return;
-    }
-    const started = api.startRecording();
-    if (!started.ok) {
-      setRecordingNote(`Recording unavailable: ${started.reason}`);
-      return;
-    }
-    setRecordingNote(null);
-    setRecordingSince(Date.now());
-  }, [stopAndSaveRecording]);
+  // --- video recording (shared wiring: `pages/map/useRecording.ts`) -----------
+  const rec = useCanvasRecording(apiRef, family, seed);
+  const { stopAndSave: stopAndSaveRecording } = rec;
 
   /**
    * Switching family is switching worlds: the canvas remounts (`key`), so the
@@ -616,24 +581,20 @@ export function MapPage(props: MapPageProps): JSX.Element {
           </button>
           <button
             type="button"
-            className={recordingSince !== null ? 'map-record is-recording' : 'map-record'}
+            className={rec.recording ? 'map-record is-recording' : 'map-record'}
             data-testid="map-record"
-            aria-pressed={recordingSince !== null}
+            aria-pressed={rec.recording}
             title="Record the canvas — tiles, strands and the chase — to a movie file"
-            onClick={toggleRecording}
+            onClick={rec.toggle}
           >
-            {recordingSince !== null
-              ? `■ Stop & save ${Math.floor(recordingElapsed / 60)}:${String(
-                  recordingElapsed % 60,
-                ).padStart(2, '0')}`
-              : '● Record video'}
+            {recordingLabel(rec.recording, rec.elapsed)}
           </button>
         </form>
       </header>
 
-      {recordingNote ? (
+      {rec.note ? (
         <p className="muted map-record-note" role="status" data-testid="map-record-note">
-          {recordingNote}
+          {rec.note}
         </p>
       ) : null}
 
@@ -702,6 +663,21 @@ export function MapPage(props: MapPageProps): JSX.Element {
                 onChange={(e) => setHold(clampTrailHold(Number(e.target.value)))}
               />
               <span className="muted">tiles · 0 = all</span>
+            </label>
+            <label className="control-row">
+              <span>Damping</span>
+              <input
+                type="range"
+                aria-label="Follow-camera damping"
+                data-testid="map-damping"
+                min={MIN_FOLLOW_DAMPING}
+                max={MAX_FOLLOW_DAMPING}
+                step={0.05}
+                value={damping}
+                disabled={!lines || !trace || !follow}
+                onChange={(e) => setDamping(clampFollowDamping(Number(e.target.value)))}
+              />
+              <span className="muted">{damping.toFixed(2)}×</span>
             </label>
           </div>
 
@@ -914,7 +890,8 @@ export function MapPage(props: MapPageProps): JSX.Element {
             its whole length. It runs to the edge of the tiles currently loaded and then waits —
             pan the way it is heading and it keeps going. The line is remembered in world
             coordinates, so pan back and it is still there. Auto-follow does the panning for you:
-            the camera chases the head (wheel-zoom stays yours; dragging pauses it), and the
+            the camera rides the strand (wheel-zoom stays yours; dragging pauses it), the Damping
+            slider sets how heavily its motion is smoothed — up floats, down snaps — and the
             rainbow holds at most the last &ldquo;hold&rdquo; tiles, letting the tail go behind it —
             the window bounds memory, not distance, so the chase can run forever and still closes
             a circuit even after its start left the window. A strand that closes into a circuit
@@ -958,6 +935,7 @@ export function MapPage(props: MapPageProps): JSX.Element {
         highlightInPath={highlightInPath}
         chainLength={chainLength}
         followPace={pace}
+        followDamping={damping}
         traceSeed={lines && trace ? traceSeed : null}
         onTraceSeed={setTraceSeed}
         style={renderStyle}

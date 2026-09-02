@@ -16,6 +16,7 @@
  */
 
 import {
+  DEFAULT_FOLLOW_DAMPING,
   DEFAULT_INSTANCE_BUDGET,
   DEFAULT_LINE_SCALE,
   DEFAULT_TRAIL_HOLD,
@@ -25,6 +26,7 @@ import {
   INSTANCE_BUDGETS,
   MAX_INSTANCE_BUDGET,
   MIN_INSTANCE_BUDGET,
+  clampFollowDamping,
   clampInstanceBudget,
   clampLineScale,
   clampFindCeiling,
@@ -109,6 +111,8 @@ export interface MapUrlState {
   readonly highlightInPath?: boolean;
   /** Chase pace in tiles/second (`fp=`); absent/null = full speed. */
   readonly pace?: number | null;
+  /** Follow-camera damping multiplier (`fd=`); 1 = the tuned default. */
+  readonly damping?: number;
   /** The tapped chord the current trace grew from (`ts=`), for share links. */
   readonly traceSeed?: readonly [number, number, number, number] | null;
 }
@@ -171,6 +175,7 @@ export const DEFAULT_MAP_STATE: MapUrlState = {
   highlightOnScreen: false,
   highlightInPath: false,
   pace: null,
+  damping: DEFAULT_FOLLOW_DAMPING,
   traceSeed: null,
 };
 
@@ -245,6 +250,12 @@ export function encodeMapQuery(state: MapUrlState): string {
   if (state.highlightOnScreen) q.set('hs', '1');
   if (state.highlightInPath) q.set('ht', '1');
   if (state.pace != null) q.set('fp', String(clampTracePace(state.pace)));
+  if (
+    state.damping !== undefined &&
+    clampFollowDamping(state.damping) !== DEFAULT_FOLLOW_DAMPING
+  ) {
+    q.set('fd', String(clampFollowDamping(state.damping)));
+  }
   if (state.traceSeed) q.set('ts', encodeTraceSeed(state.traceSeed));
   return q.toString();
 }
@@ -279,6 +290,7 @@ export function decodeMapQuery(query: string): MapUrlState {
   // `hp` is the trail hold window, so the path highlight is `ht`.
   const htRaw = q.get('ht');
   const fpRaw = num('fp');
+  const fdRaw = num('fd');
   const tsRaw = q.get('ts');
   const eRaw = q.get('e');
   const cRaw = q.get('c');
@@ -313,6 +325,7 @@ export function decodeMapQuery(query: string): MapUrlState {
     highlightOnScreen: hsRaw === '1' || hsRaw === 'true',
     highlightInPath: htRaw === '1' || htRaw === 'true',
     pace: fpRaw === null ? null : clampTracePace(fpRaw),
+    damping: fdRaw === null ? DEFAULT_FOLLOW_DAMPING : clampFollowDamping(fdRaw),
     traceSeed: tsRaw ? (decodeTraceSeed(tsRaw) ?? null) : null,
   };
 }

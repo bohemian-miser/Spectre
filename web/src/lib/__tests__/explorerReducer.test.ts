@@ -7,7 +7,9 @@ import {
   DEFAULT_TRACE_PACE,
   DEFAULT_TRAIL_HOLD,
   FLAG,
+  MAX_FOLLOW_DAMPING,
   MAX_TRACE_PACE,
+  MIN_FOLLOW_DAMPING,
   MIN_TRAIL_HOLD,
   MAX_INSTANCE_BUDGET,
   MAX_LEVEL,
@@ -22,6 +24,7 @@ import {
 } from '../../core';
 import {
   explorerBudget,
+  explorerDamping,
   explorerFindCircuits,
   explorerPersistFound,
   explorerFollow,
@@ -391,6 +394,23 @@ describe('chase pace and shareable trace seed', () => {
     const full = run(slow, { type: 'setPace', pace: null });
     expect('pace' in full).toBe(false);
     expect(run(base, { type: 'setPace', pace: null })).toBe(base);
+  });
+
+  it('damping defaults to 1× and stores only a non-default value', () => {
+    expect(explorerDamping(base)).toBe(1);
+    expect('damping' in base).toBe(false);
+
+    const floaty = run(base, { type: 'setDamping', damping: 2 });
+    expect(floaty.damping).toBe(2);
+    expect(explorerDamping(floaty)).toBe(2);
+    expect(run(floaty, { type: 'setDamping', damping: 2 })).toBe(floaty); // bail-out
+    expect(run(base, { type: 'setDamping', damping: 99 }).damping).toBe(MAX_FOLLOW_DAMPING);
+    expect(run(base, { type: 'setDamping', damping: 0 }).damping).toBe(MIN_FOLLOW_DAMPING);
+
+    // The tuned default is stored as no key at all — the same rule as pace.
+    const tuned = run(floaty, { type: 'setDamping', damping: 1 });
+    expect('damping' in tuned).toBe(false);
+    expect(run(base, { type: 'setDamping', damping: 1 })).toBe(base);
   });
 
   it('trace seed stores four coordinates and clears to no key', () => {
