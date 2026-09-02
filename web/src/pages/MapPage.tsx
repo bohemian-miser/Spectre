@@ -77,6 +77,8 @@ import {
   type MapUrlState,
 } from './map/mapUrl';
 import { CANVAS2D_MAX_INSTANCES } from './map/canvasRenderer';
+import { recordingFilename } from './map/recording';
+import { downloadBlob } from './sceneDownload';
 import { TraceTicker } from './map/TraceTicker';
 import { TransitionGraph } from './map/TransitionGraph';
 import type { GraphSelection } from './map/transitions';
@@ -466,6 +468,56 @@ export function MapPage(props: MapPageProps): JSX.Element {
     apiRef.current?.setCamera({ cx: 0, cy: 0, scale: DEFAULT_SCALE });
   }, []);
 
+  // --- video recording --------------------------------------------------------
+  /** Wall-clock start of the live recording, or null when idle. */
+  const [recordingSince, setRecordingSince] = useState<number | null>(null);
+  const [recordingNote, setRecordingNote] = useState<string | null>(null);
+  const [recordingElapsed, setRecordingElapsed] = useState(0);
+
+  useEffect(() => {
+    if (recordingSince === null) return;
+    setRecordingElapsed(0);
+    const timer = setInterval(
+      () => setRecordingElapsed(Math.floor((Date.now() - recordingSince) / 1000)),
+      500,
+    );
+    return () => clearInterval(timer);
+  }, [recordingSince]);
+
+  /** Finish the live recording and hand the file to the browser's downloads. */
+  const stopAndSaveRecording = useCallback(async (): Promise<void> => {
+    const api = apiRef.current;
+    setRecordingSince(null);
+    if (!api?.isRecording()) return;
+    try {
+      const out = await api.stopRecording();
+      if (!out) return;
+      const name = recordingFilename(worldRef.current.family, worldRef.current.seed, out.mimeType);
+      downloadBlob(out.blob, name);
+      setRecordingNote(`Saved ${name} (${(out.blob.size / 1e6).toFixed(1)} MB).`);
+    } catch (err) {
+      setRecordingNote(
+        `Recording failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }, []);
+
+  const toggleRecording = useCallback((): void => {
+    const api = apiRef.current;
+    if (!api) return;
+    if (api.isRecording()) {
+      void stopAndSaveRecording();
+      return;
+    }
+    const started = api.startRecording();
+    if (!started.ok) {
+      setRecordingNote(`Recording unavailable: ${started.reason}`);
+      return;
+    }
+    setRecordingNote(null);
+    setRecordingSince(Date.now());
+  }, [stopAndSaveRecording]);
+
   /**
    * Switching family is switching worlds: the canvas remounts (`key`), so the
    * trace, kept circuits and chord index die with it — but the page-side state
@@ -474,13 +526,16 @@ export function MapPage(props: MapPageProps): JSX.Element {
    */
   const setFamily = useCallback((next: TileFamilyId): void => {
     if (next === worldRef.current.family) return;
+    // A family switch REMOUNTS the canvas, whose unmount discards a live
+    // recording's chunks — save the take first rather than lose it silently.
+    if (apiRef.current?.isRecording()) void stopAndSaveRecording();
     setFamilyState(next);
     setCombo((c) => normalizeCombo(c, next));
     setTraceSeed(null);
     setGraphPick(null);
     setChainLength(null);
     setStatus((s) => ({ ...s, cut: null })); // the old world's numbers no longer apply
-  }, []);
+  }, [stopAndSaveRecording]);
 
   // --- render -------------------------------------------------------------------------
   const hud = status.cut;
@@ -559,8 +614,28 @@ export function MapPage(props: MapPageProps): JSX.Element {
           <button type="button" onClick={resetView}>
             Reset view
           </button>
+          <button
+            type="button"
+            className={recordingSince !== null ? 'map-record is-recording' : 'map-record'}
+            data-testid="map-record"
+            aria-pressed={recordingSince !== null}
+            title="Record the canvas — tiles, strands and the chase — to a movie file"
+            onClick={toggleRecording}
+          >
+            {recordingSince !== null
+              ? `■ Stop & save ${Math.floor(recordingElapsed / 60)}:${String(
+                  recordingElapsed % 60,
+                ).padStart(2, '0')}`
+              : '● Record video'}
+          </button>
         </form>
       </header>
+
+      {recordingNote ? (
+        <p className="muted map-record-note" role="status" data-testid="map-record-note">
+          {recordingNote}
+        </p>
+      ) : null}
 
       <details className="map-lines" open={lines}>
         <summary>

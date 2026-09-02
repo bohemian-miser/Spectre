@@ -62,6 +62,16 @@
 .map-controls button:hover {
   border-color: var(--accent);
 }
+/* The record toggle wears its state: red while a take is running. */
+.map-controls .map-record.is-recording {
+  border-color: #d24a43;
+  color: #e66158;
+  font-variant-numeric: tabular-nums; /* the timer must not wobble the layout */
+}
+.map-record-note {
+  margin: 0;
+  font-size: 13px;
+}
 
 .map-caution {
   margin: 0;
