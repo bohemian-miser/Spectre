@@ -19,12 +19,24 @@ import {
 } from '../recording';
 
 describe('pickRecordingMime', () => {
-  it('prefers WebM VP9, then VP8, then whatever WebM, then MP4', () => {
-    expect(RECORDING_MIME_CANDIDATES[0]).toBe('video/webm;codecs=vp9');
-    expect(pickRecordingMime(() => true)).toBe('video/webm;codecs=vp9');
-    expect(pickRecordingMime((t) => !t.includes('vp9'))).toBe('video/webm;codecs=vp8');
-    // Safari: no WebM at all, plain MP4 only.
+  it('prefers phone-friendly MP4/H.264, falling back to WebM', () => {
+    // MP4 first: the point of a saved movie is that it plays everywhere,
+    // and H.264-in-MP4 is what phones actually open.
+    expect(RECORDING_MIME_CANDIDATES[0]).toBe('video/mp4;codecs=avc1.640028');
+    expect(pickRecordingMime(() => true)).toBe('video/mp4;codecs=avc1.640028');
+    // No High profile → Baseline, still MP4.
+    expect(pickRecordingMime((t) => !t.includes('avc1.64'))).toBe(
+      'video/mp4;codecs=avc1.42E01E',
+    );
+    // Safari-ish: no WebM at all, plain MP4 only.
     expect(pickRecordingMime((t) => t === 'video/mp4')).toBe('video/mp4');
+    // Firefox-ish: cannot encode MP4 at all → WebM, VP9 over VP8.
+    expect(pickRecordingMime((t) => t.startsWith('video/webm'))).toBe(
+      'video/webm;codecs=vp9',
+    );
+    expect(pickRecordingMime((t) => t === 'video/webm;codecs=vp8' || t === 'video/webm')).toBe(
+      'video/webm;codecs=vp8',
+    );
     expect(pickRecordingMime(() => false)).toBeNull();
   });
 

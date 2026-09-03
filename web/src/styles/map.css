@@ -161,6 +161,69 @@
   height: 100%;
 }
 
+/* In-viewport tool cluster (top-right): stats toggle, record, fullscreen.
+   Lives inside the host so it is still there when the viewport IS the screen
+   — the page chrome (and its Record button) is not part of the fullscreen
+   subtree. Absolutely positioned like .map-hud: never in the layout. */
+.viewport-tools {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  max-width: 60%;
+}
+.viewport-tools button {
+  padding: 4px 9px;
+  border: 1px solid rgba(244, 246, 251, 0.28);
+  border-radius: var(--radius);
+  background: rgba(8, 10, 16, 0.72);
+  color: #e7ecf6;
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  cursor: pointer;
+}
+.viewport-tools button:hover {
+  border-color: rgba(244, 246, 251, 0.6);
+}
+.viewport-tools button.is-recording {
+  border-color: #e0524d;
+  color: #ffb3b0;
+}
+/* Save/fail notes are echoed here while fullscreen — the page-level note
+   (rendered in the chrome) is not on screen then. */
+.viewport-tools-note {
+  flex-basis: 100%;
+  padding: 4px 8px;
+  border-radius: var(--radius);
+  background: rgba(8, 10, 16, 0.72);
+  color: #d9c9a0;
+  font-size: 12px;
+  text-align: right;
+}
+
+/* Fullscreen: the viewport is the whole screen, so the deterministic-height
+   calc() (sized around the page chrome) must give way, and the frame styling
+   goes — there is no page for the border to separate it from. */
+.map-viewport:fullscreen {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+}
+.map-viewport:fullscreen::backdrop {
+  background: #0e1118;
+}
+/* Safari before 16.4 knows only the prefixed form (kept as separate rules —
+   one unknown selector in a list would invalidate the whole rule). */
+.map-viewport:-webkit-full-screen {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+}
+
 .map-hud {
   position: absolute;
   top: 8px;
@@ -433,9 +496,10 @@
 
 /* --- ranked runs ---------------------------------------------------------- */
 
-/* The ranked list is a list: it wants height, not the circle's square. */
+/* The ranked list is a list: it wants height, not the circle's square.
+   Starts below the viewport tools, which own the top-right corner. */
 .trace-graph.is-tall {
-  top: 8px;
+  top: 44px;
   display: flex;
   overflow: hidden;
   flex-direction: column;

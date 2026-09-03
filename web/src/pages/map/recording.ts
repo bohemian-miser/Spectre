@@ -11,9 +11,11 @@
  * and controls are not part of it, which is what a clean recording wants.
  *
  * Two facts shape the API:
- *  - the container format is negotiated, not chosen: Chrome and Firefox
- *    record WebM (VP9 where they can), Safari records MP4, and the only
- *    honest answer is to ask `MediaRecorder.isTypeSupported` down a
+ *  - the container format is negotiated, not chosen: MP4 (H.264) is asked
+ *    for first because it is what phones, messaging apps and photo rolls
+ *    reliably play — Safari always could and Chromium (126+) now can — but
+ *    a browser that cannot encode it (Firefox) records WebM instead, so the
+ *    only honest answer is to ask `MediaRecorder.isTypeSupported` down a
  *    preference list ({@link pickRecordingMime}) and name the file after
  *    whatever won ({@link recordingExtension});
  *  - a paused scene produces no new frames, and that is fine — the recorder's
@@ -27,17 +29,23 @@
  */
 
 /**
- * Container/codec preference, most wanted first. VP9 comfortably beats VP8 at
- * the same bitrate on this content (flat fills, hard edges); bare `video/webm`
- * lets the browser pick its default codec; the MP4 entries are Safari, which
- * supports neither WebM flavour.
+ * Container/codec preference, most wanted first. MP4 + H.264 leads because
+ * compatibility is what a saved movie is for: WebM/VP9 files routinely fail
+ * to open on phones (iOS in particular) while H.264-in-MP4 plays on
+ * effectively everything. High profile is preferred over Baseline for the
+ * better compression at the same bitrate; both are universally decodable.
+ * The WebM entries are the fallback for browsers that cannot ENCODE MP4
+ * (Firefox), where VP9 comfortably beats VP8 at the same bitrate on this
+ * content (flat fills, hard edges) and bare `video/webm` lets the browser
+ * pick its default codec.
  */
 export const RECORDING_MIME_CANDIDATES: readonly string[] = [
+  'video/mp4;codecs=avc1.640028',
+  'video/mp4;codecs=avc1.42E01E',
+  'video/mp4',
   'video/webm;codecs=vp9',
   'video/webm;codecs=vp8',
   'video/webm',
-  'video/mp4;codecs=avc1.42E01E',
-  'video/mp4',
 ];
 
 /**

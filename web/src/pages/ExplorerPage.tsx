@@ -103,6 +103,7 @@ import {
 import type { MapRenderStyle } from './map/rendererTypes';
 import { MAP_BUDGETS, formatBudget } from './map/mapUrl';
 import { recordingLabel, useCanvasRecording } from './map/useRecording';
+import { ViewportTools } from './map/ViewportTools';
 import { TraceTicker } from './map/TraceTicker';
 import { TransitionGraph } from './map/TransitionGraph';
 import type { GraphSelection } from './map/transitions';
@@ -1309,6 +1310,12 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
               onChainLength={setChainLength}
             />
             )}
+            <ViewportTools
+              apiRef={infiniteApiRef}
+              rec={rec}
+              hudShown={!hasFlag(state, FLAG.HIDE_STATS)}
+              onToggleHud={() => dispatch({ type: 'toggleFlag', flag: FLAG.HIDE_STATS })}
+            />
           </InfiniteCanvas>
         ) : !heavy ? (
           <PanZoom
