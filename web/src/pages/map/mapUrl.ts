@@ -99,6 +99,8 @@ export interface MapUrlState {
   readonly persistFound?: boolean;
   /** Name the tiles a chase crosses along the bottom (`tk=0` when OFF). Default ON. */
   readonly showTicker?: boolean;
+  /** Show the stats overlay (`hd=0` when OFF). Default ON. */
+  readonly showHud?: boolean;
   /** Graph which tile type follows which (`tg=1`), default OFF. */
   readonly showTransitions?: boolean;
   /** Tiles find-all may analyse in one pass (`fx=`), and where circuit zoom parks. */
@@ -169,6 +171,7 @@ export const DEFAULT_MAP_STATE: MapUrlState = {
   findCircuits: true,
   persistFound: true,
   showTicker: true,
+  showHud: true,
   showTransitions: false,
   findCeiling: DEFAULT_FIND_CEILING,
   foundHold: DEFAULT_FOUND_HOLD,
@@ -237,6 +240,7 @@ export function encodeMapQuery(state: MapUrlState): string {
   if (!state.findCircuits) q.set('fc', '0');
   if (!state.persistFound) q.set('pf', '0');
   if (state.showTicker === false) q.set('tk', '0');
+  if (state.showHud === false) q.set('hd', '0');
   if (state.showTransitions) q.set('tg', '1');
   if (
     state.findCeiling !== undefined &&
@@ -283,6 +287,7 @@ export function decodeMapQuery(query: string): MapUrlState {
   const fcRaw = q.get('fc');
   const pfRaw = q.get('pf');
   const tkRaw = q.get('tk');
+  const hdRaw = q.get('hd');
   const tgRaw = q.get('tg');
   const fxRaw = num('fx');
   const fhRaw = num('fh');
@@ -319,6 +324,7 @@ export function decodeMapQuery(query: string): MapUrlState {
     findCircuits: !(fcRaw === '0' || fcRaw === 'false'),
     persistFound: !(pfRaw === '0' || pfRaw === 'false'),
     showTicker: !(tkRaw === '0' || tkRaw === 'false'),
+    showHud: !(hdRaw === '0' || hdRaw === 'false'),
     showTransitions: tgRaw === '1' || tgRaw === 'true',
     findCeiling: fxRaw === null ? DEFAULT_FIND_CEILING : clampFindCeiling(fxRaw),
     foundHold: fhRaw === null ? DEFAULT_FOUND_HOLD : clampFoundHold(fhRaw),

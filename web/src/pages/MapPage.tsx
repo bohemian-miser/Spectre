@@ -82,6 +82,7 @@ import {
 } from './map/mapUrl';
 import { CANVAS2D_MAX_INSTANCES } from './map/canvasRenderer';
 import { recordingLabel, useCanvasRecording } from './map/useRecording';
+import { ViewportTools } from './map/ViewportTools';
 import { TraceTicker } from './map/TraceTicker';
 import { TransitionGraph } from './map/TransitionGraph';
 import type { GraphSelection } from './map/transitions';
@@ -132,6 +133,7 @@ export function MapPage(props: MapPageProps): JSX.Element {
   const [findCircuits, setFindCircuits] = useState<boolean>(initial.findCircuits ?? true);
   const [persistFound, setPersistFound] = useState<boolean>(initial.persistFound ?? true);
   const [showTicker, setShowTicker] = useState<boolean>(initial.showTicker ?? true);
+  const [showHud, setShowHud] = useState<boolean>(initial.showHud ?? true);
   const [showTransitions, setShowTransitions] = useState<boolean>(
     initial.showTransitions ?? false,
   );
@@ -206,6 +208,7 @@ export function MapPage(props: MapPageProps): JSX.Element {
     findCircuits,
     persistFound,
     showTicker,
+    showHud,
     showTransitions,
     findCeiling,
     foundHold,
@@ -231,6 +234,7 @@ export function MapPage(props: MapPageProps): JSX.Element {
     findCircuits,
     persistFound,
     showTicker,
+    showHud,
     showTransitions,
     findCeiling,
     foundHold,
@@ -290,6 +294,7 @@ export function MapPage(props: MapPageProps): JSX.Element {
       findCircuits: w.findCircuits,
       persistFound: w.persistFound,
       showTicker: w.showTicker,
+      showHud: w.showHud,
       showTransitions: w.showTransitions,
       findCeiling: w.findCeiling,
       foundHold: w.foundHold,
@@ -351,6 +356,7 @@ export function MapPage(props: MapPageProps): JSX.Element {
     findCircuits,
     persistFound,
     showTicker,
+    showHud,
     showTransitions,
     findCeiling,
     foundHold,
@@ -389,6 +395,7 @@ export function MapPage(props: MapPageProps): JSX.Element {
         findCircuits: w.findCircuits,
         persistFound: w.persistFound,
         showTicker: w.showTicker,
+        showHud: w.showHud,
         showTransitions: w.showTransitions,
         findCeiling: w.findCeiling,
         foundHold: w.foundHold,
@@ -417,6 +424,7 @@ export function MapPage(props: MapPageProps): JSX.Element {
       setFindCircuits(st.findCircuits ?? true);
       setPersistFound(st.persistFound ?? true);
       setShowTicker(st.showTicker ?? true);
+      setShowHud(st.showHud ?? true);
       setShowTransitions(st.showTransitions ?? false);
       setFindCeiling(clampFindCeiling(st.findCeiling ?? DEFAULT_FIND_CEILING));
       setFoundHold(clampFoundHold(st.foundHold ?? DEFAULT_FOUND_HOLD));
@@ -958,7 +966,7 @@ export function MapPage(props: MapPageProps): JSX.Element {
             <strong>No usable canvas renderer.</strong> This page needs WebGL2 (preferred) or a 2D
             canvas context; this browser provides neither, so the map cannot start.
           </div>
-        ) : (
+        ) : !showHud ? null : (
           <div className="map-hud" data-testid="map-hud" role="status">
             <span data-testid="hud-mode">{mode === 'pending' ? 'starting…' : mode}</span>
             <span data-testid="hud-instances">
@@ -1014,6 +1022,13 @@ export function MapPage(props: MapPageProps): JSX.Element {
             <span data-testid="hud-zoom">{drawInfo ? formatZoom(drawInfo.scale) : ''}</span>
           </div>
         )}
+
+        <ViewportTools
+          apiRef={apiRef}
+          rec={rec}
+          hudShown={showHud}
+          onToggleHud={() => setShowHud((v) => !v)}
+        />
 
         {showTransitions ? (
           <TransitionGraph

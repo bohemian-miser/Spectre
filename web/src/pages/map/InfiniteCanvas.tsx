@@ -358,6 +358,11 @@ export interface InfiniteCanvasApi {
   setCamera(next: Partial<MapCamera>): void;
   /** Viewport size in CSS px (0×0 before first layout). */
   getSize(): { width: number; height: number };
+  /**
+   * The host element the canvas (and the overlays) live in — the thing to
+   * hand to the Fullscreen API. Null before mount.
+   */
+  getHost(): HTMLElement | null;
   getStatus(): InfiniteCanvasStatus;
   /** True while a tiling query is outstanding. */
   isBusy(): boolean;
@@ -1930,6 +1935,7 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
         onCameraChanged();
       },
       getSize: () => sizeRef.current,
+      getHost: () => hostRef.current,
       getStatus: () => statusRef.current,
       isBusy: () => schedulerRef.current?.inFlight ?? false,
       traceAt,

@@ -508,3 +508,116 @@ describe('MapPage — tile families', () => {
     expect(after).not.toBe(before);
   });
 });
+
+describe('MapPage — viewport tools (stats toggle, fullscreen)', () => {
+  it('hides the stats overlay from the in-viewport toggle and remembers it in the URL', async () => {
+    const gl = makeFakeGl();
+    stubContexts(gl, null);
+    const { container } = render(<MapPage forceSyncClient />);
+    await settle();
+
+    expect(container.querySelector('[data-testid="map-hud"]')).not.toBeNull();
+    const toggle = container.querySelector('[data-testid="tools-stats"]') as HTMLButtonElement;
+    expect(toggle.textContent).toBe('Hide stats');
+
+    fireEvent.click(toggle);
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 500)); // the debounced URL write
+    });
+    expect(container.querySelector('[data-testid="map-hud"]')).toBeNull();
+    expect(toggle.textContent).toBe('Show stats');
+    expect(window.location.hash).toContain('hd=0');
+
+    fireEvent.click(toggle);
+    await settle();
+    expect(container.querySelector('[data-testid="map-hud"]')).not.toBeNull();
+  });
+
+  it('reproduces an hd=0 deep link with the overlay hidden', async () => {
+    window.history.replaceState(null, '', '/map.html#/map?seed=1&cx=0&cy=0&z=36&hd=0');
+    const gl = makeFakeGl();
+    stubContexts(gl, null);
+    const { container } = render(<MapPage forceSyncClient />);
+    await settle();
+
+    expect(container.querySelector('[data-testid="map-hud"]')).toBeNull();
+    expect(hudNumber(container, 'hud-instances')).toBe(0); // truly not rendered
+    expect(
+      (container.querySelector('[data-testid="tools-stats"]') as HTMLButtonElement).textContent,
+    ).toBe('Show stats');
+  });
+
+  it('offers no fullscreen button where the API cannot fullscreen a div', async () => {
+    // Bare jsdom: no document.fullscreenEnabled. An inert button would lie.
+    const gl = makeFakeGl();
+    stubContexts(gl, null);
+    const { container } = render(<MapPage forceSyncClient />);
+    await settle();
+    expect(container.querySelector('[data-testid="tools-fullscreen"]')).toBeNull();
+  });
+
+  it('fullscreens the viewport host and follows entry/exit through the events', async () => {
+    const requested = vi.fn(() => Promise.resolve());
+    const exited = vi.fn(() => Promise.resolve());
+    Object.defineProperty(document, 'fullscreenEnabled', { value: true, configurable: true });
+    let fsElement: Element | null = null;
+    Object.defineProperty(document, 'fullscreenElement', {
+      get: () => fsElement,
+      configurable: true,
+    });
+    (document as unknown as Record<string, unknown>).exitFullscreen = exited;
+    (HTMLElement.prototype as unknown as Record<string, unknown>).requestFullscreen = requested;
+    try {
+      const gl = makeFakeGl();
+      stubContexts(gl, null);
+      const { container } = render(<MapPage forceSyncClient />);
+      await settle();
+
+      const button = container.querySelector(
+        '[data-testid="tools-fullscreen"]',
+      ) as HTMLButtonElement;
+      expect(button.textContent).toContain('Full screen');
+
+      fireEvent.click(button);
+      expect(requested).toHaveBeenCalledTimes(1);
+      // The element asked to fill the screen is the canvas host itself.
+      expect(requested.mock.contexts[0]).toBe(container.querySelector('.map-viewport'));
+
+      // The browser says we are in: the button becomes the way back out.
+      fsElement = container.querySelector('.map-viewport');
+      await act(async () => {
+        document.dispatchEvent(new Event('fullscreenchange'));
+      });
+      expect(button.textContent).toBe('Exit full screen');
+      fireEvent.click(button);
+      expect(exited).toHaveBeenCalledTimes(1);
+
+      fsElement = null;
+      await act(async () => {
+        document.dispatchEvent(new Event('fullscreenchange'));
+      });
+      expect(button.textContent).toContain('Full screen');
+    } finally {
+      delete (document as unknown as Record<string, unknown>).exitFullscreen;
+      delete (HTMLElement.prototype as unknown as Record<string, unknown>).requestFullscreen;
+      Reflect.deleteProperty(document, 'fullscreenEnabled');
+      Reflect.deleteProperty(document, 'fullscreenElement');
+    }
+  });
+
+  it('mirrors Record in the cluster, honest about an environment that cannot', async () => {
+    const gl = makeFakeGl();
+    stubContexts(gl, null);
+    const { container } = render(<MapPage forceSyncClient />);
+    await settle();
+
+    const button = container.querySelector('[data-testid="tools-record"]') as HTMLButtonElement;
+    expect(button.textContent).toBe('● Rec');
+    fireEvent.click(button); // same control as the header button — same refusal
+    await settle();
+    expect(button.getAttribute('aria-pressed')).toBe('false');
+    expect(
+      container.querySelector('[data-testid="map-record-note"]')?.textContent,
+    ).toContain('Recording unavailable');
+  });
+});

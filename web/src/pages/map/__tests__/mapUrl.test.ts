@@ -320,10 +320,20 @@ describe('tk / tg / fx params (map codec)', () => {
     expect(encodeMapQuery({ ...base, foundHold: 0 })).not.toContain('fh=');
   });
 
+  it('round-trips a hidden stats overlay, saying nothing while it shows', () => {
+    expect(encodeMapQuery(DEFAULT_MAP_STATE)).not.toContain('hd=');
+    const q = encodeMapQuery({ ...DEFAULT_MAP_STATE, showHud: false });
+    expect(q).toContain('hd=0');
+    const back = decodeMapQuery(q);
+    expect(back.showHud).toBe(false);
+    expect(encodeMapQuery(back)).toBe(q);
+  });
+
   it('a link written before these existed still decodes to the old picture', () => {
     const back = decodeMapQuery('seed=1&z=36&ln=1&fc=1');
     expect(back.foundHold).toBe(0);
     expect(back.showTicker).toBe(true);
+    expect(back.showHud).toBe(true);
     expect(back.showTransitions).toBe(false);
     expect(back.findCeiling).toBe(DEFAULT_FIND_CEILING);
   });
