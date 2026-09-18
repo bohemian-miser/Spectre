@@ -726,17 +726,84 @@ function sectionG(): void {
   };
 
   console.log('');
-  for (const k of [3, 4, 5]) {
+  for (const k of [1, 2, 3, 4, 5]) {
     const r = search(k);
     if (r) {
       ck(true, `a per-type relabelling sigma with table(${k + 1}) = sigma(table(${k})) EXISTS`,
-         `e.g. Xi ${JSON.stringify(r.get('Xi' as TileTypeId))}  Delta ${JSON.stringify(r.get('Delta' as TileTypeId))}  Psi ${JSON.stringify(r.get('Psi' as TileTypeId))}`);
+         TYPES.map((T) => `${T}=${(r.get(T) ?? []).join('')}`).join(' ') + `  | involution: ${TYPES.every((T) => (r.get(T) ?? []).every((v, i2) => (r.get(T) ?? [])[v] === i2))}`);
     } else {
       ck(false, `NO per-type relabelling sigma with table(${k + 1}) = sigma(table(${k}))`,
          'so the level-dependence is intrinsic, not a naming artefact');
     }
   }
 }
+
+
+// ===========================================================================
+// H. 06's refutation #1: "hex is NOT the combinatorial model of the spectre
+//    tiling — the two families do NOT have the same tile-adjacency graph."
+//    Test it directly: build the edge-adjacency graph of real patches in both
+//    families (composite Mystic contracted to one node) and compare under the
+//    tile-id bijection.
+// ===========================================================================
+function adjacency(cfg: Config, root: TileTypeId, level: number): Map<string, Set<string>> {
+  const insts = zExpand(cfg.family, root, level);
+  const nodeOf = (inst: ZInstance) =>
+    inst.type === 'Gamma1' || inst.type === 'Gamma2' ? parentId(inst.id) : inst.id;
+  const byEdge = new Map<string, string[]>();
+  for (const inst of insts) {
+    const pts = zLeafPts(cfg.family, inst.type).map((q) => zApply(inst.xform, q));
+    for (let i = 0; i < pts.length; i++) {
+      const a = zKey(pts[i]), b = zKey(pts[(i + 1) % pts.length]);
+      const k = a < b ? `${a}::${b}` : `${b}::${a}`;
+      let g = byEdge.get(k); if (!g) byEdge.set(k, (g = []));
+      g.push(nodeOf(inst));
+    }
+  }
+  const adj = new Map<string, Set<string>>();
+  for (const inst of insts) if (!adj.has(nodeOf(inst))) adj.set(nodeOf(inst), new Set());
+  for (const g of byEdge.values()) {
+    for (let i = 0; i < g.length; i++) for (let j = i + 1; j < g.length; j++) {
+      if (g[i] === g[j]) continue;
+      adj.get(g[i])!.add(g[j]); adj.get(g[j])!.add(g[i]);
+    }
+  }
+  return adj;
+}
+
+function sectionH(): void {
+  head('H.  06\'s refutation #1: do the two families really have DIFFERENT tile adjacency?');
+  console.log(`  ${'patch'.padEnd(12)}${'nodes h/s'.padStart(16)}${'edges h/s'.padStart(14)}   identical under the tile-id bijection?`);
+  let anyDiff = false;
+  for (const root of ['Psi', 'Delta'] as TileTypeId[]) {
+    for (let lv = 1; lv <= 3; lv++) {
+      const H = adjacency(HEX, root, lv), S = adjacency(SPEC, root, lv);
+      const eh = [...H.values()].reduce((a, b) => a + b.size, 0) / 2;
+      const es = [...S.values()].reduce((a, b) => a + b.size, 0) / 2;
+      let same = H.size === S.size;
+      const diffs: string[] = [];
+      for (const [n, set] of H) {
+        const t = S.get(n);
+        if (!t || t.size !== set.size || [...set].some((x) => !t.has(x))) {
+          same = false;
+          if (diffs.length < 3) {
+            const only = [...set].filter((x) => !(t?.has(x) ?? false));
+            const onlyS = [...(t ?? [])].filter((x) => !set.has(x));
+            diffs.push(`${n}: hex-only {${only.join(',')}} spec-only {${onlyS.join(',')}}`);
+          }
+        }
+      }
+      if (!same) anyDiff = true;
+      console.log(`  ${(root + '@' + lv).padEnd(12)}${(H.size + '/' + S.size).padStart(16)}${(eh + '/' + es).padStart(14)}   ${same ? 'IDENTICAL' : 'DIFFERENT — ' + diffs[0]}`);
+    }
+  }
+  ck(anyDiff, '06\'s claim "the two families do NOT have the same tile-adjacency graph" is borne out on real patches',
+     anyDiff ? 'adjacency really differs' : 'the adjacency graphs are IDENTICAL under the tile bijection, so 06\'s refutation #1 is WRONG as stated');
+}
+
+// ===========================================================================
+// G2. sigma across all 9 types, both families, and k = 2..5.
+// ===========================================================================
 
 function main(): void {
   console.log('ADVERSARIAL AUDIT of fass-proof/06-family-reduction.ts');
@@ -747,6 +814,7 @@ function main(): void {
   sectionE();
   sectionF();
   sectionG();
+  sectionH();
   head('SUMMARY');
   console.log(`  failures: ${FAIL}   notes: ${NOTE}`);
   process.exit(FAIL === 0 ? 0 : 1);
