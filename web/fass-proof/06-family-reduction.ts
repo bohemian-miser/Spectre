@@ -1259,11 +1259,13 @@ function section3b(dotMap: Map<string, DotImage>): void {
     - the exposed list of a level-j supertile has the same canonical names in both
       families for j <= 5, and its size is constant for j >= 1 (2, 4, 6, 8 or 10 dots);
     - the cross-child pairing/exposure table, written in terms of positions in those
-      lists, is identical in both families and identical for k = 2..5.
-  If that table is the same for EVERY k >= 2 — the one thing still unproved — then
-  (H_k) follows from (H_{k-1}) by induction for all k, and with it the whole
-  reduction, for all levels. The open problem is therefore not "do 34649 dots weld
-  the same way"; it is a statement about a table with at most 10 entries per type.
+      lists, is identical in both families at every k computed (k = 1..6), and within
+      each family has PERIOD 2 in k from k = 3 on — it is NOT constant: k = 2, 3, 4
+      give three different tables (see the [REFU] lines above).
+  If that period-2 pattern continues for EVERY k >= 3 — the one thing still unproved —
+  then (H_k) follows from (H_{k-2}) by a two-phase induction for all k, and with it the
+  whole reduction, for all levels. The open problem is therefore not "do 34649 dots weld
+  the same way"; it is a statement about a table with at most 20 entries per type.
 `);
 }
 

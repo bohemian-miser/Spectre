@@ -667,6 +667,25 @@ function sectionG(): void {
     }
     console.log(`    ${T.padEnd(8)}${letters.join(' ')}`);
   }
+  // 1b. exposed-dot counts pushed to j = 6 (06 stopped at j = 5)
+  {
+    const row: string[] = [];
+    let constant = true;
+    for (const T of TYPES) {
+      const c: number[] = [];
+      for (let j = 1; j <= 6; j++) c.push(exposed(HEX, T, j).length);
+      if (new Set(c).size !== 1) constant = false;
+      row.push(`${T} ${c.join('/')}`);
+    }
+    console.log(`\n  exposed-dot counts j=1..6 (hex): ${row.join('  ')}`);
+    ck(constant, 'n_T is still constant at j = 6 (06 checked j <= 5 only)');
+    let agree = true;
+    for (const T of ['Psi', 'Delta', 'Xi'] as TileTypeId[]) {
+      if (exposed(HEX, T, 6).join(',') !== exposed(SPEC, T, 6).join(',')) agree = false;
+    }
+    ck(agree, 'exposed-dot LIST still agrees between the families at j = 6 (Psi, Delta, Xi)');
+  }
+
   // 2. search for sigma with table(k+1) = sigma(table(k))
   const childType = (T: TileTypeId, slot: number) => SUPER_RULES[T]![slot] as TileTypeId;
   const nOf = new Map<TileTypeId, number>();
@@ -728,6 +747,10 @@ function sectionG(): void {
   console.log('');
   for (const k of [1, 2, 3, 4, 5]) {
     const r = search(k);
+    if (k === 1) {
+      note(`k = 1 -> 2: relabelling ${r ? 'exists' : 'does NOT exist'} (k = 1 is a genuine seed: its children are bare leaves)`);
+      continue;
+    }
     if (r) {
       ck(true, `a per-type relabelling sigma with table(${k + 1}) = sigma(table(${k})) EXISTS`,
          TYPES.map((T) => `${T}=${(r.get(T) ?? []).join('')}`).join(' ') + `  | involution: ${TYPES.every((T) => (r.get(T) ?? []).every((v, i2) => (r.get(T) ?? [])[v] === i2))}`);
