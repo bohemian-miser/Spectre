@@ -39,7 +39,7 @@ very different characters:
 | **L2** | **Self-avoiding** — no drawn chord crosses another | **proved for hex, all levels**; 478 two-tile classes for spectre |
 | **L3** | the substitution's strand composition is level-independent | **narrowed to one geometric statement** |
 | **L4** | one arc, no circuits, every tile visited | **proved for all levels given L3** |
-| **L5** | the infinite limit | **whole plane, one bi-infinite curve**; the Hilbert template needs rebuilding |
+| **L5** | the infinite limit | one bi-infinite curve; exhaustion and the Hölder bound both open |
 
 **The short answer to "how do we do that".** Reduce everything to L3, then
 either prove L3 or cite it. L1 and L4 are then genuine theorems; L2 becomes a
@@ -48,10 +48,16 @@ Hilbert-curve limit argument with its hypotheses made explicit. L3 is the only
 thing standing between the current evidence and a proof, and §6 states it
 precisely enough to attack or cite.
 
-**The bottom line on the conjecture itself.** It holds, in the strong form. The
-infinite tiling built by nesting Delta inside Delta covers the whole plane, and
-its strands form exactly **one** bi-infinite curve, which is non-self-crossing
-at every finite level and passes through every tile. The one thing not yet
+**The bottom line on the conjecture itself.** Everything topological holds. The
+nested union is a single **bi-infinite** curve, non-self-crossing at every
+finite level, passing through every tile, with the four arcs of a Delta patch
+all landing in one arc two levels up.
+
+One word in that sentence is not yet earned: **whole-plane**. The seed can be
+buried, and the inradius about it is *strictly increasing* and measured to grow
+by a factor approaching the linear inflation 2.8059 over six levels. But
+"strictly increasing" is not "diverges", and divergence is what exhaustion
+needs. It is not proved. The one thing not yet
 proved is a single geometric statement: that the eight children of a supertile
 meet edge-to-edge at every level, so that coincident quad-arc endpoints force
 coincident arcs. Everything else in L3 is either proved outright or constant and
@@ -421,11 +427,12 @@ four leaf types:
 Those are two different measurements of the same excursion and an earlier draft
 of this document ran them together. The depth outside the tile is
 (2√3−3)/8 ≈ 0.058; the distance past the reflex vertex is (2−√3)/4 ≈ 0.067.
-The *verdict* that the chord leaves its tile is exact, by orientation predicates
-over `Z[√3]`. The three constants are **not**: they come from dense float
-sampling of the chord and are closed forms that match the samples to about
-1e-7, not exact derivations. Deriving them from the reflex-corner geometry over
-`Z[ζ₁₂]` is listed in §8.
+All three are exact for this combination. The verdict that the chord leaves its
+tile is exact, by orientation predicates over `Z[√3]`, and the depth outside the
+tile matches (2√3−3)/8 at **machine precision**, a difference of about 1e-17
+under refinement — an earlier draft of this document reported the agreement as
+1e-7 and called the constants float-fitted, which understated them. The
+straying-piece length is the one figure still resting on sampling.
 
 So (a) is false for configuration (B) and no single-tile argument can work.
 Because the offending chord is Psi's *forced* diagonal, this is not specific to
@@ -751,6 +758,16 @@ Any one of them is a usable periodic block. The best inradius reached goes
 the spectre. Every patch along such a chain is a Psi supertile, hence already a
 single arc, so no merge argument is needed at all.
 
+**But burial is not exhaustion.** What is established is that the seed stops
+touching the patch boundary, and that the inradius is *strictly increasing* —
+which follows because the patches increase, so their complements decrease.
+Divergence needs the per-step collar gaps to sum to infinity, and nothing bounds
+them below by a fixed constant. Burial forbids a shared *edge* but not a shared
+*vertex*, and a shared vertex would give a zero gap and make the collar
+inequality vacuous. It does not happen at the levels computed. So exhaustion is
+**consistent with everything measured and not proved**, for the Psi addresses
+and for the Delta nesting alike.
+
 **The Delta nesting also gives all three, the long way.** Delta contains Delta
 at slot 1. Its
 patches are never a single arc: Delta has eight boundary dots, hence four arcs
@@ -776,8 +793,9 @@ rate approaching the linear inflation 2.8059:
 | `hex` inradius | 1.41 | 1.41 | 4.68 | 12.02 | 35.10 | 96.91 |
 | `spectre` inradius | 3.53 | 3.53 | 8.68 | 22.84 | 66.86 | 183.60 |
 
-So **the nested union is an infinite tiling of the whole plane carrying exactly
-one bi-infinite curve**, which is the statement the conjecture actually needs.
+So **the nested union carries exactly one bi-infinite curve**, and its inradius
+grows at the inflation rate over every level computed. Modulo the divergence gap
+above, that is the statement the conjecture needs.
 This vindicates the merge analysis in `FASS_1278.md` §4.5, which had the right
 idea: the four tails of a Delta patch are four windows onto the same line. It
 reaches the same conclusion as the buried-Psi address above, by a longer route.
@@ -806,10 +824,17 @@ The obvious repair, arguing that each run is a substantial fraction of the
 sub-supertile, also fails: the smallest arc of a level-`j` supertile is only
 `O(λ^{-j})` of its segments, so individual runs can be a couple of segments. The
 argument has to be rebuilt on **bounded re-entry** instead — at most 5 visits,
-and a lower bound of about `0.83·λ^{j-k}` on the *total* time spent in each
-level-`j` sub-supertile, measured across all depths and levels to 5. That still
-yields a uniform Hölder-1/2 bound and hence Arzelà–Ascoli compactness, so
-subsequential limits exist. Uniqueness of the limit is not established.
+and a lower bound of `0.833868` for hexagons and `0.846778` for the spectre on
+`λ^{k-j}` times the *total* parameter time spent in each level-`j`
+sub-supertile. That bound is exact and holds for all levels, since the segment
+counts are integer matrix powers.
+
+A first attempt at the repaired modulus-of-continuity argument does **not**
+work: it bounds the number of sub-supertiles met by a parameter interval using a
+lower bound on each one's time over the *whole* arc, when what is needed is
+their time *inside that interval*. So no Hölder bound is established here, and
+with it neither compactness nor existence of a limit map. Bounded re-entry is
+the right ingredient; the estimate built on it has to be redone.
 
 What does hold unchanged: the arc restricted to a sub-supertile stays *inside*
 it, tile diameters shrink relative to patch diameter at a measured ratio
@@ -887,11 +912,14 @@ limit.
 | That nesting exhausts the plane | **refuted** — inradius is exactly constant |
 | A varying Psi-only address buries the seed | 6 of 81 addresses at level 5, 36 of 243 at level 6, both families |
 | Every patch along such an address is a single arc | follows from L4; no merge argument needed |
-| Delta-in-Delta nesting exhausts the plane | verified levels 1–6, inradius diverges at ≈2.81 per level |
+| The inradius is monotone non-decreasing along any address | **proved** (patches increase, complements decrease) |
+| The inradius *diverges*, hence exhaustion | **OPEN** — measured growing at ≈2.81 per level to level 6, not proved |
 | Its four arcs all merge into one, two levels up | verified levels 1–6, exact segment containment |
 | A sub-supertile is contiguous iff it is Psi | verified to depth 4, both families |
-| The arc re-enters a sub-supertile at most 5 times | verified to depth 4; bounded re-entry replaces the Hilbert nesting |
-| The whole-plane tiling carries exactly ONE bi-infinite curve | **established**, given L3 |
+| A sub-supertile is entered exactly `arcs(T)` times | **proved**: its segments are the standalone strand graph of its type, whose interior dots have degree 2 |
+| No sub-supertile is starved of parameter time | **proved**, constants 0.833868 and 0.846778, from integer matrix powers |
+| A Hölder bound on the limit parameterisation | **OPEN** — the first attempt at the estimate is invalid |
+| The nested union carries exactly ONE bi-infinite curve | **established**, given L3 |
 | Growth factor 4+√15, frequencies, segments per tile | **proved** (exact, from the substitution matrix) |
 | hex and spectre strand graphs isomorphic | verified structurally and on patches |
 | The eight single-line configurations are the only ones | **proved** by exhaustive census over all selections |
