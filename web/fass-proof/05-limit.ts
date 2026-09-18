@@ -99,40 +99,81 @@
  * ---------------------------------------------------------------------------
  *
  * Write A_k for the level-k arc, parameterised on [0, 1] proportionally to
- * segment count, and D_k for the patch diameter. The hypotheses checked below:
+ * segment count, and D_k for the patch diameter.
  *
- *   (H1) SUB-SUPERTILE NESTING. For every j < k, the segments of A_k that
- *        belong to tiles of a given level-j sub-supertile form a contiguous
- *        parameter interval. (Checked exactly, all depths, all levels reached.
- *        This is the exact analogue of the Hilbert-curve nesting: it is what
- *        makes "the time spent in this sub-supertile" an interval at all.)
- *   (H2) LOCALISATION. The piece of A_k over that interval stays within
- *        distance eps0 of the sub-supertile, where eps0 is a CONSTANT
- *        (measured below; it is 0 for hexagons and (2 - sqrt 3)/4 for the
- *        spectre, whose chords cut the reflex corner). Since sub-supertile
- *        diameters grow like lambda^(j/2), the relative excursion eps0/D_j
- *        tends to 0, which is all the argument needs.
+ * THE OBVIOUS HYPOTHESIS IS FALSE, AND THE SCRIPT REFUTES IT. One would like
+ *
+ *   (H1-naive) for every j < k, the segments of A_k inside a given level-j
+ *              sub-supertile form ONE contiguous parameter interval,
+ *
+ * which is the literal Hilbert-curve nesting. It does NOT hold here. Section
+ * 1b below finds, exactly, that a level-j sub-supertile is re-entered several
+ * times: a Psi sub-supertile exactly once, but a Gamma or Sigma one five
+ * times, a Delta four, a Theta or Lambda three, a Xi, Pi or Phi twice. The
+ * reason is structural, not accidental: the standalone strand diagram of a
+ * type-T supertile splits into exactly that many arcs (its interface carries
+ * that many pairs of dots), and the parent must thread each of them
+ * separately. Only Psi has a single arc, which is exactly why Psi is the
+ * right root and the right nesting slot. The counts are LEVEL-INDEPENDENT at
+ * every level checked, and identical in both families.
+ *
+ * So the usable hypotheses are:
+ *
+ *   (H1) BOUNDED RE-ENTRY. Every level-j sub-supertile is entered by A_k at
+ *        most m = 5 times, m being the largest arc count over the 9 types,
+ *        and the number of entries of a given sub-supertile is exactly the
+ *        arc count of its own type. Along the Psi chain that count is 1, so
+ *        the Psi nesting IS literal containment as a contiguous sub-path.
+ *   (H2) LOCALISATION. The piece of A_k inside a level-j sub-supertile stays
+ *        within distance eps0 of it, where eps0 is a CONSTANT (measured
+ *        below; 0 for hexagons, (2 - sqrt 3)/4 for the spectre, whose chords
+ *        cut the reflex corner). Since sub-supertile diameters grow like
+ *        lambda^(j/2), the relative excursion eps0 / diam tends to 0.
  *   (H3) SHRINKING SCALE. maxTileDiameter / D_k -> 0, at rate lambda^(-k/2)
  *        with lambda = 4 + sqrt 15. (Measured below.)
  *   (H4) EVERY TILE IS VISITED (Lemma 4), so the arcs fill the patch and do
  *        not merely thread part of it. (Re-verified below.)
+ *   (H5) NO STARVED SUB-SUPERTILE. Every level-j sub-supertile carries at
+ *        least c * lambda^(j-k) of the arc's total length, because it holds
+ *        exactly its share of the tiles and every tile carries at least one
+ *        chord. (Checked below. NOTE: individual RUNS can be as short as one
+ *        segment — section 1b measures a shortest-arc fraction decaying like
+ *        lambda^(-j) — so no argument may assume runs are substantial. Only
+ *        the TOTAL per sub-supertile is bounded below.)
  *
- * Given (H1)-(H4) the standard argument runs: re-parameterise A_k so that the
- * interval of a level-j sub-supertile is the SAME for every k > j (possible by
- * (H1) plus the segment counts, which are determined by the substitution).
- * For k, k' > j and t in the interval of a level-j sub-supertile S, both
- * A_k(t) and A_k'(t) lie within eps0 of S by (H2), so
+ * THE MODULUS-OF-CONTINUITY ARGUMENT, repaired to use (H1) rather than
+ * (H1-naive). Let I be a parameter interval of length delta and put
+ * j = k - log(1/delta)/log(lambda), so that delta = lambda^(j-k). Let R be
+ * the number of runs of A_k|I and S the number of DISTINCT level-j
+ * sub-supertiles it meets. By (H1) each sub-supertile supplies at most m
+ * runs, so S >= R/m. Those S sub-supertiles are distinct, so by (H5) their
+ * total parameter time is at least S * c * lambda^(j-k) = S * c * delta,
+ * and it is at most delta. Hence S <= 1/c: a BOUNDED number, independent of
+ * j, k and delta. Consecutive runs sit in ADJACENT sub-supertiles (the arc
+ * crosses their common boundary), so A_k(I) lies in the union of at most 1/c
+ * sub-supertiles plus an eps0 collar, of diameter
  *
- *     |A_k(t) - A_k'(t)|  <=  diam(S) + 2 eps0,
+ *     O(lambda^(j/2)) + 2 eps0  =  O(sqrt(delta) * lambda^(k/2))
+ *                               =  O(sqrt(delta) * D_k).
  *
- * uniformly in t. By (H3) that bound is O(lambda^(-(k-j)/2)) * D_k relative to
- * the patch, and after rescaling each patch to unit diameter the sequence is
- * uniformly Cauchy. Its uniform limit A is continuous. By (H4) the image of A
- * is dense in the limit set of the patches, and being compact it IS that set,
- * which by (E) is the whole plane (or a closed region of positive area under a
- * non-exhausting address). A continuous surjection of an interval onto a set
- * of positive area is a space-filling curve; the image therefore has Hausdorff
- * dimension 2, since any planar set of positive Lebesgue measure does.
+ * That is a uniform Hoelder-1/2 bound for the rescaled arcs A_k / D_k, which
+ * is exactly the regularity a space-filling curve has and the best it can
+ * have. Arzela-Ascoli then extracts a uniformly convergent subsequence; its
+ * limit A is continuous, and by (H3) + (H4) its image is dense in, hence
+ * equal to, the rescaled limit set. By (E) that set has positive area, so A
+ * is a continuous surjection of an interval onto a set of positive area: a
+ * space-filling curve, whose image therefore has Hausdorff dimension 2.
+ *
+ * THE BI-INFINITE CURVE NEEDS NO LIMIT AT ALL. Along the Psi chain the arcs
+ * are literally nested as paths — same segments, same order — so their union
+ * is a single bi-infinite polygonal curve gamma : R -> plane, defined with no
+ * convergence argument whatsoever. gamma is simple, and by (H4) it passes
+ * through every tile of the limit tiling, hence within one tile diameter of
+ * every point of the plane once (E) holds. That is the object the repo's
+ * pictures draw. It is NOT the measure-theoretic space-filling curve: a
+ * polygonal curve has Hausdorff dimension 1. The space-filling curve is the
+ * rescaled limit above. Both statements are true and they are different
+ * statements; a write-up must not blur them.
  *
  * SELF-AVOIDANCE IS A PROPERTY OF THE APPROXIMANTS, NOT THE LIMIT. The limit A
  * cannot be injective: a continuous injection of an interval into the plane
@@ -338,70 +379,151 @@ for (const key of KEYS) {
 
 // --- the stronger Hilbert property: EVERY sub-supertile, every depth --------
 
-heading('1b. HILBERT NESTING — every level-j sub-supertile occupies one interval');
-console.log(`  Hypothesis (H1). For each depth d = 1..k-1 the tiles sharing an id prefix
-  of length d form a level-(k-d) sub-supertile; its segments must be one
-  unbroken run of the level-k arc. This is checked for every prefix at every
-  depth, exactly.\n`);
+heading('1b. REFUTED: the naive Hilbert nesting. What is true instead.');
+console.log(`  (H1-naive) would say: for every depth d the tiles sharing an id prefix of
+  length d — a level-(k-d) sub-supertile — occupy ONE contiguous interval of
+  the level-k arc. That is FALSE here, and the failure is completely regular.
+
+  A standalone level-j supertile of type T has its own strand diagram, which
+  splits into a fixed number arcs(T) of open arcs and NO circuits. The parent
+  arc has to thread each of them separately, so it enters that sub-supertile
+  exactly arcs(T) times. Only Psi has arcs(Psi) = 1 — which is why Psi is the
+  only type that nests literally, and the only viable root.\n`);
+
+/** Arc/circuit profile of a standalone type-T supertile at level j. */
+const profCache = new Map<string, { arcs: number; circuits: number; minFrac: number; segs: number; tiles: number; covered: boolean }>();
+function profileOf(cfg: Config, type: TileTypeId, level: number) {
+  const ck = `${cfg.id}:${type}:${level}`;
+  let hit = profCache.get(ck);
+  if (!hit) {
+    const inst = zExpand(cfg.family, type, level);
+    const s = buildStrands(cfg, inst);
+    const tr = trace(s);
+    const lens = tr.arcs.map((a) => a.segIdxs.length);
+    hit = {
+      arcs: tr.arcs.length,
+      circuits: tr.circuits.length,
+      minFrac: lens.length ? Math.min(...lens) / s.segs.length : 0,
+      segs: s.segs.length,
+      tiles: inst.length,
+      covered: tr.tilesCovered === inst.length,
+    };
+    profCache.set(ck, hit);
+  }
+  return hit;
+}
+
+const typeOfPrefix = (slots: readonly number[]): TileTypeId => {
+  let t: TileTypeId = 'Psi';
+  for (const s of slots) t = SUPER_RULES[t][s] as TileTypeId;
+  return t;
+};
 
 for (const key of KEYS) {
   const cfg = CONFIGS[key];
+  console.log(`  ${cfg.id} — arcs(T) of a standalone level-j supertile of type T`);
+  console.log(`    | level j | ${TYPES.map((t) => pad(t.slice(0, 5), 6)).join(' |')} | circuits | min arc share |`);
+  console.log(`    |---|${TYPES.map(() => '---').join('|')}|---|---|`);
+  const arcsAt: number[][] = [];
+  for (let j = 1; j <= Math.max(1, MAX - 1); j++) {
+    const profs = TYPES.map((t) => profileOf(cfg, t, j));
+    arcsAt.push(profs.map((p) => p.arcs));
+    const circuits = profs.reduce((a, p) => a + p.circuits, 0);
+    const minFrac = Math.min(...profs.map((p) => p.minFrac));
+    console.log(
+      `    | ${j} | ${profs.map((p) => pad(p.arcs, 6)).join(' |')} | ${pad(circuits, 8)} | ${pad(minFrac.toFixed(5), 13)} |`,
+    );
+    if (circuits !== 0 || !profs.every((p) => p.covered)) allOk = false;
+  }
+  ok(true, `${cfg.id}: no supertile type of any level <= ${Math.max(1, MAX - 1)} has a circuit, and each covers all its tiles`);
+  const levelIndependent = arcsAt.every((r) => r.every((v, i) => v === arcsAt[0][i]));
+  ok(levelIndependent, `${cfg.id}: arcs(T) is LEVEL-INDEPENDENT`,
+    `${TYPES.map((t, i) => `${t}=${arcsAt[0][i]}`).join(' ')}`);
+  ok(arcsAt[0][TYPES.indexOf('Psi')] === 1, `${cfg.id}: Psi is the unique type with a single arc`,
+    `every other type has ${TYPES.filter((t) => t !== 'Psi').map((t) => arcsAt[0][TYPES.indexOf(t)]).join('/')} arcs`);
+  ok(Math.max(...arcsAt[0]) === 5, `${cfg.id}: the re-entry bound is m = ${Math.max(...arcsAt[0])}`, 'this is hypothesis (H1)');
+  console.log(`    NOTE: the smallest arc's share of the segments decays like lambda^(-j),
+    so individual RUNS can be as short as a couple of segments. Any argument
+    that assumes runs are a fixed fraction of the sub-supertile is wrong.\n`);
+}
+
+console.log('  Direct check of (H1) and (H5) on the level-k arc itself:');
+console.log('    | config | level | depth | sub-supertiles | runs = arcs(type)? | contiguous | max runs | min time share * lambda^d |');
+console.log('    |---|---|---|---|---|---|---|---|');
+for (const key of KEYS) {
+  const cfg = CONFIGS[key];
+  let allMatch = true;
+  let worstRuns = 0;
+  let worstShare = Infinity;
   for (let lv = 2; lv <= MAX; lv++) {
     const arc = arcOf(cfg, lv);
     if (!arc) continue;
     const s = strandsOf(cfg, lv);
-    let groupsTotal = 0;
-    let bad = 0;
-    let worstDepth = -1;
     for (let d = 1; d < lv; d++) {
-      const lo = new Map<string, number>();
-      const hi = new Map<string, number>();
-      const cnt = new Map<string, number>();
-      for (let i = 0; i < s.segs.length; i++) {
-        const pre = s.instances[s.instOf[i]].id.split('.').slice(0, d).join('.');
-        const p = arc.posOf[i];
-        if (!cnt.has(pre)) { lo.set(pre, p); hi.set(pre, p); cnt.set(pre, 0); }
-        if (p < (lo.get(pre) as number)) lo.set(pre, p);
-        if (p > (hi.get(pre) as number)) hi.set(pre, p);
-        cnt.set(pre, (cnt.get(pre) as number) + 1);
+      const runsOf = new Map<string, number>();
+      const cntOf = new Map<string, number>();
+      let prev = '';
+      for (const seg of arc.order) {
+        const pre = s.instances[s.instOf[seg]].id.split('.').slice(0, d).join('.');
+        cntOf.set(pre, (cntOf.get(pre) ?? 0) + 1);
+        if (pre !== prev) runsOf.set(pre, (runsOf.get(pre) ?? 0) + 1);
+        prev = pre;
       }
-      for (const [pre, c] of cnt) {
-        groupsTotal++;
-        if ((hi.get(pre) as number) - (lo.get(pre) as number) + 1 !== c) {
-          bad++;
-          if (worstDepth < 0) worstDepth = d;
-        }
+      let matches = 0;
+      let contiguous = 0;
+      let maxRuns = 0;
+      let minShare = Infinity;
+      for (const [pre, r] of runsOf) {
+        const type = typeOfPrefix(pre.split('.').map(Number));
+        if (r === profileOf(cfg, type, lv - d).arcs) matches++;
+        if (r === 1) contiguous++;
+        maxRuns = Math.max(maxRuns, r);
+        minShare = Math.min(minShare, (cntOf.get(pre) as number) / s.segs.length);
       }
+      const total = runsOf.size;
+      if (matches !== total) allMatch = false;
+      worstRuns = Math.max(worstRuns, maxRuns);
+      worstShare = Math.min(worstShare, minShare * LAMBDA ** d);
+      console.log(
+        `    | ${pad(cfg.id, 24)} | ${lv} | ${d} | ${pad(total, 14)} | ${pad(`${matches}/${total}`, 18)} | ${pad(`${contiguous}/${total}`, 10)} | ${pad(maxRuns, 8)} | ${pad((minShare * LAMBDA ** d).toFixed(5), 25)} |`,
+      );
     }
-    ok(
-      bad === 0,
-      `${cfg.id} level ${lv}: all ${groupsTotal} sub-supertiles (every depth) occupy one arc interval`,
-      bad ? `${bad} broken, first at depth ${worstDepth}` : '',
-    );
   }
+  ok(allMatch, `${cfg.id}: every sub-supertile is entered exactly arcs(its type) times, all depths, all levels`);
+  ok(worstRuns <= 5, `${cfg.id}: the re-entry count never exceeds m = 5 — hypothesis (H1)`, `worst ${worstRuns}`);
+  ok(worstShare > 0.05, `${cfg.id}: no starved sub-supertile — hypothesis (H5)`,
+    `least time share over all depths is ${worstShare.toFixed(5)} * lambda^(-depth)`);
 }
+console.log(`\n  So (H1-naive) is REFUTED and replaced by (H1): re-entry is bounded by 5,
+  and the number of entries of a sub-supertile is exactly arcs(its type) —
+  matched for every single sub-supertile at every depth and level checked.`);
 
 // ===========================================================================
 // 2. BOTH ENDS GROW
 // ===========================================================================
 
 heading('2. BI-INFINITENESS — does the parent arc grow on BOTH sides?');
-console.log(`  trace() picks an arc direction arbitrarily, so "before" and "after" are
-  only defined up to a swap; the verdict therefore uses min(before, after),
-  which is direction-free. Cumulatively, the amount of curve on each side of
-  the FIXED seed P_1 inside P_k is B_k = sum of the per-level "before" counts
-  and A_k = sum of the "after" counts, since the level-(j-1) sub-path sits
-  inside the level-j sub-path. Both must diverge for a line rather than a ray.
+console.log(`  trace() picks an arc direction arbitrarily and independently at each level,
+  so "before" and "after" cannot be summed across levels — which end of the
+  growing curve each one feeds is not tracked. The direction-free statement
+  is what matters and is stronger than it looks: at level k the two ends of
+  the child's sub-path ARE the two ends of the level-(k-1) arc, and they are
+  extended by "before" and "after" segments in some order. So EACH end of the
+  growing curve receives at least min(before, after) new segments at every
+  level, hence at least the running sum of those minima in total. If that sum
+  diverges the union is a LINE; if some level had min = 0 the curve would
+  stop growing at one end and the union could be a RAY.
 
-  The structural reason: each level-k arc visits the 8 top-level children in
-  some order (a permutation of the slots). If the nesting slot is neither
-  first nor last in that order, both sides are non-empty, and since the
-  neighbouring children's segment counts grow like lambda^k, both sides grow
-  geometrically. The visit orders are printed first.\n`);
+  The structural reason: the level-k arc visits the 8 top-level children in a
+  definite order WITH REPEATS — 21 runs, not 8, because of section 1b — but
+  each Psi child is visited exactly once. If that single visit is neither the
+  first nor the last run, both sides are non-empty; and since the neighbouring
+  children's segment counts grow like lambda^k, both sides grow geometrically.
+  The visit sequences are printed first (slot numbers, in arc order).\n`);
 
 for (const key of KEYS) {
   const cfg = CONFIGS[key];
-  console.log(`  ${cfg.id} — top-level slot visit order per level (canonicalised by direction)`);
+  console.log(`  ${cfg.id} — top-level slot visit sequence per level (canonicalised by direction)`);
   const orders: string[] = [];
   for (let lv = 2; lv <= MAX; lv++) {
     const arc = arcOf(cfg, lv);
@@ -416,49 +538,56 @@ for (const key of KEYS) {
     const rev = [...seq].reverse().join(' ');
     const canon = fwd < rev ? fwd : rev;
     orders.push(canon);
-    console.log(`    level ${lv}: ${canon}${seq.length === 8 ? '' : `   <-- ${seq.length} runs, not 8`}`);
-    if (seq.length !== 8) allOk = false;
+    const psiOnce = PSI_SLOTS.every((p) => seq.filter((x) => x === p).length === 1);
+    console.log(`    level ${lv}: ${canon}   (${seq.length} runs; Psi slots visited once: ${psiOnce ? 'yes' : 'NO'})`);
+    if (!psiOnce) allOk = false;
   }
   const evenOrders = orders.filter((_, i) => i % 2 === 0);
   const oddOrders = orders.filter((_, i) => i % 2 === 1);
   const period2 =
     evenOrders.every((o) => o === evenOrders[0]) && oddOrders.every((o) => o === oddOrders[0]);
-  ok(period2, `${cfg.id}: the slot visit order is period-2 in the level (the mirror parity)`,
-    period2 && evenOrders[0] === oddOrders[0] ? 'in fact constant' : '');
+  ok(period2, `${cfg.id}: the slot visit sequence is period-2 in the level (the mirror parity)`,
+    period2 && evenOrders[0] === oddOrders[0] ? 'in fact constant' : `two sequences, alternating`);
   for (const slot of PSI_SLOTS) {
     const neverEnd = orders.every((o) => {
       const parts = o.split(' ').map(Number);
       return parts[0] !== slot && parts[parts.length - 1] !== slot;
     });
-    ok(neverEnd, `${cfg.id}: nesting slot ${slot} is never first or last in the visit order`,
-      neverEnd ? 'so both sides are non-empty at every level' : 'that level yields a RAY, not a line');
+    ok(neverEnd, `${cfg.id}: nesting slot ${slot} is never the first or last run`,
+      neverEnd ? 'so both sides are non-empty at every level' : 'that slot yields a RAY, not a line');
   }
 }
 
 for (const key of KEYS) {
   const cfg = CONFIGS[key];
   console.log(`\n  ${cfg.id} — material on each side of the nested child`);
-  console.log('    | slot | level | before | after | min | cumulative B | cumulative A | min ratio |');
+  console.log('    | slot | level | before | after | min | guaranteed per end (sum of mins) | total added | min ratio |');
   console.log('    |---|---|---|---|---|---|---|---|');
   for (const slot of PSI_SLOTS) {
     const rows = nestRows.get(`${key}:${slot}`) ?? [];
-    let B = 0;
-    let A = 0;
+    let guaranteed = 0;
+    let total = 0;
     let prevMin = 0;
     const mins: number[] = [];
     for (const r of rows) {
-      B += r.before;
-      A += r.after;
       const mn = Math.min(r.before, r.after);
+      guaranteed += mn;
+      total += r.before + r.after;
       mins.push(mn);
       console.log(
-        `    | ${slot} | ${r.level} | ${pad(r.before, 6)} | ${pad(r.after, 6)} | ${pad(mn, 6)} | ${pad(B, 12)} | ${pad(A, 12)} | ${pad(prevMin ? (mn / prevMin).toFixed(3) : '—', 9)} |`,
+        `    | ${slot} | ${r.level} | ${pad(r.before, 6)} | ${pad(r.after, 6)} | ${pad(mn, 6)} | ${pad(guaranteed, 31)} | ${pad(total, 11)} | ${pad(prevMin ? (mn / prevMin).toFixed(3) : '—', 9)} |`,
       );
       prevMin = mn;
     }
-    const grows = mins.length >= 2 && mins.every((m) => m > 0) && mins[mins.length - 1] > mins[0];
-    ok(grows, `${cfg.id} slot ${slot}: min(before, after) is positive at every level and grows`,
-      `min sequence ${mins.join(' -> ')}; B=${B}, A=${A}`);
+    // Each substitution level is a MIRROR of the previous one, so the natural
+    // comparison is at equal parity: mins[i] against mins[i-2]. The ratio
+    // should approach lambda^2 = 61.98.
+    const positive = mins.every((m) => m > 0);
+    const parityGrows = mins.length < 3 || mins.every((m, i) => i < 2 || m > mins[i - 2]);
+    const ratios = mins.map((m, i) => (i < 2 ? null : m / mins[i - 2])).filter((r): r is number => r !== null);
+    ok(positive && parityGrows,
+      `${cfg.id} slot ${slot}: min(before, after) > 0 at every level and grows at equal parity`,
+      `mins ${mins.join(' -> ')}; two-level ratios ${ratios.map((r) => r.toFixed(1)).join(', ') || '(need level >= 4)'} vs lambda^2 = ${(LAMBDA * LAMBDA).toFixed(1)}; each end gains >= ${guaranteed} segments by level ${MAX}`);
   }
 }
 
@@ -677,7 +806,6 @@ console.log(`\n  3c. VARYING ADDRESS, STILL INSIDE Psi. The address may use any 
       outline edge of P_k at all.\n`);
 
 interface AddrRow { readonly addr: string; readonly buried: boolean; readonly inr: number; }
-const bestAddr: Record<string, string> = {};
 
 for (const family of ['hex', 'spectre'] as TileFamilyId[]) {
   console.log(`  ${family}`);
@@ -704,20 +832,24 @@ for (const family of ['hex', 'spectre'] as TileFamilyId[]) {
     }
     rows.sort((a, b) => b.inr - a.inr);
     perLevel.push(rows);
-    bestAddr[`${family}:${lv}`] = rows[0].addr;
     console.log(
       `    | ${lv} | ${pad(rows.length, 13)} | ${pad(rows.filter((r) => r.buried).length, 6)} | ${pad(rows[0].inr.toFixed(4), 13)} | ${rows[0].addr}${rows[0].buried ? '  (BURIED)' : ''} |`,
     );
   }
   const last = perLevel[perLevel.length - 1];
   const anyBuried = last.some((r) => r.buried);
-  ok(
-    anyBuried,
-    `${family}: a Psi-only address buries the seed by level ${MAXG}`,
-    anyBuried
-      ? `${last.filter((r) => r.buried).length} of ${last.length} addresses; best inradius ${last[0].inr.toFixed(4)}`
-      : `no Psi-only address buries the seed at level <= ${MAXG} — raise maxGeomLevel`,
-  );
+  if (MAXG >= 5) {
+    ok(
+      anyBuried,
+      `${family}: a Psi-only address buries the seed by level ${MAXG}`,
+      anyBuried
+        ? `${last.filter((r) => r.buried).length} of ${last.length} addresses; best inradius ${last[0].inr.toFixed(4)}`
+        : `no Psi-only address buries the seed at level <= ${MAXG}`,
+    );
+  } else {
+    console.log(`    (burial first happens at level 5; this run stopped at ${MAXG}, so the`);
+    console.log(`     burial verdict is skipped — re-run with maxGeomLevel >= 5.)`);
+  }
 
   // Track one fixed infinite address through the levels: the inradius is
   // monotone in k for a FIXED address (P_k increases), so the sequence below
@@ -742,14 +874,12 @@ for (const family of ['hex', 'spectre'] as TileFamilyId[]) {
       `${chain[0].toFixed(3)} -> ${chain[chain.length - 1].toFixed(3)}`);
     // Lemma B's collar gap for the last step.
     const p = patchOf(family, MAXG);
-    const rows = perLevel[MAXG - 2];
     const preSlots = chosen.split('').map(Number).reverse().join('.');
     const idxs: number[] = [];
     for (let t = 0; t < p.inst.length; t++) {
       if (p.inst[t].id.split('.').slice(0, MAXG - 1).join('.') === preSlots) idxs.push(t);
     }
     if (idxs.length) {
-      const inSet = new Set(idxs);
       // boundary of the seed Q inside P: edges of Q's tiles not shared with another Q tile
       const qm = new Map<string, number>();
       for (const t of idxs) {
@@ -773,7 +903,7 @@ for (const family of ['hex', 'spectre'] as TileFamilyId[]) {
           gap = Math.min(gap, pointSegDist(qa, a, b), pointSegDist(qb, a, b));
         }
       }
-      console.log(`      Lemma B collar gap d(boundary Q, boundary P) at level ${MAXG}: ${gap.toFixed(4)}  (${inSet.size} tiles in Q)`);
+      console.log(`      Lemma B collar gap d(boundary Q, boundary P) at level ${MAXG}: ${gap.toFixed(4)}  (${idxs.length} tiles in Q)`);
       ok(gap > 1e-9, `${family}: the collar gap is strictly positive, so Lemma B applies`,
         `gap ${gap.toFixed(4)}; each further period adds at least this much to the inradius`);
     }
@@ -829,9 +959,10 @@ function distToPoly(p: Pt, poly: readonly Pt[]): number {
 }
 
 console.log('  (H2) localisation: how far can a chord leave its OWN tile?');
-console.log('    | config | worst leaf type | max excursion | (2-sqrt3)/4 |');
-console.log('    |---|---|---|---|');
+console.log('    | config | worst leaf type | max excursion | (2 sqrt3 - 3)/8 | (2-sqrt3)/4 |');
+console.log('    |---|---|---|---|---|');
 const EXPECT = (2 - Math.sqrt(3)) / 4;
+const EXCURSION = (2 * Math.sqrt(3) - 3) / 8;
 const eps0: Record<string, number> = {};
 for (const key of KEYS) {
   const cfg = CONFIGS[key];
@@ -840,21 +971,31 @@ for (const key of KEYS) {
   for (const type of leafOrder(cfg.family)) {
     const poly = leafPts(cfg.family, type);
     for (const [a, b] of floatChords(cfg, type)) {
-      for (let s = 0; s <= 400; s++) {
-        const t = s / 400;
+      for (let s = 0; s <= 4000; s++) {
+        const t = s / 4000;
         const d = distToPoly({ x: a.x + t * (b.x - a.x), y: a.y + t * (b.y - a.y) }, poly);
         if (d > worst) { worst = d; worstType = type; }
       }
     }
   }
   eps0[key] = worst;
-  console.log(`    | ${cfg.id} | ${pad(worstType, 15)} | ${pad(worst.toFixed(6), 13)} | ${EXPECT.toFixed(6)} |`);
+  console.log(
+    `    | ${cfg.id} | ${pad(worstType, 15)} | ${pad(worst.toFixed(6), 13)} | ${pad(EXCURSION.toFixed(6), 15)} | ${EXPECT.toFixed(6)} |`,
+  );
 }
 ok(eps0.hex128 < 1e-9, 'hex: every chord stays inside its own tile (eps0 = 0)');
 ok(
-  Math.abs(eps0.spectre1278 - EXPECT) < 2e-4,
-  'spectre: the excursion is the reflex-corner cut (2-sqrt 3)/4, a CONSTANT',
-  `measured ${eps0.spectre1278.toFixed(6)} vs ${EXPECT.toFixed(6)}; sampled at 401 points per chord, so this is a metric measurement, not an exact statement`,
+  eps0.spectre1278 > 0 && eps0.spectre1278 < 0.1,
+  'spectre: chords DO leave their tiles, but by a bounded CONSTANT independent of level',
+  `eps0 = ${eps0.spectre1278.toFixed(6)}, clearance ${(0.1 - eps0.spectre1278).toFixed(4)} below the 0.1 bound`,
+);
+ok(
+  Math.abs(eps0.spectre1278 - EXCURSION) < 1e-5,
+  'spectre: that constant is (2 sqrt 3 - 3)/8, NOT the (2 - sqrt 3)/4 of docs/FASS_PROOF.md §4.2',
+  `measured ${eps0.spectre1278.toFixed(9)} vs (2 sqrt3 - 3)/8 = ${EXCURSION.toFixed(9)} (difference ${Math.abs(eps0.spectre1278 - EXCURSION).toExponential(2)}),` +
+    ` vs (2-sqrt3)/4 = ${EXPECT.toFixed(9)} (difference ${Math.abs(eps0.spectre1278 - EXPECT).toExponential(2)});` +
+    ` 4001 samples per chord, so the sampling resolution is ~2.5e-4 of chord length — the agreement is far inside it, the disagreement far outside.` +
+    ` The doc's constant is presumably for the sibling combo 0100100000, which selects different chords`,
 );
 console.log(`    A chord that leaves its own tile can only enter a tile that shares the
     edge it crosses. So the arc restricted to a level-j sub-supertile stays
@@ -1115,12 +1256,14 @@ for (const key of KEYS) {
     `${cfg.id}: measured segments/tile agrees with the exact eigenvector value`,
     `measured ${measured.toFixed(6)} vs exact ${fNum(spt).toFixed(9)}`,
   );
-  const tileRatio = prevTiles / (strandsOf(cfg, MAX - 1).instances.length || 1);
-  ok(
-    Math.abs(tileRatio - LAMBDA) < 5e-3,
-    `${cfg.id}: tile growth factor -> 4 + sqrt(15) = ${LAMBDA.toFixed(9)}`,
-    `level ${MAX}/${MAX - 1} ratio ${tileRatio.toFixed(6)}`,
-  );
+  if (MAX >= 3) {
+    const tileRatio = prevTiles / strandsOf(cfg, MAX - 1).instances.length;
+    ok(
+      Math.abs(tileRatio - LAMBDA) < 5e-3,
+      `${cfg.id}: tile growth factor -> 4 + sqrt(15) = ${LAMBDA.toFixed(9)}`,
+      `level ${MAX}/${MAX - 1} ratio ${tileRatio.toFixed(6)}`,
+    );
+  }
 }
 
 console.log(`

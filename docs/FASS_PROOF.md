@@ -37,7 +37,7 @@ very different characters:
 | **L0** | the leaf tiles actually tile (disjoint interiors, no gaps) | cite for spectre, **checked** for hex |
 | **L1** | **Simple** — the strand graph has max degree 2 | **proved, all levels** |
 | **L2** | **Self-avoiding** — no drawn chord crosses another | **proved for hex, all levels**; 478 two-tile classes for spectre |
-| **L3** | the substitution's strand composition is level-independent | **open — the crux** |
+| **L3** | the substitution's strand composition is level-independent | **narrowed to one geometric statement** |
 | **L4** | one arc, no circuits, every tile visited | **proved for all levels given L3** |
 | **L5** | the infinite limit | **whole plane, one bi-infinite curve**, via the Delta nesting, given L3 |
 
@@ -51,10 +51,11 @@ precisely enough to attack or cite.
 **The bottom line on the conjecture itself.** It holds, in the strong form. The
 infinite tiling built by nesting Delta inside Delta covers the whole plane, and
 its strands form exactly **one** bi-infinite curve, which is non-self-crossing
-at every finite level and passes through every tile. What is not yet a proof is
-the level-independence of the substitution's gluing data, on which the
-circuit-freeness and single-arc statements depend at levels beyond those
-computed.
+at every finite level and passes through every tile. The one thing not yet
+proved is a single geometric statement: that the eight children of a supertile
+meet edge-to-edge at every level, so that coincident quad-arc endpoints force
+coincident arcs. Everything else in L3 is either proved outright or constant and
+checked to level 8.
 
 Seven things found while writing this reshape the problem. Three are good news,
 four are corrections — and every correction came from running a check, not from
@@ -74,10 +75,12 @@ reading.
   Open Question 3.
 * **Correction 1 (§4.3).** `FASS_1278.md` justifies the crux lemma by saying
   the gluing data is "pinned by the level-independent child transforms of
-  `buildSupertiles`". Those transforms are *not* level-independent —
-  `buildSupertiles` recomputes them from each level's own quad — and the
-  supertiles are not similar across levels. Their boundaries are fractal in the
-  limit, of dimension about 1.396. The crux lemma has no similarity proof.
+  `buildSupertiles`". Those transforms are *not* level-independent. The
+  similarity residual between consecutive quads is a fixed non-zero ring
+  element, and no pair of similarities conjugates the transforms across levels.
+  The supertile boundaries are fractal in the limit, of dimension exactly
+  `log(2+√5)/log(√(4+√15)) = 1.3992532…`, the perimeter growing by the golden
+  ratio cubed. Every similarity route to the crux lemma is closed.
 * **Correction 2 (§4.2).** Four of the spectre chords **leave their own tile**,
   cutting across the reflex corner of the concave 14-gon by exactly
   (2−√3)/4. So the clean "chords stay inside their tiles" proof of
@@ -434,10 +437,18 @@ Let `∂(T,k)` be the connection dots on the boundary of the level-`k` supertile
 of type `T`, in canonical cyclic order.
 
 > **Lemma (L3).** For each type `T`: `|∂(T,k)|` is constant in `k`; and under a
-> canonical labelling, the **gluing** map — which child boundary dot welds to
-> which sibling boundary dot inside the parent — and the **outer** map — which
-> child boundary dots survive as the parent's boundary dots — are constant in
-> `k`, up to the period-2 mirror that `buildSupertiles` introduces.
+> chirality-stable canonical labelling, the **gluing** map — which child
+> boundary dot welds to which sibling boundary dot inside the parent — and the
+> **outer** map — which child boundary dots survive as the parent's boundary
+> dots — are constant in `k`.
+
+Measured, the datum is constant with **period 1** from level 2 through level 8,
+identical across all three configurations and both families. An earlier draft of
+this document said "up to the period-2 mirror", following `FASS_1278.md`. That
+period-2 alternation is an artefact of a labelling that does not absorb the
+per-level mirror flip; it is not a property of the substitution. The routing
+*states* do sit on a 2-cycle (§4.4), but that is a 2-cycle of a fixed map, not a
+period in the map itself.
 
 Given L3, `routing(T,k+1) = F_T(children's routings at level k)` with `F_T`
 **fixed**, and the whole problem collapses to iterating a fixed map on a finite
@@ -459,14 +470,21 @@ each level's own quad. Fitting a similarity from each level's quad to the next:
 | 5 → 6 | 2.805910 | +11.5648° | 2.7e−2 |
 
 The ratio converges to √(4+√15) = 2.805883701… and the angle to ±11.565°, but
-neither is exact at any finite level. Exactly: the eight child transforms are
-*distinct* at every one of levels 1 to 6, in both families, and so are the
-supertile quads. What **is** level-independent is only the rotation-and-mirror
-part of each slot, which is `6,1 | 4,1 | 4,1 | 2,1 | 0,1 | 0,1 | 10,1 | 2,1` at
-every level and identical for hexagons and the spectre. So the salvageable
-content of the `FASS_1278.md` claim is that each child sits in its parent at a
-level-independent *orientation*; only the translations move. That is not enough
-to pin the gluing. The underlying reason
+never exactly. This is not a numerical observation but an exact one: the
+cross-multiplied similarity residual is a **fixed non-zero ring element** at
+every level, `[-6,-12,0,6]` for the spectre and alternating `[-2,0,1,0]` and
+`[-1,0,-1,0]` for hexagons. It cannot vanish however deep one goes. Stronger
+still, `Ts` at level `k+1` is provably not conjugate to `Ts` at level `k` by any
+pair of plane similarities, and an anti-similarity conjugation is impossible
+outright, because the slot rotations mod 6 are `{0,2,4}` rather than all equal.
+**Every geometric-similarity route to L3 is closed.**
+
+What **is** level-independent is only the rotation-and-mirror part of each slot,
+`6m 4m 4m 2m 0m 0m 10m 2m`, fixed because `buildSupertiles` derives it from
+`T_RULES`' cumulative angles and never from the quad. Only the translations
+move. So the salvageable content of the `FASS_1278.md` claim is that each child
+sits in its parent at a level-independent *orientation*, which does not pin the
+gluing. The underlying reason
 ([`08-supertile-outline.ts`](../web/fass-proof/08-supertile-outline.ts)): all
 eight non-Gamma supertile types share one identical outline at every level —
 every type carries Gamma at slot 7 and only there, so the induction is
@@ -480,11 +498,29 @@ immediate, and only Gamma differs — but that outline's perimeter grows by abou
 | 3 | 378 | 4.2000 | 758 | 4.1648 |
 | 4 | 1,598 | 4.2275 | 3,198 | 4.2190 |
 
-Perimeter grows by 4.22 while diameter grows by only 2.8059, so **the supertile
-boundaries are fractal in the limit**, of dimension log(4.22)/log(2.8059) ≈
-1.396. Supertiles are genuinely not similar across levels and the crux lemma has
-no similarity proof. Two weaker invariants also fail: the boundary *direction*
-word grows (22, 90, 378, …) and so does the boundary *meta-edge class* word.
+The perimeter factor is exactly **2 + √5 = 4.236067977…**, the golden ratio
+cubed, approached slowly from below — the quad-arc lengths behind it are
+Fibonacci numbers. Perimeter therefore outgrows diameter, which grows by only
+2.8059, so **the supertile boundaries are fractal in the limit**, of dimension
+`log(2+√5) / log(√(4+√15)) = 1.399253214…`.
+
+Several weaker invariants also fail, each checked exactly: the boundary
+*direction* word grows (22, 90, 378, …); so does the *meta-edge class* word (6,
+22, 90, 378, 1598, 6766, 28658, 121394, 514230 for Psi); the positions of the
+four quad points within it grow; and the turning-angle sequence grows with the
+perimeter. The meta-edge *length* question is vacuous as posed, since a boundary
+meta-edge's length is a function of its class alone.
+
+**What does work is the quad-arc decomposition.** The quad recursion is exactly
+semilinear with a fixed matrix, `Q_k = M · conj(Q_{k-1})` over `Z[ζ₁₂]`, with no
+`Q_{k-1}` term at all, verified exactly to level 20. And the **quad-point
+incidence pattern among the eight children is the same at every level `k ≥ 2`** —
+the eight coincidences `0.3=1.1, 0.0=7.0, 1.2=2.0, 2.3=3.1, 3.3=4.1, 4.2=5.0,
+5.3=6.1, 6.3=7.3` — and this is *proved for all such `k`*, not merely checked.
+Each incidence is the vanishing of a fixed linear functional of
+`v_j = (Q_j, conj Q_j)`; since `v_j = N v_{j-1}` for a fixed 8×8 matrix over
+`Q(ζ₁₂)`, Cayley–Hamilton puts `v_{j+8}` in the span of the previous eight, so
+vanishing on a window of eight consecutive levels forces vanishing for all `k`.
 
 **What does survive is the better invariant.** The boundary grows without bound
 but the number of boundary connection dots does not
@@ -676,7 +712,11 @@ limit.
 | Zero circuits, every type, every level | verified levels 1–6; **all levels given L3**, and no argument for it exists independent of L3 |
 | Psi supertile is a single arc | verified levels 1–6; **all levels given L3**, and forced by the interface invariant |
 | Every tile visited | verified levels 1–5; **all levels given L3** |
-| The gluing and outer maps are level-independent | **OPEN — this is L3** |
+| The gluing and outer maps are constant (period 1) | verified levels 2–8, both families, all three configurations |
+| No similarity or anti-similarity conjugates `Ts` across levels | **proved** (fixed non-zero exact residual) |
+| The quad-point incidence pattern is the same at every level | **proved for all k ≥ 2** (Cayley–Hamilton) |
+| Coincident quad-arc endpoints force coincident arcs | **OPEN — the remaining piece of L3** |
+| Perimeter growth is exactly 2+√5, boundary dimension 1.3992532… | **proved** |
 | Finite local complexity (no new two-tile class ever appears) | **OPEN** — this is what would make L2 unconditional for the spectre |
 | Psi-in-Psi nesting gives a bi-infinite curve | verified levels 1–5, all three slots |
 | That nesting exhausts the plane | **refuted** — inradius is exactly constant |
@@ -689,42 +729,63 @@ limit.
 
 ## 6. Closing the crux
 
-L3 is the only thing between the evidence and a proof. Three routes, in
-decreasing order of how well they are understood.
+The crux is now much narrower than it was. Three things that looked like they
+might be the obstruction are settled, and one remains.
+
+**Settled.** The gluing and outer maps are *constant*, period 1, from level 2 to
+level 8, in both families and all three configurations. The quad-point incidence
+pattern among the eight children is **proved level-independent for all `k ≥ 2`**
+by the Cayley–Hamilton argument in §4.3. And the quad recursion is exactly
+semilinear with a fixed matrix. So the arrangement's combinatorial skeleton is
+pinned; what is not yet pinned is that the skeleton determines the contacts.
+
+**The one remaining gap, stated precisely:**
+
+> For every `k ≥ 2` and every supertile type `T`, the eight children of the
+> level-`k` supertile of `T` tile it without overlap and edge-to-edge, meeting
+> exactly along the boundary arcs delimited by the coincident quad points.
+> Equivalently: **whenever two children's quad-arcs share both endpoints, those
+> arcs coincide as point sets.**
+
+Endpoint coincidence is proved; arc coincidence is not. Two smaller gaps sit
+beside it. The *negative* half of the incidence result — that no additional
+quad-point coincidence ever appears — is a statement that a non-zero
+linear-recurrent sequence over `Q(ζ₁₂)` of order at most 8 has no zeros, which
+Skolem–Mahler–Lech does not settle for free; it is checked exactly to level 24.
+And Gamma is a genuine exception to the clean arc picture: it is the only type
+with an empty slot, the two child arcs flanking that notch are part-glued and
+part-outer, and the split position inside the arc is level-dependent, so Gamma's
+arc-length recursion needs two extra alphabet letters before it is linear.
+
+Three routes remain, in decreasing order of how well understood they are.
 
 **Route 1 — cite the metatile substitution.** The hat and spectre metatile
 systems of Smith, Myers, Kaplan & Goodman-Strauss are genuine *combinatorial*
-substitutions: the supertile adjacency and edge-matching structure is fixed and
-level-independent by construction, which is exactly L3. Under this route the
-repo's job is not to prove L3 but to verify that *this implementation* realises
-that substitution — which the exact scripts here do, at every computed level.
-That is an honest and complete proof structure; the assumption is named and
-external rather than hidden.
+substitutions, with level-independent supertile adjacency by construction, which
+is exactly what the remaining gap asks for. The work would be to identify this
+repo's transform chain — `T_RULES`, `SUPER_RULES` and the reflection
+pre-multiplication — with the published substitution, so the citation is
+legitimate rather than assumed. That is a bounded, concrete task and it is
+probably the shortest path to a complete proof.
 
-**Route 2 — a linear-recursion invariant plus Perron–Frobenius.** The boundary
-word is not level-independent, but the vector of meta-edge extents plausibly
-satisfies a fixed linear recursion `v(k+1) = M v(k)`. The contact computation
-depends on `v` only through finitely many linear predicates ("do these two
-boundary walks coincide"). By Perron–Frobenius, `v(k)` converges in direction to
-the Perron eigenvector; if each predicate is strict at the limit, it is constant
-for all `k` beyond an effectively computable `k₀`, and checking up to `k₀`
-finishes the proof. This is a concrete research programme, not a finished
-argument, and the first step is to establish the recursion exactly.
+**Route 2 — prove the tiling property inductively.** The gap is a statement
+about eight polygons fitting together. Every ingredient except arc coincidence
+is now proved, and L0 (§4.1) already proves by winding number that each patch
+*is* a tiling at the levels computed. Turning that into an induction over `k`
+would close both the gap and L0 for the hexagon family at once.
 
 **Route 3 — shrink what L3 has to carry.** §4.3 shows the single-line property
 at the Psi root needs only three things: the interface `|∂(Psi,k)| = 2`, L1, and
-circuit-freeness. Interfaces are a much weaker statement than the full gluing
-map, and `|∂(Psi,k)| = 2` may be provable directly — for instance by showing the
-level-`k` Psi boundary meets a selected seam class exactly twice. That would
-reduce L3 to circuit-freeness alone.
+circuit-freeness. The interface is a much weaker statement than the full gluing
+map and may be provable directly. Circuit-freeness, however, has no argument
+independent of L3 at all, because the routing operator never destroys a circuit
+(§4.4), so this route shortens the lemma rather than eliminating it.
 
-**For a machine-checked proof**, the finite parts — matchings, the corona check,
-automaton iteration, exact `Z[ζ₁₂]` arithmetic — are all well suited to a proof
-assistant, since the ring has a unique integer representation and every
-predicate is decidable. The limit argument in §4.5 is the hard part and would
-need real analysis, not just decidable arithmetic.
-
----
+**For a machine-checked proof**, the finite parts — matchings, the two-tile
+class check, automaton iteration, exact `Z[ζ₁₂]` arithmetic, even the
+Cayley–Hamilton argument — are all well suited to a proof assistant, since the
+ring has a unique integer representation and every predicate is decidable. The
+limit argument in §4.5 is the part that would need real analysis.
 
 ## 7. Scripts
 
@@ -738,6 +799,7 @@ non-zero on failure.
 | `00-census.ts` | the complete classification of §3, class 0 included |
 | `01-local-structure.ts` | L0 by winding number; L1; the class-0 refutation |
 | `02-self-avoidance.ts` | the straying chords, exactly; the 272/478 two-tile classes |
+| `03-substitution-invariance.ts` | the gluing datum is constant; similarity is impossible; the incidence proof |
 | `04-routing-automaton.ts` | the routing operator, its 2-cycle, and the non-attractor result |
 | `14-merge.ts` | the Delta nesting merges to one curve and exhausts the plane |
 | `08-supertile-outline.ts` | all non-Gamma outlines identical; perimeter grows 4.22 per level; boundaries fractal |
@@ -752,7 +814,9 @@ non-zero on failure.
 
 ## 8. Open questions
 
-1. **L3 itself** (§6) — the main gap. Everything topological rests on it.
+1. **The one remaining piece of L3** (§6): that coincident quad-arc endpoints
+   force coincident arcs, i.e. the eight children tile their parent edge-to-edge
+   at every level. Everything else in L3 is now proved or constant-and-checked.
 2. **Finite local complexity.** Prove the set of two-tile relative-placement
    classes is closed under one substitution step. That single step turns L2 into
    an unconditional all-levels theorem for the spectre. The difficulty is the

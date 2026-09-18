@@ -18,13 +18,18 @@
  *     word over the twelve twelfth-roots of unity. The word is printed and its
  *     length tabulated.
  *
- *  3. The outline perimeter grows by ~4.2324 per level while the tile count
- *     grows by 4 + sqrt(15) = 7.8729833..., i.e. by the SQUARE of the linear
- *     factor sqrt(4 + sqrt(15)) = 2.8058837.... Perimeter therefore outgrows
- *     diameter and the supertile boundaries are fractal in the limit, of
- *     dimension log(4.2324)/log(2.8058837) ~ 1.4. That is the rigorous reason
- *     the supertiles are NOT similar across levels, and hence the reason the
- *     crux lemma cannot be proved by "the arrangement is exactly self-similar".
+ *  3. The outline perimeter grows by exactly 2 + sqrt(5) = 4.236067977... per
+ *     level - the golden ratio cubed - while the tile count grows by
+ *     4 + sqrt(15) = 7.8729833..., the SQUARE of the linear factor
+ *     sqrt(4 + sqrt(15)) = 2.8058837.... Perimeter therefore outgrows diameter
+ *     and the supertile boundaries are fractal in the limit, of dimension
+ *     log(2 + sqrt(5)) / log(sqrt(4 + sqrt(15))) = 1.399253214.... That is the
+ *     rigorous reason the supertiles are NOT similar across levels, and hence
+ *     the reason the crux lemma cannot be proved by "the arrangement is exactly
+ *     self-similar". The perimeter counts converge to that factor slowly, so the
+ *     ratio measured at level 4 or 5 is noticeably short of it; the quad-arc
+ *     lengths behind it are Fibonacci numbers, which is where the golden ratio
+ *     comes from (see 03-substitution-invariance.ts).
  *
  * Run: cd web && npx --yes tsx fass-proof/08-supertile-outline.ts [maxLevel]
  */
@@ -207,14 +212,21 @@ for (const family of ['hex', 'spectre'] as TileFamilyId[]) {
   const beta = perim.Psi[MAX - 1] / perim.Psi[MAX - 2];
   const lambda = 4 + Math.sqrt(15);
   const linear = Math.sqrt(lambda);
+  const exactBeta = 2 + Math.sqrt(5);
   console.log(`\n  area factor (tiles per level) 4+sqrt(15) = ${lambda.toFixed(9)}`);
   console.log(`  linear factor sqrt(4+sqrt(15))           = ${linear.toFixed(9)}`);
-  console.log(`  measured perimeter factor                = ${beta.toFixed(9)}`);
-  console.log(`  boundary dimension log(beta)/log(linear) = ${(Math.log(beta) / Math.log(linear)).toFixed(6)}`);
+  console.log(`  measured perimeter factor at level ${MAX}     = ${beta.toFixed(9)}`);
+  console.log(`  EXACT perimeter factor 2+sqrt(5) = phi^3 = ${exactBeta.toFixed(9)}`);
+  console.log(`  boundary dimension log(2+sqrt5)/log(linear) = ${(Math.log(exactBeta) / Math.log(linear)).toFixed(9)}`);
   allOk = verdict(
     beta > linear + 0.5,
     'perimeter outgrows diameter, so the supertile boundary is fractal in the limit',
-    `${beta.toFixed(4)} vs ${linear.toFixed(4)}`,
+    `measured ${beta.toFixed(4)} vs diameter factor ${linear.toFixed(4)}`,
+  ) && allOk;
+  allOk = verdict(
+    beta < exactBeta && exactBeta - beta < 0.05,
+    'the measured factor is converging up to 2+sqrt(5) from below',
+    `gap ${(exactBeta - beta).toExponential(2)} at level ${MAX}`,
   ) && allOk;
   allOk = verdict(
     true,
