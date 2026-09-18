@@ -499,8 +499,14 @@ immediate, and only Gamma differs — but that outline's perimeter grows by abou
 | 4 | 1,598 | 4.2275 | 3,198 | 4.2190 |
 
 The perimeter factor is exactly **2 + √5 = 4.236067977…**, the golden ratio
-cubed, approached slowly from below — the quad-arc lengths behind it are
-Fibonacci numbers. Perimeter therefore outgrows diameter, which grows by only
+cubed, approached slowly from below. It is *derived*, not measured: the
+perimeter obeys `L_k = 4·L_{k-1} + L_{k-2} + c` exactly, with `c` a per-type
+constant (−4 and −8 for hexagon Psi and Gamma, −16 and −32 for the spectre),
+checked exactly to level 8. The characteristic polynomial is `x² − 4x − 1`,
+whose dominant root is `2 + √5`. The quad-arc lengths behind it are Fibonacci
+numbers: hexagon Psi runs `[1,1,2,2]`, `[4,4,9,5]`, `[17,17,38,18]`,
+`[72,72,161,73]`, `[305,305,682,306]`, and the spectre runs
+`[2,2,4,6]`, `[8,8,18,12]`, `[34,34,76,38]`, `[144,144,322,148]`. Perimeter therefore outgrows diameter, which grows by only
 2.8059, so **the supertile boundaries are fractal in the limit**, of dimension
 `log(2+√5) / log(√(4+√15)) = 1.399253214…`.
 
@@ -511,7 +517,25 @@ four quad points within it grow; and the turning-angle sequence grows with the
 perimeter. The meta-edge *length* question is vacuous as posed, since a boundary
 meta-edge's length is a function of its class alone.
 
-**What does work is the quad-arc decomposition.** The quad recursion is exactly
+**The explicit rule.** Under the canonical labelling, the substitution's gluing
+and outer datum for Psi — the "substitute and keep all the paths" rule the
+README asks for, written out — is the same at every level from 2 on, in both
+families and all three configurations. Children at slots 0…7 are
+`Psi, Delta, Psi, Phi, Sigma, Psi, Phi, Gamma` with boundary-dot counts
+`2, 8, 2, 4, 10, 2, 4, 10`:
+
+```text
+glue: 0:0=1:1  0:1=7:0  1:0=7:1  1:2=2:1  1:3=3:0  1:4=3:3  1:5=4:0  1:6=4:9
+      1:7=7:2  2:0=3:1  3:2=4:1  4:2=5:1  4:3=6:0  4:4=6:3  4:5=7:6  4:6=7:5
+      4:7=7:4  4:8=7:3  5:0=6:1  6:2=7:7
+outer: 7:8 -> 0   7:9 -> 1
+```
+
+Both endpoints of the Psi arc sit on the Gamma child at every level, which is
+what `FASS_1278.md` §4.4 observes. Level 1 is the only exception and the only
+place the three configurations differ, because there the children are leaves.
+
+**What else works is the quad-arc decomposition.** The quad recursion is exactly
 semilinear with a fixed matrix, `Q_k = M · conj(Q_{k-1})` over `Z[ζ₁₂]`, with no
 `Q_{k-1}` term at all, verified exactly to level 20. And the **quad-point
 incidence pattern among the eight children is the same at every level `k ≥ 2`** —
@@ -840,9 +864,10 @@ non-zero on failure.
 7. **The other three combinations.** Each family's quartet has the same Psi-root
    single-line property. Are the four limit curves the same curve up to mirror,
    or genuinely different FASS curves?
-8. **Why 4.22?** The boundary growth factor is measured, not derived. It should
-   be the Perron eigenvalue of a boundary substitution matrix; finding that
-   matrix would also feed Route 2.
+8. **Gamma's arc-length recursion.** The fixed arc-incidence matrix predicts
+   every non-Gamma type's arc lengths but not Gamma's, because its empty slot
+   splits two child arcs part-glued and part-outer at a level-dependent
+   position. Extending the alphabet by those two sub-arcs should make it linear.
 9. **A structural reason two unit edges never cross at a non-lattice point.**
    The ambient ring permits it — there is an explicit witness — so the
    "residual boundary is a Jordan curve" step of L0 is currently a per-level

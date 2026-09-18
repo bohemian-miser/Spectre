@@ -1296,10 +1296,29 @@ console.log(`  PROVED for all k, no level bound:
     * the Perron eigenvector and both segments-per-tile constants, exactly in
       Q(sqrt 15), verified by an exact eigen-equation rather than a tolerance.
 
+  REFUTED (each by an exact computation, not an estimate):
+    * the naive Hilbert nesting — a level-j sub-supertile does NOT in general
+      occupy one interval of the level-k arc. It is entered exactly arcs(T)
+      times, T its type: Gamma 5, Sigma 5, Delta 4, Theta 3, Lambda 3, Xi 2,
+      Pi 2, Phi 2, Psi 1. Only 3 of 8 top-level children are contiguous, and
+      they are exactly the three Psi children. Every argument that assumed
+      the naive nesting has to be redone with the bounded-re-entry version.
+    * the idea that runs are a fixed fraction of a sub-supertile. The
+      smallest arc of a level-j supertile is O(lambda^(-j)) of its segments.
+    * that whole-plane exhaustion needs an address through non-Psi supertile
+      types (docs/FASS_PROOF.md §4.5, fass-proof/13-nesting-limit.ts). A
+      varying address inside Psi buries the seed, keeping every approximant
+      a single arc.
+    * that the spectre chord excursion is (2 - sqrt 3)/4 for THIS combination
+      (docs/FASS_PROOF.md §4.2). For 0101000000 it is (2 sqrt 3 - 3)/8.
+
   CHECKED at levels <= ${MAX} (arcs) / <= ${MAXG} (geometry), NOT proved for all k:
-    * contiguity of the child sub-path, and of EVERY sub-supertile at every
-      depth (hypothesis H1);
-    * the slot visit order and its period-2 behaviour, hence two-sided growth;
+    * contiguity of the child sub-path along the Psi chain;
+    * arcs(T) being level-independent, and every sub-supertile being entered
+      exactly arcs(its type) times (hypothesis H1) with no starved
+      sub-supertile (hypothesis H5);
+    * the slot visit sequence and its period-2 behaviour, hence two-sided
+      growth;
     * the constant-slot seed edge staying frozen on the outline;
     * a Psi-only varying address burying the seed, and its inradius growth;
     * max tile diameter / patch diameter decaying like lambda^(-k/2).
@@ -1309,14 +1328,16 @@ console.log(`  PROVED for all k, no level bound:
       Everything in the "checked" list is a finite combinatorial statement
       that L3 promotes to all levels. Without L3 they are statements about
       the levels actually computed.
-    * The uniform-convergence argument for space-filling curves (the
-      Hilbert-curve argument), whose hypotheses H1-H4 are what this script
-      checks.
+    * The Arzela-Ascoli / modulus-of-continuity argument for space-filling
+      curves, whose hypotheses H1-H5 are what this script checks.
     * A planar set of positive Lebesgue measure has Hausdorff dimension 2.
 
   EXPLICITLY NOT CLAIMED:
     * that the LIMIT curve is self-avoiding. It cannot be. Self-avoidance in
-      FASS is a property of the finite approximants.`);
+      FASS is a property of the finite approximants.
+    * that the bi-infinite polygonal curve gamma IS the space-filling curve.
+      gamma has Hausdorff dimension 1; the space-filling curve is the
+      rescaled limit of the approximants. Two different objects.`);
 
 console.log(`\n${allOk ? 'ALL CHECKS PASSED' : 'SOME CHECKS FAILED'}`);
 process.exit(allOk ? 0 : 1);
