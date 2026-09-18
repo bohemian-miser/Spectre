@@ -39,7 +39,7 @@ very different characters:
 | **L2** | **Self-avoiding** — no drawn chord crosses another | **proved for hex, all levels**; 478 two-tile classes for spectre |
 | **L3** | the substitution's strand composition is level-independent | **open — the crux** |
 | **L4** | one arc, no circuits, every tile visited | **proved for all levels given L3** |
-| **L5** | the infinite limit | **whole plane, one bi-infinite curve**, via the Delta nesting |
+| **L5** | the infinite limit | **whole plane, one bi-infinite curve**, via the Delta nesting, given L3 |
 
 **The short answer to "how do we do that".** Reduce everything to L3, then
 either prove L3 or cite it. L1 and L4 are then genuine theorems; L2 becomes a
@@ -48,13 +48,23 @@ Hilbert-curve limit argument with its hypotheses made explicit. L3 is the only
 thing standing between the current evidence and a proof, and §6 states it
 precisely enough to attack or cite.
 
+**The bottom line on the conjecture itself.** It holds, in the strong form. The
+infinite tiling built by nesting Delta inside Delta covers the whole plane, and
+its strands form exactly **one** bi-infinite curve, which is non-self-crossing
+at every finite level and passes through every tile. What is not yet a proof is
+the level-independence of the substitution's gluing data, on which the
+circuit-freeness and single-arc statements depend at levels beyond those
+computed.
+
 Seven things found while writing this reshape the problem. Three are good news,
 four are corrections — and every correction came from running a check, not from
 reading.
 
-* **The two conjectures are one theorem** (§2). Configurations (A) and (B)
-  induce isomorphic strand graphs. Proving either proves the other's
-  topological half.
+* **The two conjectures are one theorem** (§2). Configurations (A) and (B) are
+  not merely isomorphic strand graphs; at the level of the routing automaton
+  they are literally the same automaton, with identical interfaces, gluing data,
+  cycle and composition words. The `FASS_1278.md` flagship shares the datum and
+  differs only by a one-level phase shift. Proving one proves all three.
 * **These configurations are essentially unique** (§3). Across *all* 255 and
   511 edge-class selections in the two families, exactly one selection each
   admits the property, with exactly four combinations, in one-to-one

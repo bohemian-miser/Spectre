@@ -156,6 +156,7 @@ import {
   zMul,
   zSupertileTransforms,
   zToPt,
+  Z_IDENT,
   type Pt,
   type TileFamilyId,
   type TileTypeId,
@@ -478,6 +479,8 @@ interface Patch {
   readonly touches: readonly boolean[];
   /** exact undirected keys of the outline */
   readonly bkeys: ReadonlySet<string>;
+  /** the outline again, as exact endpoint pairs */
+  readonly bexact: readonly (readonly [ZVec, ZVec])[];
   readonly hull: readonly Pt[];
 }
 
@@ -522,6 +525,7 @@ function patchOf(family: TileFamilyId, level: number): Patch {
     }
   }
   const outline: (readonly [Pt, Pt])[] = [];
+  const bexact: (readonly [ZVec, ZVec])[] = [];
   const bkeys = new Set<string>();
   const touches = new Array<boolean>(inst.length).fill(false);
   const bverts: Pt[] = [];
@@ -534,6 +538,7 @@ function patchOf(family: TileFamilyId, level: number): Patch {
       if (mult.get(u) === 1) {
         touches[t] = true;
         bkeys.add(u);
+        bexact.push([a, b]);
         const pa = zToPt(a);
         const pb = zToPt(b);
         outline.push([pa, pb]);
@@ -541,7 +546,7 @@ function patchOf(family: TileFamilyId, level: number): Patch {
       }
     }
   }
-  const out: Patch = { inst, mult, outline, touches, bkeys, hull: convexHull(bverts) };
+  const out: Patch = { inst, mult, outline, touches, bkeys, bexact, hull: convexHull(bverts) };
   patchCache.set(ck, out);
   return out;
 }
@@ -613,14 +618,19 @@ console.log(`\n  3b. CONSTANT SLOT. The seed P_1 sits at address (slot, slot, ..
       outline edges of P_k (the "frozen" edges), and the inradius about the
       seed's centroid, which is monotone in k.\n`);
 
-interface SlotRow { readonly slot: number; readonly inradii: number[]; readonly frozen: number[]; }
-const constRows: Record<string, SlotRow[]> = {};
+/** Ts_lv[slot] . Ts_{lv-1}[slot] . ... . Ts_2[slot]: where the seed sits in P_lv. */
+function seedXform(family: TileFamilyId, slots: readonly number[]): ZAffine {
+  // `slots` is root-down: slots[0] is the outermost choice.
+  let T = Z_IDENT;
+  const lv = slots.length + 1;
+  for (let i = 0; i < slots.length; i++) T = zMul(T, zSupertileTransforms(family, lv - i)[slots[i]]);
+  return T;
+}
 
 for (const family of ['hex', 'spectre'] as TileFamilyId[]) {
   console.log(`  ${family}`);
   console.log('    | slot | level | tiles | seed outline edges | still frozen | inradius | patch radius |');
   console.log('    |---|---|---|---|---|---|---|');
-  constRows[family] = [];
   for (const slot of PSI_SLOTS) {
     const inradii: number[] = [];
     const frozen: number[] = [];
@@ -632,21 +642,10 @@ for (const family of ['hex', 'spectre'] as TileFamilyId[]) {
         if (lv === 1 || p.inst[t].id.split('.').slice(0, lv - 1).join('.') === pre) idxs.push(t);
       }
       const c = centroidOf(family, p.inst, idxs);
-      // the seed's own outline, in the level-k frame
-      const A: ZAffine = (() => {
-        let T = zSupertileTransforms(family, 1)[0];
-        T = { k: 0, m: 0, t: [0, 0, 0, 0] };
-        for (let j = lv; j >= 2; j--) T = zMul(T, zSupertileTransforms(family, j)[slot]);
-        return T;
-      })();
+      const A = seedXform(family, new Array(lv - 1).fill(slot));
       const seed = patchOf(family, 1);
       let fro = 0;
-      let seedEdges = 0;
-      for (const u of seed.bkeys) {
-        seedEdges++;
-        const [ka, kb] = u.split('_');
-        const va = ka.split(',').map(Number) as unknown as ZVec;
-        const vb = kb.split(',').map(Number) as unknown as ZVec;
+      for (const [va, vb] of seed.bexact) {
         if (p.bkeys.has(ukey(zApply(A, va), zApply(A, vb)))) fro++;
       }
       const r = inradius(p, c);
@@ -655,10 +654,9 @@ for (const family of ['hex', 'spectre'] as TileFamilyId[]) {
       inradii.push(r);
       frozen.push(fro);
       console.log(
-        `    | ${slot} | ${lv} | ${pad(p.inst.length, 6)} | ${pad(seedEdges, 18)} | ${pad(fro, 12)} | ${pad(r.toFixed(4), 8)} | ${pad(rad.toFixed(2), 12)} |`,
+        `    | ${slot} | ${lv} | ${pad(p.inst.length, 6)} | ${pad(seed.bexact.length, 18)} | ${pad(fro, 12)} | ${pad(r.toFixed(4), 8)} | ${pad(rad.toFixed(2), 12)} |`,
       );
     }
-    constRows[family].push({ slot, inradii, frozen });
     const flat = inradii.every((r) => Math.abs(r - inradii[0]) < 1e-9);
     const stillFrozen = frozen[frozen.length - 1] > 0;
     ok(
