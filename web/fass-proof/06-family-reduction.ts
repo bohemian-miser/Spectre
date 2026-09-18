@@ -451,8 +451,12 @@ function section2(): { outerOrder: readonly string[]; reversed: boolean } {
 
   // metric side note: the 7 dot is strictly interior to the composite
   const boundaryPts = walk.map((e) => zToPt(e.from));
-  const sevenPt = zToPt(g1Dots[2]);
+  // g1Dots are DOUBLED lattice points; the boundary vertices are not. Halve before
+  // mixing them, or the "dot" lands outside the composite entirely.
+  const sevenD = zToPt(g1Dots[2]);
+  const sevenPt: Pt = { x: sevenD.x / 2, y: sevenD.y / 2 };
   let minDist = Infinity;
+  let crossings = 0;
   for (let i = 0; i < boundaryPts.length; i++) {
     const a = boundaryPts[i];
     const b = boundaryPts[(i + 1) % boundaryPts.length];
@@ -461,7 +465,13 @@ function section2(): { outerOrder: readonly string[]; reversed: boolean } {
     const L2 = vx * vx + vy * vy;
     const t = Math.max(0, Math.min(1, ((sevenPt.x - a.x) * vx + (sevenPt.y - a.y) * vy) / L2));
     minDist = Math.min(minDist, Math.hypot(sevenPt.x - (a.x + t * vx), sevenPt.y - (a.y + t * vy)));
+    // ray cast, so that the check really tests INTERIORITY and not just clearance
+    if (a.y > sevenPt.y !== b.y > sevenPt.y) {
+      const xx = a.x + ((sevenPt.y - a.y) / (b.y - a.y)) * (b.x - a.x);
+      if (xx > sevenPt.x) crossings++;
+    }
   }
+  const sevenInside = crossings % 2 === 1;
   // EXACT form of "the 7 dot is interior": it is the midpoint of the shared edge
   // `7.0A`, and it is not a vertex of either half. A connection dot always lies on
   // its own tile's boundary, so a third tile carrying a dot at p would have p on
@@ -495,7 +505,11 @@ function section2(): { outerOrder: readonly string[]; reversed: boolean } {
     `\n      [metric, float, corroboration only] distance from the class-7 dot to the composite\n` +
       `      boundary = ${minDist.toFixed(6)} (tile edge length 1; eps 1e-9, clearance ${(minDist / 1e-9).toExponential(2)}x eps).`,
   );
-  check(minDist > 1e-6, 'class-7 dot is strictly interior to the composite (metric, float, stated as such)');
+  check(
+    sevenInside && minDist > 1e-6,
+    'class-7 dot is strictly interior to the composite (metric, float, stated as such)',
+    `inside = ${sevenInside}`,
+  );
 
   return { outerOrder, reversed: fwd < 0 };
 }

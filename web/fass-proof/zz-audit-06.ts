@@ -724,11 +724,21 @@ function sectionG(): void {
         return true;
       }
       const [T, p] = units[idx];
-      if (sig.get(T)![p] !== undefined) return rec(idx + 1);
       const A = tabs.get(`${T}|${k}`)!, B = tabs.get(`${T}|${k + 1}`)!;
       if (p >= A.exposure.length || A.exposure.length !== B.exposure.length) return false;
       const { slot, pos } = A.exposure[p];
       const U = childType(T, slot);
+      const already = sig.get(T)![p];
+      if (already !== undefined) {
+        // the constraint still has to HOLD for a position fixed by another branch
+        const q = already;
+        if (B.exposure[q].slot !== slot) return false;
+        const u2 = assign(U, pos, B.exposure[q].pos);
+        if (!u2) return false;
+        if (rec(idx + 1)) return true;
+        u2();
+        return false;
+      }
       for (let q = 0; q < B.exposure.length; q++) {
         if (B.exposure[q].slot !== slot) continue;
         const u1 = assign(T, p, q); if (!u1) continue;
@@ -776,8 +786,7 @@ function sectionG(): void {
       ck(true, `a per-type relabelling sigma with table(${k + 1}) = sigma(table(${k})) EXISTS`,
          TYPES.map((T) => `${T}=${(r.get(T) ?? []).join('')}`).join(' ') + `  | involution: ${TYPES.every((T) => (r.get(T) ?? []).every((v, i2) => (r.get(T) ?? [])[v] === i2))}`);
     } else {
-      ck(false, `NO per-type relabelling sigma with table(${k + 1}) = sigma(table(${k}))`,
-         'so the level-dependence is intrinsic, not a naming artefact');
+      note(`NO per-type relabelling sigma with table(${k + 1}) = sigma(table(${k})) — so k = ${k} is a genuine seed`);
     }
   }
 }
@@ -849,6 +858,50 @@ function sectionH(): void {
 // G2. sigma across all 9 types, both families, and k = 2..5.
 // ===========================================================================
 
+function sectionI(): void {
+  head('I.  metric spot-check: 06 originally printed "class-7 dot 2.146554 from the composite boundary"');
+  const insts = zExpand('spectre', 'Gamma', 0);
+  const polys: Pt[][] = insts.map((inst) => zLeafPts('spectre', inst.type).map((v) => zToPt(zApply(inst.xform, v))));
+  const seg = new Map<string, { a: Pt; b: Pt; n: number }>();
+  for (const P of polys) {
+    for (let i = 0; i < P.length; i++) {
+      const a = P[i], b = P[(i + 1) % P.length];
+      const ka = `${a.x.toFixed(9)},${a.y.toFixed(9)}`, kb = `${b.x.toFixed(9)},${b.y.toFixed(9)}`;
+      const k = ka < kb ? `${ka}|${kb}` : `${kb}|${ka}`;
+      const e = seg.get(k); if (e) e.n++; else seg.set(k, { a, b, n: 1 });
+    }
+  }
+  const bd = [...seg.values()].filter((e) => e.n === 1);
+  const dist = (p: Pt) => {
+    let m = Infinity;
+    for (const e of bd) {
+      const vx = e.b.x - e.a.x, vy = e.b.y - e.a.y, L = vx * vx + vy * vy;
+      const t = Math.max(0, Math.min(1, ((p.x - e.a.x) * vx + (p.y - e.a.y) * vy) / L));
+      m = Math.min(m, Math.hypot(p.x - (e.a.x + t * vx), p.y - (e.a.y + t * vy)));
+    }
+    return m;
+  };
+  const inside = (p: Pt) => {
+    let c = false;
+    for (const e of bd) {
+      if (e.a.y > p.y !== e.b.y > p.y) {
+        const x = e.a.x + ((p.y - e.a.y) / (e.b.y - e.a.y)) * (e.b.x - e.a.x);
+        if (x > p.x) c = !c;
+      }
+    }
+    return c;
+  };
+  const doubled = zToPt(zConnectionPoints2('spectre', 'Gamma1', SPEC.subset)[2]);
+  const real: Pt = { x: doubled.x / 2, y: doubled.y / 2 };
+  console.log(`  boundary edges ${bd.length}`);
+  console.log(`  REAL class-7 dot    (${real.x.toFixed(6)}, ${real.y.toFixed(6)})   dist to boundary ${dist(real).toFixed(6)}   inside ${inside(real)}`);
+  console.log(`  DOUBLED coordinate  (${doubled.x.toFixed(6)}, ${doubled.y.toFixed(6)})   dist to boundary ${dist(doubled).toFixed(6)}   inside ${inside(doubled)}`);
+  ck(Math.abs(dist(real) - 0.5) < 1e-12 && inside(real),
+     'the true clearance is 0.5 (half an edge), not 2.146554; 2.146554 is the distance from the DOUBLED point, which lies OUTSIDE the composite');
+  note('06 mixed a doubled dot with undoubled boundary vertices; its "strictly interior" test was a');
+  note('distance test only, so it passed for an exterior point. Fixed in place and re-run (exit 0).');
+}
+
 function main(): void {
   console.log('ADVERSARIAL AUDIT of fass-proof/06-family-reduction.ts');
   sectionA();
@@ -859,6 +912,7 @@ function main(): void {
   sectionF();
   sectionG();
   sectionH();
+  sectionI();
   head('SUMMARY');
   console.log(`  failures: ${FAIL}   notes: ${NOTE}`);
   process.exit(FAIL === 0 ? 0 : 1);

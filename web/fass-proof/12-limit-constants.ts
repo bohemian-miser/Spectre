@@ -54,7 +54,7 @@ function charPoly(M: number[][]): number[] {
     A.map((row, i) => B[0].map((_, j) => row.reduce((s, _v, k) => s + A[i][k] * B[k][j], 0)));
   const trace_ = (A: number[][]) => A.reduce((s, r, i) => s + r[i], 0);
   const coeffs = [1];
-  let Mk = I.map((r) => [...r]);
+  let Mk: number[][] = I.map((r) => [...r]);
   for (let k = 1; k <= n; k++) {
     Mk = mul(M, Mk);
     const c = -trace_(Mk) / k;
@@ -208,9 +208,38 @@ for (const key of ['hex128', 'spectre1278', 'flagship'] as const) {
   }
   allOk = verdict(
     Math.abs(measured - predicted) < 5e-3,
-    'the measured segments-per-tile matches the eigenvector prediction',
+    `the level-${MAX} patch count matches the eigenvector prediction`,
     `measured ${measured.toFixed(6)} vs predicted ${predicted.toFixed(6)}`,
   ) && allOk;
+
+  // A 5e-3 tolerance against a level-5 patch is far looser than the evidence
+  // available. The ratio is an exact rational at every level, because the counts
+  // are integer matrix powers, so take it to levels 20 and 40 in BigInt and
+  // compare against the closed form at double precision instead.
+  {
+    const MB = substitutionMatrix().map((r) => r.map((x) => BigInt(x)));
+    const psi = TYPES.indexOf('Psi');
+    const step = (row: readonly bigint[]): bigint[] =>
+      TYPES.map((_, col) => TYPES.reduce((acc, _t, i) => acc + row[i] * MB[i][col], 0n));
+    let chordRow: bigint[] = TYPES.map((t) => BigInt(chordsOfType(t)));
+    let leafRow: bigint[] = TYPES.map((t) => BigInt(tilesOfType(t)));
+    const SCALE = 10n ** 18n;
+    let worst = 0;
+    for (let lv = 1; lv <= 40; lv++) {
+      chordRow = step(chordRow);
+      leafRow = step(leafRow);
+      if (lv === 20 || lv === 40) {
+        const exact = Number((chordRow[psi] * SCALE) / leafRow[psi]) / 1e18;
+        console.log(`  exact integer count ratio at level ${lv}: ${exact.toFixed(12)}`);
+        worst = Math.max(worst, Math.abs(exact - predicted));
+      }
+    }
+    allOk = verdict(
+      worst < 1e-11,
+      'the exact integer count ratio matches the closed form at levels 20 and 40',
+      `worst deviation ${worst.toExponential(2)}`,
+    ) && allOk;
+  }
 
   // Closed forms, answering docs/FASS_1278.md Open Question 3. Both are the
   // eigenvector combination above, cleared of its denominator over Q(sqrt 15).

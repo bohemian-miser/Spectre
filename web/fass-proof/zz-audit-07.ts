@@ -126,11 +126,11 @@ note('justifies it in proved_for_all_k by a 15-digit numerical check on stored c
 H('B. Tile counts: exact BigInt, and the recurrence t_k = 8 t_{k-1} - t_{k-2}');
 
 function countsRootedAt(root: string, upTo: number): { hex: bigint[]; spec: bigint[] } {
-  let v = TYPES.map((t) => (t === root ? 1n : 0n));
+  let v: bigint[] = TYPES.map((t) => (t === root ? 1n : 0n));
   const hex: bigint[] = [v.reduce((a, b) => a + b, 0n)];
   const spec: bigint[] = [hex[0] + v[IX.get('Gamma')!]];
   for (let k = 1; k <= upTo; k++) {
-    const w = TYPES.map(() => 0n);
+    const w: bigint[] = TYPES.map(() => 0n);
     for (let i = 0; i < TYPES.length; i++) { if (v[i] === 0n) continue; for (let j = 0; j < TYPES.length; j++) w[j] += v[i] * M[i][j]; }
     v = w;
     const h = v.reduce((a, b) => a + b, 0n);
