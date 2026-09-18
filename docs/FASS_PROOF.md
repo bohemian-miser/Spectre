@@ -551,6 +551,10 @@ Each incidence is the vanishing of a fixed linear functional of
 `v_j = (Q_j, conj Q_j)`; since `v_j = N v_{j-1}` for a fixed 8×8 matrix over
 `Q(ζ₁₂)`, Cayley–Hamilton puts `v_{j+8}` in the span of the previous eight, so
 vanishing on a window of eight consecutive levels forces vanishing for all `k`.
+Checked independently here by direct enumeration to level 14 in both families:
+exactly those eight coincidences and no others. The restriction to `k ≥ 2` is
+real — the hexagon base quad is degenerate, so hexagon level 1 alone carries two
+extra coincidences, `1.3=4.0` and `1.0=7.1`.
 
 **What does survive is the better invariant.** The boundary grows without bound
 but the number of boundary connection dots does not
@@ -752,7 +756,7 @@ limit.
 | Every tile visited | verified levels 1–5; **all levels given L3** |
 | The gluing and outer maps are constant (period 1) | verified levels 2–8, both families, all three configurations |
 | No similarity or anti-similarity conjugates `Ts` across levels | **proved** (fixed non-zero exact residual) |
-| The quad-point incidence pattern is the same at every level | **proved for all k ≥ 2** (Cayley–Hamilton) |
+| The quad-point incidence pattern is the same at every level | **proved for all k ≥ 2** (Cayley–Hamilton); reconfirmed by direct enumeration to level 14 |
 | Coincident quad-arc endpoints force coincident arcs | **OPEN — the remaining piece of L3** |
 | Perimeter growth is exactly 2+√5, boundary dimension 1.3992532… | **proved** |
 | Finite local complexity (no new two-tile class ever appears) | **OPEN** — this is what would make L2 unconditional for the spectre |

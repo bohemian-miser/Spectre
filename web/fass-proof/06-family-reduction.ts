@@ -36,6 +36,7 @@ import {
   leafPts,
   metaEdges,
   parseEdgeLabel,
+  SUPER_RULES,
   zAdd,
   zApply,
   zBasePairXform,
@@ -459,6 +460,95 @@ function section2(): { outerOrder: readonly string[]; reversed: boolean } {
 }
 
 // ---------------------------------------------------------------------------
+// 2e.  The class-7 weld stays internal on REAL patches, including at the
+//      geometric patch boundary (exact).
+// ---------------------------------------------------------------------------
+
+/** Composites having at least one unshared physical edge = on the patch rim. */
+function section2e(dotMap: Map<string, DotImage>): void {
+  heading('2e.  class-7 welds on real patches, INCLUDING Gamma-adjacent patch boundaries (exact)');
+  console.log(
+    `  "on the rim" = the composite has at least one physical edge shared with no other tile,\n` +
+      `  i.e. it genuinely touches the outer boundary of the patch.\n`,
+  );
+  console.log(
+    `  ${'patch'.padEnd(12)}${pad('composites', 11)}${pad('on rim', 8)}${pad('7-welds', 9)}  all internal, degree exactly 2, disjoint from every other dot`,
+  );
+
+  for (const root of ROOTS_DEEP) {
+    for (let lv = 1; lv <= 4; lv++) {
+      const insts = zExpand('spectre', root, lv);
+      // physical-edge multiplicity over the whole patch
+      const edgeMult = new Map<string, number>();
+      const instEdgeKeys: string[][] = insts.map((inst) => {
+        const pts = zLeafPts('spectre', inst.type).map((p) => zApply(inst.xform, p));
+        const out: string[] = [];
+        for (let i = 0; i < pts.length; i++) {
+          out.push(undirectedSegKey(pts[i], pts[(i + 1) % pts.length]));
+        }
+        return out;
+      });
+      for (const row of instEdgeKeys) {
+        for (const k of row) edgeMult.set(k, (edgeMult.get(k) ?? 0) + 1);
+      }
+
+      const keys = dotKeys('spectre', SPEC.subset, insts);
+      const groups = new Map<string, number[]>();
+      const outer = new Set<string>();
+      const compOfHalf = new Map<number, string>();
+      for (let i = 0; i < insts.length; i++) {
+        const isHalf = insts[i].type === 'Gamma1' || insts[i].type === 'Gamma2';
+        if (isHalf) compOfHalf.set(i, parentId(insts[i].id));
+        for (let d = 0; d < keys[i].length; d++) {
+          const img = dotMap.get(`${insts[i].type}:${d}`);
+          if (!img) continue;
+          if (img.kind === 'internal') {
+            const k = keys[i][d];
+            if (!groups.has(k)) groups.set(k, []);
+            groups.get(k)!.push(i);
+          } else outer.add(keys[i][d]);
+        }
+      }
+
+      const rimComposites = new Set<string>();
+      const rimSevenOk: string[] = [];
+      for (const [i, comp] of compOfHalf) {
+        if (instEdgeKeys[i].some((k) => (edgeMult.get(k) ?? 0) === 1)) rimComposites.add(comp);
+      }
+      let allOk = groups.size > 0 || compOfHalf.size === 0;
+      let rimChecked = 0;
+      for (const [k, owners] of groups) {
+        const ok =
+          owners.length === 2 &&
+          !outer.has(k) &&
+          compOfHalf.get(owners[0]) === compOfHalf.get(owners[1]) &&
+          [insts[owners[0]].type, insts[owners[1]].type].sort().join(',') === 'Gamma1,Gamma2';
+        if (!ok) {
+          allOk = false;
+          rimSevenOk.push(k);
+        }
+        if (rimComposites.has(compOfHalf.get(owners[0]) ?? '')) rimChecked++;
+      }
+      const nComposites = new Set([...compOfHalf.values()]).size;
+      const detail = `${nComposites} composites, ${rimComposites.size} on the rim (${rimChecked} of the 7-welds checked belong to rim composites)`;
+      console.log(
+        `  ${(root + '@' + lv).padEnd(12)}${pad(nComposites, 11)}${pad(rimComposites.size, 8)}${pad(groups.size, 9)}  ${allOk && groups.size === nComposites ? 'yes' : 'NO — ' + rimSevenOk.slice(0, 2).join(' ')}`,
+      );
+      checkQuiet(allOk && groups.size === nComposites, `${root}@${lv}: rim-inclusive class-7 internality`, detail);
+      checkQuiet(
+        rimComposites.size > 0,
+        `${root}@${lv}: the test actually reaches Gamma-adjacent patch boundaries`,
+        detail,
+      );
+    }
+  }
+  console.log(
+    `\n  => the class-7 dot is never exposed, never shared with a tile outside its own composite,\n` +
+      `     and has degree exactly 2, including for composites sitting on the patch rim.`,
+  );
+}
+
+// ---------------------------------------------------------------------------
 // 3.  The explicit isomorphism, checked on real patches
 // ---------------------------------------------------------------------------
 
@@ -768,11 +858,7 @@ function checkPatch(root: TileTypeId, level: number, dotMap: Map<string, DotImag
   };
 }
 
-function section3(): void {
-  heading('3.  The explicit isomorphism, verified on real patches (exact)');
-
-  const { map: dotMap, ok: dotMapOk } = buildDotMap();
-  check(dotMapOk, 'dot correspondence derived from seam tags is a bijection and is the identity on the 8 shared types');
+function section3(dotMap: Map<string, DotImage>): void {
 
   console.log('\n  derived dot map (spectre -> hex):');
   for (const type of [...SHARED, 'Gamma1', 'Gamma2'] as TileTypeId[]) {
@@ -811,6 +897,278 @@ function section3(): void {
     console.log(`    ${root.padEnd(8)} ${row.join('   ')}`);
   }
   check(idOk, 'segs(spectre) - segs(hex) == #composites at every root, levels 1..4');
+
+  section3b(dotMap);
+}
+
+// ---------------------------------------------------------------------------
+// 3b.  The interface reduction: what hypothesis (H) really depends on
+// ---------------------------------------------------------------------------
+
+/** Compare two slot paths numerically, component by component. */
+function idCmp(a: string, b: string): number {
+  const A = a === '' ? [] : a.split('.').map(Number);
+  const B = b === '' ? [] : b.split('.').map(Number);
+  const n = Math.max(A.length, B.length);
+  for (let i = 0; i < n; i++) {
+    const x = A[i] ?? -1;
+    const y = B[i] ?? -1;
+    if (x !== y) return x - y;
+  }
+  return 0;
+}
+
+/**
+ * Canonical, FAMILY-INDEPENDENT name of a dot: the hex tile id it corresponds
+ * to, plus the hex dot index. Spectre dots interior to a composite (class 7)
+ * have no canonical name and are excluded.
+ */
+function canonicalDots(
+  family: TileFamilyId,
+  cfg: Config,
+  root: TileTypeId,
+  level: number,
+  dotMap: Map<string, DotImage>,
+): { coords: string[]; keys: string[] } {
+  const insts = zExpand(family, root, level);
+  const keys = dotKeys(family, cfg.subset, insts);
+  const coords: string[] = [];
+  const flatKeys: string[] = [];
+  for (let i = 0; i < insts.length; i++) {
+    const isHalf = insts[i].type === 'Gamma1' || insts[i].type === 'Gamma2';
+    const hid = isHalf ? parentId(insts[i].id) : insts[i].id;
+    for (let d = 0; d < keys[i].length; d++) {
+      // In the hex family the canonical name IS the hex name; `dotMap` is only
+      // defined on spectre leaf types (it has no `Gamma:*` entries at all, hex
+      // Gamma being the target of the map rather than its source).
+      if (family === 'hex') {
+        coords.push(`${insts[i].id}#${d}`);
+        flatKeys.push(keys[i][d]);
+        continue;
+      }
+      const img = dotMap.get(`${insts[i].type}:${d}`);
+      if (!img) throw new Error(`no dot image for ${insts[i].type}:${d}`);
+      if (img.kind === 'internal') continue;
+      coords.push(`${hid}#${img.hexDot}`);
+      flatKeys.push(keys[i][d]);
+    }
+  }
+  return { coords, keys: flatKeys };
+}
+
+const exposedCache = new Map<string, readonly string[]>();
+
+/** Canonical names of the dots left UNWELDED by a level-`level` `root` patch. */
+function exposedList(
+  family: TileFamilyId,
+  cfg: Config,
+  root: TileTypeId,
+  level: number,
+  dotMap: Map<string, DotImage>,
+): readonly string[] {
+  const ck = `${family}|${root}|${level}`;
+  const hit = exposedCache.get(ck);
+  if (hit) return hit;
+  const { coords, keys } = canonicalDots(family, cfg, root, level, dotMap);
+  const mult = new Map<string, number>();
+  for (const k of keys) mult.set(k, (mult.get(k) ?? 0) + 1);
+  const out = coords
+    .filter((_, i) => mult.get(keys[i]) === 1)
+    .sort((a, b) => {
+      const [ia, da] = a.split('#');
+      const [ib, db] = b.split('#');
+      const c = idCmp(ia, ib);
+      return c !== 0 ? c : Number(da) - Number(db);
+    });
+  exposedCache.set(ck, out);
+  return out;
+}
+
+/** Strip the leading child slot from a canonical dot name. */
+function relCoord(coord: string): { slot: number; rel: string } {
+  const [id, dot] = coord.split('#');
+  const parts = id === '' ? [] : id.split('.');
+  return { slot: Number(parts[0]), rel: `${parts.slice(1).join('.')}#${dot}` };
+}
+
+interface Interface {
+  /** Cross-child welds, as 'slotA:posA~slotB:posB', sorted. */
+  readonly pairing: readonly string[];
+  /** Dots still exposed at the parent level, as 'slot:pos', in canonical order. */
+  readonly exposure: readonly string[];
+  readonly ok: boolean;
+}
+
+function interfaceTable(
+  family: TileFamilyId,
+  cfg: Config,
+  root: TileTypeId,
+  level: number,
+  dotMap: Map<string, DotImage>,
+): Interface {
+  const { coords, keys } = canonicalDots(family, cfg, root, level, dotMap);
+  const childExposed = new Map<number, ReadonlyMap<string, number>>();
+  const subs = SUPER_RULES[root];
+  if (!subs) throw new Error(`no substitution rule for ${root}`);
+  for (let slot = 0; slot < 8; slot++) {
+    if (subs[slot] === 'null') continue;
+    const list = exposedList(family, cfg, subs[slot] as TileTypeId, level - 1, dotMap);
+    const m = new Map<string, number>();
+    list.forEach((c, i) => m.set(c, i));
+    childExposed.set(slot, m);
+  }
+
+  const mult = new Map<string, number>();
+  for (const k of keys) mult.set(k, (mult.get(k) ?? 0) + 1);
+
+  const byKey = new Map<string, { slot: number; pos: number }[]>();
+  const exposure: { coord: string; slot: number; pos: number }[] = [];
+  let ok = true;
+  for (let i = 0; i < coords.length; i++) {
+    const { slot, rel } = relCoord(coords[i]);
+    const pos = childExposed.get(slot)?.get(rel);
+    if (pos === undefined) continue; // was already welded inside its own child
+    const k = keys[i];
+    if (!byKey.has(k)) byKey.set(k, []);
+    byKey.get(k)!.push({ slot, pos });
+    if (mult.get(k) === 1) exposure.push({ coord: coords[i], slot, pos });
+  }
+  const pairing: string[] = [];
+  for (const [, list] of byKey) {
+    if (list.length === 1) continue;
+    if (list.length !== 2 || list[0].slot === list[1].slot) {
+      ok = false;
+      continue;
+    }
+    const [a, b] = [...list].sort((x, y) => x.slot - y.slot || x.pos - y.pos);
+    pairing.push(`${a.slot}:${a.pos}~${b.slot}:${b.pos}`);
+  }
+  // Every weld that crosses children must have been between two child-exposed
+  // dots; check no key of multiplicity 2 was missed.
+  let welds = 0;
+  for (const m of mult.values()) if (m === 2) welds++;
+  const insideChildWelds = welds - pairing.length;
+  if (insideChildWelds < 0) ok = false;
+
+  exposure.sort((a, b) => {
+    const [ia, da] = a.coord.split('#');
+    const [ib, db] = b.coord.split('#');
+    const c = idCmp(ia, ib);
+    return c !== 0 ? c : Number(da) - Number(db);
+  });
+  pairing.sort();
+  return { pairing, exposure: exposure.map((e) => `${e.slot}:${e.pos}`), ok };
+}
+
+function section3b(dotMap: Map<string, DotImage>): void {
+  heading('3b.  INTERFACE REDUCTION — what hypothesis (H) actually depends on');
+  console.log(
+    `  The whole weld pattern of a level-k patch is: (welds inside each of the 8 children,\n` +
+      `  by induction) + (welds BETWEEN children). The second part only ever involves dots that\n` +
+      `  the children leave UNWELDED. If that exposed set is small and its cross-child pairing is\n` +
+      `  the same in both families and does not depend on k, (H) follows by induction from a\n` +
+      `  FINITE table. This section computes that table.\n`,
+  );
+
+  // (i) exposed-dot counts per type and level, both families
+  console.log(`  (i) number of dots a level-j supertile leaves exposed  (canonical, family-independent names)\n`);
+  console.log(`      ${'type'.padEnd(8)}${['j=0', 'j=1', 'j=2', 'j=3', 'j=4', 'j=5'].map((s) => pad(s, 7)).join('')}   hex list == spectre list?`);
+  let listsAgree = true;
+  let countsConstant = true;
+  for (const T of ROOTS_ALL) {
+    const row: string[] = [];
+    let agree = true;
+    const counts: number[] = [];
+    for (let j = 0; j <= 5; j++) {
+      const h = exposedList('hex', HEX, T, j, dotMap);
+      const s = exposedList('spectre', SPEC, T, j, dotMap);
+      if (!sameArray(h, s)) agree = false;
+      row.push(pad(h.length, 7));
+      counts.push(h.length);
+    }
+    if (!agree) listsAgree = false;
+    if (new Set(counts.slice(1)).size !== 1) countsConstant = false;
+    console.log(`      ${T.padEnd(8)}${row.join('')}   ${agree ? 'yes' : 'NO'}`);
+  }
+  console.log('');
+  check(listsAgree, 'exposed-dot LIST (not just count) is identical in both families, all 9 types, levels 0..5');
+  check(countsConstant, 'exposed-dot count is constant in j for j >= 1 (a bounded interface)');
+
+  // (ii) the cross-child interface table
+  console.log(`\n  (ii) cross-child weld pairing + parent exposure, as indices into the children's exposed lists\n`);
+  console.log(`      ${'type'.padEnd(8)}${'k=1'.padEnd(9)}${'k=2'.padEnd(9)}${'k=3'.padEnd(9)}${'k=4'.padEnd(9)}${'k=5'.padEnd(9)}  family-agree / level-constant (k>=2)`);
+  let famAgree = true;
+  let pairingConstant = true;
+  let allConstant = true;
+  const sample = new Map<string, Interface>();
+  for (const T of ROOTS_ALL) {
+    const full: string[] = [];
+    const pairOnly: string[] = [];
+    let agree = true;
+    for (let k = 1; k <= 5; k++) {
+      const h = interfaceTable('hex', HEX, T, k, dotMap);
+      const s = interfaceTable('spectre', SPEC, T, k, dotMap);
+      if (!h.ok || !s.ok) agree = false;
+      if (!sameArray(h.pairing, s.pairing) || !sameArray(h.exposure, s.exposure)) agree = false;
+      full.push(`${h.pairing.join(',')}||${h.exposure.join(',')}`);
+      pairOnly.push(h.pairing.join(','));
+      if (k === 2) sample.set(T, h);
+    }
+    if (!agree) famAgree = false;
+    // label each level by which earlier level it repeats (A, B, C, ...)
+    const classes: string[] = [];
+    const seen: string[] = [];
+    for (const f of full) {
+      let idx = seen.indexOf(f);
+      if (idx < 0) {
+        seen.push(f);
+        idx = seen.length - 1;
+      }
+      classes.push(String.fromCharCode(65 + idx));
+    }
+    if (new Set(full.slice(1)).size !== 1) allConstant = false;
+    if (new Set(pairOnly.slice(1)).size !== 1) pairingConstant = false;
+    const tailConst = new Set(full.slice(2)).size === 1;
+    console.log(
+      `      ${T.padEnd(8)}${classes.map((c) => c.padEnd(9)).join('')}  ${agree ? 'agree' : 'DISAGREE'} / ${
+        new Set(full.slice(1)).size === 1 ? 'constant k>=2' : tailConst ? 'constant k>=3 only' : 'NOT constant'
+      }`,
+    );
+  }
+  console.log('');
+  check(famAgree, 'cross-child interface table is IDENTICAL in both families, all 9 types, k = 1..5');
+  verdict(
+    allConstant,
+    'cross-child interface table is the SAME for every k >= 2',
+    allConstant ? '' : 'it is NOT — see the class letters above; this kills the naive induction',
+  );
+  verdict(
+    pairingConstant,
+    'the WELD PAIRING alone (ignoring which dots stay exposed) is level-independent for k >= 2',
+  );
+  console.log(
+    `      (letters label distinct tables; equal letters = identical table. k = 1 is a seed:\n` +
+      `       its children are single leaves, whose exposed list is all of their dots.)\n`,
+  );
+
+  console.log('  sample interface tables (k = 2, both families identical):\n');
+  for (const T of ['Psi', 'Delta', 'Gamma'] as TileTypeId[]) {
+    const it = sample.get(T)!;
+    console.log(`      ${T.padEnd(8)}welds  ${it.pairing.join('  ')}`);
+    console.log(`      ${''.padEnd(8)}exposes ${it.exposure.join('  ')}`);
+  }
+
+  console.log(`
+  CONSEQUENCE.  Let (H_k) be hypothesis (H) at level k. The computation above shows
+    - the exposed list of a level-j supertile has the same canonical names in both
+      families for j <= 5, and its size is constant for j >= 1 (2, 4, 6, 8 or 10 dots);
+    - the cross-child pairing/exposure table, written in terms of positions in those
+      lists, is identical in both families and identical for k = 2..5.
+  If that table is the same for EVERY k >= 2 — the one thing still unproved — then
+  (H_k) follows from (H_{k-1}) by induction for all k, and with it the whole
+  reduction, for all levels. The open problem is therefore not "do 34649 dots weld
+  the same way"; it is a statement about a table with at most 10 entries per type.
+`);
 }
 
 // ---------------------------------------------------------------------------
@@ -904,9 +1262,16 @@ function section4(): void {
 
 function main(): void {
   console.log('FASS PROOF 06 — FAMILY REDUCTION: hex-128-010100000  vs  spectre-1278-0101000000');
+  const { map: dotMap, ok: dotMapOk } = buildDotMap();
   section1();
   section2();
-  section3();
+  section2e(dotMap);
+  heading('3.  The explicit isomorphism, verified on real patches (exact)');
+  check(
+    dotMapOk,
+    'dot correspondence derived from seam tags is a bijection and is the identity on the 8 shared types',
+  );
+  section3(dotMap);
   section4();
 
   heading('5.  VERDICT');

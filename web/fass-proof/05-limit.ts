@@ -993,13 +993,20 @@ console.log(`
      outline edge at every level, so by Lemma A the union misses an open set.
      This is a proof (given the edge-to-edge check and the persistence of the
      edge, which is verified to level ${MAXG} and is a combinatorial statement
-     that L3 would extend to all levels) — not a numerical impression.
+     that L3 would extend to all levels) — not a numerical impression. Note
+     this is WEAKER than the claim in docs/FASS_PROOF.md §4.5 and in
+     fass-proof/13-nesting-limit.ts that the constant-slot union "fills a
+     sector". Missing an open set is what the computation supports; that the
+     complement is a sector is not checked anywhere, here or there.
    * A VARYING address, still entirely within Psi supertiles, DOES bury the
-     seed. Every patch in that sequence is a Psi supertile and hence a single
-     arc, so nothing is given up. This CORRECTS docs/FASS_PROOF.md §4.5 and
-     fass-proof/13-nesting-limit.ts, which both conclude that exhaustion
-     requires an address through other supertile types (Gamma, whose 10-dot
-     interface breaks the single-arc property). It does not.
+     seed, at every level from 5 on. Every patch in that sequence is a Psi
+     supertile and hence already a single arc, so nothing is given up. This
+     corrects fass-proof/13-nesting-limit.ts, which states that pushing the
+     seed inside "needs an address that passes through other supertile types"
+     — it does not — and it makes the Delta-nesting-plus-merge route of
+     docs/FASS_PROOF.md §4.5 and fass-proof/14-merge.ts unnecessary rather
+     than wrong: that route reaches the same conclusion through four arcs
+     that merge over two levels, where the Psi route never leaves one arc.
 
   What is still needed for divergence at ALL levels: that the seed's ancestor
   stays buried at every level, i.e. that the burial is a level-independent
@@ -1020,9 +1027,11 @@ console.log(`
 // 4. SPACE-FILLING: the remaining hypotheses
 // ===========================================================================
 
-heading('4. SPACE-FILLING — the hypotheses of the uniform-convergence argument');
+heading('4. SPACE-FILLING — the hypotheses of the modulus-of-continuity argument');
 
-console.log(`  (H1) sub-supertile nesting: checked in section 1b above.\n`);
+console.log(`  (H1) bounded re-entry (m = 5) and (H5) no starved sub-supertile: both
+       checked in section 1b above, along with the refutation of the naive
+       Hilbert nesting that the textbook version of this argument assumes.\n`);
 
 // --- (H2) how far a chord can leave its own tile --------------------------
 
@@ -1391,9 +1400,9 @@ console.log(`  PROVED for all k, no level bound:
     * the idea that runs are a fixed fraction of a sub-supertile. The
       smallest arc of a level-j supertile is O(lambda^(-j)) of its segments.
     * that whole-plane exhaustion needs an address through non-Psi supertile
-      types (docs/FASS_PROOF.md §4.5, fass-proof/13-nesting-limit.ts). A
-      varying address inside Psi buries the seed, keeping every approximant
-      a single arc.
+      types (fass-proof/13-nesting-limit.ts). A varying address inside Psi
+      buries the seed, keeping every approximant a single arc, so the
+      Delta-plus-merge route of docs/FASS_PROOF.md §4.5 is not needed.
     * that the spectre chord excursion is (2 - sqrt 3)/4 for THIS combination
       (docs/FASS_PROOF.md §4.2). For 0101000000 it is (2 sqrt 3 - 3)/8.
 
