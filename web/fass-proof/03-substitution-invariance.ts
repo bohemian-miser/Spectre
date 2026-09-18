@@ -1171,6 +1171,8 @@ function part2a(): void {
     for (const cfg of cfgsOf(family)) {
       let good = true;
       let detail = '';
+      let shapeGood = true;
+      let shapeDetail = '';
       for (let lv = 1; lv <= VALIDATE; lv++) {
         for (const T of TYPES) {
           const sh = shapeOf(family, isGammaType(T), lv);
@@ -1191,6 +1193,20 @@ function part2a(): void {
           const gtShape = cancelAndLoop(pool, zSupertileQuad(family, lv), `gt ${T}@${lv}`);
           const gtLabels = Array.from(gtShape.provSlot, (s) => labTable[s]);
           const gt = dotEdgeIdxs(cfg, gtLabels).map((i) => zKey(dotPoint2(gtShape, i)));
+          // P3 in the flesh: the SHARED shape this script memoizes per
+          // (is-it-Gamma, level) really is this type's own boundary loop,
+          // vertex index for vertex index, and its labels really are this
+          // type's labels. If the non-Gamma outlines were not identical this
+          // would fail immediately.
+          if (
+            gtShape.verts.length !== sh.verts.length ||
+            gtShape.verts.some((v, i) => zKey(v) !== zKey(sh.verts[i])) ||
+            gtShape.quadAt.join(',') !== sh.quadAt.join(',') ||
+            gtLabels.join(' ') !== labelsOf(family, T, lv).join(' ')
+          ) {
+            shapeGood = false;
+            if (!shapeDetail) shapeDetail = `${T}@${lv}: shared shape ${sh.verts.length} verts vs expanded ${gtShape.verts.length}`;
+          }
           let deg1 = 0;
           for (const d of buildStrands(cfg, insts).degree.values()) if (d === 1) deg1++;
           if (mine.length !== deg1 || mine.join(' ') !== gt.join(' ')) {
@@ -1199,6 +1215,13 @@ function part2a(): void {
           }
         }
       }
+      ok(
+        shapeGood,
+        `${family}: the SHARED non-Gamma boundary loop equals every type's own fully-expanded loop, vertex for vertex and label for label, levels 1..${VALIDATE}`,
+        shapeGood
+          ? 'P3 verified in the flesh — the script memoizes one shape per (is-it-Gamma, level) and this is what justifies that'
+          : shapeDetail,
+      );
       ok(
         good,
         `${cfg.id}: recursive boundary dots = welded degree-1 dots = fully-expanded outline dots, same order, levels 1..${VALIDATE}`,
@@ -1249,6 +1272,39 @@ function part2b(): void {
         console.log(`          outer  ${d.outer}`);
       }
     }
+  }
+}
+
+/** Do the three configurations — and the two families — share one datum? */
+function part2bCross(): void {
+  heading('PART 2b(ii) — is the substitution datum the same across configurations and families?');
+  let sameFrom2 = true;
+  let sameAt1 = true;
+  let d1 = '';
+  for (const T of TYPES) {
+    for (let lv = 1; lv <= MAX; lv++) {
+      const strs = CFG_KEYS.map((k) => {
+        const d = datumStore.get(datumKey(CONFIGS[k], T, lv))!;
+        return `${d.ifaceSize}|${d.gluing}|${d.outer}`;
+      });
+      if (new Set(strs).size !== 1) {
+        if (lv === 1) {
+          sameAt1 = false;
+          if (!d1) d1 = `${T}@1`;
+        } else sameFrom2 = false;
+      }
+    }
+  }
+  ok(
+    sameFrom2,
+    `all three configurations (hex/128, spectre/1278, spectre/1278-flagship) share ONE substitution datum at every level 2..${MAX}`,
+    'same |dB|, same gluing map, same outer map, for all 9 types — the hexagon and spectre families and both spectre combos are the same combinatorial object above level 1',
+  );
+  if (!sameAt1) {
+    note(
+      'at level 1 the configurations DIFFER',
+      `first at ${d1} — the hex base quad carries two extra quad-point coincidences (PART 3c) and the spectre composite Gamma is two welded leaves, so the level-1 assembly is genuinely different even though every level >= 2 is identical`,
+    );
   }
 }
 
@@ -1342,6 +1398,20 @@ function part3a(): void {
       `${family}: a boundary meta-edge's physical LENGTH is a function of its class alone`,
       [...lens.entries()].sort().map(([k, s]) => `${k}:${[...s].join('/')}`).join(' '),
     );
+  }
+  // The brief's bullet 2: are the four quad points at constant positions in the word?
+  for (const family of FAMILIES) {
+    for (const T of ['Psi', 'Gamma'] as TileTypeId[]) {
+      const q: string[] = [];
+      for (let lv = 0; lv <= MAX; lv++) q.push(`[${rows.get(rowKey(family, T, lv))!.arcLen.join(',')}]`);
+      console.log(`  ${family}/${T}: boundary edges per quad-arc, by level: ${q.join(' ')}`);
+      if (new Set(q).size === 1) ok(true, `${family}/${T}: quad-point positions in the boundary word are constant`);
+      else
+        refuted(
+          `${family}/${T}: the quad points sit at level-DEPENDENT positions in the boundary word`,
+          'all four arcs grow; what IS invariant is their length vector under a fixed integer matrix — see PART 3b(iii)',
+        );
+    }
   }
   console.log(
     `\n  Reading: the length vector therefore carries no information the class word does not already\n` +
@@ -1672,9 +1742,23 @@ CHECKED EXACTLY, for the levels stated, NOT proved for all k
   C6. The fixed rule F_T built from the level-2 datum reproduces the routing of
       every type at every computed level, matching the independently computed
       welded strand graph exactly. That is Lemma 3(c) as an identity.
+  C7. For the 8 non-Gamma types the quad-arc LENGTH vector obeys len^(k) =
+      A . len^(k-1) exactly, with A the fixed non-negative integer whole-arc
+      incidence matrix read off the level-2 arc substitution word. This is the
+      brief's "fixed integer matrix on a length vector", found on the ARC
+      decomposition rather than the meta-edge one. It FAILS for Gamma: the empty
+      slot 2 splits two child arcs whose glued/outer division is level-dependent,
+      so Gamma needs two extra alphabet letters before its length recursion is
+      linear.
+  C8. Every type's boundary length obeys L_k = 4 L_{k-1} + L_{k-2} + c with a
+      fixed integer c per (family, type). The homogeneous part has characteristic
+      polynomial x^2 - 4x - 1, so the perimeter growth factor is EXACTLY
+      2 + sqrt(5) = 4.236067977..., and the supertile boundary's fractal dimension
+      is exactly log(2+sqrt(5)) / log(sqrt(4+sqrt(15))) = 1.399253214...
+      08-supertile-outline.ts only measures these as ~4.2324 and "~1.4".
 
 WHAT THIS BUYS
-  C4 + C2 give a genuine induction SCHEME. If the arc substitution is
+  C4 + C2 + C7 give a genuine induction SCHEME. If the arc substitution is
   level-independent then the parent's contact structure is a fixed finite datum,
   the per-arc dot counts obey x^(k) = A x^(k-1) with A the fixed abelianisation,
   and x^(3) = x^(2) forces x^(k) = x^(2) for ALL k >= 2 — so C1, C3 and C5 upgrade
@@ -1718,6 +1802,7 @@ function main(): void {
   sweep();
   part2a();
   part2b();
+  part2bCross();
   part2c();
   part3a();
   part3b();

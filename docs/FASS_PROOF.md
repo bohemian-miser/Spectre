@@ -39,7 +39,7 @@ very different characters:
 | **L2** | **Self-avoiding** — no drawn chord crosses another | **proved for hex, all levels**; 478 two-tile classes for spectre |
 | **L3** | the substitution's strand composition is level-independent | **open — the crux** |
 | **L4** | one arc, no circuits, every tile visited | **proved for all levels given L3** |
-| **L5** | the infinite limit | bi-infinite **yes**; whole-plane needs a merge argument |
+| **L5** | the infinite limit | **whole plane, one bi-infinite curve**, via the Delta nesting |
 
 **The short answer to "how do we do that".** Reduce everything to L3, then
 either prove L3 or cite it. L1 and L4 are then genuine theorems; L2 becomes a
@@ -76,9 +76,10 @@ reading.
   still finite — 478 classes, complete from level 4.
 * **Correction 3 (§4.5).** The Psi-inside-Psi nesting gives a genuine
   bi-infinite curve, but its inradius about the seed is *exactly constant* at
-  every level, so that union fills a sector, not the plane. Whole-plane
-  exhaustion needs an address through other supertile types, and along such an
-  address the patch is no longer a single arc.
+  every level, so that union fills a sector, not the plane. The nesting that
+  does fill the plane is **Delta inside Delta**, whose patches carry four arcs
+  rather than one — and those four all land in a single arc two levels up, so
+  the whole-plane object is still exactly one bi-infinite curve.
 * **Correction 4 (§4.1).** `web/src/core/circuits.ts` says three tiles can meet
   at a class-0 connection point, producing branch points. They cannot. Over all
   511 selections in both families the maximum dot multiplicity is 2, so **no
@@ -543,35 +544,59 @@ all-levels conclusion rests on that base state *together with* L3.
 
 ### 4.5 L5 — the infinite limit
 
-`SUPER_RULES.Psi = [Psi, Delta, Psi, Phi, Sigma, Psi, Phi, Gamma]`, so Psi
-contains Psi at slots 0, 2 and 5. Each gives an increasing sequence of patches
-by re-anchoring, `E₁ = id` and `E_{k+1} = E_k ∘ Ts_{k+1}[slot]⁻¹`, so the
-level-`k` child stays put while the parent grows around it. All transforms are
-exact, so containment is an integer statement.
-[`13-nesting-limit.ts`](../web/fass-proof/13-nesting-limit.ts) checks three
-things.
+A finite patch necessarily has endpoints, so "infinite curve" is a statement
+about a nested sequence. Nesting works by re-anchoring: `E₁ = id` and
+`E_{k+1} = E_k ∘ Ts_{k+1}[slot]⁻¹`, so the level-`k` child stays put while the
+parent grows around it. All transforms are exact, so containment is an integer
+statement. Three things have to hold.
 
-1. **Nesting holds, and is forced rather than lucky.** The level-`k` arc sits
-   inside the level-`(k+1)` arc as a *contiguous* sub-path at every level, in
-   both families, at all three slots. This is forced by the interface invariant:
-   the Psi interface is exactly two dots, so a strand entering the child must
-   traverse all of it before leaving.
-2. **Two-sided growth holds.** The parent arc carries material both before and
-   after the child's sub-path, and both counts diverge — at spectre slot 2, for
-   instance, `before` runs 41, 176, 2646, 10994 and `after` runs 40, 463, 2385,
-   28615. So each slot gives a genuine **bi-infinite** curve, not a ray.
-3. **Exhaustion does not hold for a constant slot.** The inradius about the seed
-   is *exactly constant* at every level — 1.409 for hexagons, 3.527 for the
-   spectre — so the seed abuts the patch boundary forever and that union fills a
-   sector, not the plane.
+1. **Nesting.** The level-`k` arcs must sit inside the level-`(k+1)` arcs.
+2. **Exhaustion.** The inradius about the seed must diverge, or the union covers
+   only a sector.
+3. **One curve.** The patch's arcs must all end up in a single arc higher up, or
+   the limit is several curves.
 
-A varying address does push the seed inside. Greedily maximising the inradius
-finds `Theta#0 → Gamma#3 → Gamma#7 → Gamma#7`, where it jumps from 3.53 to
-40.35 at level 4. But such an address passes through types with larger
-interfaces — Gamma has ten boundary dots and five arcs — so along it the patch
-is no longer a single arc, and the single-line property must be carried by a
-merge argument of the kind `FASS_1278.md` §4.5 runs, rather than by the nesting
-itself.
+**The Psi nesting gives 1 and not 2.** `SUPER_RULES.Psi` contains Psi at slots
+0, 2 and 5. At all three, in both families, the level-`k` arc sits inside the
+level-`(k+1)` arc as a *contiguous* sub-path — forced, not lucky, because the
+Psi interface is exactly two dots, so a strand entering the child must traverse
+all of it before leaving. Both ends grow without bound, so it is genuinely
+bi-infinite: at spectre slot 2 the segments before the child run 41, 176, 2646,
+10994 and those after run 40, 463, 2385, 28615. But the inradius about the seed
+is *exactly constant* — 1.409 for hexagons, 3.527 for the spectre — so the seed
+abuts the patch boundary forever and that union fills a sector, not the plane.
+
+**The Delta nesting gives all three.** Delta contains Delta at slot 1. Its
+patches are never a single arc: Delta has eight boundary dots, hence four arcs
+at every level. But those four are *boundary cuts, not components*
+([`14-merge.ts`](../web/fass-proof/14-merge.ts), exact segment containment):
+
+| step | child arcs | distinct parent arcs they land in |
+|---|---|---|
+| 1 → 2 | 4 | 2 |
+| 2 → 3 | 4 | **1** |
+| 3 → 4 | 4 | 2 |
+| 4 → 5 | 4 | **1** |
+| 5 → 6 | 4 | 2 |
+
+Over *any two consecutive levels* everything a patch holds lands in one arc. And
+this nesting does exhaust the plane — the inradius about the seed diverges at a
+rate approaching the linear inflation 2.8059:
+
+| level | 1 | 2 | 3 | 4 | 5 | 6 |
+|---|---|---|---|---|---|---|
+| `hex` inradius | 1.41 | 1.41 | 4.68 | 12.02 | 35.10 | 96.91 |
+| `spectre` inradius | 3.53 | 3.53 | 8.68 | 22.84 | 66.86 | 183.60 |
+
+So **the nested union is an infinite tiling of the whole plane carrying exactly
+one bi-infinite curve**, which is the statement the conjecture actually needs.
+This vindicates the merge analysis in `FASS_1278.md` §4.5, which had the right
+idea: the four tails of a Delta patch are four windows onto the same line.
+
+For contrast, the greedy address `Theta#0 → Gamma#3 → Gamma#7 → …` found by
+maximising the inradius also exhausts the plane, but its arcs settle at three
+and do not merge within the levels computed. So exhaustion alone is not enough;
+the nesting has to be chosen so the merge happens too.
 
 **Space-filling, and one point of hygiene.** The standard argument needs: the
 level-`k` arc restricted to any level-`j` sub-supertile stays inside that
@@ -643,6 +668,9 @@ limit.
 | Finite local complexity (no new two-tile class ever appears) | **OPEN** — this is what would make L2 unconditional for the spectre |
 | Psi-in-Psi nesting gives a bi-infinite curve | verified levels 1–5, all three slots |
 | That nesting exhausts the plane | **refuted** — inradius is exactly constant |
+| Delta-in-Delta nesting exhausts the plane | verified levels 1–6, inradius diverges at ≈2.81 per level |
+| Its four arcs all merge into one, two levels up | verified levels 1–6, exact segment containment |
+| The whole-plane tiling carries exactly ONE bi-infinite curve | **established**, given L3 |
 | Growth factor 4+√15, frequencies, segments per tile | **proved** (exact, from the substitution matrix) |
 | hex and spectre strand graphs isomorphic | verified structurally and on patches |
 | The eight single-line configurations are the only ones | **proved** by exhaustive census over all selections |
@@ -699,6 +727,7 @@ non-zero on failure.
 | `01-local-structure.ts` | L0 by winding number; L1; the class-0 refutation |
 | `02-self-avoidance.ts` | the straying chords, exactly; the 272/478 two-tile classes |
 | `04-routing-automaton.ts` | the routing operator, its 2-cycle, and the non-attractor result |
+| `14-merge.ts` | the Delta nesting merges to one curve and exhausts the plane |
 | `08-supertile-outline.ts` | all non-Gamma outlines identical; perimeter grows 4.22 per level; boundaries fractal |
 | `09-interface-invariant.ts` | boundary dot counts constant; arcs a perfect matching; no circuits |
 | `10-routing-states.ts` | canonical routing states; period 2 with pre-period 1 |
@@ -728,10 +757,10 @@ non-zero on failure.
 5. **Circuit-freeness independent of L3.** There is currently no such argument,
    and no fixed-point or attractor argument can supply one, because the routing
    operator is monotone non-decreasing in circuits.
-6. **Whole-plane exhaustion with a single curve.** The constant-slot nesting is
-   bi-infinite but fills a sector. An address that exhausts the plane passes
-   through types with several arcs. Does the merge argument close, and is the
-   whole-plane object one curve or several?
+6. **Other exhausting addresses.** The Delta nesting settles the conjecture, but
+   the greedy Gamma address also exhausts the plane and its arcs settle at three
+   without merging within six levels. Classify which addresses in the hull give
+   one curve and which give several.
 7. **The other three combinations.** Each family's quartet has the same Psi-root
    single-line property. Are the four limit curves the same curve up to mirror,
    or genuinely different FASS curves?
