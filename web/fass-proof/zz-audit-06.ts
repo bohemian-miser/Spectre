@@ -397,12 +397,356 @@ function sectionD(): void {
   ck(ok, '(H) + the derived invariants still hold at level 6 for Psi, Delta, Gamma, Sigma');
 }
 
+
+// ===========================================================================
+// E. Rim composites: 06 reports exactly ONE composite on the patch rim at every
+//    root and level. Recount independently (directed-edge boundary, not edge
+//    multiplicity), and also count composites that touch the patch outline at a
+//    VERTEX rather than an edge.
+// ===========================================================================
+function ccwWorldPolys(family: TileFamilyId, insts: readonly ZInstance[]): ZVec[][] {
+  return insts.map((inst) => {
+    const pts = zLeafPts(family, inst.type).map((p) => zApply(inst.xform, p));
+    // orient CCW in world: reflections flip the local orientation
+    const f = pts.map(zToPt);
+    let a = 0;
+    for (let i = 0; i < f.length; i++) {
+      const q = f[(i + 1) % f.length];
+      a += f[i].x * q.y - q.x * f[i].y;
+    }
+    return a >= 0 ? pts : [...pts].reverse();
+  });
+}
+
+function sectionE(): void {
+  head('E.  Composites on the patch rim — independent recount');
+  console.log(`  ${'patch'.padEnd(14)}${'composites'.padStart(12)}${'rim (edge)'.padStart(12)}${'rim (vertex)'.padStart(14)}`);
+  for (const root of ['Psi', 'Delta', 'Gamma'] as TileTypeId[]) {
+    for (let lv = 1; lv <= 4; lv++) {
+      const insts = zExpand('spectre', root, lv);
+      const polys = ccwWorldPolys('spectre', insts);
+      const dir = new Map<string, number>();
+      for (let i = 0; i < polys.length; i++) {
+        const P = polys[i];
+        for (let e = 0; e < P.length; e++) dir.set(`${zKey(P[e])}>${zKey(P[(e + 1) % P.length])}`, i);
+      }
+      const bVerts = new Set<string>();
+      const bTiles = new Set<number>();
+      for (const [k, i] of dir) {
+        const [a, b] = k.split('>');
+        if (!dir.has(`${b}>${a}`)) { bTiles.add(i); bVerts.add(a); bVerts.add(b); }
+      }
+      const compOf = (id: string) => id.slice(0, id.lastIndexOf('.'));
+      const rimEdge = new Set<string>();
+      const rimVert = new Set<string>();
+      for (let i = 0; i < insts.length; i++) {
+        if (insts[i].type !== 'Gamma1' && insts[i].type !== 'Gamma2') continue;
+        if (bTiles.has(i)) rimEdge.add(compOf(insts[i].id));
+        if (polys[i].some((v) => bVerts.has(zKey(v)))) rimVert.add(compOf(insts[i].id));
+      }
+      const nComp = new Set(insts.filter((x) => x.type === 'Gamma1').map((x) => compOf(x.id))).size;
+      console.log(`  ${(root + '@' + lv).padEnd(14)}${pad(nComp, 12)}${pad(rimEdge.size, 12)}${pad(rimVert.size, 14)}`);
+    }
+  }
+  note('06 prints "on rim" using edge-multiplicity 1, which is the edge column above.');
+}
+
+// ===========================================================================
+// F. The docs/FASS_1278.md sec 4.4 question: 06 claims to REFUTE the
+//    level-independence of the gluing/outer table. 06 labels exposed dots by
+//    DESCENT PATH; the doc labels them by position along the supertile OUTLINE
+//    with a chirality-stable rule. Compute the outline order and see whether the
+//    two labellings differ by a level-dependent rotation/reflection.
+// ===========================================================================
+function outlineDotOrder(cfg: Config, T: TileTypeId, level: number): { seq: string[]; allOnRim: boolean } {
+  const insts = zExpand(cfg.family, T, level);
+  const polys = ccwWorldPolys(cfg.family, insts);
+  const dir = new Map<string, { inst: number; edge: number; to: ZVec }>();
+  for (let i = 0; i < polys.length; i++) {
+    const P = polys[i];
+    for (let e = 0; e < P.length; e++) {
+      dir.set(`${zKey(P[e])}>${zKey(P[(e + 1) % P.length])}`, { inst: i, edge: e, to: P[(e + 1) % P.length] });
+    }
+  }
+  const nextOf = new Map<string, { key: string; inst: number; edge: number }>();
+  for (const [k, v] of dir) {
+    const [a, b] = k.split('>');
+    if (dir.has(`${b}>${a}`)) continue;
+    nextOf.set(a, { key: b, inst: v.inst, edge: v.edge });
+  }
+  // dot keys + canonical names, and global multiplicity
+  const keys = dotKeysOf(cfg, insts);
+  const mult = new Map<string, number>();
+  for (const row of keys) for (const k of row) mult.set(k, (mult.get(k) ?? 0) + 1);
+  // edge index -> dot index for each type
+  const edgeToDot = new Map<string, Map<number, number>>();
+  const dotAt = (type: TileTypeId, edge: number): number | undefined => {
+    let m = edgeToDot.get(type);
+    if (!m) {
+      m = new Map<number, number>();
+      const labels = edgeLabels(cfg.family, type);
+      let d = 0;
+      for (let i = 0; i < labels.length; i++) {
+        const { major, minor } = parseEdgeLabel(labels[i]);
+        if (minor !== 0 || !cfg.subset.includes(major)) continue;
+        m.set(i, d++);
+      }
+      edgeToDot.set(type, m);
+    }
+    return m.get(edge);
+  };
+  // walk
+  const start = nextOf.keys().next().value as string;
+  const seq: string[] = [];
+  let cur = start;
+  let steps = 0;
+  const nB = nextOf.size;
+  const seen = new Set<string>();
+  for (; steps <= nB; steps++) {
+    const nx = nextOf.get(cur);
+    if (!nx) break;
+    const inst = insts[nx.inst];
+    // polygon may be reversed relative to zLeafPts; recover the LOCAL edge index
+    const local = zLeafPts(cfg.family, inst.type);
+    const P = polys[nx.inst];
+    const reversed = zKey(P[0]) !== zKey(zApply(inst.xform, local[0])) || zKey(P[1]) !== zKey(zApply(inst.xform, local[1]));
+    const n = local.length;
+    const li = reversed ? (n - 1 - nx.edge + n - 1) % n : nx.edge;
+    const d = dotAt(inst.type, li);
+    if (d !== undefined) {
+      const k = keys[nx.inst][d];
+      if (mult.get(k) === 1) {
+        const isHalf = inst.type === 'Gamma1' || inst.type === 'Gamma2';
+        const hid = isHalf ? parentId(inst.id) : inst.id;
+        const img = cfg.family === 'hex' ? { internal: false, hexDot: d } : dotImage(inst.type, d);
+        if (!img.internal) { seq.push(`${hid}#${img.hexDot}`); seen.add(k); }
+      }
+    }
+    cur = nx.key;
+    if (cur === start) break;
+  }
+  const exposedTotal = [...mult.values()].filter((v) => v === 1).length;
+  return { seq, allOnRim: seen.size === exposedTotal };
+}
+
+function cyclicEq(a: readonly string[], b: readonly string[]): number | null {
+  if (a.length !== b.length) return null;
+  for (let r = 0; r < a.length; r++) {
+    let ok = true;
+    for (let i = 0; i < a.length; i++) if (a[(i + r) % a.length] !== b[i]) { ok = false; break; }
+    if (ok) return r;
+  }
+  return null;
+}
+
+function sectionF(): void {
+  head('F.  06 vs docs/FASS_1278.md sec 4.4 — is the "refutation" a change of LABELLING?');
+  console.log('  06 indexes a supertile\'s exposed dots by DESCENT PATH (level-independent names).');
+  console.log('  docs sec 4.4 indexes them by position along the supertile OUTLINE, "chirality-stable".');
+  console.log('  If the outline order of the same names rotates/reflects with the level, the two');
+  console.log('  labellings differ level by level and the two constancy claims are NOT comparable.\n');
+  console.log(`  ${'type'.padEnd(8)}${'j'.padStart(3)}  outline order of exposed dots (canonical descent-path names)   vs j-1`);
+  for (const T of ['Psi', 'Xi', 'Phi', 'Delta'] as TileTypeId[]) {
+    let prev: string[] | null = null;
+    for (let j = 2; j <= 5; j++) {
+      const { seq, allOnRim } = outlineDotOrder(HEX, T, j);
+      let rel = '';
+      if (prev) {
+        const f = cyclicEq(seq, prev);
+        const r = cyclicEq([...seq].reverse(), prev);
+        rel = f !== null ? `rotation ${f}` : r !== null ? `REVERSED, rotation ${r}` : 'unrelated';
+      }
+      console.log(`  ${T.padEnd(8)}${pad(j, 3)}  ${seq.join(' ').padEnd(58)} ${rel}${allOnRim ? '' : '  (WARNING: some exposed dot not on the walked outline)'}`);
+      prev = seq;
+    }
+    console.log('');
+  }
+}
+
+
+// ===========================================================================
+// G. Is 06's "the interface table is NOT level-independent" a real fact about
+//    the welding, or an artefact of ITS labelling?  Test: does there exist a
+//    per-type permutation sigma_T of the exposed lists with table(k+1) =
+//    sigma(table(k))?  If yes, the doc's constancy claim (in a different,
+//    chirality-stable labelling) is consistent and 06 has refuted nothing.
+//    Everything below is an INDEPENDENT reimplementation of 06's sec 3b.
+// ===========================================================================
+function idCmp(a: string, b: string): number {
+  const A = a === '' ? [] : a.split('.').map(Number);
+  const B = b === '' ? [] : b.split('.').map(Number);
+  for (let i = 0; i < Math.max(A.length, B.length); i++) {
+    const x = A[i] ?? -1, y = B[i] ?? -1;
+    if (x !== y) return x - y;
+  }
+  return 0;
+}
+function canonDots(cfg: Config, root: TileTypeId, level: number): { coords: string[]; keys: string[] } {
+  const insts = zExpand(cfg.family, root, level);
+  const keys = dotKeysOf(cfg, insts);
+  const coords: string[] = [], flat: string[] = [];
+  for (let i = 0; i < insts.length; i++) {
+    const isHalf = insts[i].type === 'Gamma1' || insts[i].type === 'Gamma2';
+    const hid = isHalf ? parentId(insts[i].id) : insts[i].id;
+    for (let d = 0; d < keys[i].length; d++) {
+      if (cfg.family === 'hex') { coords.push(`${insts[i].id}#${d}`); flat.push(keys[i][d]); continue; }
+      const img = dotImage(insts[i].type, d);
+      if (img.internal) continue;
+      coords.push(`${hid}#${img.hexDot}`); flat.push(keys[i][d]);
+    }
+  }
+  return { coords, keys: flat };
+}
+const expCache = new Map<string, string[]>();
+function exposed(cfg: Config, T: TileTypeId, level: number): string[] {
+  const ck2 = `${cfg.family}|${T}|${level}`;
+  const h = expCache.get(ck2); if (h) return h;
+  const { coords, keys } = canonDots(cfg, T, level);
+  const m = new Map<string, number>();
+  for (const k of keys) m.set(k, (m.get(k) ?? 0) + 1);
+  const out = coords.filter((_, i) => m.get(keys[i]) === 1).sort((a, b) => {
+    const [ia, da] = a.split('#'), [ib, db] = b.split('#');
+    const c = idCmp(ia, ib); return c !== 0 ? c : Number(da) - Number(db);
+  });
+  expCache.set(ck2, out); return out;
+}
+interface ITab { pairing: string[]; exposure: { slot: number; pos: number }[] }
+function iTable(cfg: Config, T: TileTypeId, k: number): ITab {
+  const { coords, keys } = canonDots(cfg, T, k);
+  const subs = SUPER_RULES[T]!;
+  const childExp = new Map<number, Map<string, number>>();
+  for (let s = 0; s < 8; s++) {
+    if (subs[s] === 'null') continue;
+    const m = new Map<string, number>();
+    exposed(cfg, subs[s] as TileTypeId, k - 1).forEach((c, i) => m.set(c, i));
+    childExp.set(s, m);
+  }
+  const mult = new Map<string, number>();
+  for (const key of keys) mult.set(key, (mult.get(key) ?? 0) + 1);
+  const byKey = new Map<string, { slot: number; pos: number }[]>();
+  const expo: { coord: string; slot: number; pos: number }[] = [];
+  for (let i = 0; i < coords.length; i++) {
+    const [id, dot] = coords[i].split('#');
+    const parts = id.split('.');
+    const slot = Number(parts[0]);
+    const rel = `${parts.slice(1).join('.')}#${dot}`;
+    const pos = childExp.get(slot)?.get(rel);
+    if (pos === undefined) continue;
+    let g = byKey.get(keys[i]); if (!g) byKey.set(keys[i], (g = []));
+    g.push({ slot, pos });
+    if (mult.get(keys[i]) === 1) expo.push({ coord: coords[i], slot, pos });
+  }
+  const pairing: string[] = [];
+  for (const g of byKey.values()) {
+    if (g.length !== 2) continue;
+    const [a, b] = [...g].sort((x, y) => x.slot - y.slot || x.pos - y.pos);
+    pairing.push(`${a.slot}:${a.pos}~${b.slot}:${b.pos}`);
+  }
+  expo.sort((a, b) => {
+    const [ia, da] = a.coord.split('#'), [ib, db] = b.coord.split('#');
+    const c = idCmp(ia, ib); return c !== 0 ? c : Number(da) - Number(db);
+  });
+  pairing.sort();
+  return { pairing, exposure: expo.map((e) => ({ slot: e.slot, pos: e.pos })) };
+}
+
+function sectionG(): void {
+  head('G.  Does a per-type RELABELLING turn 06\'s alternating table into a constant one?');
+  // 1. reproduce 06's letters independently
+  console.log('  independent recomputation of 06 sec 3b(ii) signatures (hex family):');
+  const TYPES = ['Gamma','Delta','Theta','Lambda','Xi','Pi','Sigma','Phi','Psi'] as TileTypeId[];
+  const tabs = new Map<string, ITab>();
+  for (const T of TYPES) {
+    const letters: string[] = [], seen: string[] = [];
+    for (let k = 1; k <= 6; k++) {
+      const t = iTable(HEX, T, k);
+      tabs.set(`${T}|${k}`, t);
+      const sig = `${t.pairing.join(',')}||${t.exposure.map((e) => `${e.slot}:${e.pos}`).join(',')}`;
+      let i = seen.indexOf(sig); if (i < 0) { seen.push(sig); i = seen.length - 1; }
+      letters.push(String.fromCharCode(65 + i));
+    }
+    console.log(`    ${T.padEnd(8)}${letters.join(' ')}`);
+  }
+  // 2. search for sigma with table(k+1) = sigma(table(k))
+  const childType = (T: TileTypeId, slot: number) => SUPER_RULES[T]![slot] as TileTypeId;
+  const nOf = new Map<TileTypeId, number>();
+  for (const T of TYPES) nOf.set(T, exposed(HEX, T, 3).length);
+
+  const search = (k: number): Map<TileTypeId, number[]> | null => {
+    const sig = new Map<TileTypeId, (number | undefined)[]>();
+    const used = new Map<TileTypeId, Set<number>>();
+    for (const T of TYPES) { sig.set(T, new Array(nOf.get(T)!).fill(undefined)); used.set(T, new Set()); }
+    const assign = (T: TileTypeId, p: number, q: number): (() => void) | null => {
+      const cur = sig.get(T)![p];
+      if (cur !== undefined) return cur === q ? () => {} : null;
+      if (used.get(T)!.has(q)) return null;
+      sig.get(T)![p] = q; used.get(T)!.add(q);
+      return () => { sig.get(T)![p] = undefined; used.get(T)!.delete(q); };
+    };
+    // unknowns: (T, p) for every parent position; constraints from exposure
+    const units: [TileTypeId, number][] = [];
+    for (const T of TYPES) for (let p = 0; p < nOf.get(T)!; p++) units.push([T, p]);
+    const rec = (idx: number): boolean => {
+      if (idx === units.length) {
+        // verify pairing for both levels
+        for (const T of TYPES) {
+          const A = tabs.get(`${T}|${k}`)!, B = tabs.get(`${T}|${k + 1}`)!;
+          const mapped = A.pairing.map((s) => {
+            const [x, y] = s.split('~');
+            const [sa, pa] = x.split(':').map(Number), [sb, pb] = y.split(':').map(Number);
+            const na = sig.get(childType(T, sa))![pa], nb = sig.get(childType(T, sb))![pb];
+            if (na === undefined || nb === undefined) return 'UNDEF';
+            const u = { s: sa, p: na }, v = { s: sb, p: nb };
+            const [f, g] = [u, v].sort((m, n) => m.s - n.s || m.p - n.p);
+            return `${f.s}:${f.p}~${g.s}:${g.p}`;
+          }).sort();
+          if (mapped.join('|') !== [...B.pairing].sort().join('|')) return false;
+        }
+        return true;
+      }
+      const [T, p] = units[idx];
+      if (sig.get(T)![p] !== undefined) return rec(idx + 1);
+      const A = tabs.get(`${T}|${k}`)!, B = tabs.get(`${T}|${k + 1}`)!;
+      if (p >= A.exposure.length || A.exposure.length !== B.exposure.length) return false;
+      const { slot, pos } = A.exposure[p];
+      const U = childType(T, slot);
+      for (let q = 0; q < B.exposure.length; q++) {
+        if (B.exposure[q].slot !== slot) continue;
+        const u1 = assign(T, p, q); if (!u1) continue;
+        const u2 = assign(U, pos, B.exposure[q].pos);
+        if (u2 && rec(idx + 1)) return true;
+        if (u2) u2(); u1();
+      }
+      return false;
+    };
+    if (!rec(0)) return null;
+    const out = new Map<TileTypeId, number[]>();
+    for (const T of TYPES) out.set(T, sig.get(T)!.map((x) => x ?? -1));
+    return out;
+  };
+
+  console.log('');
+  for (const k of [3, 4, 5]) {
+    const r = search(k);
+    if (r) {
+      ck(true, `a per-type relabelling sigma with table(${k + 1}) = sigma(table(${k})) EXISTS`,
+         `e.g. Xi ${JSON.stringify(r.get('Xi' as TileTypeId))}  Delta ${JSON.stringify(r.get('Delta' as TileTypeId))}  Psi ${JSON.stringify(r.get('Psi' as TileTypeId))}`);
+    } else {
+      ck(false, `NO per-type relabelling sigma with table(${k + 1}) = sigma(table(${k}))`,
+         'so the level-dependence is intrinsic, not a naming artefact');
+    }
+  }
+}
+
 function main(): void {
   console.log('ADVERSARIAL AUDIT of fass-proof/06-family-reduction.ts');
   sectionA();
   sectionB();
   sectionC();
   sectionD();
+  sectionE();
+  sectionF();
+  sectionG();
   head('SUMMARY');
   console.log(`  failures: ${FAIL}   notes: ${NOTE}`);
   process.exit(FAIL === 0 ? 0 : 1);

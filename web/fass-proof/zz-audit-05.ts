@@ -503,7 +503,7 @@ for (const key of KEYS) {
   {
     const leafW = TYPES.map((t) => (t === 'Gamma' && cfg.family !== 'hex' ? 1n : 1n));
     // tiles_j(T) = (leaf-count row) . M^j e_T, leaf weight 2 for a composite Gamma
-    const w = TYPES.map((t) => (t === 'Gamma' && cfg.family !== 'hex' ? 2n : 1n));
+    const w: bigint[] = TYPES.map((t) => (t === 'Gamma' && cfg.family !== 'hex' ? 2n : 1n));
     let rt = w.slice();
     const tilesRow: bigint[][] = [rt.slice()];
     for (let s2 = 0; s2 < KMAX; s2++) {
