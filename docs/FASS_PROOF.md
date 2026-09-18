@@ -206,13 +206,28 @@ combinatorial model of the spectre tiling. The leaf seam decompositions genuinel
 differ: hexagon Sigma has six seams where spectre Sigma has five, because the
 spectre's class-4 seam wraps as one four-edge seam that the hexagon splits into
 class 6 plus class 4; and hexagon Gamma has six outer seams against the
-composite Mystic's seven, with no class-6 seam at all. The reduction below is a
+composite Mystic's seven, with no class-6 seam at all. The tile-adjacency graphs
+differ too, at every level — with the composite Mystic contracted to one node, a
+level-1 Psi patch has 8 nodes and 13 edges in the hexagon family against 12 in
+the spectre, and a level-3 patch 1299 against 1236. The reduction below is a
 statement about the *dot-carrying* seams only.
 
 **Consequence.** The two strand graphs are isomorphic after suppressing every
-degree-2 class-7 vertex. Every *topological* FASS property — circuit-freeness,
-the single-arc property, component structure, tile coverage — transfers between
-them. The correspondence is stronger than an isomorphism of graphs: at the level
+degree-2 class-7 vertex, and the isomorphism respects tiles. Every *topological*
+FASS property — circuit-freeness, the single-arc property, component structure,
+tile coverage — transfers between them.
+
+The isomorphism is **conditional**, on two hypotheses checked to level 6 rather
+than proved: that the weld patterns agree between the families, and that no
+active dot has multiplicity 3 or more. The implication from those to the
+isomorphism *is* proved, by a finite local argument that never mentions the
+supertile transforms, so the negative result of §4.3 does not touch it.
+
+Every headline patch number here has been reproduced by a completely independent
+route — the float core library with a separate tracer, no exact machinery at all
+— agreeing exactly on tiles, segments, arcs, circuits, maximum degree, arc-length
+multiset and coverage, and cross-checking against the level-6 row of
+`FASS_1278.md`. The correspondence is stronger than an isomorphism of graphs: at the level
 of the routing automaton (§4.4) the two configurations are **literally the same
 automaton**. Identical boundary-dot counts per type, identical gluing and outer
 data for all nine types, identical routing cycle, identical Psi composition
@@ -528,6 +543,14 @@ identically for all nine types in both families. Both computations were right
 about their own object: **whether the datum looks constant or period-2 is
 decided by the labelling.** That matters, because a fixed datum is what lets the
 routing operator `F` of §4.4 be a single map rather than an alternating pair.
+
+A fourth computation sharpens it further. The cross-child interface table is
+*identical in both families* at every level computed, and within each family
+satisfies `table(k+1) = σ(table(k))` for a single fixed per-type involution `σ`
+of the exposed-dot lists. Since `σ² = id`, period 2 is a corollary rather than
+the sharpest statement: the table is level-independent once the per-level mirror
+is compensated, which is what `FASS_1278.md` §4.4 claims. Levels 1 and 2 are two
+genuine seeds, not related by any relabelling.
 
 Given L3, `routing(T,k+1) = F_T(children's routings at level k)` with `F_T`
 **fixed**, and the whole problem collapses to iterating a fixed map on a finite
