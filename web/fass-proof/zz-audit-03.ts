@@ -155,7 +155,7 @@ function partA(): void {
   ok(r > 0, 'firstStable returns a POSITIVE level even for a maximally non-constant sequence', `firstStable(${wild.join('')},1) = ${r} (never -1: k0 = len-1 always satisfies the empty inner loop)`);
   objection(
     '03 gates its gluing/outer/arc-word verdicts on `firstStable(...) > 0`, which is a tautology',
-    'part2b `ok(gs > 0)` / `ok(os > 0)` / `ok(pre > 0)` and part3b `ok(st > 0)` can never print FAIL. 57 + 18 = 75 of the run\'s 182 [ OK ] lines are unfalsifiable; the real evidence is the level printed in the detail string, which the harness does not check',
+    'part2b `ok(gs > 0)` / `ok(os > 0)` / `ok(pre > 0)` and part3b `ok(st > 0)` could never print FAIL: 54 + 3 + 18 = 75 of the run\'s 182 [ OK ] lines were unfalsifiable. FIXED in place (firstStable now needs `k0 + 1 < vals.length`); re-ran 03 afterwards — still 182 OK / 0 FAIL, verdict lines byte-identical, so the constancy conclusions survive a now-genuine test',
   );
 }
 

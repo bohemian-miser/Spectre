@@ -1139,7 +1139,11 @@ function sweep(): void {
 
 /** Smallest k0 with vals[k0..] all equal, as a level (1-based via `base`); -1 if none. */
 function firstStable(vals: readonly string[], base: number): number {
-  for (let k0 = 0; k0 < vals.length; k0++) {
+  // `k0 + 1 < vals.length`, NOT `k0 < vals.length`: with the latter the final
+  // index always satisfies the (empty) inner loop, so this never returned -1 and
+  // every `ok(firstStable(...) > 0, ...)` gate below was unfalsifiable. A claim of
+  // stability needs at least one corroborating level.
+  for (let k0 = 0; k0 + 1 < vals.length; k0++) {
     let good = true;
     for (let i = k0 + 1; i < vals.length; i++) if (vals[i] !== vals[k0]) good = false;
     if (good) return k0 + base;

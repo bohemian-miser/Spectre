@@ -494,16 +494,23 @@ absorb the per-level mirror flip, a period-2 alternation appears instead; the
 routing *states* likewise sit on a 2-cycle (§4.4), but that is a 2-cycle of a
 fixed map rather than a period in the map.
 
-**An unresolved discrepancy.** A second, independent computation of the closely
-related cross-child *interface table* finds it **not** constant — levels 2, 3
-and 4 give three pairwise different tables, with only period 2 from level 3
-surviving, and the weld pairing alone alternating. Whether the two computations
-are describing the same object under different labelling conventions, or
-genuinely disagree, is not settled here. It matters, because "the datum is
-fixed" is what makes `F` a fixed map, and a period-2 datum would mean `F` is
-really a pair of maps applied alternately. The conclusions of §4.4 survive
-either way — a 2-cycle of a fixed map and a fixed alternation of two maps give
-the same orbit — but the statement of L3 does not, and §8 lists this as work.
+**A discrepancy, and its resolution.** A second, independent computation of the
+closely related cross-child *interface table* found it **not** constant — levels
+2, 3 and 4 giving three pairwise different tables, with only period 2 from level
+3. A third computation
+([`15-datum-labelling.ts`](../web/fass-proof/15-datum-labelling.ts)) settles it
+by computing the datum under both conventions at once:
+
+| labelling | pattern over levels 2–5 | distinct values |
+|---|---|---|
+| chirality-stable (anchor at `quad[0]`, `quad[1]` before `quad[3]`) | `0000` | **1** |
+| naive (walk the outline whichever way the chaining produces) | `0121` | 3 |
+
+identically for all nine types in both families. Both earlier computations were
+right about their own object: **the period-2 alternation is an artefact of the
+labelling, not a property of the substitution.** That matters, because a fixed
+datum is what lets the routing operator `F` of §4.4 be a single map rather than
+an alternating pair.
 
 Given L3, `routing(T,k+1) = F_T(children's routings at level k)` with `F_T`
 **fixed**, and the whole problem collapses to iterating a fixed map on a finite
@@ -853,7 +860,7 @@ limit.
 | Zero circuits, every type, every level | verified levels 1–6; **all levels given L3**, and no argument for it exists independent of L3 |
 | Psi supertile is a single arc | verified levels 1–6; **all levels given L3**, and forced by the interface invariant |
 | Every tile visited | verified levels 1–5; **all levels given L3** |
-| The gluing and outer maps are constant (period 1) | verified levels 2–8, both families, all three configurations |
+| The gluing and outer maps are constant (period 1) | verified levels 2–8 under the chirality-stable labelling; the period-2 alternation seen otherwise is a labelling artefact, confirmed by a third independent computation |
 | No similarity or anti-similarity conjugates `Ts` across levels | **proved** (fixed non-zero exact residual) |
 | The quad-point incidence pattern is the same at every level | **proved for all k ≥ 2** (Cayley–Hamilton); reconfirmed by direct enumeration to level 14 |
 | Coincident quad-arc endpoints force coincident arcs | **OPEN — the remaining piece of L3** |
@@ -951,6 +958,7 @@ non-zero on failure.
 | `04-routing-automaton.ts` | the routing operator, its 2-cycle, and the non-attractor result |
 | `05-limit.ts` | nesting, burial, bounded re-entry, and the exact limit constants |
 | `14-merge.ts` | the Delta nesting merges to one curve and exhausts the plane |
+| `15-datum-labelling.ts` | resolves the disputed datum period as a labelling artefact |
 | `08-supertile-outline.ts` | all non-Gamma outlines identical; perimeter grows 4.22 per level; boundaries fractal |
 | `09-interface-invariant.ts` | boundary dot counts constant; arcs a perfect matching; no circuits |
 | `10-routing-states.ts` | canonical routing states; period 2 with pre-period 1 |
@@ -1011,21 +1019,18 @@ non-zero on failure.
    The ambient ring permits it — there is an explicit witness — so the
    "residual boundary is a Jordan curve" step of L0 is currently a per-level
    check rather than a corollary.
-14. **Resolve the datum-period discrepancy** (§4.3): whether the gluing datum is
-   constant or period 2 depends on the labelling, and two independent
-   computations currently disagree.
-15. **Derive the excursion constants exactly.** (2−√3)/4 and (2√3−3)/8 are
+14. **Derive the excursion constants exactly.** (2−√3)/4 and (2√3−3)/8 are
    closed forms matched to dense float samples, not exact computations.
-16. **Bridge the implementation to the published substitution.** Every
+15. **Bridge the implementation to the published substitution.** Every
    invocation of the Smith-Myers-Kaplan-Goodman-Strauss theorem assumes this
    repo's transform chain implements it. That identification is unstated work,
    and it is needed for the hexagon family as much as for the spectre.
-17. **Fix `SUBSTITUTION_GROWTH` in `web/src/core/unrooted.ts`**, which reads
+16. **Fix `SUBSTITUTION_GROWTH` in `web/src/core/unrooted.ts`**, which reads
    7.8730178 and is documented as the dominant eigenvalue. The true value is
    4+√15 = 7.872983346207417. `docs/BIGMAP_INVESTIGATION.md` repeats the wrong
    figure. The relative error is 4.5e-6, harmless for level-of-detail budgeting
    and wrong in a write-up.
-18. **The hexagon realisation's geometry.** The topological half transfers from
+17. **The hexagon realisation's geometry.** The topological half transfers from
    the spectre, but the hexagon tiling is a different metric object. Its
    space-filling limit deserves its own statement.
 
