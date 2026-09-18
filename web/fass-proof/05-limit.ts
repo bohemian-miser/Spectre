@@ -126,8 +126,10 @@
  *        the Psi nesting IS literal containment as a contiguous sub-path.
  *   (H2) LOCALISATION. The piece of A_k inside a level-j sub-supertile stays
  *        within distance eps0 of it, where eps0 is a CONSTANT (measured
- *        below; 0 for hexagons, (2 - sqrt 3)/4 for the spectre, whose chords
- *        cut the reflex corner). Since sub-supertile diameters grow like
+ *        below; 0 for hexagons, (2 sqrt 3 - 3)/8 = 0.0580127 for the spectre,
+ *        whose chords cut the reflex corner. NOT (2 - sqrt 3)/4: that is the
+ *        distance from the reflex VERTEX to the chord, a different quantity,
+ *        which is what docs/FASS_PROOF.md 4.2 labels it). Since sub-supertile diameters grow like
  *        lambda^(j/2), the relative excursion eps0 / diam tends to 0.
  *   (H3) SHRINKING SCALE. maxTileDiameter / D_k -> 0, at rate lambda^(-k/2)
  *        with lambda = 4 + sqrt 15. (Measured below.)
@@ -425,6 +427,7 @@ for (const key of KEYS) {
   console.log(`    | level j | ${TYPES.map((t) => pad(t.slice(0, 5), 6)).join(' |')} | circuits | min arc share |`);
   console.log(`    |---|${TYPES.map(() => '---').join('|')}|---|---|`);
   const arcsAt: number[][] = [];
+  let noCircuits = true;
   for (let j = 1; j <= Math.max(1, MAX - 1); j++) {
     const profs = TYPES.map((t) => profileOf(cfg, t, j));
     arcsAt.push(profs.map((p) => p.arcs));
@@ -433,9 +436,10 @@ for (const key of KEYS) {
     console.log(
       `    | ${j} | ${profs.map((p) => pad(p.arcs, 6)).join(' |')} | ${pad(circuits, 8)} | ${pad(minFrac.toFixed(5), 13)} |`,
     );
-    if (circuits !== 0 || !profs.every((p) => p.covered)) allOk = false;
+    if (circuits !== 0 || !profs.every((p) => p.covered)) noCircuits = false;
   }
-  ok(true, `${cfg.id}: no supertile type of any level <= ${Math.max(1, MAX - 1)} has a circuit, and each covers all its tiles`);
+  if (!noCircuits) allOk = false;
+  ok(noCircuits, `${cfg.id}: no supertile type of any level <= ${Math.max(1, MAX - 1)} has a circuit, and each covers all its tiles`);
   const levelIndependent = arcsAt.every((r) => r.every((v, i) => v === arcsAt[0][i]));
   ok(levelIndependent, `${cfg.id}: arcs(T) is LEVEL-INDEPENDENT`,
     `${TYPES.map((t, i) => `${t}=${arcsAt[0][i]}`).join(' ')}`);

@@ -309,6 +309,9 @@ for (const f of ['hex', 'spectre'] as TileFamilyId[]) {
         const ek = ukey(za, zb);
         let r = Infinity;
         for (let t = 0; t < p.inst.length; t++) {
+          let nearT = false;
+          for (const q of p.poly[t]) if (Math.abs(q.x - m.x) < 3 && Math.abs(q.y - m.y) < 3) { nearT = true; break; }
+          if (!nearT) continue;
           const zp = zLeafPts(f, p.inst[t].type).map((q) => zApply(p.inst[t].xform, q));
           let owns = false;
           for (let j = 0; j < zp.length; j++) if (ukey(zp[j], zp[(j + 1) % zp.length]) === ek) owns = true;
@@ -783,6 +786,41 @@ console.log('    |---|---|---|---|');
     }
   }
   console.log(`    reference constants: (2sqrt3-3)/8 = ${C1.toFixed(9)}   (2-sqrt3)/4 = ${C2.toFixed(9)}   (2sqrt3-3)/2 = ${((2 * Math.sqrt(3) - 3) / 2).toFixed(9)}`);
+}
+
+// ===========================================================================
+H('A13. Two claims in the 05 header that its code never computes');
+// ===========================================================================
+console.log(`  (i) 05-limit.ts's LEMMA A paragraph says the edge-to-edge check verifies
+      "no directed edge repeats". Its section 3a computes only UNDIRECTED edge
+      multiplicities (helper ukey); there is no directed-edge test anywhere in
+      the file. The check is supplied here.
+  (ii) Its section 3a says the outline is "a disjoint union of simple cycles",
+      which permits HOLES. Whether the patch region is simply connected is never
+      computed, though the inradius and the burial argument read more naturally
+      if it is. Counted here.\n`);
+for (const f of ['hex', 'spectre'] as TileFamilyId[]) {
+  for (let lv = 1; lv <= MAXG; lv++) {
+    const p = patchOf(f, lv);
+    const dseen = new Set<string>();
+    let dup = 0;
+    for (const i of p.inst) {
+      const zp = zLeafPts(f, i.type).map((q) => zApply(i.xform, q));
+      for (let j = 0; j < zp.length; j++) {
+        const k = `${zKey(zp[j])}>${zKey(zp[(j + 1) % zp.length])}`;
+        if (dseen.has(k)) dup++; else dseen.add(k);
+      }
+    }
+    const par = new Map<string, string>();
+    const find = (x: string): string => { let r = x; while (par.get(r) !== r) r = par.get(r) as string; return r; };
+    for (const u of p.bkeys) { const [a, b] = u.split('_'); if (!par.has(a)) par.set(a, a); if (!par.has(b)) par.set(b, b); }
+    for (const u of p.bkeys) { const [a, b] = u.split('_'); const ra = find(a), rb = find(b); if (ra !== rb) par.set(ra, rb); }
+    const roots = new Set<string>();
+    for (const k of par.keys()) roots.add(find(k));
+    hold(dup === 0 && roots.size === 1,
+      `${f} level ${lv}: no repeated DIRECTED edge, and the outline is ONE cycle (no holes)`,
+      `${p.inst.length} tiles, ${p.bkeys.size} outline edges, ${roots.size} outline cycle(s), ${dup} repeated directed edge(s)`);
+  }
 }
 
 console.log(`\n${bad === 0 ? 'AUDIT: no objection survived' : `AUDIT: ${bad} objection(s)/failure(s)`}\n`);
