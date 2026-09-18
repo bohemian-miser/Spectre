@@ -910,6 +910,55 @@ for (const family of ['hex', 'spectre'] as TileFamilyId[]) {
   }
 }
 
+// --- 3d: is burial a LEVEL-INDEPENDENT depth-4 fact? ----------------------
+
+const BURY_DEPTH = 4;
+if (MAXG >= BURY_DEPTH + 2) {
+  console.log(`\n  3d. IS BURIAL LEVEL-INDEPENDENT? The divergence argument needs more than
+      one buried level: it needs the seed's ancestor to be buried inside ITS
+      ancestor at every step of a periodic address. That is the statement
+
+        "in a level-M Psi supertile, the level-(M-${BURY_DEPTH}) sub-supertile at
+         root-down address alpha owns no outline edge"
+
+      for every M, not just M = ${BURY_DEPTH + 1}. It is a purely combinatorial statement
+      about the depth-${BURY_DEPTH} decomposition, so L3 would give it for all M. Here
+      it is checked directly at M = ${BURY_DEPTH + 1} .. ${MAXG}: if the buried SET of addresses is
+      the same at each M, the depth-${BURY_DEPTH} burial does not depend on the level.\n`);
+  for (const family of ['hex', 'spectre'] as TileFamilyId[]) {
+    const sets: string[][] = [];
+    for (let M = BURY_DEPTH + 1; M <= MAXG; M++) {
+      const p = patchOf(family, M);
+      const groups = new Map<string, number[]>();
+      for (let t = 0; t < p.inst.length; t++) {
+        const pre = p.inst[t].id.split('.').slice(0, BURY_DEPTH).join('.');
+        let g = groups.get(pre);
+        if (!g) { g = []; groups.set(pre, g); }
+        g.push(t);
+      }
+      const buried: string[] = [];
+      for (const [pre, idxs] of groups) {
+        const slots = pre.split('.').map(Number);
+        if (slots.length !== BURY_DEPTH || !slots.every((s) => PSI_SLOTS.includes(s))) continue;
+        if (!idxs.some((t) => p.touches[t])) buried.push(pre);
+      }
+      buried.sort();
+      sets.push(buried);
+      console.log(`    ${pad(family, 8)} M = ${M}: ${buried.length} of ${3 ** BURY_DEPTH} depth-${BURY_DEPTH} Psi addresses buried — ${buried.join(' ') || '(none)'}`);
+    }
+    const same = sets.every((s) => s.length === sets[0].length && s.every((v, i) => v === sets[0][i]));
+    ok(
+      same && sets[0].length > 0,
+      `${family}: the buried depth-${BURY_DEPTH} address set is IDENTICAL at M = ${BURY_DEPTH + 1}..${MAXG}`,
+      same
+        ? `${sets[0].length} addresses, so burial is a depth-${BURY_DEPTH} fact, not a level-${BURY_DEPTH + 1} accident — which is exactly what the periodic-address argument needs`
+        : `sets differ between levels: ${sets.map((s) => s.length).join(' vs ')}`,
+    );
+  }
+} else {
+  console.log(`\n  3d. (skipped: needs maxGeomLevel >= ${BURY_DEPTH + 2} to compare two levels of depth-${BURY_DEPTH} burial)`);
+}
+
 console.log(`
   READING OF SECTION 3. Two findings, and they point opposite ways.
 
