@@ -289,11 +289,20 @@ pairwise disjoint interiors and to cover the patch without gaps. For the spectre
 family this is the Smith–Myers–Kaplan–Goodman-Strauss theorem.
 
 An earlier draft of this document said the `hex` family is this repo's own
-reduced realisation with nothing cited for it. **That is backwards.** The marked
-hexagons are the *primary* object of the spectre paper — nine hexagons carrying
-the same Greek names, eight edge classes, Gamma the unique type expanding to two
-spectres — and the Spectre tiling is obtained *from* them by re-marking. If
-anything the hexagon family is the better-cited of the two.
+reduced realisation with nothing cited for it. That is very probably the wrong
+way round. Six structural facts line up with the marked-hexagon system of the
+spectre paper: nine Greek-named types, exactly eight edge classes against the
+spectre family's nine, Gamma the unique type with an empty substitution slot and
+the unique type expanding to two spectres, six orientations per type, the same
+λ = 4+√15, and a reflection at every level.
+
+That is a strong plausibility argument, **not an item-for-item identification**,
+and it should not be written up as one. The two families in this repo are
+demonstrably *not* related by a relabelling of edge classes: hexagon Sigma
+carries six meta-edges where spectre Sigma carries five, because the hexagon's
+class-6 seam is absorbed into a wrap-around class-4 seam of length 4. So the
+honest statement is that the hexagon family is very likely the published system,
+pending someone matching the substitution figures slot by slot.
 
 What is genuinely uncited in both cases is the bridge: that this repo's
 `T_RULES`, `SUPER_RULES` and reflection pre-multiplication implement the
@@ -1073,10 +1082,12 @@ search is weak evidence, so the right phrasing is "we are not aware of", and the
 nearest neighbours should be named: Hassell 2014 for a FASS curve on an
 aperiodic tile set, Singh, Lloyd & Flicker 2024 for a rigorous
 hierarchy-exploiting Hamiltonian construction on an aperiodic tiling, and Henle
-for the Penrose attempt. Henle's obstruction is worth stating, because it is
-exactly the hypothesis we *do* satisfy: Penrose deflation is not
-bounding-volume-hierarchical, whereas our supertiles contain their children,
-which is why the Hilbert template transplants as far as it does.
+for the Penrose attempt. Henle's obstruction is worth mentioning, though not as a selling point: here a
+supertile's region *is by construction* the union of its children, so
+containment is definitional and carries no content. The substantive comparison
+is elsewhere — in whether the approximant restricted to a window stays in that
+window, which §4.5 shows holds at supertile granularity and fails at tile
+granularity for the spectre.
 
 **The single-arc property has a second name.** An arc visiting every tile of
 every supertile is a Hamiltonian path in the dual graph. That framing reaches a
