@@ -1095,6 +1095,8 @@ function symEval(x: Sym, Q: readonly ZVec[]): BVec {
 
 interface Row {
   readonly nBoundary: number;
+  /** Boundary edges in each of the four quad-to-quad arcs. */
+  readonly arcLen: readonly number[];
   readonly metaCount: number;
   readonly metaCanon: string;
   readonly turn: string;
@@ -1119,8 +1121,11 @@ function sweep(): void {
         }
         const a = lv >= 1 ? analyze(family, T, lv) : null;
         if (a) for (const cfg of cfgsOf(family)) datumStore.set(datumKey(cfg, T, lv), a.datum.get(cfg.id)!);
+        const arcLen = [0, 0, 0, 0];
+        for (let i = 0; i < sh.verts.length; i++) arcLen[arcOf(sh, i)]++;
         rows.set(rowKey(family, T, lv), {
           nBoundary: sh.verts.length,
+          arcLen,
           metaCount: runs.length,
           metaCanon: canonicalCyclic(runs.map((r) => r.cls)),
           turn: lv <= 4 ? turningWord(sh) : `len=${sh.verts.length}`,
@@ -1435,6 +1440,103 @@ function part3b(): void {
   }
 }
 
+/**
+ * The brief's bullet 4: is there a fixed integer matrix acting on a length
+ * vector? Not on the meta-edge lengths (PART 3a refutes that), but on the
+ * QUAD-ARC lengths there is. Read the incidence matrix straight off the level-2
+ * arc substitution word — A[(T,a)][(C,b)] = how many times the whole child arc
+ * (C,b) appears inside parent arc a of type T — and test the prediction
+ *     len(T, a, k)  =  sum_{C,b} A[(T,a)][(C,b)] * len(C, b, k-1)
+ * at every deeper level, in exact integer arithmetic.
+ */
+function part3bIII(): void {
+  heading('PART 3b(iii) — a FIXED integer matrix on the quad-ARC length vector');
+  for (const family of FAMILIES) {
+    // Incidence matrix from the level-2 arc substitution word.
+    const A = new Map<string, Map<string, number>>();
+    for (const T of TYPES) {
+      const subs = SUPER_RULES[T];
+      for (const tok of rows.get(rowKey(family, T, 2))!.arc!.word.split(' ')) {
+        const m = /^(\d)<(\d)\.(\d)/.exec(tok);
+        if (!m) continue;
+        const key = `${T}|${m[1]}`;
+        const child = `${subs[Number(m[2])]}|${m[3]}`;
+        if (!A.has(key)) A.set(key, new Map());
+        const row = A.get(key)!;
+        row.set(child, (row.get(child) ?? 0) + 1);
+      }
+    }
+    const badByType = new Map<TileTypeId, string[]>();
+    for (let lv = 3; lv <= MAX; lv++) {
+      for (const T of TYPES) {
+        const have = rows.get(rowKey(family, T, lv))!.arcLen;
+        for (let a = 0; a < 4; a++) {
+          const row = A.get(`${T}|${a}`);
+          let pred = 0;
+          if (row) {
+            for (const [child, c] of row) {
+              const [ct, cb] = child.split('|');
+              pred += c * rows.get(rowKey(family, ct as TileTypeId, lv - 1))!.arcLen[Number(cb)];
+            }
+          }
+          if (pred !== have[a]) {
+            if (!badByType.has(T)) badByType.set(T, []);
+            badByType.get(T)!.push(`lv${lv} arc${a}: predicted ${pred}, actual ${have[a]}`);
+          }
+        }
+      }
+    }
+    const nonGammaBad = [...badByType.keys()].filter((t) => t !== 'Gamma');
+    ok(
+      nonGammaBad.length === 0,
+      `${family}: for the 8 non-Gamma types the quad-arc length vector obeys len^(k) = A . len^(k-1) EXACTLY, levels 3..${MAX}`,
+      nonGammaBad.length === 0
+        ? 'A is the fixed non-negative integer whole-arc incidence matrix read off the level-2 arc substitution word'
+        : nonGammaBad.map((t) => `${t}: ${badByType.get(t)![0]}`).join('; '),
+    );
+    if (badByType.has('Gamma')) {
+      refuted(
+        `${family}/Gamma: the same matrix MISPREDICTS Gamma's arc lengths`,
+        `${badByType.get('Gamma')!.slice(0, 3).join(' ; ')} — exactly the two arcs the empty slot 2 splits, whose glued/outer division is level-dependent; Gamma needs two extra alphabet letters before its length recursion is linear`,
+      );
+    } else {
+      ok(true, `${family}/Gamma: the matrix predicts Gamma's arc lengths too`);
+    }
+
+    // The scalar consequence: the perimeter obeys a fixed second-order recurrence.
+    for (const T of ['Psi', 'Gamma'] as TileTypeId[]) {
+      const L: number[] = [];
+      for (let lv = 0; lv <= MAX; lv++) L.push(rows.get(rowKey(family, T, lv))!.nBoundary);
+      let base = 2;
+      let c = L[base] - 4 * L[base - 1] - L[base - 2];
+      let good = true;
+      for (let k = base; k < L.length; k++) if (L[k] - 4 * L[k - 1] - L[k - 2] !== c) good = false;
+      if (!good && L.length > 4) {
+        base = 3;
+        c = L[base] - 4 * L[base - 1] - L[base - 2];
+        good = true;
+        for (let k = base; k < L.length; k++) if (L[k] - 4 * L[k - 1] - L[k - 2] !== c) good = false;
+      }
+      ok(
+        good,
+        `${family}/${T}: the boundary length obeys L_k = 4 L_{k-1} + L_{k-2} ${c < 0 ? '-' : '+'} ${Math.abs(c)} for k >= ${base}`,
+        good
+          ? `checked exactly to level ${MAX}; the homogeneous part has characteristic polynomial x^2 - 4x - 1, so the perimeter growth factor is exactly 2 + sqrt(5) = ${(2 + Math.sqrt(5)).toFixed(9)}`
+          : `L = ${L.join(' ')}`,
+      );
+    }
+  }
+  const beta = 2 + Math.sqrt(5);
+  const lin = Math.sqrt(4 + Math.sqrt(15));
+  console.log(
+    `\n  Consequence: 08-supertile-outline.ts measures the perimeter factor as ~4.2324 and calls the\n` +
+      `  boundary dimension "~1.4". The recurrence pins both exactly: the factor is 2 + sqrt(5) = ${beta.toFixed(9)}\n` +
+      `  and the boundary dimension is log(2+sqrt(5)) / log(sqrt(4+sqrt(15))) = ${(Math.log(beta) / Math.log(lin)).toFixed(9)}.\n` +
+      `  This is CONDITIONAL in the same way as everything else: the matrix A is read off the level-2 arc\n` +
+      `  substitution word, so "for all k" needs the same GAP that PART 4 states.`,
+  );
+}
+
 function part3c(): void {
   heading('PART 3c — the quad-point incidence pattern, PROVED level-independent for all k >= 2');
   const { Ts: sTs, superQuad: sSuper } = symbolicLevel();
@@ -1619,6 +1721,7 @@ function main(): void {
   part2c();
   part3a();
   part3b();
+  part3bIII();
   part3c();
   part4();
 }

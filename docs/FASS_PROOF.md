@@ -174,7 +174,14 @@ the hexagon Gamma's four.
 **Consequence.** The two strand graphs are isomorphic after suppressing every
 degree-2 class-7 vertex. Every *topological* FASS property — circuit-freeness,
 the single-arc property, component structure, tile coverage — transfers between
-them. The *metric* properties do not transfer automatically: self-avoidance of
+them. The correspondence is stronger than an isomorphism of graphs: at the level
+of the routing automaton (§4.4) the two configurations are **literally the same
+automaton**. Identical boundary-dot counts per type, identical gluing and outer
+data for all nine types, identical routing cycle, identical Psi composition
+words, identical phase. The `FASS_1278.md` flagship shares the same datum and
+the same cycle and differs only by a one-level phase shift, which is exactly the
+"phase-shifted pair" that document reports. Anything proved about the routing of
+one is automatically true of all three. The *metric* properties do not transfer automatically: self-avoidance of
 the drawn chords, clearances, and the geometry of the space-filling limit must
 be established separately in each family, because the two realisations put the
 same combinatorics on different polygons. §4.2 shows this distinction has real
@@ -441,7 +448,14 @@ each level's own quad. Fitting a similarity from each level's quad to the next:
 | 5 → 6 | 2.805910 | +11.5648° | 2.7e−2 |
 
 The ratio converges to √(4+√15) = 2.805883701… and the angle to ±11.565°, but
-neither is exact at any finite level. The underlying reason
+neither is exact at any finite level. Exactly: the eight child transforms are
+*distinct* at every one of levels 1 to 6, in both families, and so are the
+supertile quads. What **is** level-independent is only the rotation-and-mirror
+part of each slot, which is `6,1 | 4,1 | 4,1 | 2,1 | 0,1 | 0,1 | 10,1 | 2,1` at
+every level and identical for hexagons and the spectre. So the salvageable
+content of the `FASS_1278.md` claim is that each child sits in its parent at a
+level-independent *orientation*; only the translations move. That is not enough
+to pin the gluing. The underlying reason
 ([`08-supertile-outline.ts`](../web/fass-proof/08-supertile-outline.ts)): all
 eight non-Gamma supertile types share one identical outline at every level —
 every type carries Gamma at slot 7 and only there, so the induction is
@@ -485,28 +499,47 @@ circuit-freeness.
 
 ### 4.4 L4 — one line, no circuits, every tile visited
 
-[`10-routing-states.ts`](../web/fass-proof/10-routing-states.ts) computes the
-pairing each type induces on its canonically-labelled boundary dots. The
-labelling anchors the outline at the supertile's `quad[0]` and orients it so
-`quad[1]` precedes `quad[3]` — chirality-stable, which is essential because
-consecutive levels are mirror images.
+Define the state of a supertile type at level `k` as the pairing its internal
+arcs induce on its canonically-labelled boundary dots, together with the number
+of circuits strictly inside. The labelling anchors the outline at the
+supertile's `quad[0]` and orients it so `quad[1]` precedes `quad[3]` —
+chirality-stable, which is essential because consecutive levels are mirror
+images.
 
-Every type in all three configurations is eventually periodic with period 2, and
-for **both conjectured configurations the pre-period is 1** — cleaner than the
-`FASS_1278.md` flagship, whose Gamma and Sigma need pre-period 2. Psi is the arc
-`0-1` at every level with period 1. For example, Delta alternates between
-`0-7 1-6 2-3 4-5` and `0-1 2-7 3-4 5-6`; Xi between `0-1 2-3` and `0-3 1-2`.
+The state space is finite and that is what makes a cycle search a proof rather
+than a table: the matching component of the 9-tuple lives in a set of size
+`945 · 105 · 15 · 15 · 3 · 3 · 945 · 3 · 1 = 5.6964 × 10¹¹`. Given L3, the
+substitution induces one **fixed** combinatorial operator `F` on that 9-tuple,
+and its orbit from the exact level-1 state is a **2-cycle entered with
+pre-period 0** for both conjectured configurations. The flagship has pre-period
+1, its transient confined to Gamma and Sigma. (`FASS_1278.md` §4.4 reports
+stabilisation at `k₀ = 3`; for the boundary-pairing state that is not tight.)
 
-Given L3, the state at level `k+1` is a fixed function of the children's states
-at level `k`, so a period **is** an induction and the following hold at *every*
-level, not just the computed ones: zero circuits for every type; the Psi
-supertile is a single arc; the Delta profile alternates with period 2.
+Three things are unconditional, needing no part of L3:
 
-Coverage is separate and structural: every leaf type carries at least one chord
-(§1 — no type has zero dots), and the parent's arc decomposition consumes every
-arc of every child exactly once, so by induction the single Psi arc visits every
-tile of its patch at every level. Verified directly at levels 1–5 in both
-families: tiles covered equals tiles present.
+* Arcs are a perfect matching of the boundary dots, so `arcs(T,k) = |∂(T,k)|/2`.
+  Since Psi is the only type with two boundary dots, **Psi is the only root that
+  is ever a single arc** — Gamma always has 5, Delta 4, Theta and Lambda 3,
+  Sigma 5, and Xi, Pi and Phi 2, at every level.
+* A supertile with two boundary dots, no circuits and no interior arc endpoint
+  *is* one arc joining those dots. There is no alternative.
+* Zero circuits at level `k` implies the arcs visit every tile, because every
+  leaf type carries at least one chord and every chord lies in some component.
+
+Given L3, the following then hold at *every* level: zero circuits for every
+type; the Psi supertile is a single arc through every one of its tiles; and the
+Delta pairing alternates with period 2 between `0-7 1-6 2-3 4-5` and
+`0-1 2-7 3-4 5-6`.
+
+**A negative result that matters.** `F` never *decreases* the circuit count:
+`circuits(F(s))` is the sum of the children's circuits plus whatever the gluing
+newly closes. So circuit-freeness can only be inherited, never created. The
+routing cycle is correspondingly **not an attractor** — of 2000 random 9-tuples
+iterated 40 times, none reached the true cycle and most retained circuits. The
+README's intuition that substituting "maintains all the paths" is therefore not
+by itself an argument for circuit-freeness at every level. Circuit-freeness is a
+property of the exact level-1 base state, which has to be computed, and the
+all-levels conclusion rests on that base state *together with* L3.
 
 ### 4.5 L5 — the infinite limit
 
@@ -599,8 +632,11 @@ limit.
 | No crossings anywhere | **proved for hex, all levels**; for spectre reduced to 478 two-tile classes, complete from level 4, unchanged to level 6 |
 | Every leaf-instance transform is an isometry of the lattice | **proved, all levels** (≤ 24 linear parts in total) |
 | Boundary dot interfaces constant per type | verified levels 1–6, both families |
-| Routing states eventually periodic (period 2, pre-period 1) | verified levels 1–5, both families |
-| Zero circuits, every type, every level | verified levels 1–6; **all levels given L3** |
+| Arcs are a perfect matching of the boundary dots; Psi is the only single-arc root | **proved, all levels** |
+| Routing states lie on a 2-cycle, pre-period 0 | verified levels 1–6, both families |
+| The routing operator never decreases the circuit count | **proved** — so circuit-freeness is never created by the substitution |
+| The two configurations are the same routing automaton | verified byte-identical, all nine types |
+| Zero circuits, every type, every level | verified levels 1–6; **all levels given L3**, and no argument for it exists independent of L3 |
 | Psi supertile is a single arc | verified levels 1–6; **all levels given L3**, and forced by the interface invariant |
 | Every tile visited | verified levels 1–5; **all levels given L3** |
 | The gluing and outer maps are level-independent | **OPEN — this is L3** |
@@ -662,6 +698,7 @@ non-zero on failure.
 | `00-census.ts` | the complete classification of §3, class 0 included |
 | `01-local-structure.ts` | L0 by winding number; L1; the class-0 refutation |
 | `02-self-avoidance.ts` | the straying chords, exactly; the 272/478 two-tile classes |
+| `04-routing-automaton.ts` | the routing operator, its 2-cycle, and the non-attractor result |
 | `08-supertile-outline.ts` | all non-Gamma outlines identical; perimeter grows 4.22 per level; boundaries fractal |
 | `09-interface-invariant.ts` | boundary dot counts constant; arcs a perfect matching; no circuits |
 | `10-routing-states.ts` | canonical routing states; period 2 with pre-period 1 |
@@ -686,21 +723,25 @@ non-zero on failure.
    winding-number verification at levels 3–6. Deriving it from the label tables,
    or showing the two families' tables isomorphic, would settle it.
 4. **`|∂(Psi,k)| = 2` directly.** A direct proof would collapse most of L3 for
-   the single-line property (Route 3 in §6).
-5. **Whole-plane exhaustion with a single curve.** The constant-slot nesting is
+   the single-line property (Route 3 in §6). Everything about the single Psi arc
+   fails if the interface size can change at some deep level.
+5. **Circuit-freeness independent of L3.** There is currently no such argument,
+   and no fixed-point or attractor argument can supply one, because the routing
+   operator is monotone non-decreasing in circuits.
+6. **Whole-plane exhaustion with a single curve.** The constant-slot nesting is
    bi-infinite but fills a sector. An address that exhausts the plane passes
    through types with several arcs. Does the merge argument close, and is the
    whole-plane object one curve or several?
-6. **The other three combinations.** Each family's quartet has the same Psi-root
+7. **The other three combinations.** Each family's quartet has the same Psi-root
    single-line property. Are the four limit curves the same curve up to mirror,
    or genuinely different FASS curves?
-7. **Why 4.22?** The boundary growth factor is measured, not derived. It should
+8. **Why 4.22?** The boundary growth factor is measured, not derived. It should
    be the Perron eigenvalue of a boundary substitution matrix; finding that
    matrix would also feed Route 2.
-8. **A structural reason two unit edges never cross at a non-lattice point.**
+9. **A structural reason two unit edges never cross at a non-lattice point.**
    The ambient ring permits it — there is an explicit witness — so the
    "residual boundary is a Jordan curve" step of L0 is currently a per-level
    check rather than a corollary.
-9. **The hexagon realisation's geometry.** The topological half transfers from
+10. **The hexagon realisation's geometry.** The topological half transfers from
    the spectre, but the hexagon tiling is a different metric object. Its
    space-filling limit deserves its own statement.
