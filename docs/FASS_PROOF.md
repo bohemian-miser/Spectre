@@ -214,8 +214,17 @@ The survivors, with every non-crossing combination classified at the Psi root:
 The two near-full selections are cascaded through levels 1 to 4 rather than
 swept flat; single-line at level 4 implies single-line below, so nothing is
 lost, and neither yields a survivor at level 1. Circuit-free and single-line
-coincide exactly at the Psi root. The eight winners, in exact cross-family
-correspondence (same digits on the eight shared types, Gamma digits zero):
+coincide exactly at the Psi root.
+
+**Cross-check.** `core/subsets.ts` independently computes the valid selections
+as the kernel of the tiles-by-class count matrix over GF(2) (DESIGN.md §3.8).
+The "even dot count" condition reproduces that kernel exactly in both families,
+and the census's extra "no leaf type has zero dots" condition drops precisely
+`15` for hexagons and `15`, `0356` for the spectre. So the sweep agrees with the
+repo's own linear algebra, by a completely different route.
+
+The eight winners, in exact cross-family correspondence (same digits on the
+eight shared types, Gamma digits zero):
 
 | | `hex` 128 | `spectre` 1278 | set digits |
 |---|---|---|---|
@@ -284,9 +293,15 @@ tracing at all. That reads off 1 arc at Psi, 4 at Delta, 5 at Gamma directly.
 **A correction about class 0.** An earlier draft of this document justified
 excluding class 0 by claiming that three tiles can meet at a class-0 vertex dot,
 producing degree-3 junctions. That is **false**, and so is the same claim in
-`web/src/core/circuits.ts`'s header comment. Over all 511 non-empty selections
-in both families — every one containing class 0 included — the maximum dot
-multiplicity is 2. No selection whatsoever produces a junction.
+`web/src/core/circuits.ts`'s header comment and DESIGN.md §3.7, which calls that
+vertex "the source of degree-3 junctions". Over every selection that admits a
+perfect matching at all, in **all four** tile families and with the default
+contracts, the maximum welded degree is 2 and the junction count is 0.
+
+The mechanism is real but class 0 does not trigger it: sliding a *class 1–8*
+contract onto a tile vertex does produce junctions, of degree up to 4. So the
+tracer's junction handling is worth having as a defence against edited
+contracts. It is the attribution to class 0 that does not hold.
 
 What is true is narrower. A class-0 seam glues to another class-0 seam with the
 minors *reversed*, so the mate's own centre lands on the same point. In the

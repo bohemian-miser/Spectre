@@ -28,6 +28,7 @@ import {
   familyMajors,
   leafOrder,
   nonCrossingForTile,
+  validEdgeSubsets,
   type TileFamilyId,
 } from '../src/core';
 import { buildStrands, heading, trace, verdict, zExpand, type Config } from './lib';
@@ -153,6 +154,72 @@ for (const family of ['hex', 'spectre'] as TileFamilyId[]) {
     console.log(`      SINGLE LINE   : ${s.singleLine.length}${s.singleLine.length ? '  (' + s.singleLine.join(' ') + ')' : ''}`);
   }
   winners[family] = survivors.flatMap((s) => s.singleLine.map((c) => `${s.subset.join('')}-${c}`));
+}
+
+// ---------------------------------------------------------------------------
+// Independent cross-check: the "even dot count" condition IS the GF(2) kernel
+// ---------------------------------------------------------------------------
+
+heading('Cross-check against the documented GF(2) kernel');
+console.log(`  core/subsets.ts computes the valid edge-class selections independently, as
+  the kernel of the tiles x class count matrix over GF(2) (DESIGN.md section
+  3.8). "Every leaf type has an EVEN dot count" is exactly that kernel
+  condition, so the sweep above should reproduce it, minus the members this
+  census additionally drops for leaving some leaf type with NO dot.\n`);
+
+for (const family of ['hex', 'spectre'] as TileFamilyId[]) {
+  const order = leafOrder(family);
+  const kernel = validEdgeSubsets(family)
+    .map((v) => [...v.edges].sort((a, b) => a - b).join(''))
+    .filter((k) => k.length > 0);
+  const even: string[] = [];
+  const evenNonZero: string[] = [];
+  const majors = familyMajors(family);
+  for (let m = 1; m < 1 << majors.length; m++) {
+    const sub = majors.filter((_, i) => m & (1 << i));
+    const counts = order.map((t) => connectionCount(family, t, new Set(sub)));
+    if (counts.some((c) => c % 2 !== 0)) continue;
+    even.push(sub.join(''));
+    if (!counts.some((c) => c === 0)) evenNonZero.push(sub.join(''));
+  }
+  const dropped = kernel.filter((k) => !evenNonZero.includes(k));
+  console.log(`  ${family}:`);
+  console.log(`    kernel (non-empty)      : ${kernel.join(' ')}`);
+  console.log(`    even dot count          : ${even.sort().join(' ')}`);
+  console.log(`    even AND non-zero       : ${evenNonZero.sort().join(' ')}`);
+  console.log(`    dropped for a zero count: ${dropped.join(' ') || 'none'}`);
+  allOk = verdict(
+    even.slice().sort().join(' ') === kernel.slice().sort().join(' '),
+    `${family}: the even-dot-count selections are exactly the GF(2) kernel`,
+  ) && allOk;
+}
+
+// ---------------------------------------------------------------------------
+// No selection, in any family, produces a junction
+// ---------------------------------------------------------------------------
+
+heading('No selection produces a degree-3 junction');
+console.log(`  core/circuits.ts and DESIGN.md section 3.7 say three tiles can meet at a
+  class-0 connection point, making it "the source of degree-3 junctions". With
+  the default contracts that never happens, in any of the four families.\n`);
+for (const family of ['hex', 'spectre'] as TileFamilyId[]) {
+  const order = leafOrder(family);
+  const majors = familyMajors(family);
+  let worst = 0;
+  let junctions = 0;
+  for (let m = 1; m < 1 << majors.length; m++) {
+    const subset = majors.filter((_, i) => m & (1 << i));
+    const counts = order.map((t) => connectionCount(family, t, new Set(subset)));
+    if (counts.some((c) => c % 2 !== 0)) continue;
+    const cfg: Config = { id: 'x', family, subset, combo: '0'.repeat(10) };
+    const tr = trace(buildStrands(cfg, zExpand(family, 'Delta', 3)));
+    worst = Math.max(worst, tr.maxDegree);
+    junctions += tr.junctions;
+  }
+  allOk = verdict(
+    worst <= 2 && junctions === 0,
+    `${family}: max welded degree over EVERY even-count selection is ${worst}, junctions ${junctions}`,
+  ) && allOk;
 }
 
 heading('Conclusions');
