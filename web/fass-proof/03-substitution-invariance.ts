@@ -1195,12 +1195,46 @@ function part2(): void {
       const rep: TileTypeId = 'Psi';
       console.log(`\n  ${rep} substitution datum (the fixed rule F_Psi), levels 1..${Math.min(3, MAX)}:`);
       for (let lv = 1; lv <= Math.min(3, MAX); lv++) {
-        const d = substitutionDatum(cfg, rep, lv);
+        const d = datumOf(cfg, rep, lv);
         console.log(`    lv${lv}  |dB|=${d.ifaceSize}  children |dB| = [${d.childSizes.join(', ')}]`);
         console.log(`          gluing ${d.gluing}`);
         console.log(`          outer  ${d.outer}`);
       }
     }
+  }
+
+  // --- 2c: Lemma 3(c) in action -------------------------------------------
+  heading(`PART 2c — the FIXED rule F_T really is the composition operator (levels 1..${VALIDATE})`);
+  console.log(
+    `  Thread each child's own routing through the LEVEL-2 gluing map and read off how the parent's
+` +
+    `  outer dots end up paired. If Lemma 3(c) holds, that reproduces the parent's routing computed
+` +
+    `  independently from the fully welded strand graph, at every level.
+`,
+  );
+  for (const key of ['hex128', 'spectre1278', 'flagship'] as const) {
+    const cfg = CONFIGS[key];
+    let good = true;
+    let detail = '';
+    const psiRows: string[] = [];
+    for (let lv = 1; lv <= VALIDATE; lv++) {
+      for (const T of TYPES) {
+        const by = routingByFixedRule(cfg, T, lv);
+        const gt = routingGroundTruth(cfg, T, lv);
+        if (by !== gt) {
+          good = false;
+          if (!detail) detail = `${T}@${lv}: fixed rule gives "${by}", welded graph gives "${gt}"`;
+        }
+        if (T === 'Psi') psiRows.push(`lv${lv} ${gt || '(empty)'}`);
+      }
+    }
+    console.log(`  ${cfg.id}: Psi routing ${psiRows.join(' | ')}`);
+    ok(
+      good,
+      `${cfg.id}: the fixed rule F_T reproduces every type's routing at levels 1..${VALIDATE}`,
+      good ? 'Lemma 3(c) verified as an identity, not just as matching tables' : detail,
+    );
   }
 }
 
@@ -1321,13 +1355,22 @@ function part3(): void {
           `${mixedByLevel.join(' ')} (Gamma is the only type with an empty slot, and the split arcs are the two flanking it)`,
         );
       }
-      ok(
-        flipsOk,
-        `${family}/${T}: every glued/outer TRANSITION on a child boundary sits on a slot quad point`,
-        flipsOk
-          ? 'so the contact pattern is cut out by the 32 slot quad points alone, including the PHANTOM slot-2 points of Gamma'
-          : flipDetail,
-      );
+      if (T === 'Gamma') {
+        if (flipsOk) {
+          ok(true, `${family}/Gamma: every glued/outer TRANSITION on a child boundary sits on a slot quad point`);
+        } else {
+          refuted(
+            `${family}/Gamma: two glued/outer transitions do NOT sit on any slot quad point`,
+            `${flipDetail} — these are the two ends of the notch left by Gamma's empty slot 2, where the absent child stops touching children 1 and 3; their position inside the arc is level-DEPENDENT`,
+          );
+        }
+      } else {
+        ok(
+          flipsOk,
+          `${family}/${T}: every glued/outer TRANSITION on a child boundary sits on a slot quad point`,
+          flipsOk ? 'so the contact pattern is cut out by the 32 slot quad points alone' : flipDetail,
+        );
+      }
       ok(
         st > 0,
         `${family}/${T}: the ARC SUBSTITUTION word is constant from level ${st}`,
