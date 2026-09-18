@@ -462,10 +462,38 @@ function section2(): { outerOrder: readonly string[]; reversed: boolean } {
     const t = Math.max(0, Math.min(1, ((sevenPt.x - a.x) * vx + (sevenPt.y - a.y) * vy) / L2));
     minDist = Math.min(minDist, Math.hypot(sevenPt.x - (a.x + t * vx), sevenPt.y - (a.y + t * vy)));
   }
+  // EXACT form of "the 7 dot is interior": it is the midpoint of the shared edge
+  // `7.0A`, and it is not a vertex of either half. A connection dot always lies on
+  // its own tile's boundary, so a third tile carrying a dot at p would have p on
+  // its boundary; p lies in the relative interior of an edge shared by exactly the
+  // two halves, so such a tile would have to overlap a half's interior. In a
+  // tiling that is impossible — hence the class-7 dot is unreachable from outside.
+  const allVerts2 = new Set<string>();
+  for (const tile of ['Gamma1', 'Gamma2'] as const) {
+    for (const v of V[tile]) allVerts2.add(zKey(zAdd(v, v)));
+  }
+  const sevenIsVertex = allVerts2.has(g1Seven);
+  check(
+    !sevenIsVertex,
+    'the class-7 dot is NOT a vertex of either half — it is interior to the shared edge (exact)',
+  );
+  check(
+    internal.some((r) => r.some((x) => parseEdgeLabel(x.label).minor === 0)),
+    'the shared 7-seam contains the minor-0 edge whose midpoint is that dot (exact)',
+  );
   console.log(
-    `\n      [metric, float] distance from the class-7 dot to the composite boundary = ${minDist.toFixed(6)}\n` +
-      `      (tile edge length 1; eps 1e-9, clearance ${(minDist / 1e-9).toExponential(2)}x eps) — the dot is\n` +
-      `      strictly INSIDE the composite, so no tile outside the composite can reach it.`,
+    `      EXACT: the class-7 dot is the midpoint of the physical edge Gamma1:7.0A = Gamma2:-7.0A,\n` +
+      `      which section 2b showed is shared by exactly the two halves, and it is not a vertex of\n` +
+      `      either. A connection dot always lies on its own tile's boundary; a third tile with a dot\n` +
+      `      there would have that point on its boundary, and since the point is in the RELATIVE\n` +
+      `      INTERIOR of an edge shared by the two halves, that tile would overlap a half's interior.\n` +
+      `      In a tiling that cannot happen — so the class-7 weld is internal in EVERY patch, finite\n` +
+      `      or infinite, whatever the patch boundary looks like. (This is the argument; the sweeps\n` +
+      `      in 2e confirm it on real patches rather than replacing it.)`,
+  );
+  console.log(
+    `\n      [metric, float, corroboration only] distance from the class-7 dot to the composite\n` +
+      `      boundary = ${minDist.toFixed(6)} (tile edge length 1; eps 1e-9, clearance ${(minDist / 1e-9).toExponential(2)}x eps).`,
   );
   check(minDist > 1e-6, 'class-7 dot is strictly interior to the composite (metric, float, stated as such)');
 
@@ -485,7 +513,7 @@ function section2e(dotMap: Map<string, DotImage>): void {
       `  i.e. it genuinely touches the outer boundary of the patch.\n`,
   );
   console.log(
-    `  ${'patch'.padEnd(12)}${pad('composites', 11)}${pad('on rim', 8)}${pad('7-welds', 9)}  all internal, degree exactly 2, disjoint from every other dot`,
+    `  ${'patch'.padEnd(12)}${pad('composites', 11)}${pad('on rim', 8)}${pad('7-welds', 9)}  internal, degree 2, and NO other tile of the patch has a vertex or edge midpoint there`,
   );
 
   for (const root of ROOTS_DEEP) {
@@ -523,6 +551,22 @@ function section2e(dotMap: Map<string, DotImage>): void {
         }
       }
 
+      // Exact, and much stronger than "no other DOT is there": no other tile in the
+      // whole patch has a VERTEX or an EDGE MIDPOINT at the class-7 point.
+      const incident = new Map<string, number[]>();
+      for (let i = 0; i < insts.length; i++) {
+        const pts = zLeafPts('spectre', insts[i].type).map((q) => zApply(insts[i].xform, q));
+        for (let e = 0; e < pts.length; e++) {
+          const v2 = zKey(zAdd(pts[e], pts[e]));
+          const m2 = zKey(zAdd(pts[e], pts[(e + 1) % pts.length]));
+          for (const k of [v2, m2]) {
+            let list = incident.get(k);
+            if (!list) incident.set(k, (list = []));
+            if (list[list.length - 1] !== i) list.push(i);
+          }
+        }
+      }
+
       const rimComposites = new Set<string>();
       const rimSevenOk: string[] = [];
       for (const [i, comp] of compOfHalf) {
@@ -531,9 +575,13 @@ function section2e(dotMap: Map<string, DotImage>): void {
       let allOk = groups.size > 0 || compOfHalf.size === 0;
       let rimChecked = 0;
       for (const [k, owners] of groups) {
+        const touching = new Set(incident.get(k) ?? []);
+        const onlyTheTwoHalves =
+          touching.size === 2 && owners.every((o) => touching.has(o));
         const ok =
           owners.length === 2 &&
           !outer.has(k) &&
+          onlyTheTwoHalves &&
           compOfHalf.get(owners[0]) === compOfHalf.get(owners[1]) &&
           [insts[owners[0]].type, insts[owners[1]].type].sort().join(',') === 'Gamma1,Gamma2';
         if (!ok) {
@@ -556,8 +604,12 @@ function section2e(dotMap: Map<string, DotImage>): void {
     }
   }
   console.log(
-    `\n  => the class-7 dot is never exposed, never shared with a tile outside its own composite,\n` +
-      `     and has degree exactly 2, including for composites sitting on the patch rim.`,
+    `\n  => the class-7 dot is never exposed, has degree exactly 2, and NO third tile of the patch\n` +
+      `     so much as touches it (vertex or edge midpoint) — including for the composites on the rim.\n` +
+      `     HONEST CAVEAT: only ONE composite per patch actually sits on the rim. The Mystic is almost\n` +
+      `     always interior to a supertile, so the empirical rim coverage here is thin, and the claim\n` +
+      `     for arbitrary patches rests on the exact relative-interior argument in section 2d, not on\n` +
+      `     this sweep.`,
   );
 }
 

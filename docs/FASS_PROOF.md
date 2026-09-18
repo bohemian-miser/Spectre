@@ -189,11 +189,19 @@ degree-2 vertex in the middle. That is exactly the hexagon Gamma's chord set,
 subdivided once. The composite's outer active seams are `{-1A, 1A, 2A, -2A}`,
 the hexagon Gamma's four.
 
-The equivalence goes deeper than the chords. The cyclic word of meta-edge
-classes along a supertile boundary is the *same sequence* in both families from
-level 1 on — the meta-edge counts of a spectre supertile are the hexagon edge
-counts, not the spectre ones. The two families differ in how long each meta-edge
-is, not in which meta-edges there are.
+The equivalence goes deeper than the chords at *supertile* scale: the cyclic
+word of meta-edge classes along a supertile boundary is the same sequence in
+both families from level 1 on, so a spectre supertile's meta-edge counts are the
+hexagon's. The families differ there in how long each meta-edge is, not in which
+ones there are.
+
+It does **not** extend to the leaf tiles, and the hexagon family is *not* the
+combinatorial model of the spectre tiling. The leaf seam decompositions genuinely
+differ: hexagon Sigma has six seams where spectre Sigma has five, because the
+spectre's class-4 seam wraps as one four-edge seam that the hexagon splits into
+class 6 plus class 4; and hexagon Gamma has six outer seams against the
+composite Mystic's seven, with no class-6 seam at all. The reduction below is a
+statement about the *dot-carrying* seams only.
 
 **Consequence.** The two strand graphs are isomorphic after suppressing every
 degree-2 class-7 vertex. Every *topological* FASS property — circuit-freeness,
@@ -278,9 +286,19 @@ circuit-free; the script reproduces the 136 circuits `FASS_1278.md` reports.
 
 Everything geometric downstream needs the leaf tiles of a patch to have
 pairwise disjoint interiors and to cover the patch without gaps. For the spectre
-family this is the Smith–Myers–Kaplan–Goodman-Strauss theorem. The `hex` family
-is this repo's own reduced realisation and **nothing is cited for it** — only
-the exact verification below supports it.
+family this is the Smith–Myers–Kaplan–Goodman-Strauss theorem.
+
+An earlier draft of this document said the `hex` family is this repo's own
+reduced realisation with nothing cited for it. **That is backwards.** The marked
+hexagons are the *primary* object of the spectre paper — nine hexagons carrying
+the same Greek names, eight edge classes, Gamma the unique type expanding to two
+spectres — and the Spectre tiling is obtained *from* them by re-marking. If
+anything the hexagon family is the better-cited of the two.
+
+What is genuinely uncited in both cases is the bridge: that this repo's
+`T_RULES`, `SUPER_RULES` and reflection pre-multiplication implement the
+published substitution. That identification is an unstated assumption wherever
+the theorem is invoked, and §6 names it as work.
 
 The argument that actually proves tiling is a winding-number identity, not an
 area check ([`01-local-structure.ts`](../web/fass-proof/01-local-structure.ts)).
@@ -311,9 +329,16 @@ distinct unit segments with a common midpoint either coincide or cross
 transversally at an interior point of both, and the latter would make the two
 tiles overlap in a sector of positive area, contradicting L0. So any two tiles
 carrying a dot at the same point carry the *same* edge, and by L0 an edge
-belongs to at most two tiles. Each tile's chosen matching is a *perfect*
-matching of its dots, so each tile contributes exactly one chord-end per dot.
-Hence welded degree is 2 in the interior and 1 on the boundary, never more. ∎
+belongs to at most two tiles. A single tile cannot contribute two chord-ends at
+one point either: that would need two distinct edges of a simple polygon to
+share a midpoint, which the same transversality argument forbids within the
+tile. Each tile's chosen matching is a *perfect* matching of its dots, so each
+tile contributes exactly one chord-end per dot it carries. Hence welded degree
+is at most 2. ∎
+
+That bound is structural. The sharper statement — degree *exactly* 2 at every
+interior dot — is **not**: it additionally needs every shared physical edge to
+carry `+c.m` against `-c.m`, which is verified to level 6 rather than derived.
 
 Structural, so it holds at every level and in the infinite tiling, conditional
 on L0. It is why every arc ends on the patch boundary rather than stopping
@@ -387,6 +412,11 @@ four leaf types:
 Those are two different measurements of the same excursion and an earlier draft
 of this document ran them together. The depth outside the tile is
 (2√3−3)/8 ≈ 0.058; the distance past the reflex vertex is (2−√3)/4 ≈ 0.067.
+The *verdict* that the chord leaves its tile is exact, by orientation predicates
+over `Z[√3]`. The three constants are **not**: they come from dense float
+sampling of the chord and are closed forms that match the samples to about
+1e-7, not exact derivations. Deriving them from the reflex-corner geometry over
+`Z[ζ₁₂]` is listed in §8.
 
 So (a) is false for configuration (B) and no single-tile argument can work.
 Because the offending chord is Psi's *forced* diagonal, this is not specific to
@@ -456,13 +486,24 @@ of type `T`, in canonical cyclic order.
 > **outer** map — which child boundary dots survive as the parent's boundary
 > dots — are constant in `k`.
 
-Measured, the datum is constant with **period 1** from level 2 through level 8,
-identical across all three configurations and both families. An earlier draft of
-this document said "up to the period-2 mirror", following `FASS_1278.md`. That
-period-2 alternation is an artefact of a labelling that does not absorb the
-per-level mirror flip; it is not a property of the substitution. The routing
-*states* do sit on a 2-cycle (§4.4), but that is a 2-cycle of a fixed map, not a
-period in the map itself.
+Measured under a chirality-stable labelling, the datum is constant with
+**period 1** from level 2 through level 8, identical across all three
+configurations and both families. An earlier draft of this document said "up to
+the period-2 mirror", following `FASS_1278.md`. Under a labelling that does not
+absorb the per-level mirror flip, a period-2 alternation appears instead; the
+routing *states* likewise sit on a 2-cycle (§4.4), but that is a 2-cycle of a
+fixed map rather than a period in the map.
+
+**An unresolved discrepancy.** A second, independent computation of the closely
+related cross-child *interface table* finds it **not** constant — levels 2, 3
+and 4 give three pairwise different tables, with only period 2 from level 3
+surviving, and the weld pairing alone alternating. Whether the two computations
+are describing the same object under different labelling conventions, or
+genuinely disagree, is not settled here. It matters, because "the datum is
+fixed" is what makes `F` a fixed map, and a period-2 datum would mean `F` is
+really a pair of maps applied alternately. The conclusions of §4.4 survive
+either way — a 2-cycle of a fixed map and a fixed alternation of two maps give
+the same orbit — but the statement of L3 does not, and §8 lists this as work.
 
 Given L3, `routing(T,k+1) = F_T(children's routings at level k)` with `F_T`
 **fixed**, and the whole problem collapses to iterating a fixed map on a finite
@@ -602,9 +643,12 @@ supertile's `quad[0]` and orients it so `quad[1]` precedes `quad[3]` —
 chirality-stable, which is essential because consecutive levels are mirror
 images.
 
-The state space is finite and that is what makes a cycle search a proof rather
-than a table: the matching component of the 9-tuple lives in a set of size
-`945 · 105 · 15 · 15 · 3 · 3 · 945 · 3 · 1 = 5.6964 × 10¹¹`. Given L3, the
+The *matching* component of the 9-tuple lives in a set of size
+`945 · 105 · 15 · 15 · 3 · 3 · 945 · 3 · 1 = 5.6964 × 10¹¹`. That alone does not
+make the state space finite — the circuit count is unbounded — so eventual
+periodicity is not free. What makes the cycle search a proof here is that the
+orbit actually computed stays at zero circuits throughout, which bounds the
+state to the finite matching component along that orbit. Given L3, the
 substitution induces one **fixed** combinatorial operator `F` on that 9-tuple,
 and its orbit from the exact level-1 state is a **2-cycle entered with
 pre-period 0** for both conjectured configurations. The flagship has pre-period
@@ -626,6 +670,10 @@ Given L3, the following then hold at *every* level: zero circuits for every
 type; the Psi supertile is a single arc through every one of its tiles; and the
 Delta pairing alternates with period 2 between `0-7 1-6 2-3 4-5` and
 `0-1 2-7 3-4 5-6`.
+
+The period-2 alternation is mostly bookkeeping. For eight of the nine types the
+second phase is the first with the boundary labels rotated by a fixed amount, so
+nothing about the routing changes. **Only Gamma genuinely alternates.**
 
 **A negative result that matters.** `F` never *decreases* the circuit count:
 `circuits(F(s))` is the sum of the children's circuits plus whatever the gluing
@@ -881,8 +929,11 @@ independent of L3 at all, because the routing operator never destroys a circuit
 **For a machine-checked proof**, the finite parts — matchings, the two-tile
 class check, automaton iteration, exact `Z[ζ₁₂]` arithmetic, even the
 Cayley–Hamilton argument — are all well suited to a proof assistant, since the
-ring has a unique integer representation and every predicate is decidable. The
-limit argument in §4.5 is the part that would need real analysis.
+ring has a unique integer representation and every predicate is decidable. An
+earlier draft ranked the §4.5 limit argument as the expensive part; that is
+wrong. mathlib4 already carries Hausdorff measure and uniform convergence, so
+the analytic paragraph is the *cheap* half. The expensive halves are L0 and the
+crux, because they are geometry about specific polygons rather than analysis.
 
 ## 7. Scripts
 
@@ -960,6 +1011,65 @@ non-zero on failure.
    The ambient ring permits it — there is an explicit witness — so the
    "residual boundary is a Jordan curve" step of L0 is currently a per-level
    check rather than a corollary.
-14. **The hexagon realisation's geometry.** The topological half transfers from
+14. **Resolve the datum-period discrepancy** (§4.3): whether the gluing datum is
+   constant or period 2 depends on the labelling, and two independent
+   computations currently disagree.
+15. **Derive the excursion constants exactly.** (2−√3)/4 and (2√3−3)/8 are
+   closed forms matched to dense float samples, not exact computations.
+16. **Bridge the implementation to the published substitution.** Every
+   invocation of the Smith-Myers-Kaplan-Goodman-Strauss theorem assumes this
+   repo's transform chain implements it. That identification is unstated work,
+   and it is needed for the hexagon family as much as for the spectre.
+17. **Fix `SUBSTITUTION_GROWTH` in `web/src/core/unrooted.ts`**, which reads
+   7.8730178 and is documented as the dominant eigenvalue. The true value is
+   4+√15 = 7.872983346207417. `docs/BIGMAP_INVESTIGATION.md` repeats the wrong
+   figure. The relative error is 4.5e-6, harmless for level-of-detail budgeting
+   and wrong in a write-up.
+18. **The hexagon realisation's geometry.** The topological half transfers from
    the spectre, but the hexagon tiling is a different metric object. Its
    space-filling limit deserves its own statement.
+
+---
+
+## 9. Where this sits in the literature
+
+A briefing with full tagging is at
+[`web/fass-proof/07-literature.md`](../web/fass-proof/07-literature.md). **Read
+its §0 first.** The session that produced it had almost every scholarly host
+blocked by the egress proxy, so most of its claims rest on a search engine's
+server-side read of a page rather than on the source text. Each is tagged, and
+nothing tagged `[EXTRACT]` should go into a write-up before someone opens the
+PDF. Its §6.2 ranks the five fetches to redo.
+
+Subject to that, four things bear directly on this document.
+
+**The construction appears to be new.** Repeated targeted searches found no
+published space-filling curve, plane-filling curve, FASS curve, Hamiltonian path
+or Hamiltonian cycle on the hat or spectre tiling. An absence established by
+search is weak evidence, so the right phrasing is "we are not aware of", and the
+nearest neighbours should be named: Hassell 2014 for a FASS curve on an
+aperiodic tile set, Singh, Lloyd & Flicker 2024 for a rigorous
+hierarchy-exploiting Hamiltonian construction on an aperiodic tiling, and Henle
+for the Penrose attempt. Henle's obstruction is worth stating, because it is
+exactly the hypothesis we *do* satisfy: Penrose deflation is not
+bounding-volume-hierarchical, whereas our supertiles contain their children,
+which is why the Hilbert template transplants as far as it does.
+
+**The single-arc property has a second name.** An arc visiting every tile of
+every supertile is a Hamiltonian path in the dual graph. That framing reaches a
+different audience than FASS does, and both are accurate.
+
+**The literature confirms the negative result rather than contradicting it.**
+The published inflation is *combinatorial*: supertile adjacency and edge
+matching are level-independent while the metatiles themselves change shape at
+every deflation. That is precisely §4.3. The self-similar representative CASPr
+exists but is only topologically conjugate to the Spectre, not mutually locally
+derivable from it, so a locally defined decoration such as our chords cannot be
+transported to it. The similarity shortcut is closed for good.
+
+**Two citations could shorten real work.** Özkaraca (arXiv:2204.11111) states a
+mild condition on a planar substitution that yields a Lebesgue-type
+space-filling curve; if this system satisfies it, §4.5 becomes a citation rather
+than a rebuilt argument. And a Lean project by Joseph Myers, one of the monotile
+papers' authors, already formalises parts of that work with a roadmap of about
+24 steps, which is the realistic starting point for anything machine-checked.

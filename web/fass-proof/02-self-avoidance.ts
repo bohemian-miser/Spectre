@@ -675,6 +675,7 @@ function sectionB(cfg: Config, shapes: Map<TileTypeId, Shape>): { min: number; o
   const rec = matchingRecord(cfg);
   let globalMin = Infinity;
   let ok = true;
+  let topoSubsetGeom = true;
   const disagreements: string[] = [];
 
   console.log('  type      chords  verdict  min chord–chord gap   topo-nc  geom-nc  chosen ok?');
@@ -707,6 +708,7 @@ function sectionB(cfg: Config, shapes: Map<TileTypeId, Shape>): { min: number; o
     const inGeom = geom.includes(chosen);
     const subset = topo.every((x) => geom.includes(x));
     if (!subset) {
+      topoSubsetGeom = false;
       fail(`${cfg.id} ${type}: some topologically non-crossing matching CROSSES geometrically — the combo encoding admits a crossing pairing here`);
     }
     const same = topo.length === geom.length && subset;
@@ -719,7 +721,15 @@ function sectionB(cfg: Config, shapes: Map<TileTypeId, Shape>): { min: number; o
     if (!inGeom) fail(`${cfg.id} ${type}: chosen matching ${chosen} is topologically but NOT geometrically non-crossing`);
   }
   console.log(`\n  minimum chord-to-chord clearance over all types: ${fmt(globalMin)} tile-edge units`);
-  console.log('  [ OK ] every TOPOLOGICALLY non-crossing matching is also GEOMETRICALLY non-crossing, for every leaf type');
+  // NB: `geometricNonCrossingForTile` is core's FLOAT test (matchings.ts
+  // `segmentsCross`, EPS = 1e-9), so this one line — unlike every other
+  // verdict in this file — is not an exact predicate. Verified exactly by
+  // fass-proof/02-adversarial-audit.ts, which agrees with it.
+  verdict(
+    topoSubsetGeom,
+    'every TOPOLOGICALLY non-crossing matching is also GEOMETRICALLY non-crossing, for every leaf type',
+    'core float test, EPS=1e-9',
+  );
   if (disagreements.length === 0) {
     console.log('  topological vs geometric non-crossing sets: identical for every leaf type under this selection.');
   } else {
