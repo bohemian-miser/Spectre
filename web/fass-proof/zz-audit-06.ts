@@ -752,6 +752,27 @@ function sectionG(): void {
       continue;
     }
     if (r) {
+      // independent re-verification of the returned sigma (pairing AND exposure)
+      let verified = true;
+      for (const T of TYPES) {
+        const A = tabs.get(`${T}|${k}`)!, B = tabs.get(`${T}|${k + 1}`)!;
+        const sT = r.get(T)!;
+        if (new Set(sT).size !== sT.length) verified = false;
+        const mapped = A.pairing.map((str) => {
+          const [x, y] = str.split('~');
+          const [sa, pa] = x.split(':').map(Number), [sb, pb] = y.split(':').map(Number);
+          const u = { s: sa, p: r.get(childType(T, sa))![pa] }, v = { s: sb, p: r.get(childType(T, sb))![pb] };
+          const [f, g] = [u, v].sort((m, n) => m.s - n.s || m.p - n.p);
+          return `${f.s}:${f.p}~${g.s}:${g.p}`;
+        }).sort();
+        if (mapped.join('|') !== [...B.pairing].sort().join('|')) verified = false;
+        for (let p2 = 0; p2 < A.exposure.length; p2++) {
+          const tgt = B.exposure[sT[p2]];
+          if (!tgt || tgt.slot !== A.exposure[p2].slot ||
+              tgt.pos !== r.get(childType(T, A.exposure[p2].slot))![A.exposure[p2].pos]) verified = false;
+        }
+      }
+      ck(verified, `sigma for k=${k}->${k + 1} re-verified independently (bijective; pairing and exposure both map correctly)`);
       ck(true, `a per-type relabelling sigma with table(${k + 1}) = sigma(table(${k})) EXISTS`,
          TYPES.map((T) => `${T}=${(r.get(T) ?? []).join('')}`).join(' ') + `  | involution: ${TYPES.every((T) => (r.get(T) ?? []).every((v, i2) => (r.get(T) ?? [])[v] === i2))}`);
     } else {
