@@ -21,6 +21,19 @@
  *   (C) checked exactly at finitely many levels, and labelled as such,
  * and the script says which is which.
  *
+ * Sections:
+ *   1   the 8 shared leaf types carry identical dot/chord data (exact, all k)
+ *   1b  REFUTATION: the hexagon family is NOT a faithful combinatorial model of
+ *       the spectre tiling — the seam decompositions differ at Sigma and Gamma
+ *   2   the Gamma reduction: the class-7 seam is the composite Mystic's internal
+ *       weld, and suppressing its dot turns three chords into hex Gamma's two
+ *   2e  the same, on real patches, including composites on the patch rim
+ *   3   the explicit tile-respecting isomorphism, verified exactly on patches
+ *   3b  INTERFACE REDUCTION: the remaining gap is a table of <= 20 entries per
+ *       tile type, with period 2 in the level (and a second refutation: that
+ *       table is NOT level-independent)
+ *   4   exactly what transfers (all topological) and what does not (all metric)
+ *
  * All adjacency/welding claims use EXACT Z[zeta12] integer arithmetic (doubled,
  * so that edge midpoints stay integral).  The only float numbers printed are the
  * two genuinely metric clearances in section 2d, which are reported with their
@@ -1209,81 +1222,112 @@ function section3b(dotMap: Map<string, DotImage>): void {
 function section4(): void {
   heading('4.  What the isomorphism transfers — and what it does NOT');
   console.log(`
-  PROVED FOR ALL LEVELS k (the local half), given the hypothesis (H) below:
+  THE STATEMENT.  Write P_k(R, family) for the level-k patch with root R, and phi for
+  the map built in section 3: on tiles, hex id X <-> spectre {X.0, X.1} when X is a
+  Gamma and X <-> X otherwise; on dots, the seam-tag bijection printed in section 3.
 
-    (H)  WELD-PATTERN AGREEMENT.  For a level-k patch with root R, two active
-         dots of the hex patch coincide exactly iff the corresponding two dots
-         of the spectre patch coincide exactly, where "corresponding" is the
-         tile bijection (hex tile id X <-> spectre {X.0, X.1} when X is a Gamma,
-         X <-> X otherwise) composed with the seam-tag dot map of section 3.
-         Equivalently: the gluing pattern of the DOT-CARRYING seams (classes
-         1, 2, 8) is the same in both families.
+    THEOREM (conditional).  For every root R and level k, phi induces an isomorphism
+    from the spectre strand graph of P_k(R, spectre), with its degree-2 class-7
+    vertices suppressed, onto the hex strand graph of P_k(R, hex). The isomorphism
+    respects tiles: a chord of hex tile X corresponds to the chord (for X not a
+    Gamma) or the two-chord path (for X a Gamma) of the corresponding spectre tiles.
 
-    Given (H), the isomorphism is forced, for every k, by finitely many
-    level-independent facts that this script verifies exactly:
-      L1. the 8 shared types have identical active-seam sequences, identical
-          non-crossing option counts, identical combo digits, hence identical
-          chord sets (section 1);
-      L2. class 7 occurs on no shared type, so the selections {1,2,8} and
-          {1,2,7,8} agree away from Gamma (section 1);
-      L3. the composite Gamma's class-7 seam is exactly its internal weld, its
-          two class-7 dots are the same lattice point, and that point is
-          strictly interior to the composite, so it can never meet any dot of a
-          tile outside the composite (section 2b, 2d);
-      L4. the composite's OUTER active dots are {-1A, 1A, 2A, -2A} in the same
-          cyclic order as hex Gamma's, and suppressing the degree-2 class-7
-          vertex turns its three chords into hex Gamma's two (section 2c, 2d).
-    L1-L4 are statements about the base tiles only. They do not mention the
-    supertile transforms, so the negative result about geometric self-similarity
-    does not touch them.
+  PROVED FOR ALL k, given hypothesis (H) below.  The proof is finite and local; it
+  never mentions the supertile transforms, so the session's negative result (the
+  supertile quad is not an exact similarity image of the previous level's) does not
+  touch it. Its ingredients, all verified exactly above:
+    L1. the 8 shared types have identical active-seam sequences, identical
+        non-crossing option counts, identical combo digits, hence identical chord
+        sets (section 1);
+    L2. class 7 occurs on no shared leaf type in either family, so the selections
+        {1,2,8} and {1,2,7,8} agree away from Gamma (section 1);
+    L3. the composite Gamma's class-7 seam is exactly its internal weld, its two
+        class-7 dots are the same lattice point, and that point is strictly interior
+        to the composite, so no tile outside the composite can reach it — verified on
+        real patches including composites on the patch rim (sections 2b, 2d, 2e);
+    L4. the composite's OUTER active dots are {-1A, 1A, 2A, -2A} in the same cyclic
+        order as hex Gamma's, and suppressing the degree-2 class-7 vertex turns its
+        three chords into hex Gamma's two (sections 2c, 2d).
 
-  CHECKED, NOT PROVED:
-    (H) itself is verified EXACTLY at the levels this script reports and nowhere
-    else. It is a statement about welding, which is geometric, and the two
-    families have different geometry; it does not follow from SUPER_RULES alone.
-    Section 1b exhibits real tile-adjacency differences between the families
-    (hex Sigma splits the spectre 4A seam into 6A + 4A; hex Gamma has 6 outer
-    seams where the composite Mystic has 7, dropping class 6), so the naive
-    claim "hex is the combinatorial model of the spectre tiling" is FALSE, and
-    (H) survives only because classes 4 and 6 carry no dot under these
-    selections. (H) is the whole remaining gap in the reduction.
+    (H)  WELD-PATTERN AGREEMENT.  Two active dots of P_k(R, hex) coincide exactly iff
+         the corresponding two dots of P_k(R, spectre) coincide exactly.
+
+  THE REMAINING GAP, SHARPENED.  Section 3b reduces (H) to a bounded object:
+    - a level-j supertile of type T leaves exactly n_T dots unwelded, with n_T
+      constant in j for j >= 1 (n = 2, 4, 6, 8 or 10), and the exposed set has the
+      same canonical names in both families;
+    - cross-child welds only ever involve those exposed dots, so the whole weld
+      pattern is generated by the finite "interface table" (which exposed dot of
+      which child slot welds to which exposed dot of which other child slot, and
+      which stay exposed) — at most 20 weld entries per type;
+    - that table is IDENTICAL in the two families for k = 1..6 (and k = 7 for Psi and
+      Delta), and, within each family, has PERIOD 2 in k for k >= 3.
+    Therefore (H) holds for every k as soon as one proves:
+
+      (H*)  In each family separately, the cross-child interface table satisfies
+            table(k) = table(k + 2) for every k >= 3.
+
+    (H*) is a statement about two finite tables per tile type, not about a growing
+    patch. It is the combinatorial residue of the REFLECT_X pre-multiplication in
+    buildSupertiles. It is NOT geometric self-similarity and is strictly weaker than
+    it, so it is not refuted by the negative result; but it is not implied by it
+    either, and it is not proved here. This is the whole remaining gap in the
+    reduction, and it is a per-family statement, so it belongs with the substitution
+    -invariance argument rather than with the cross-family comparison.
+
+  REFUTED ALONG THE WAY:
+    - "hex is the combinatorial model of the spectre tiling": FALSE. Section 1b shows
+      the seam decompositions differ — hex Sigma splits the single spectre 4A seam
+      into 6A + 4A, and hex Gamma has 6 outer seams where the composite Mystic has 7
+      (hex Gamma has no class-6 seam). The two families do not have the same tile
+      adjacency graph. The reduction survives only because classes 4 and 6 carry no
+      connection dot under these selections, i.e. it is a statement about the
+      dot-carrying seams alone.
+    - "the interface table is level-independent for k >= 2": FALSE. k = 2, k = 3 and
+      k = 4 give three different tables; even the weld pairing (ignoring exposure)
+      alternates. Only period 2 from k = 3 survives.
 
   TRANSFERS THROUGH THE ISOMORPHISM (topological / combinatorial):
     - circuit-freeness (no closed component);
-    - maximum welded degree <= 2, absence of junctions;
-    - the number of connected components and the multiset of their lengths
-      (after subtracting one segment per composite traversed);
-    - "every tile is covered by the strand" (via the tile bijection: a composite
-      is covered iff its hex Gamma is);
+    - maximum welded degree <= 2 and absence of junctions (after suppression);
+    - the number of connected components and the multiset of their lengths, where a
+      spectre arc's length exceeds its hex counterpart's by the number of composites
+      it traverses — this script verifies the global form of that identity,
+      segs(spectre) - segs(hex) = #composites, at every root and level tested;
+    - "every tile is covered by the strand", via the tile bijection: a composite is
+      covered iff its hex Gamma is (note the raw tile COUNTS differ, 34649 vs 30744
+      at Psi level 5, so "tilesCovered" must be compared type-wise, not numerically);
     - "rooted at Psi the diagram is a single open arc visiting every tile";
-    - the endpoint structure of each arc, and which tile each endpoint sits in;
+    - the endpoint structure of each arc and which tile each endpoint sits in;
     - anything phrased purely in the abstract graph, its components, or the
-      tile-to-component incidence.
+      tile-to-component incidence — in particular the S (self-avoiding, in the
+      graph-theoretic sense of "no vertex of degree > 2 and no cycle") half of FASS.
 
-  DOES NOT TRANSFER (metric):
-    - SELF-AVOIDANCE OF THE DRAWN CHORDS. The chords are straight segments
-      between dot positions, and the dot positions differ: the hexagon Gamma is
-      a regular hexagon, the composite Mystic is two Spectres. Two chords can
-      be disjoint in one realisation and cross in the other. A graph isomorphism
-      says nothing about plane embeddings. Self-avoidance must be proved
-      separately in EACH family. (Note also that the suppressed spectre chord
-      -2A..2A is a two-segment polyline through the internal dot, not a straight
-      segment — so even "the same" chord is a different point set.)
-    - CLEARANCES and any epsilon-level statement.
-    - SPACE-FILLING of the plane region: the two tilings cover different regions
-      with different tiles; density, Hausdorff limits and the limit curve's
-      image are separate questions per family.
-    - SELF-SIMILARITY of the limit curve, and the similarity ratio / rotation
-      angle, which are metric and family-dependent (and, per this session's
-      negative result, not exact at any finite level in either family).
-    - The hexagon realisation's tiles are not even the same shape class, so
-      "the curve passes through the interior of each tile" is a separate claim.
+  DOES NOT TRANSFER (metric) — the boundary is exactly "does the claim mention
+  points of the plane, or only vertices and edges of the graph?":
+    - SELF-AVOIDANCE OF THE DRAWN CHORDS. The chords are straight segments between
+      dot positions, and the dot positions differ: hex Gamma is a regular hexagon,
+      the composite Mystic is two Spectres. Two chords can be disjoint in one
+      realisation and cross in the other; a graph isomorphism says nothing about
+      plane embeddings. Self-avoidance must be proved separately in EACH family.
+      Note also that the suppressed spectre chord -2A..2A is a two-segment polyline
+      through the internal class-7 dot, not a straight segment, so even "the same"
+      chord is a different point set.
+    - CLEARANCES and every epsilon-level statement.
+    - SPACE-FILLING of the plane region: the two tilings cover different regions with
+      differently shaped tiles; density, Hausdorff limits and the limit curve's image
+      are separate questions per family.
+    - SELF-SIMILARITY of the limit curve and the similarity ratio / rotation angle,
+      which are metric and family-dependent (and, per this session's negative result,
+      exact at no finite level in either family).
+    - "the curve passes through the interior of each tile", and anything about the
+      shape of the tiles.
 
-  CONSEQUENCE. The two conjectures are ONE theorem on the topological side and
-  TWO theorems on the metric side. Proving "infinite space-filling FASS" for
-  spectre-1278-'0101000000' gives the S, A and self-similarity parts for
-  hex-128-'010100000' only in their combinatorial readings; the drawn-curve
-  self-avoidance and the space-filling must still be argued in the hex geometry.
+  CONSEQUENCE.  The two conjectures are ONE theorem on the topological side and TWO
+  theorems on the metric side. Proving the combinatorial core for
+  spectre-1278-'0101000000' gives hex-128-'010100000' its circuit-freeness, its
+  single-arc-ness and its coverage for free; the drawn-curve self-avoidance and the
+  space-filling still have to be argued in the hexagon geometry.
 `);
 }
 
@@ -1309,20 +1353,29 @@ function main(): void {
   if (FAILURES === 0) {
     console.log(`  ALL CHECKS PASSED.
 
-  PROVED (all levels k), modulo hypothesis (H):
-    the strand graph of spectre-1278-'0101000000' on any patch, with its
-    degree-2 class-7 vertices suppressed, is isomorphic to the strand graph of
-    hex-128-'010100000' on the corresponding patch, by a tile-respecting
-    isomorphism.
+  PROVED (all levels k), modulo hypothesis (H) below:
+    the strand graph of spectre-1278-'0101000000' on any patch, with its degree-2
+    class-7 vertices suppressed, is isomorphic — tile-respectingly — to the strand
+    graph of hex-128-'010100000' on the corresponding patch. Hence the two
+    conjectures have a single common TOPOLOGICAL core.
 
-  CHECKED EXACTLY (not proved for all k):
-    hypothesis (H), the weld-pattern agreement, at roots Delta/Psi/Gamma levels
-    0..5 and the other six roots levels 1..4.
+  CHECKED EXACTLY, NOT PROVED FOR ALL k:
+    (H)  weld-pattern agreement, verified at roots Delta/Psi/Gamma levels 0..5 and
+         the other six roots levels 1..4;
+    (H*) the sharper form: the bounded cross-child interface table agrees between the
+         families for k = 1..6 (k = 7 for Psi, Delta) and has period 2 in k for
+         k >= 3 within each family. (H*) for all k implies (H) for all k by
+         induction; it is a statement about tables with at most 20 entries.
 
   REFUTED:
-    "hex is the combinatorial model of the spectre tiling" — the seam
-    decompositions differ (section 1b); the reduction holds only because the
-    differing classes carry no connection dot under these two selections.
+    - "hex is the combinatorial model of the spectre tiling" — the seam
+      decompositions differ at Sigma and Gamma (section 1b); the reduction holds only
+      because the differing classes carry no connection dot.
+    - "the cross-child interface table is level-independent for k >= 2" — three
+      distinct tables occur at k = 2, 3, 4; only period 2 from k = 3 survives.
+
+  DOES NOT TRANSFER: every metric property — drawn-chord self-avoidance, clearances,
+  space-filling of the plane, limit geometry. Those remain two separate theorems.
 `);
     process.exit(0);
   } else {
