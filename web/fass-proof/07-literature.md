@@ -426,8 +426,10 @@ Three separate matches with this repo, none of them coincidence: **[MINE]**
    constant `SUBSTITUTION_GROWTH = 7.8730178` in `src/core/unrooted.ts`
    (docstring: "Dominant eigenvalue of the substitution matrix") is **wrong in
    the 5th decimal**: the true value is 4+√15 = 7.872983346207417…, and the
-   repo's own tile counts confirm it to 15 digits (133121449/16908641 =
-   7.8729833462074215). `docs/BIGMAP_INVESTIGATION.md` repeats the bad value as
+   repo's own tile counts confirm it to 14 significant digits (exactly,
+   133121449/16908641 = 7.87298334620742140… against λ = 7.87298334620741688…;
+   the "15 digits" a `double` appears to show is a rounding artefact — see
+   `fass-proof/zz-audit-07.ts` §J). `docs/BIGMAP_INVESTIGATION.md` repeats the bad value as
    "converges to 7.87302". Relative error ≈ 4.5e-6 — harmless for LOD budgeting,
    embarrassing in a paper. Fix both.
 2. **Linear factor √(4+√15) = 2.805883701…** — the repo's measured inradius

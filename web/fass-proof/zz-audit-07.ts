@@ -18,6 +18,7 @@
  * Run: cd web && npx --yes tsx fass-proof/zz-audit-07.ts
  */
 
+import { readFileSync } from 'node:fs';
 import {
   SUPER_RULES,
   zAdd,
@@ -283,7 +284,7 @@ if (mismatchTypes.length === 0) {
   note('disagree about which class sits on which physical edge of the SAME type.');
 }
 // and specifically for the selected classes
-for (const cls of [1, 2, 7, 8]) {
+for (const cls of [1, 2, 4, 6, 7, 8]) {
   const hx = TYPES.filter((t) => edgeLabels('hex', t as TileTypeId).some((l) => Math.abs(parseEdgeLabel(l).major) === cls));
   const sp = leafOrder('spectre').filter((t) => edgeLabels('spectre', t).some((l) => Math.abs(parseEdgeLabel(l).major) === cls));
   console.log(`  class ${cls}: hex on [${hx.join(',')}]   spectre on [${sp.join(',')}]`);
@@ -474,5 +475,46 @@ for (const key of ['spectre1278'] as const) {
   }
 }
 
-H(FAIL === 0 ? 'AUDIT RESULT: all executable checks PASSED' : `AUDIT RESULT: ${FAIL} CHECK(S) FAILED`);
+
+// ===========================================================================
+// J. "Agreement is to 15 digits from level 6 on" — the report's own wording
+// ===========================================================================
+H('J. Significant-digit agreement of each stored ratio with 4 + sqrt(15)');
+{
+  const lam = lamStr; // 40 exact decimals, from C
+  const pairs: [bigint, bigint, string][] = [
+    [272791n, 34649n, 'lvl 5->6'],
+    [2147679n, 272791n, 'lvl 6->7'],
+    [16908641n, 2147679n, 'lvl 7->8'],
+    [133121449n, 16908641n, 'lvl 8->9'],
+  ];
+  const digits: number[] = [];
+  for (const [a, b, lbl] of pairs) {
+    const rr = (a * 10n ** D) / b;
+    const rs = `${rr / 10n ** D}.${(rr % 10n ** D).toString().padStart(Number(D), '0')}`;
+    let n = 0;
+    for (let i = 0; i < lam.length && lam[i] === rs[i]; i++) if (lam[i] !== '.') n++;
+    digits.push(n);
+    console.log(`  ${lbl}  ${a}/${b} = ${rs.slice(0, 20)}  -> ${n} significant digits agree`);
+  }
+  console.log(`  4 + sqrt(15)                = ${lam.slice(0, 20)}`);
+  ok(digits[digits.length - 1] === 14,
+    `exact agreement of 133121449/16908641 with lambda is ${digits[digits.length - 1]} significant digits`);
+  const md = readFileSync(new URL('./07-literature.md', import.meta.url), 'utf8');
+  ok(!/confirm it to 15 digits/.test(md),
+    '07-literature.md no longer claims "confirm it to 15 digits" (corrected by this audit to 14)');
+  note('The 15th digit is an artefact of double rounding: as doubles both sides print');
+  note('7.87298334620742, but exactly the ratio is 7.87298334620742140 and lambda is');
+  note('7.87298334620741688 — they part at the 15th significant digit. Say 14.');
+  ok(!(digits[1] >= 15 && digits[2] >= 15),
+    `NOT 15 digits "from level 6 on": the lvl 6->7 and 7->8 ratios give ${digits[1]} and ${digits[2]} digits`);
+  note('=> the structured report\'s checked_finitely wording "Agreement is to 15 digits');
+  note(`from level 6 on" is false. The true profile is ${digits.join(', ')} digits.`);
+  note('(15 digits is also the double-precision ceiling, so the last ratio is at the');
+  note('limit of what a float check can say at all.)');
+}
+
+H(FAIL === 0
+  ? 'AUDIT RESULT: no defect found in the audited claims'
+  : `AUDIT RESULT: ${FAIL} DEFECT(S) FOUND IN THE AUDITED CLAIMS (not bugs in this script)`);
 process.exit(FAIL === 0 ? 0 : 1);

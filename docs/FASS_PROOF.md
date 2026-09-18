@@ -489,15 +489,17 @@ of type `T`, in canonical cyclic order.
 Measured under a chirality-stable labelling, the datum is constant with
 **period 1** from level 2 through level 8, identical across all three
 configurations and both families. An earlier draft of this document said "up to
-the period-2 mirror", following `FASS_1278.md`. Under a labelling that does not
-absorb the per-level mirror flip, a period-2 alternation appears instead; the
-routing *states* likewise sit on a 2-cycle (§4.4), but that is a 2-cycle of a
-fixed map rather than a period in the map.
+the period-2 mirror" and attributed that to `FASS_1278.md`. **That attribution
+was wrong and is withdrawn.** `FASS_1278.md` already says the composition
+operator is level-independent, with gluing and outer maps identical at every
+level; its period-2 statement is about the routing *signature*, a different
+object, and that statement is correct. The routing states do sit on a 2-cycle
+(§4.4) — a 2-cycle of a fixed map, not a period in the map.
 
-**A discrepancy, and its resolution.** A second, independent computation of the
-closely related cross-child *interface table* found it **not** constant — levels
-2, 3 and 4 giving three pairwise different tables, with only period 2 from level
-3. A third computation
+**Why the labelling matters.** A second, independent computation of the closely
+related cross-child *interface table* found it **not** constant — levels 2, 3
+and 4 giving three pairwise different tables, with only period 2 from level 3. A
+third computation
 ([`15-datum-labelling.ts`](../web/fass-proof/15-datum-labelling.ts)) settles it
 by computing the datum under both conventions at once:
 
@@ -506,11 +508,10 @@ by computing the datum under both conventions at once:
 | chirality-stable (anchor at `quad[0]`, `quad[1]` before `quad[3]`) | `0000` | **1** |
 | naive (walk the outline whichever way the chaining produces) | `0121` | 3 |
 
-identically for all nine types in both families. Both earlier computations were
-right about their own object: **the period-2 alternation is an artefact of the
-labelling, not a property of the substitution.** That matters, because a fixed
-datum is what lets the routing operator `F` of §4.4 be a single map rather than
-an alternating pair.
+identically for all nine types in both families. Both computations were right
+about their own object: **whether the datum looks constant or period-2 is
+decided by the labelling.** That matters, because a fixed datum is what lets the
+routing operator `F` of §4.4 be a single map rather than an alternating pair.
 
 Given L3, `routing(T,k+1) = F_T(children's routings at level k)` with `F_T`
 **fixed**, and the whole problem collapses to iterating a fixed map on a finite
@@ -532,14 +533,20 @@ each level's own quad. Fitting a similarity from each level's quad to the next:
 | 5 → 6 | 2.805910 | +11.5648° | 2.7e−2 |
 
 The ratio converges to √(4+√15) = 2.805883701… and the angle to ±11.565°, but
-never exactly. This is not a numerical observation but an exact one: the
-cross-multiplied similarity residual is a **fixed non-zero ring element** at
-every level, `[-6,-12,0,6]` for the spectre and alternating `[-2,0,1,0]` and
-`[-1,0,-1,0]` for hexagons. It cannot vanish however deep one goes. Stronger
-still, `Ts` at level `k+1` is provably not conjugate to `Ts` at level `k` by any
-pair of plane similarities, and an anti-similarity conjugation is impossible
-outright, because the slot rotations mod 6 are `{0,2,4}` rather than all equal.
-**Every geometric-similarity route to L3 is closed.**
+never exactly. The cross-multiplied similarity residual is a non-zero ring element at every
+level computed, and a *fixed* one: `[-6,-12,0,6]` for the spectre, alternating
+`[-2,0,1,0]` and `[-1,0,-1,0]` for hexagons, unchanged over levels 1 to 30 in
+exact arithmetic. That it is fixed is an observation over those 30 levels, not a
+theorem — the residuals are quadratic and quartic forms in `(Q, conj Q)`, so the
+Cayley–Hamilton argument used below does not reach them, and an upgrade would
+need the 64×64 tensor square with a 65-level window. The same applies to the
+non-conjugacy of `Ts` by a pair of plane similarities.
+
+One piece of this *is* a theorem for all `k`: an **anti**-similarity conjugation
+is impossible outright, because the slot rotations mod 6 are `{0,2,4}` rather
+than all equal, and the rotation-mirror word itself comes from `T_RULES` with no
+quad involved. So the similarity route is closed outright in one direction and
+closed to level 30 in the other.
 
 What **is** level-independent is only the rotation-and-mirror part of each slot,
 `6m 4m 4m 2m 0m 0m 10m 2m`, fixed because `buildSupertiles` derives it from
@@ -561,11 +568,12 @@ immediate, and only Gamma differs — but that outline's perimeter grows by abou
 | 4 | 1,598 | 4.2275 | 3,198 | 4.2190 |
 
 The perimeter factor is exactly **2 + √5 = 4.236067977…**, the golden ratio
-cubed, approached slowly from below. It is *derived*, not measured: the
-perimeter obeys `L_k = 4·L_{k-1} + L_{k-2} + c` exactly, with `c` a per-type
-constant (−4 and −8 for hexagon Psi and Gamma, −16 and −32 for the spectre),
-checked exactly to level 8. The characteristic polynomial is `x² − 4x − 1`,
-whose dominant root is `2 + √5`. The quad-arc lengths behind it are Fibonacci
+cubed, approached slowly from below. It is *derived rather than fitted*, though not unconditional: the perimeter
+obeys `L_k = 4·L_{k-1} + L_{k-2} + c` exactly, with `c` a per-type constant
+(−4 and −8 for hexagon Psi and Gamma, −16 and −32 for the spectre), **checked
+exactly to level 8**. The characteristic polynomial is `x² − 4x − 1`, whose
+dominant root is `2 + √5`. The exact constant therefore follows *given* that the
+recurrence holds for all `k`, which is checked rather than proved. The quad-arc lengths behind it are Fibonacci
 numbers: hexagon Psi runs `[1,1,2,2]`, `[4,4,9,5]`, `[17,17,38,18]`,
 `[72,72,161,73]`, `[305,305,682,306]`, and the spectre runs
 `[2,2,4,6]`, `[8,8,18,12]`, `[34,34,76,38]`, `[144,144,322,148]`. Perimeter therefore outgrows diameter, which grows by only
@@ -885,11 +893,21 @@ The crux is now much narrower than it was. Three things that looked like they
 might be the obstruction are settled, and one remains.
 
 **Settled.** The gluing and outer maps are *constant*, period 1, from level 2 to
-level 8, in both families and all three configurations. The quad-point incidence
-pattern among the eight children is **proved level-independent for all `k ≥ 2`**
-by the Cayley–Hamilton argument in §4.3. And the quad recursion is exactly
-semilinear with a fixed matrix. So the arrangement's combinatorial skeleton is
+level 8, in both families and all three configurations. The eight quad-point
+coincidences are **proved to persist for all `k ≥ 2`** by the Cayley–Hamilton
+argument in §4.3. The quad recursion is exactly semilinear with a fixed matrix.
+The rotation-mirror word and the identity of the eight non-Gamma boundary loops
+are genuine all-levels theorems. So the arrangement's combinatorial skeleton is
 pinned; what is not yet pinned is that the skeleton determines the contacts.
+
+**A caveat on the evidence.** As originally written,
+`03-substitution-invariance.ts` contained a defective helper — a
+"first stable level" search that could never report failure — so 54 of its gates
+were tautologies and the run's all-pass verdict carried no evidence for the
+constancy claims. The helper has been fixed and the script re-run; the claims do
+hold. But it is worth recording, because it is exactly the failure mode this
+whole document is trying to avoid: a check that cannot fail looks identical to a
+check that passed.
 
 **The one remaining gap, stated precisely:**
 

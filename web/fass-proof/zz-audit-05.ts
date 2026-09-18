@@ -495,6 +495,30 @@ for (const key of KEYS) {
   }
   hold(inf > 0.05, `${cfg.id}: (H5) holds with c = ${inf.toFixed(6)} for ALL j < k <= ${KMAX} (exact counts)`,
     `infimum attained at ${argm}; 05-limit.ts only sampled k <= 5 and reported 0.83`);
+  // exact segments/tile at high level, vs the closed form -- a far better test than
+  // 05-limit.ts's "measured 1.3448 vs exact 1.3488, tolerance 5e-3" at level 5.
+  {
+    const leafW = TYPES.map((t) => (t === 'Gamma' && cfg.family !== 'hex' ? 1n : 1n));
+    // tiles_j(T) = (leaf-count row) . M^j e_T, leaf weight 2 for a composite Gamma
+    const w = TYPES.map((t) => (t === 'Gamma' && cfg.family !== 'hex' ? 2n : 1n));
+    let rt = w.slice();
+    const tilesRow: bigint[][] = [rt.slice()];
+    for (let s2 = 0; s2 < KMAX; s2++) {
+      rt = TYPES.map((_, col) => TYPES.reduce((acc, _t, i) => acc + rt[i] * M9[i][col], 0n));
+      tilesRow.push(rt.slice());
+    }
+    void leafW;
+    const pi = tIdx.get('Psi') as number;
+    const closed = cfg.family === 'hex' ? 13 * Math.sqrt(15) - 49 : (3 * Math.sqrt(15) - 9) / 2;
+    const at = (j: number) => Number(rows[j][pi]) / Number(tilesRow[j][pi]);
+    const measTiles: number[] = [];
+    for (let lv = 1; lv <= MAX; lv++) measTiles.push(strands(cfg, 'Psi', lv).instances.length);
+    const predTiles = [1, 2, 3, 4, 5].slice(0, MAX).map((lv) => Number(tilesRow[lv][pi]));
+    hold(measTiles.every((v, i) => v === predTiles[i]), `${cfg.id}: exact tiles_j(Psi) matches the built patches`,
+      `predicted ${predTiles.join(',')} measured ${measTiles.join(',')}`);
+    hold(Math.abs(at(40) - closed) < 1e-11, `${cfg.id}: EXACT segments/tile at level 40 equals the Q(sqrt15) closed form`,
+      `level 5 ${at(5).toFixed(9)}, level 20 ${at(20).toFixed(12)}, level 40 ${at(40).toFixed(12)}, closed form ${closed.toFixed(12)}, |diff| ${Math.abs(at(40) - closed).toExponential(2)}`);
+  }
 }
 
 // ===========================================================================
@@ -589,11 +613,20 @@ for (const f of ['hex', 'spectre'] as TileFamilyId[]) {
       const nl = Math.hypot(nx, ny);
       const probe = (sgn: number) => {
         const q = { x: m.x + sgn * 1e-6 * nx / nl, y: m.y + sgn * 1e-6 * ny / nl };
-        for (let ti = 0; ti < p.inst.length; ti++) if (pointInPoly(q, p.poly[ti])) return true;
+        for (let ti = 0; ti < p.inst.length; ti++) {
+          const c0 = p.poly[ti][0];
+          if (Math.abs(c0.x - m.x) > 12 || Math.abs(c0.y - m.y) > 12) continue;
+          if (pointInPoly(q, p.poly[ti])) return true;
+        }
         return false;
       };
       const sgn = probe(1) ? -1 : 1;
       if (probe(sgn)) { hold(false, `${f}: neither side of a frozen edge is empty (edge ${u})`); continue; }
+      // spatial pre-filter: only tiles whose vertices come within 3 of m can matter
+      const near: number[] = [];
+      for (let ti = 0; ti < p.inst.length; ti++) {
+        for (const q of p.poly[ti]) if (Math.abs(q.x - m.x) < 3 && Math.abs(q.y - m.y) < 3) { near.push(ti); break; }
+      }
       for (let ia = 1; ia < 400; ia++) {
         const th = (Math.PI * ia) / 400;
         const dx = Math.cos(th) * (b.x - a.x) / Math.hypot(b.x - a.x, b.y - a.y) + Math.sin(th) * sgn * nx / nl;
@@ -601,7 +634,7 @@ for (const f of ['hex', 'spectre'] as TileFamilyId[]) {
         for (let ir = 1; ir <= 200; ir++) {
           const r = (0.4999 * ir) / 200;
           const q = { x: m.x + r * dx, y: m.y + r * dy };
-          for (let ti = 0; ti < p.inst.length; ti++) {
+          for (const ti of near) {
             if (pointInPoly(q, p.poly[ti])) { hits++; minClear = Math.min(minClear, r); ir = 1e9; break; }
           }
         }
