@@ -453,6 +453,7 @@ console.log('    |---|---|---|---|---|---|---|---|');
 for (const key of KEYS) {
   const cfg = CONFIGS[key];
   let allMatch = true;
+  let contigExact = true;
   let worstRuns = 0;
   let worstShare = Infinity;
   for (let lv = 2; lv <= MAX; lv++) {
@@ -471,17 +472,24 @@ for (const key of KEYS) {
       }
       let matches = 0;
       let contiguous = 0;
+      let psiCount = 0;
+      let contiguousArePsi = true;
       let maxRuns = 0;
       let minShare = Infinity;
       for (const [pre, r] of runsOf) {
         const type = typeOfPrefix(pre.split('.').map(Number));
+        if (type === 'Psi') psiCount++;
         if (r === profileOf(cfg, type, lv - d).arcs) matches++;
-        if (r === 1) contiguous++;
+        if (r === 1) {
+          contiguous++;
+          if (type !== 'Psi') contiguousArePsi = false;
+        }
         maxRuns = Math.max(maxRuns, r);
         minShare = Math.min(minShare, (cntOf.get(pre) as number) / s.segs.length);
       }
       const total = runsOf.size;
       if (matches !== total) allMatch = false;
+      if (contiguous !== psiCount || !contiguousArePsi) contigExact = false;
       worstRuns = Math.max(worstRuns, maxRuns);
       worstShare = Math.min(worstShare, minShare * LAMBDA ** d);
       console.log(
@@ -490,6 +498,8 @@ for (const key of KEYS) {
     }
   }
   ok(allMatch, `${cfg.id}: every sub-supertile is entered exactly arcs(its type) times, all depths, all levels`);
+  ok(contigExact, `${cfg.id}: a sub-supertile is contiguous IF AND ONLY IF it is a Psi sub-supertile`,
+    'the "contiguous" column above is exactly the Psi count at that depth');
   ok(worstRuns <= 5, `${cfg.id}: the re-entry count never exceeds m = 5 — hypothesis (H1)`, `worst ${worstRuns}`);
   ok(worstShare > 0.05, `${cfg.id}: no starved sub-supertile — hypothesis (H5)`,
     `least time share over all depths is ${worstShare.toFixed(5)} * lambda^(-depth)`);

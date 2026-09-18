@@ -185,6 +185,12 @@ degree-2 vertex in the middle. That is exactly the hexagon Gamma's chord set,
 subdivided once. The composite's outer active seams are `{-1A, 1A, 2A, -2A}`,
 the hexagon Gamma's four.
 
+The equivalence goes deeper than the chords. The cyclic word of meta-edge
+classes along a supertile boundary is the *same sequence* in both families from
+level 1 on — the meta-edge counts of a spectre supertile are the hexagon edge
+counts, not the spectre ones. The two families differ in how long each meta-edge
+is, not in which meta-edges there are.
+
 **Consequence.** The two strand graphs are isomorphic after suppressing every
 degree-2 class-7 vertex. Every *topological* FASS property — circuit-freeness,
 the single-arc property, component structure, tile coverage — transfers between
@@ -560,6 +566,13 @@ identically in both families and at every computed level:
 A supertile therefore has a fixed, small number of *ports*, which is exactly the
 structure the Hilbert-curve argument needs. The internal arcs form a perfect
 matching of those ports, with no circuits and no interior endpoints anywhere.
+Those counts are constant over levels 1 to 8 and **identical in all three
+configurations**. So is their distribution across the four quad-arcs of the
+boundary, from level 2 on:
+
+| type | Gamma | Delta | Theta | Lambda | Xi | Pi | Sigma | Phi | Psi |
+|---|---|---|---|---|---|---|---|---|---|
+| dots per quad-arc | 2,2,4,2 | 2,0,4,2 | 2,0,2,2 | 2,0,2,2 | 0,0,2,2 | 0,0,2,2 | 2,0,4,4 | 2,0,0,2 | 0,0,0,2 |
 
 **A consequence worth stating separately: Psi's routing state space is a
 singleton.** With two boundary dots, no circuits and no interior endpoints, the
@@ -728,7 +741,8 @@ limit.
 | Chords stay inside their own tile | **true for hex; FALSE for spectre** — 4 chords stray by (2−√3)/4 |
 | No crossings anywhere | **proved for hex, all levels**; for spectre reduced to 478 two-tile classes, complete from level 4, unchanged to level 6 |
 | Every leaf-instance transform is an isometry of the lattice | **proved, all levels** (≤ 24 linear parts in total) |
-| Boundary dot interfaces constant per type | verified levels 1–6, both families |
+| Boundary dot interfaces constant per type | verified levels 1–8, identical in all three configurations |
+| Their distribution across the four quad-arcs is constant | verified levels 2–8 |
 | Arcs are a perfect matching of the boundary dots; Psi is the only single-arc root | **proved, all levels** |
 | Routing states lie on a 2-cycle, pre-period 0 | verified levels 1–6, both families |
 | The routing operator never decreases the circuit count | **proved** — so circuit-freeness is never created by the substitution |

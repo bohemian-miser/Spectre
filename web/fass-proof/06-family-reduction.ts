@@ -1,0 +1,938 @@
+/**
+ * 06 — THE FAMILY REDUCTION
+ * =========================
+ *
+ * Obligation: show that the two conjectured configurations
+ *
+ *     A)  hex      / selection {1,2,8}    / combo '010100000'
+ *     B)  spectre  / selection {1,2,7,8}  / combo '0101000000'
+ *
+ * are THE SAME THEOREM — i.e. that their strand graphs are isomorphic once the
+ * degree-2 "class-7" vertices interior to every composite Mystic (Gamma1+Gamma2)
+ * are suppressed.  If so, every *topological* FASS property (circuit-freeness,
+ * single-arc-ness, component structure, coverage) proved for one transfers to
+ * the other and there is only one combinatorial theorem to prove.
+ *
+ * Nothing here is geometric self-similarity: the negative result of this session
+ * (the supertile quad is not an exact similarity image of the previous level's)
+ * is respected.  Every claim below is either
+ *   (P) proved for all levels k by a finite, level-independent argument whose
+ *       ingredients this script verifies exactly, or
+ *   (C) checked exactly at finitely many levels, and labelled as such,
+ * and the script says which is which.
+ *
+ * All adjacency/welding claims use EXACT Z[zeta12] integer arithmetic (doubled,
+ * so that edge midpoints stay integral).  The only float numbers printed are the
+ * two genuinely metric clearances in section 2d, which are reported with their
+ * epsilon.
+ *
+ * Run:  cd web && npx --yes tsx fass-proof/06-family-reduction.ts
+ */
+
+import {
+  edgeLabels,
+  enumerateMatchings,
+  leafOrder,
+  leafPts,
+  metaEdges,
+  parseEdgeLabel,
+  zAdd,
+  zApply,
+  zBasePairXform,
+  zKey,
+  zLeafPts,
+  zToPt,
+  Z_IDENT,
+  type MetaEdge,
+  type Pt,
+  type TileFamilyId,
+  type TileTypeId,
+  type ZAffine,
+  type ZVec,
+} from '../src/core';
+
+import {
+  CONFIGS,
+  activeSeams,
+  buildStrands,
+  chosenMatching,
+  heading,
+  matchingRecord,
+  ncOptionCount,
+  pad,
+  trace,
+  verdict,
+  zApply2,
+  zConnectionPoints2,
+  zExpand,
+  type Config,
+  type ZInstance,
+} from './lib';
+
+// ---------------------------------------------------------------------------
+// 0.  Setup
+// ---------------------------------------------------------------------------
+
+const HEX: Config = CONFIGS.hex128;
+const SPEC: Config = CONFIGS.spectre1278;
+
+/** The 8 leaf types shared by both families (everything except Gamma). */
+const SHARED: readonly TileTypeId[] = ['Delta', 'Theta', 'Lambda', 'Xi', 'Pi', 'Sigma', 'Phi', 'Psi'];
+
+const ROOTS_DEEP: readonly TileTypeId[] = ['Delta', 'Psi', 'Gamma'];
+const ROOTS_ALL: readonly TileTypeId[] = [
+  'Gamma', 'Delta', 'Theta', 'Lambda', 'Xi', 'Pi', 'Sigma', 'Phi', 'Psi',
+];
+
+let FAILURES = 0;
+function check(ok: boolean, label: string, detail = ''): boolean {
+  if (!ok) FAILURES++;
+  verdict(ok, label, detail);
+  return ok;
+}
+/** Quiet variant: only prints when it fails (for the big per-level sweeps). */
+function checkQuiet(ok: boolean, label: string, detail = ''): boolean {
+  if (!ok) {
+    FAILURES++;
+    verdict(false, label, detail);
+  }
+  return ok;
+}
+
+/** Canonical short tag of a seam: '-1A', '2B', '7A', ... */
+function seamTag(s: MetaEdge): string {
+  return `${s.sign < 0 ? '-' : ''}${s.major}${s.variant}`;
+}
+
+/** Active seam tags of a leaf type, in connectionPoints() order. */
+function activeTags(cfg: Config, type: TileTypeId): readonly string[] {
+  return activeSeams(cfg, type).map(seamTag);
+}
+
+/** Chosen matching rendered as sorted unordered tag pairs, e.g. ['1A|2A']. */
+function chordTags(cfg: Config, type: TileTypeId): readonly string[] {
+  const tags = activeTags(cfg, type);
+  return chosenMatching(cfg, type)
+    .map(([a, b]) => [tags[a], tags[b]].sort().join('|'))
+    .sort();
+}
+
+function sameArray<T>(a: readonly T[], b: readonly T[]): boolean {
+  return a.length === b.length && a.every((x, i) => x === b[i]);
+}
+
+// ---------------------------------------------------------------------------
+// 1.  The per-tile table for the 8 shared leaf types
+// ---------------------------------------------------------------------------
+
+function section1(): void {
+  heading('1.  Per-tile data for the 8 SHARED leaf types  (exact, level-independent)');
+
+  const hexRec = matchingRecord(HEX);
+  const specRec = matchingRecord(SPEC);
+  const hexOrder = leafOrder('hex');
+  const specOrder = leafOrder('spectre');
+
+  console.log(
+    `  hex      selection {${HEX.subset.join(',')}}  combo '${HEX.combo}'  over ${hexOrder.join(',')}`,
+  );
+  console.log(
+    `  spectre  selection {${SPEC.subset.join(',')}}  combo '${SPEC.combo}'  over ${specOrder.join(',')}`,
+  );
+  console.log(
+    `\n  ${'type'.padEnd(8)}${'active seams (cyclic order)'.padEnd(30)}${'#NC'.padEnd(6)}${'digit'.padEnd(7)}${'matching idx'.padEnd(14)}chords`,
+  );
+
+  let allOk = true;
+  for (const type of SHARED) {
+    const hTags = activeTags(HEX, type);
+    const sTags = activeTags(SPEC, type);
+    const hNC = ncOptionCount(HEX, type);
+    const sNC = ncOptionCount(SPEC, type);
+    const hDigit = HEX.combo[hexOrder.indexOf(type)];
+    const sDigit = SPEC.combo[specOrder.indexOf(type)];
+    const hPairs = chosenMatching(HEX, type).map(([a, b]) => `${a}-${b}`).join(',');
+    const sPairs = chosenMatching(SPEC, type).map(([a, b]) => `${a}-${b}`).join(',');
+    const hChords = chordTags(HEX, type);
+    const sChords = chordTags(SPEC, type);
+
+    const ok =
+      sameArray(hTags, sTags) &&
+      hNC === sNC &&
+      hDigit === sDigit &&
+      hPairs === sPairs &&
+      hexRec[type] === specRec[type] &&
+      sameArray(hChords, sChords);
+    if (!ok) allOk = false;
+
+    console.log(
+      `  ${type.padEnd(8)}${hTags.join(', ').padEnd(30)}${String(hNC).padEnd(6)}${String(hDigit).padEnd(7)}${String(hexRec[type]).padEnd(14)}${hChords.join('  ')}`,
+    );
+    if (!ok) {
+      console.log(
+        `  ${''.padEnd(8)}spectre differs: ${sTags.join(', ')} | #NC ${sNC} | digit ${sDigit} | idx ${specRec[type]} | ${sChords.join('  ')}`,
+      );
+    }
+  }
+
+  console.log('');
+  check(allOk, '8 shared types: identical active seams, order, #NC, digit, matching index, chords');
+
+  // The class-7 selection difference must be invisible off Gamma.
+  const sevenElsewhere: string[] = [];
+  for (const type of SHARED) {
+    for (const s of metaEdges('spectre', type)) if (s.major === 7) sevenElsewhere.push(`${type}/${seamTag(s)}`);
+    for (const s of metaEdges('hex', type)) if (s.major === 7) sevenElsewhere.push(`hex ${type}/${seamTag(s)}`);
+  }
+  check(
+    sevenElsewhere.length === 0,
+    'class 7 occurs on NO shared leaf type in either family',
+    sevenElsewhere.length ? sevenElsewhere.join(' ') : 'so {1,2,7,8} and {1,2,8} agree off Gamma',
+  );
+
+  // ---- 1b.  Where the hexagon family is NOT a faithful model -----------------
+  heading('1b.  Where the hexagon family is NOT a faithful combinatorial model');
+  console.log('  (these mismatches are REAL; they are invisible only because the classes carry no dot)\n');
+  const mismatches: string[] = [];
+  for (const type of [...SHARED, 'Gamma' as TileTypeId]) {
+    const hSeams =
+      type === 'Gamma'
+        ? metaEdges('hex', 'Gamma').map(seamTag)
+        : metaEdges('hex', type).map(seamTag);
+    const sSeams =
+      type === 'Gamma'
+        ? compositeOuterSeamTags()
+        : metaEdges('spectre', type).map(seamTag);
+    const hSet = [...hSeams].sort();
+    const sSet = [...sSeams].sort();
+    if (!sameArray(hSet, sSet)) {
+      mismatches.push(type);
+      console.log(`  ${type.padEnd(8)} hex: ${hSeams.join(' ').padEnd(28)} spectre: ${sSeams.join(' ')}`);
+    }
+  }
+  if (mismatches.length === 0) console.log('  (none)');
+  console.log(
+    `\n  => the two families do NOT have the same tile-adjacency graph. Any claim of the form\n` +
+      `     "hex is the combinatorial model of the spectre tiling" is FALSE as stated: the seam\n` +
+      `     decompositions differ at ${mismatches.join(', ') || '(no type)'}. The reduction below is therefore NOT a\n` +
+      `     statement about tile adjacency; it is a statement about the DOT-CARRYING seams only,\n` +
+      `     and has to be verified as such.`,
+  );
+}
+
+/** Outer (non class-7) seam tags of the composite spectre Gamma. */
+function compositeOuterSeamTags(): readonly string[] {
+  const out = new Set<string>();
+  for (const t of ['Gamma1', 'Gamma2'] as TileTypeId[]) {
+    for (const s of metaEdges('spectre', t)) if (s.major !== 7) out.add(seamTag(s));
+  }
+  return [...out];
+}
+
+// ---------------------------------------------------------------------------
+// 2.  The Gamma reduction
+// ---------------------------------------------------------------------------
+
+const G2X: ZAffine = zBasePairXform('spectre') as ZAffine;
+
+interface EdgeRef {
+  readonly tile: 'Gamma1' | 'Gamma2';
+  readonly idx: number;
+  readonly label: string;
+}
+
+/** Exact world vertices of the two halves of the base composite Mystic. */
+function compositeVerts(): Record<'Gamma1' | 'Gamma2', readonly ZVec[]> {
+  const g1 = zLeafPts('spectre', 'Gamma1');
+  const g2 = zLeafPts('spectre', 'Gamma2').map((p) => zApply(G2X, p));
+  return { Gamma1: g1, Gamma2: g2 };
+}
+
+function undirectedSegKey(a: ZVec, b: ZVec): string {
+  const ka = zKey(a);
+  const kb = zKey(b);
+  return ka < kb ? `${ka}::${kb}` : `${kb}::${ka}`;
+}
+
+function section2(): { outerOrder: readonly string[]; reversed: boolean } {
+  heading('2.  The Gamma reduction  (exact, level-independent)');
+
+  const V = compositeVerts();
+  const labels = {
+    Gamma1: edgeLabels('spectre', 'Gamma1'),
+    Gamma2: edgeLabels('spectre', 'Gamma2'),
+  };
+
+  // ---- 2a.  local chord tables --------------------------------------------
+  console.log('  2a.  local dot / chord tables\n');
+  for (const [cfg, type] of [
+    [HEX, 'Gamma'],
+    [SPEC, 'Gamma1'],
+    [SPEC, 'Gamma2'],
+  ] as [Config, TileTypeId][]) {
+    console.log(
+      `      ${(cfg.family + '/' + type).padEnd(16)}dots ${activeTags(cfg, type).join(', ').padEnd(24)}#NC ${ncOptionCount(cfg, type)}   chords ${chordTags(cfg, type).join('  ')}`,
+    );
+  }
+  console.log('');
+  check(sameArray(activeTags(HEX, 'Gamma'), ['-1A', '1A', '2A', '-2A']), 'hex Gamma dots are (-1A, 1A, 2A, -2A)');
+  check(sameArray(chordTags(HEX, 'Gamma'), ['-1A|1A', '-2A|2A']), 'hex Gamma chords are {-1A—1A, 2A—-2A}');
+  check(sameArray(activeTags(SPEC, 'Gamma1'), ['-1A', '1A', '7A', '-2A']), 'Gamma1 dots are (-1A, 1A, 7A, -2A)');
+  check(sameArray(chordTags(SPEC, 'Gamma1'), ['-1A|1A', '-2A|7A']), 'Gamma1 chords are {-1A—1A, 7A—-2A}');
+  check(sameArray(activeTags(SPEC, 'Gamma2'), ['-7A', '2A']), 'Gamma2 dots are (-7A, 2A)');
+  check(sameArray(chordTags(SPEC, 'Gamma2'), ['-7A|2A']), 'Gamma2 chord is {-7A—2A}');
+
+  // ---- 2b.  the class-7 seam is the internal weld of the composite --------
+  console.log('\n  2b.  the class-7 seam is EXACTLY the internal weld of the composite\n');
+  const byKey = new Map<string, EdgeRef[]>();
+  for (const tile of ['Gamma1', 'Gamma2'] as const) {
+    const pts = V[tile];
+    for (let i = 0; i < pts.length; i++) {
+      const k = undirectedSegKey(pts[i], pts[(i + 1) % pts.length]);
+      if (!byKey.has(k)) byKey.set(k, []);
+      byKey.get(k)!.push({ tile, idx: i, label: labels[tile][i] });
+    }
+  }
+  const internal: EdgeRef[][] = [];
+  let overCount = 0;
+  for (const refs of byKey.values()) {
+    if (refs.length === 2) internal.push(refs);
+    else if (refs.length > 2) overCount++;
+  }
+  check(overCount === 0, 'no composite edge is shared by more than two half-tiles');
+  check(internal.length === 4, 'the two halves share exactly 4 physical edges', `got ${internal.length}`);
+
+  const pairDesc = internal
+    .map((r) => r.map((x) => `${x.tile}:${x.label}`).sort().join(' <-> '))
+    .sort();
+  console.log('      shared edges:');
+  for (const d of pairDesc) console.log(`        ${d}`);
+  const allSeven = internal.every((r) => r.every((x) => parseEdgeLabel(x.label).major === 7));
+  check(allSeven, 'every shared edge is a class-7 edge (so the internal weld is exactly the 7-seam)');
+  const minorsMatch = internal.every((r) => {
+    const [a, b] = r;
+    return parseEdgeLabel(a.label).minor === parseEdgeLabel(b.label).minor;
+  });
+  check(minorsMatch, "Gamma1's `7.m` glues to Gamma2's `-7.m` for each minor m (so minor-0 dots coincide)");
+
+  // the class-7 DOTS coincide exactly
+  const g1Dots = zConnectionPoints2('spectre', 'Gamma1', SPEC.subset);
+  const g2Dots = zConnectionPoints2('spectre', 'Gamma2', SPEC.subset);
+  const g1Seven = zKey(zApply2(Z_IDENT, g1Dots[2]));
+  const g2Seven = zKey(zApply2(G2X, g2Dots[0]));
+  check(g1Seven === g2Seven, "Gamma1's 7A dot and Gamma2's -7A dot are the SAME exact lattice point", g1Seven);
+
+  // ---- 2c.  composite outer boundary, and its cyclic dot order ------------
+  console.log('\n  2c.  composite outer boundary and the cyclic order of its dots\n');
+  const internalSet = new Set<string>();
+  for (const refs of internal) for (const r of refs) internalSet.add(`${r.tile}:${r.idx}`);
+
+  // Directed boundary edges, keyed by start vertex.
+  const nextEdge = new Map<string, EdgeRef & { from: ZVec; to: ZVec }>();
+  let collisions = 0;
+  let boundaryCount = 0;
+  for (const tile of ['Gamma1', 'Gamma2'] as const) {
+    const pts = V[tile];
+    for (let i = 0; i < pts.length; i++) {
+      if (internalSet.has(`${tile}:${i}`)) continue;
+      boundaryCount++;
+      const from = pts[i];
+      const to = pts[(i + 1) % pts.length];
+      const k = zKey(from);
+      if (nextEdge.has(k)) collisions++;
+      nextEdge.set(k, { tile, idx: i, label: labels[tile][i], from, to });
+    }
+  }
+  check(collisions === 0, 'composite boundary has no pinch vertex (one outgoing edge per vertex)');
+  check(boundaryCount === 20, 'composite boundary has 14 + 14 - 2*4 = 20 physical edges', `got ${boundaryCount}`);
+
+  const start = nextEdge.keys().next().value as string;
+  const walk: (EdgeRef & { from: ZVec; to: ZVec })[] = [];
+  let cur = start;
+  for (let step = 0; step < boundaryCount + 2; step++) {
+    const e = nextEdge.get(cur);
+    if (!e) break;
+    walk.push(e);
+    cur = zKey(e.to);
+    if (cur === start) break;
+  }
+  check(walk.length === boundaryCount && cur === start, 'the composite boundary is a single closed cycle', `walked ${walk.length}/${boundaryCount}`);
+
+  // signed area (float, orientation only) for both outlines
+  const area = (pts: readonly Pt[]): number => {
+    let a = 0;
+    for (let i = 0; i < pts.length; i++) {
+      const p = pts[i];
+      const q = pts[(i + 1) % pts.length];
+      a += p.x * q.y - q.x * p.y;
+    }
+    return a / 2;
+  };
+  const compArea = area(walk.map((e) => zToPt(e.from)));
+  const hexArea = area(leafPts('hex', 'Gamma') as Pt[]);
+  console.log(
+    `      orientation: composite walk signed area ${compArea.toFixed(4)} (${compArea > 0 ? 'CCW' : 'CW'}),  hex Gamma ${hexArea.toFixed(4)} (${hexArea > 0 ? 'CCW' : 'CW'})`,
+  );
+
+  // dot order along the walk
+  const isDotEdge = (r: EdgeRef): string | null => {
+    const p = parseEdgeLabel(r.label);
+    if (p.minor !== 0 || !SPEC.subset.includes(p.major)) return null;
+    const seam = metaEdges('spectre', r.tile).find((s) => s.edgeIndices.includes(r.idx));
+    return seam ? seamTag(seam) : null;
+  };
+  const outerOrder: string[] = [];
+  const outerSrc: string[] = [];
+  for (const e of walk) {
+    const tag = isDotEdge(e);
+    if (tag) {
+      outerOrder.push(tag);
+      outerSrc.push(`${e.tile}:${e.label}`);
+    }
+  }
+  console.log(`      composite outer dots in boundary order: ${outerOrder.join(' -> ')}`);
+  console.log(`                                     source : ${outerSrc.join(' , ')}`);
+
+  const hexOrder = activeTags(HEX, 'Gamma');
+  // hex boundary order == label order == activeTags order
+  const rotationsOf = (a: readonly string[]): string[][] => a.map((_, i) => [...a.slice(i), ...a.slice(0, i)]);
+  const fwd = rotationsOf(outerOrder).findIndex((r) => sameArray(r, hexOrder));
+  const rev = rotationsOf([...outerOrder].reverse()).findIndex((r) => sameArray(r, hexOrder));
+  console.log(`      hex Gamma dots in boundary order      : ${hexOrder.join(' -> ')}`);
+  check(
+    fwd >= 0 || rev >= 0,
+    'composite outer dot cyclic order == hex Gamma dot cyclic order',
+    fwd >= 0 ? `same orientation, rotation ${fwd}` : `reversed orientation, rotation ${rev}`,
+  );
+  check(
+    sameArray([...outerOrder].sort(), [...hexOrder].sort()),
+    'composite OUTER active seams are exactly {-1A, 1A, 2A, -2A}',
+    outerOrder.join(','),
+  );
+  console.log(
+    '      NOTE: cyclic order is what the non-crossing condition depends on, and it is\n' +
+      '            invariant under rotation AND reversal, so either answer above suffices.',
+  );
+
+  // ---- 2d.  suppression turns the composite chords into the hex chords ----
+  console.log('\n  2d.  suppressing the degree-2 class-7 vertex\n');
+  const g1Pairs = chosenMatching(SPEC, 'Gamma1');
+  const g2Pairs = chosenMatching(SPEC, 'Gamma2');
+  const g1Tags = activeTags(SPEC, 'Gamma1');
+  const g2Tags = activeTags(SPEC, 'Gamma2');
+  const chordsWithSeven = g1Pairs.filter(([a, b]) => a === 2 || b === 2);
+  const chordsWithMinusSeven = g2Pairs.filter(([a, b]) => a === 0 || b === 0);
+  check(chordsWithSeven.length === 1, 'exactly one Gamma1 chord ends at the 7A dot');
+  check(chordsWithMinusSeven.length === 1, 'exactly one Gamma2 chord ends at the -7A dot');
+  const g1Other = chordsWithSeven[0][0] === 2 ? chordsWithSeven[0][1] : chordsWithSeven[0][0];
+  const g2Other = chordsWithMinusSeven[0][0] === 0 ? chordsWithMinusSeven[0][1] : chordsWithMinusSeven[0][0];
+  const merged = [g1Tags[g1Other], g2Tags[g2Other]].sort().join('|');
+  const survivors = [
+    ...g1Pairs.filter(([a, b]) => a !== 2 && b !== 2).map(([a, b]) => [g1Tags[a], g1Tags[b]].sort().join('|')),
+    merged,
+  ].sort();
+  console.log(`      composite chords after suppression : ${survivors.join('   ')}`);
+  console.log(`      hex Gamma chords                   : ${chordTags(HEX, 'Gamma').join('   ')}`);
+  check(sameArray(survivors, chordTags(HEX, 'Gamma')), 'suppressed composite chord set == hex Gamma chord set');
+
+  // metric side note: the 7 dot is strictly interior to the composite
+  const boundaryPts = walk.map((e) => zToPt(e.from));
+  const sevenPt = zToPt(g1Dots[2]);
+  let minDist = Infinity;
+  for (let i = 0; i < boundaryPts.length; i++) {
+    const a = boundaryPts[i];
+    const b = boundaryPts[(i + 1) % boundaryPts.length];
+    const vx = b.x - a.x;
+    const vy = b.y - a.y;
+    const L2 = vx * vx + vy * vy;
+    const t = Math.max(0, Math.min(1, ((sevenPt.x - a.x) * vx + (sevenPt.y - a.y) * vy) / L2));
+    minDist = Math.min(minDist, Math.hypot(sevenPt.x - (a.x + t * vx), sevenPt.y - (a.y + t * vy)));
+  }
+  console.log(
+    `\n      [metric, float] distance from the class-7 dot to the composite boundary = ${minDist.toFixed(6)}\n` +
+      `      (tile edge length 1; eps 1e-9, clearance ${(minDist / 1e-9).toExponential(2)}x eps) — the dot is\n` +
+      `      strictly INSIDE the composite, so no tile outside the composite can reach it.`,
+  );
+  check(minDist > 1e-6, 'class-7 dot is strictly interior to the composite (metric, float, stated as such)');
+
+  return { outerOrder, reversed: fwd < 0 };
+}
+
+// ---------------------------------------------------------------------------
+// 3.  The explicit isomorphism, checked on real patches
+// ---------------------------------------------------------------------------
+
+/** (spectre type, dot index) -> hex dot index, or 'internal'. Derived, not assumed. */
+type DotImage = { kind: 'outer'; hexDot: number } | { kind: 'internal' };
+
+function buildDotMap(): { map: Map<string, DotImage>; ok: boolean } {
+  const map = new Map<string, DotImage>();
+  let ok = true;
+
+  for (const type of SHARED) {
+    const h = activeTags(HEX, type);
+    const s = activeTags(SPEC, type);
+    for (let i = 0; i < s.length; i++) {
+      const j = h.indexOf(s[i]);
+      if (j < 0 || h.filter((x) => x === s[i]).length !== 1) {
+        ok = false;
+        continue;
+      }
+      map.set(`${type}:${i}`, { kind: 'outer', hexDot: j });
+      if (j !== i) ok = false; // we also want it to be the identity on indices
+    }
+    if (s.length !== h.length) ok = false;
+  }
+
+  const hg = activeTags(HEX, 'Gamma');
+  for (const type of ['Gamma1', 'Gamma2'] as TileTypeId[]) {
+    const s = activeTags(SPEC, type);
+    for (let i = 0; i < s.length; i++) {
+      if (Math.abs(parseInt(s[i].replace(/[^0-9]/g, ''), 10)) === 7) {
+        map.set(`${type}:${i}`, { kind: 'internal' });
+        continue;
+      }
+      const j = hg.indexOf(s[i]);
+      if (j < 0) {
+        ok = false;
+        continue;
+      }
+      map.set(`${type}:${i}`, { kind: 'outer', hexDot: j });
+    }
+  }
+  return { map, ok };
+}
+
+/** Exact welded keys of every active dot of every instance, per instance. */
+function dotKeys(family: TileFamilyId, subset: readonly number[], insts: readonly ZInstance[]): string[][] {
+  const cache = new Map<string, readonly ZVec[]>();
+  return insts.map((inst) => {
+    let pts = cache.get(inst.type);
+    if (!pts) {
+      pts = zConnectionPoints2(family, inst.type, subset);
+      cache.set(inst.type, pts);
+    }
+    return pts.map((p) => zKey(zApply2(inst.xform, p)));
+  });
+}
+
+function parentId(id: string): string {
+  const k = id.lastIndexOf('.');
+  return k < 0 ? '' : id.slice(0, k);
+}
+
+interface PatchResult {
+  readonly ok: boolean;
+  readonly hexTiles: number;
+  readonly specTiles: number;
+  readonly hexSegs: number;
+  readonly specSegs: number;
+  readonly composites: number;
+  readonly boundaryComposites: number;
+  readonly hexTrace: ReturnType<typeof trace>;
+  readonly specTrace: ReturnType<typeof trace>;
+}
+
+function checkPatch(root: TileTypeId, level: number, dotMap: Map<string, DotImage>, verbose: boolean): PatchResult {
+  const tag = `${root}@${level}`;
+  const hexI = zExpand('hex', root, level);
+  const specI = zExpand('spectre', root, level);
+
+  // ---- tile bijection -----------------------------------------------------
+  const hexByIdx = new Map<string, number>();
+  hexI.forEach((h, i) => hexByIdx.set(h.id, i));
+  let tileOk = hexByIdx.size === hexI.length;
+  const hexOfSpec: number[] = new Array(specI.length).fill(-1);
+  const halvesSeen = new Map<number, Set<string>>();
+  for (let i = 0; i < specI.length; i++) {
+    const s = specI[i];
+    const isHalf = s.type === 'Gamma1' || s.type === 'Gamma2';
+    const hid = isHalf ? parentId(s.id) : s.id;
+    const hi = hexByIdx.get(hid);
+    if (hi === undefined) {
+      tileOk = false;
+      continue;
+    }
+    hexOfSpec[i] = hi;
+    if (isHalf) {
+      if (hexI[hi].type !== 'Gamma') tileOk = false;
+      if (!halvesSeen.has(hi)) halvesSeen.set(hi, new Set());
+      halvesSeen.get(hi)!.add(s.type);
+    } else if (hexI[hi].type !== s.type) {
+      tileOk = false;
+    }
+  }
+  const composites = hexI.filter((h) => h.type === 'Gamma').length;
+  for (const [, set] of halvesSeen) if (set.size !== 2) tileOk = false;
+  if (halvesSeen.size !== composites) tileOk = false;
+  if (specI.length !== hexI.length + composites) tileOk = false;
+  checkQuiet(tileOk, `${tag}: tile bijection (composite Gamma <-> hex Gamma)`);
+
+  // ---- dot keys -----------------------------------------------------------
+  const hexK = dotKeys('hex', HEX.subset, hexI);
+  const specK = dotKeys('spectre', SPEC.subset, specI);
+
+  // ---- internal class-7 vertices -----------------------------------------
+  const internalGroups = new Map<string, string[]>(); // key -> ['<specIdx>:<dot>']
+  const outerKeySet = new Set<string>();
+  for (let i = 0; i < specI.length; i++) {
+    for (let d = 0; d < specK[i].length; d++) {
+      const img = dotMap.get(`${specI[i].type}:${d}`);
+      if (!img) continue;
+      if (img.kind === 'internal') {
+        const k = specK[i][d];
+        if (!internalGroups.has(k)) internalGroups.set(k, []);
+        internalGroups.get(k)!.push(`${i}:${d}`);
+      } else {
+        outerKeySet.add(specK[i][d]);
+      }
+    }
+  }
+  let internalOk = internalGroups.size === composites;
+  for (const [k, members] of internalGroups) {
+    if (members.length !== 2) internalOk = false;
+    if (outerKeySet.has(k)) internalOk = false; // must never coincide with an outer dot
+    const owners = members.map((m) => Number(m.split(':')[0]));
+    const types = owners.map((o) => specI[o].type).sort();
+    if (types[0] !== 'Gamma1' || types[1] !== 'Gamma2') internalOk = false;
+    if (hexOfSpec[owners[0]] !== hexOfSpec[owners[1]]) internalOk = false; // SAME composite
+  }
+  checkQuiet(
+    internalOk,
+    `${tag}: every class-7 dot is an internal weld of one composite, degree 2, never shared with anything else`,
+    `${internalGroups.size} groups vs ${composites} composites`,
+  );
+
+  // ---- vertex map: well-defined, injective, surjective --------------------
+  const vmap = new Map<string, string>();
+  const rmap = new Map<string, string>();
+  let vOk = true;
+  for (let i = 0; i < specI.length; i++) {
+    for (let d = 0; d < specK[i].length; d++) {
+      const img = dotMap.get(`${specI[i].type}:${d}`);
+      if (!img || img.kind === 'internal') continue;
+      const sk = specK[i][d];
+      const hk = hexK[hexOfSpec[i]][img.hexDot];
+      const prev = vmap.get(sk);
+      if (prev === undefined) vmap.set(sk, hk);
+      else if (prev !== hk) vOk = false;
+      const rprev = rmap.get(hk);
+      if (rprev === undefined) rmap.set(hk, sk);
+      else if (rprev !== sk) vOk = false;
+    }
+  }
+  const hexAllKeys = new Set<string>();
+  for (const row of hexK) for (const k of row) hexAllKeys.add(k);
+  const surj = rmap.size === hexAllKeys.size && [...hexAllKeys].every((k) => rmap.has(k));
+  checkQuiet(vOk, `${tag}: vertex map is well defined and injective (weld patterns agree)`);
+  checkQuiet(surj, `${tag}: vertex map is onto the hex vertex set`, `${rmap.size} vs ${hexAllKeys.size}`);
+
+  // ---- chord multisets ----------------------------------------------------
+  const canon = (a: string, b: string, owner: string): string =>
+    `${owner}#${a < b ? a + '|' + b : b + '|' + a}`;
+
+  const hexChords: string[] = [];
+  for (let i = 0; i < hexI.length; i++) {
+    for (const [a, b] of chosenMatching(HEX, hexI[i].type)) {
+      hexChords.push(canon(hexK[i][a], hexK[i][b], hexI[i].id));
+    }
+  }
+
+  const specChords: string[] = [];
+  const pendingBySeven = new Map<string, { key: string; owner: string }[]>();
+  for (let i = 0; i < specI.length; i++) {
+    for (const [a, b] of chosenMatching(SPEC, specI[i].type)) {
+      const ia = dotMap.get(`${specI[i].type}:${a}`);
+      const ib = dotMap.get(`${specI[i].type}:${b}`);
+      const aInt = ia?.kind === 'internal';
+      const bInt = ib?.kind === 'internal';
+      if (aInt && bInt) {
+        vOk = false; // would be a loop after suppression
+        continue;
+      }
+      const owner = specI[i].type === 'Gamma1' || specI[i].type === 'Gamma2' ? parentId(specI[i].id) : specI[i].id;
+      if (!aInt && !bInt) {
+        specChords.push(canon(vmap.get(specK[i][a])!, vmap.get(specK[i][b])!, owner));
+        continue;
+      }
+      const sevenKey = specK[i][aInt ? a : b];
+      const freeKey = specK[i][aInt ? b : a];
+      if (!pendingBySeven.has(sevenKey)) pendingBySeven.set(sevenKey, []);
+      pendingBySeven.get(sevenKey)!.push({ key: freeKey, owner });
+    }
+  }
+  let mergeOk = true;
+  for (const [, list] of pendingBySeven) {
+    if (list.length !== 2) {
+      mergeOk = false;
+      continue;
+    }
+    if (list[0].owner !== list[1].owner) mergeOk = false;
+    const a = vmap.get(list[0].key);
+    const b = vmap.get(list[1].key);
+    if (a === undefined || b === undefined) {
+      mergeOk = false;
+      continue;
+    }
+    if (a === b) mergeOk = false; // suppression would create a self-loop
+    specChords.push(canon(a, b, list[0].owner));
+  }
+  checkQuiet(mergeOk, `${tag}: every class-7 vertex merges exactly two chords of one composite into one`);
+
+  hexChords.sort();
+  specChords.sort();
+  const chordOk = sameArray(hexChords, specChords);
+  if (!chordOk && verbose) {
+    const hs = new Set(hexChords);
+    const ss = new Set(specChords);
+    const onlyHex = hexChords.filter((c) => !ss.has(c)).slice(0, 3);
+    const onlySpec = specChords.filter((c) => !hs.has(c)).slice(0, 3);
+    console.log(`        smallest differences — only in hex: ${onlyHex.join(' ')}`);
+    console.log(`        smallest differences — only in spec: ${onlySpec.join(' ')}`);
+  }
+  checkQuiet(
+    chordOk,
+    `${tag}: suppressed spectre chord multiset == hex chord multiset (tile-attributed)`,
+    `${specChords.length} vs ${hexChords.length}`,
+  );
+
+  // ---- invariants ---------------------------------------------------------
+  const hexS = buildStrands(HEX, hexI);
+  const specS = buildStrands(SPEC, specI);
+  const hexT = trace(hexS);
+  const specT = trace(specS);
+
+  const arcLenHex = hexT.arcs.map((a) => a.segIdxs.length).sort((x, y) => y - x);
+  const arcLenSpec = specT.arcs.map((a) => a.segIdxs.length).sort((x, y) => y - x);
+  // Each arc loses one segment per class-7 vertex it passes through.
+  const sevenOnArc = specT.arcs.map((a) => {
+    let n = 0;
+    const seen = new Set<string>();
+    for (const si of a.segIdxs) for (const k of specS.segs[si]) if (internalGroups.has(k) && !seen.has(k)) { seen.add(k); n++; }
+    return n;
+  });
+  const arcLenSuppressed = specT.arcs.map((a, i) => a.segIdxs.length - sevenOnArc[i]).sort((x, y) => y - x);
+
+  // Max degree must be compared on the SUPPRESSED spectre graph: before
+  // suppression every class-7 vertex has degree 2, so a hex patch whose own
+  // maxDegree is 1 (a lone Gamma at level 0) would spuriously disagree.
+  const supDeg = new Map<string, number>();
+  for (const c of specChords) {
+    const [a, b] = c.split('#')[1].split('|');
+    supDeg.set(a, (supDeg.get(a) ?? 0) + 1);
+    supDeg.set(b, (supDeg.get(b) ?? 0) + 1);
+  }
+  const supMaxDeg = supDeg.size ? Math.max(...supDeg.values()) : 0;
+
+  const invOk =
+    hexT.arcs.length === specT.arcs.length &&
+    hexT.circuits.length === specT.circuits.length &&
+    hexT.maxDegree === supMaxDeg &&
+    specT.maxDegree <= 2 &&
+    hexT.junctions === specT.junctions &&
+    sameArray(arcLenHex, arcLenSuppressed) &&
+    hexT.tilesCovered === hexI.length &&
+    specT.tilesCovered === specI.length;
+  checkQuiet(invOk, `${tag}: derived invariants agree after suppression`);
+
+  // count composites touching the patch boundary (some outer dot unwelded)
+  let boundaryComposites = 0;
+  for (const [hi] of halvesSeen) {
+    let onBoundary = false;
+    for (let d = 0; d < hexK[hi].length; d++) {
+      if ((hexS.degree.get(hexK[hi][d]) ?? 0) < 2) onBoundary = true;
+    }
+    if (onBoundary) boundaryComposites++;
+  }
+
+  if (verbose) {
+    console.log(
+      `  ${tag.padEnd(12)} tiles ${pad(hexI.length, 6)} / ${pad(specI.length, 6)}   segs ${pad(hexS.segs.length, 6)} / ${pad(specS.segs.length, 6)}` +
+        `   composites ${pad(composites, 5)} (${pad(boundaryComposites, 5)} on the patch boundary)` +
+        `   arcs ${pad(hexT.arcs.length, 3)}/${pad(specT.arcs.length, 3)}   circuits ${pad(hexT.circuits.length, 3)}/${pad(specT.circuits.length, 3)}` +
+        `   maxdeg ${hexT.maxDegree}/${supMaxDeg}(raw ${specT.maxDegree})` +
+        `   arc-lens ${arcLenHex.slice(0, 4).join(',')} == ${arcLenSuppressed.slice(0, 4).join(',')}`,
+    );
+  }
+
+  return {
+    ok: tileOk && internalOk && vOk && surj && mergeOk && chordOk && invOk,
+    hexTiles: hexI.length,
+    specTiles: specI.length,
+    hexSegs: hexS.segs.length,
+    specSegs: specS.segs.length,
+    composites,
+    boundaryComposites,
+    hexTrace: hexT,
+    specTrace: specT,
+  };
+}
+
+function section3(): void {
+  heading('3.  The explicit isomorphism, verified on real patches (exact)');
+
+  const { map: dotMap, ok: dotMapOk } = buildDotMap();
+  check(dotMapOk, 'dot correspondence derived from seam tags is a bijection and is the identity on the 8 shared types');
+
+  console.log('\n  derived dot map (spectre -> hex):');
+  for (const type of [...SHARED, 'Gamma1', 'Gamma2'] as TileTypeId[]) {
+    const s = activeTags(SPEC, type);
+    const parts = s.map((t, i) => {
+      const img = dotMap.get(`${type}:${i}`)!;
+      return img.kind === 'internal' ? `${t}[${i}]->INTERNAL` : `${t}[${i}]->${type.startsWith('Gamma') ? 'Gamma' : type}[${img.hexDot}]`;
+    });
+    console.log(`    ${type.padEnd(8)} ${parts.join('   ')}`);
+  }
+
+  console.log('\n  --- roots Delta, Psi, Gamma at levels 0..5 (the obligation) ---\n');
+  for (const root of ROOTS_DEEP) {
+    for (let lv = 0; lv <= 5; lv++) checkPatch(root, lv, dotMap, true);
+  }
+
+  console.log('\n  --- the other six roots at levels 1..4 (extra) ---\n');
+  for (const root of ROOTS_ALL) {
+    if (ROOTS_DEEP.includes(root)) continue;
+    for (let lv = 1; lv <= 4; lv++) checkPatch(root, lv, dotMap, true);
+  }
+
+  console.log('\n  --- segment-count identity  segs(spectre) - segs(hex) == #composites ---\n');
+  let idOk = true;
+  for (const root of ROOTS_ALL) {
+    const row: string[] = [];
+    for (let lv = 1; lv <= 4; lv++) {
+      const hexI = zExpand('hex', root, lv);
+      const specI = zExpand('spectre', root, lv);
+      const g = hexI.filter((h) => h.type === 'Gamma').length;
+      const hs = buildStrands(HEX, hexI).segs.length;
+      const ss = buildStrands(SPEC, specI).segs.length;
+      if (ss - hs !== g) idOk = false;
+      row.push(`${pad(ss, 6)}-${pad(hs, 6)}=${pad(g, 5)}`);
+    }
+    console.log(`    ${root.padEnd(8)} ${row.join('   ')}`);
+  }
+  check(idOk, 'segs(spectre) - segs(hex) == #composites at every root, levels 1..4');
+}
+
+// ---------------------------------------------------------------------------
+// 4.  What transfers, and what does not
+// ---------------------------------------------------------------------------
+
+function section4(): void {
+  heading('4.  What the isomorphism transfers — and what it does NOT');
+  console.log(`
+  PROVED FOR ALL LEVELS k (the local half), given the hypothesis (H) below:
+
+    (H)  WELD-PATTERN AGREEMENT.  For a level-k patch with root R, two active
+         dots of the hex patch coincide exactly iff the corresponding two dots
+         of the spectre patch coincide exactly, where "corresponding" is the
+         tile bijection (hex tile id X <-> spectre {X.0, X.1} when X is a Gamma,
+         X <-> X otherwise) composed with the seam-tag dot map of section 3.
+         Equivalently: the gluing pattern of the DOT-CARRYING seams (classes
+         1, 2, 8) is the same in both families.
+
+    Given (H), the isomorphism is forced, for every k, by finitely many
+    level-independent facts that this script verifies exactly:
+      L1. the 8 shared types have identical active-seam sequences, identical
+          non-crossing option counts, identical combo digits, hence identical
+          chord sets (section 1);
+      L2. class 7 occurs on no shared type, so the selections {1,2,8} and
+          {1,2,7,8} agree away from Gamma (section 1);
+      L3. the composite Gamma's class-7 seam is exactly its internal weld, its
+          two class-7 dots are the same lattice point, and that point is
+          strictly interior to the composite, so it can never meet any dot of a
+          tile outside the composite (section 2b, 2d);
+      L4. the composite's OUTER active dots are {-1A, 1A, 2A, -2A} in the same
+          cyclic order as hex Gamma's, and suppressing the degree-2 class-7
+          vertex turns its three chords into hex Gamma's two (section 2c, 2d).
+    L1-L4 are statements about the base tiles only. They do not mention the
+    supertile transforms, so the negative result about geometric self-similarity
+    does not touch them.
+
+  CHECKED, NOT PROVED:
+    (H) itself is verified EXACTLY at the levels this script reports and nowhere
+    else. It is a statement about welding, which is geometric, and the two
+    families have different geometry; it does not follow from SUPER_RULES alone.
+    Section 1b exhibits real tile-adjacency differences between the families
+    (hex Sigma splits the spectre 4A seam into 6A + 4A; hex Gamma has 6 outer
+    seams where the composite Mystic has 7, dropping class 6), so the naive
+    claim "hex is the combinatorial model of the spectre tiling" is FALSE, and
+    (H) survives only because classes 4 and 6 carry no dot under these
+    selections. (H) is the whole remaining gap in the reduction.
+
+  TRANSFERS THROUGH THE ISOMORPHISM (topological / combinatorial):
+    - circuit-freeness (no closed component);
+    - maximum welded degree <= 2, absence of junctions;
+    - the number of connected components and the multiset of their lengths
+      (after subtracting one segment per composite traversed);
+    - "every tile is covered by the strand" (via the tile bijection: a composite
+      is covered iff its hex Gamma is);
+    - "rooted at Psi the diagram is a single open arc visiting every tile";
+    - the endpoint structure of each arc, and which tile each endpoint sits in;
+    - anything phrased purely in the abstract graph, its components, or the
+      tile-to-component incidence.
+
+  DOES NOT TRANSFER (metric):
+    - SELF-AVOIDANCE OF THE DRAWN CHORDS. The chords are straight segments
+      between dot positions, and the dot positions differ: the hexagon Gamma is
+      a regular hexagon, the composite Mystic is two Spectres. Two chords can
+      be disjoint in one realisation and cross in the other. A graph isomorphism
+      says nothing about plane embeddings. Self-avoidance must be proved
+      separately in EACH family. (Note also that the suppressed spectre chord
+      -2A..2A is a two-segment polyline through the internal dot, not a straight
+      segment — so even "the same" chord is a different point set.)
+    - CLEARANCES and any epsilon-level statement.
+    - SPACE-FILLING of the plane region: the two tilings cover different regions
+      with different tiles; density, Hausdorff limits and the limit curve's
+      image are separate questions per family.
+    - SELF-SIMILARITY of the limit curve, and the similarity ratio / rotation
+      angle, which are metric and family-dependent (and, per this session's
+      negative result, not exact at any finite level in either family).
+    - The hexagon realisation's tiles are not even the same shape class, so
+      "the curve passes through the interior of each tile" is a separate claim.
+
+  CONSEQUENCE. The two conjectures are ONE theorem on the topological side and
+  TWO theorems on the metric side. Proving "infinite space-filling FASS" for
+  spectre-1278-'0101000000' gives the S, A and self-similarity parts for
+  hex-128-'010100000' only in their combinatorial readings; the drawn-curve
+  self-avoidance and the space-filling must still be argued in the hex geometry.
+`);
+}
+
+// ---------------------------------------------------------------------------
+// 5.  Summary
+// ---------------------------------------------------------------------------
+
+function main(): void {
+  console.log('FASS PROOF 06 — FAMILY REDUCTION: hex-128-010100000  vs  spectre-1278-0101000000');
+  section1();
+  section2();
+  section3();
+  section4();
+
+  heading('5.  VERDICT');
+  if (FAILURES === 0) {
+    console.log(`  ALL CHECKS PASSED.
+
+  PROVED (all levels k), modulo hypothesis (H):
+    the strand graph of spectre-1278-'0101000000' on any patch, with its
+    degree-2 class-7 vertices suppressed, is isomorphic to the strand graph of
+    hex-128-'010100000' on the corresponding patch, by a tile-respecting
+    isomorphism.
+
+  CHECKED EXACTLY (not proved for all k):
+    hypothesis (H), the weld-pattern agreement, at roots Delta/Psi/Gamma levels
+    0..5 and the other six roots levels 1..4.
+
+  REFUTED:
+    "hex is the combinatorial model of the spectre tiling" — the seam
+    decompositions differ (section 1b); the reduction holds only because the
+    differing classes carry no connection dot under these two selections.
+`);
+    process.exit(0);
+  } else {
+    console.log(`  ${FAILURES} CHECK(S) FAILED — see [FAIL] lines above. The reduction as stated does NOT hold.`);
+    process.exit(1);
+  }
+}
+
+main();
