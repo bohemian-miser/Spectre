@@ -907,15 +907,21 @@ for (const family of ['hex', 'spectre'] as TileFamilyId[]) {
           if (qm.get(u) === 1) qEdges.push([zToPt(poly[j]), zToPt(poly[(j + 1) % poly.length])]);
         }
       }
+      // d(bdy Q, bdy P) for polygonal boundaries is attained at a vertex of
+      // one against a point of the other, so BOTH directions are needed.
       let gap = Infinity;
       for (const [qa, qb] of qEdges) {
         for (const [a, b] of p.outline) {
-          gap = Math.min(gap, pointSegDist(qa, a, b), pointSegDist(qb, a, b));
+          gap = Math.min(
+            gap,
+            pointSegDist(qa, a, b), pointSegDist(qb, a, b),
+            pointSegDist(a, qa, qb), pointSegDist(b, qa, qb),
+          );
         }
       }
       console.log(`      Lemma B collar gap d(boundary Q, boundary P) at level ${MAXG}: ${gap.toFixed(4)}  (${idxs.length} tiles in Q)`);
       ok(gap > 1e-9, `${family}: the collar gap is strictly positive, so Lemma B applies`,
-        `gap ${gap.toFixed(4)}; each further period adds at least this much to the inradius`);
+        `gap ${gap.toFixed(4)} (both directions, vertex-to-edge); burial only forbids a shared EDGE, so a shared VERTEX would give gap 0 and Lemma B would say nothing — it does not happen here`);
     }
   }
 }
@@ -961,9 +967,20 @@ if (MAXG >= BURY_DEPTH + 2) {
       same && sets[0].length > 0,
       `${family}: the buried depth-${BURY_DEPTH} address set is IDENTICAL at M = ${BURY_DEPTH + 1}..${MAXG}`,
       same
-        ? `${sets[0].length} addresses, so burial is a depth-${BURY_DEPTH} fact, not a level-${BURY_DEPTH + 1} accident — which is exactly what the periodic-address argument needs`
+        ? `${sets[0].length} addresses, so burial is a depth-${BURY_DEPTH} fact, not a level-${BURY_DEPTH + 1} accident`
         : `sets differ between levels: ${sets.map((s) => s.length).join(' vs ')}`,
     );
+    // The periodic construction repeats ONE root-down address alpha as the
+    // block, so any alpha in the buried set is a usable period: at every
+    // block boundary the ancestor sits at exactly that address inside its
+    // own ancestor. No extra closure condition is needed.
+    if (sets[0].length) {
+      const alpha = sets[0][0];
+      const inOut = alpha.split('.').reverse().join('');
+      ok(true,
+        `${family}: periodic address available — repeat the inside-out block (${inOut})`,
+        `root-down block ${alpha}; at every block boundary Q_i sits at that address inside Q_{i+1}, so Lemma B applies once per block`);
+    }
   }
 } else {
   console.log(`\n  3d. (skipped: needs maxGeomLevel >= ${BURY_DEPTH + 2} to compare two levels of depth-${BURY_DEPTH} burial)`);
@@ -986,9 +1003,18 @@ console.log(`
 
   What is still needed for divergence at ALL levels: that the seed's ancestor
   stays buried at every level, i.e. that the burial is a level-independent
-  combinatorial fact about the depth-d decomposition. That is obligation L3.
-  Given it, Lemma B adds at least one collar gap per period, and the inradius
-  diverges, so the union is the whole plane.`);
+  combinatorial fact about the depth-${BURY_DEPTH} decomposition. Section 3d checks exactly
+  that, at two levels; L3 is what would give it for all of them. Granted it,
+  Lemma B adds at least one collar gap per period of the address, the inradius
+  is unbounded, and the union is the whole plane — with every approximant
+  still a single arc, because every patch in the chain is a Psi supertile.
+
+  The one gap that survives even given L3: Lemma B gives inradius >= sum of
+  the per-block collar gaps, so divergence needs that sum to be infinite. Each
+  gap is strictly positive (measured), but no argument here bounds them below
+  by a fixed constant. In practice they grow like lambda^(period/2) with the
+  patches, which is overwhelmingly the expected behaviour and is what the
+  measured sequence shows; it is not proved.`);
 
 // ===========================================================================
 // 4. SPACE-FILLING: the remaining hypotheses
@@ -1381,6 +1407,12 @@ console.log(`  PROVED for all k, no level bound:
     * the constant-slot seed edge staying frozen on the outline;
     * a Psi-only varying address burying the seed, and its inradius growth;
     * max tile diameter / patch diameter decaying like lambda^(-k/2).
+
+  OPEN, EVEN GIVEN L3:
+    * that the per-block collar gaps of Lemma B sum to infinity. Each is
+      strictly positive and they visibly grow with the patches, but nothing
+      here bounds them below. Without that, exhaustion is "the inradius is
+      strictly increasing", not "the inradius diverges".
 
   ASSUMED / CITED:
     * L3 — level-independence of the substitution's combinatorial adjacency.
