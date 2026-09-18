@@ -39,7 +39,7 @@ very different characters:
 | **L2** | **Self-avoiding** — no drawn chord crosses another | **proved for hex, all levels**; 478 two-tile classes for spectre |
 | **L3** | the substitution's strand composition is level-independent | **narrowed to one geometric statement** |
 | **L4** | one arc, no circuits, every tile visited | **proved for all levels given L3** |
-| **L5** | the infinite limit | **whole plane, one bi-infinite curve**, via the Delta nesting, given L3 |
+| **L5** | the infinite limit | **whole plane, one bi-infinite curve**; the Hilbert template needs rebuilding |
 
 **The short answer to "how do we do that".** Reduce everything to L3, then
 either prove L3 or cite it. L1 and L4 are then genuine theorems; L2 becomes a
@@ -57,9 +57,9 @@ meet edge-to-edge at every level, so that coincident quad-arc endpoints force
 coincident arcs. Everything else in L3 is either proved outright or constant and
 checked to level 8.
 
-Seven things found while writing this reshape the problem. Three are good news,
-four are corrections — and every correction came from running a check, not from
-reading.
+Eight things found while writing this reshape the problem. Three are good news,
+five are corrections — and every correction came from running a check, not from
+reading. Three of the five correct earlier drafts of this document itself.
 
 * **The two conjectures are one theorem** (§2). Configurations (A) and (B) are
   not merely isomorphic strand graphs; at the level of the routing automaton
@@ -82,17 +82,21 @@ reading.
   `log(2+√5)/log(√(4+√15)) = 1.3992532…`, the perimeter growing by the golden
   ratio cubed. Every similarity route to the crux lemma is closed.
 * **Correction 2 (§4.2).** Four of the spectre chords **leave their own tile**,
-  cutting across the reflex corner of the concave 14-gon by exactly
-  (2−√3)/4. So the clean "chords stay inside their tiles" proof of
+  cutting across the reflex corner of the concave 14-gon and reaching
+  (2√3−3)/8 ≈ 0.058 outside it. So the clean "chords stay inside their tiles" proof of
   self-avoidance settles hexagons completely and fails for the spectre. It is
   repaired by checking two-tile placements instead of single tiles, which is
   still finite — 478 classes, complete from level 4.
-* **Correction 3 (§4.5).** The Psi-inside-Psi nesting gives a genuine
-  bi-infinite curve, but its inradius about the seed is *exactly constant* at
-  every level, so that union fills a sector, not the plane. The nesting that
-  does fill the plane is **Delta inside Delta**, whose patches carry four arcs
-  rather than one — and those four all land in a single arc two levels up, so
-  the whole-plane object is still exactly one bi-infinite curve.
+* **Correction 3 (§4.5).** A *constant* Psi slot gives a bi-infinite curve whose
+  union misses an open set, so it does not fill the plane. But a *varying* Psi
+  address does bury the seed, from level 5 on, and every patch along it is still
+  a single arc. An earlier draft of this document claimed exhaustion required
+  leaving Psi and paying the single-arc property; it does not.
+* **Correction 5 (§4.5).** The naive Hilbert nesting is **false** here. A
+  level-`j` sub-supertile is re-entered `arcs(T)` times, up to 5, and is
+  contiguous if and only if it is a Psi sub-supertile. The space-filling
+  argument has to be rebuilt on bounded re-entry, which still gives Hölder-1/2
+  and hence compactness, but not a unique limit.
 * **Correction 4 (§4.1).** `web/src/core/circuits.ts` says three tiles can meet
   at a class-0 connection point, producing branch points. They cannot. Over all
   511 selections in both families the maximum dot multiplicity is 2, so **no
@@ -375,10 +379,14 @@ four leaf types:
 
 | tile | chord | exact excursion |
 |---|---|---|
-| Theta | `2A—-2A` | passes (2−√3)/4 = 0.0669873 beyond the reflex vertex |
-| Xi | `-1A—-2A` | straying piece (2√3−3)/2 = 0.2320508 long |
-| Phi | `2A—-2A` | reaching (2√3−3)/8 = 0.0580127 outside the tile |
+| Theta | `2A—-2A` | the excursion passes (2−√3)/4 = 0.0669873 beyond the reflex vertex |
+| Xi | `-1A—-2A` | the straying piece is (2√3−3)/2 = 0.2320508 long |
+| Phi | `2A—-2A` | its greatest distance *outside* the tile is (2√3−3)/8 = 0.0580127 |
 | Psi | `-1A—-2A` | verdict by exact `Z[√3]` orientation predicates |
+
+Those are two different measurements of the same excursion and an earlier draft
+of this document ran them together. The depth outside the tile is
+(2√3−3)/8 ≈ 0.058; the distance past the reflex vertex is (2−√3)/4 ≈ 0.067.
 
 So (a) is false for configuration (B) and no single-tile argument can work.
 Because the offending chord is Psi's *forced* diagonal, this is not specific to
@@ -653,7 +661,26 @@ bi-infinite: at spectre slot 2 the segments before the child run 41, 176, 2646,
 is *exactly constant* — 1.409 for hexagons, 3.527 for the spectre — so the seed
 abuts the patch boundary forever and that union fills a sector, not the plane.
 
-**The Delta nesting gives all three.** Delta contains Delta at slot 1. Its
+**A varying Psi address gives all three, with every approximant a single arc.**
+An earlier draft of this document, and `13-nesting-limit.ts`, said that pushing
+the seed into the interior needs an address through other supertile types, which
+would cost the single-arc property. That is false. A varying address using only
+the Psi slots `{0, 2, 5}` buries the seed: none of the 3^(k−1) such addresses
+works at levels 2 to 4, but 6 of 81 do at level 5 and 36 of 243 at level 6, in
+both families. Burial is a depth-4 fact, not a level-5 accident — the buried
+depth-4 address set is identical at both levels and across both families:
+
+```text
+0.0.5.0   0.0.5.2   2.0.5.0   2.0.5.2   5.0.5.0   5.0.5.2
+```
+
+Any one of them is a usable periodic block. The best inradius reached goes
+1.409 → 2.619 → 12.45 → 38.32 for hexagons and 3.527 → 5.09 → 23.29 → 72.78 for
+the spectre. Every patch along such a chain is a Psi supertile, hence already a
+single arc, so no merge argument is needed at all.
+
+**The Delta nesting also gives all three, the long way.** Delta contains Delta
+at slot 1. Its
 patches are never a single arc: Delta has eight boundary dots, hence four arcs
 at every level. But those four are *boundary cuts, not components*
 ([`14-merge.ts`](../web/fass-proof/14-merge.ts), exact segment containment):
@@ -680,22 +707,46 @@ rate approaching the linear inflation 2.8059:
 So **the nested union is an infinite tiling of the whole plane carrying exactly
 one bi-infinite curve**, which is the statement the conjecture actually needs.
 This vindicates the merge analysis in `FASS_1278.md` §4.5, which had the right
-idea: the four tails of a Delta patch are four windows onto the same line.
+idea: the four tails of a Delta patch are four windows onto the same line. It
+reaches the same conclusion as the buried-Psi address above, by a longer route.
 
 For contrast, the greedy address `Theta#0 → Gamma#3 → Gamma#7 → …` found by
 maximising the inradius also exhausts the plane, but its arcs settle at three
 and do not merge — not over one level, and not over two either. So exhaustion
 alone is not enough; the nesting has to be chosen so the merge happens too.
 
-**Space-filling, and one point of hygiene.** The standard argument needs: the
-level-`k` arc restricted to any level-`j` sub-supertile stays inside that
-sub-supertile (true, and the same fact as nesting); tile diameters shrink
-relative to patch diameter like λ^(−k/2); and every tile is visited (L4).
-Together these give uniformly convergent parameterisations and a continuous
-surjection onto a set of positive area. But **"self-avoiding" in FASS is a
-property of the finite approximants, not of the limit** — a genuine
-space-filling curve cannot be injective. The right claim is that every level-`k`
-approximant is a non-self-crossing polygonal arc, which is L2.
+**Space-filling, and the one place the standard argument breaks.** The Hilbert
+template assumes the curve enters each sub-cell once, so that the parameter
+interval subdivides in step with the space. **That assumption is false here.** A
+level-`j` sub-supertile is entered exactly `arcs(T)` times, where `T` is its
+type:
+
+| type | Gamma | Sigma | Delta | Theta | Lambda | Xi | Pi | Phi | **Psi** |
+|---|---|---|---|---|---|---|---|---|---|
+| times entered | 5 | 5 | 4 | 3 | 3 | 2 | 2 | 2 | **1** |
+
+A sub-supertile is entered once **if and only if** it is a Psi sub-supertile —
+the contiguous counts 3 of 8, 13 of 63, 89 of 496, 687 of 3905 are exactly the
+Psi counts at those depths. So the arc's restriction to a general sub-supertile
+is several intervals, not one.
+
+The obvious repair, arguing that each run is a substantial fraction of the
+sub-supertile, also fails: the smallest arc of a level-`j` supertile is only
+`O(λ^{-j})` of its segments, so individual runs can be a couple of segments. The
+argument has to be rebuilt on **bounded re-entry** instead — at most 5 visits,
+and a lower bound of about `0.83·λ^{j-k}` on the *total* time spent in each
+level-`j` sub-supertile, measured across all depths and levels to 5. That still
+yields a uniform Hölder-1/2 bound and hence Arzelà–Ascoli compactness, so
+subsequential limits exist. Uniqueness of the limit is not established.
+
+What does hold unchanged: the arc restricted to a sub-supertile stays *inside*
+it, tile diameters shrink relative to patch diameter at a measured ratio
+approaching √λ = 2.8059, and every tile is visited.
+
+One point of hygiene: **"self-avoiding" in FASS is a property of the finite
+approximants, not of the limit** — a genuine space-filling curve cannot be
+injective. The right claim is that every level-`k` approximant is a
+non-self-crossing polygonal arc, which is L2.
 
 ### 4.6 The limit constants, in closed form
 
@@ -762,8 +813,12 @@ limit.
 | Finite local complexity (no new two-tile class ever appears) | **OPEN** — this is what would make L2 unconditional for the spectre |
 | Psi-in-Psi nesting gives a bi-infinite curve | verified levels 1–5, all three slots |
 | That nesting exhausts the plane | **refuted** — inradius is exactly constant |
+| A varying Psi-only address buries the seed | 6 of 81 addresses at level 5, 36 of 243 at level 6, both families |
+| Every patch along such an address is a single arc | follows from L4; no merge argument needed |
 | Delta-in-Delta nesting exhausts the plane | verified levels 1–6, inradius diverges at ≈2.81 per level |
 | Its four arcs all merge into one, two levels up | verified levels 1–6, exact segment containment |
+| A sub-supertile is contiguous iff it is Psi | verified to depth 4, both families |
+| The arc re-enters a sub-supertile at most 5 times | verified to depth 4; bounded re-entry replaces the Hilbert nesting |
 | The whole-plane tiling carries exactly ONE bi-infinite curve | **established**, given L3 |
 | Growth factor 4+√15, frequencies, segments per tile | **proved** (exact, from the substitution matrix) |
 | hex and spectre strand graphs isomorphic | verified structurally and on patches |
@@ -843,6 +898,7 @@ non-zero on failure.
 | `02-self-avoidance.ts` | the straying chords, exactly; the 272/478 two-tile classes |
 | `03-substitution-invariance.ts` | the gluing datum is constant; similarity is impossible; the incidence proof |
 | `04-routing-automaton.ts` | the routing operator, its 2-cycle, and the non-attractor result |
+| `05-limit.ts` | nesting, burial, bounded re-entry, and the exact limit constants |
 | `14-merge.ts` | the Delta nesting merges to one curve and exhausts the plane |
 | `08-supertile-outline.ts` | all non-Gamma outlines identical; perimeter grows 4.22 per level; boundaries fractal |
 | `09-interface-invariant.ts` | boundary dot counts constant; arcs a perfect matching; no circuits |
@@ -875,21 +931,35 @@ non-zero on failure.
 5. **Circuit-freeness independent of L3.** There is currently no such argument,
    and no fixed-point or attractor argument can supply one, because the routing
    operator is monotone non-decreasing in circuits.
-6. **Other exhausting addresses.** The Delta nesting settles the conjecture, but
-   the greedy Gamma address also exhausts the plane and its arcs settle at three
-   without merging within six levels. Classify which addresses in the hull give
-   one curve and which give several.
-7. **The other three combinations.** Each family's quartet has the same Psi-root
+6. **Does burial persist?** The depth-4 statement — that in a level-`M` Psi
+   supertile the sub-supertile at address `0.0.5.0` owns no outline edge — is
+   verified at `M = 5` and `M = 6` only. It is exactly what a periodic-address
+   argument needs at `M = 5, 9, 13, …`
+7. **Do the collar gaps sum to infinity?** Each is strictly positive and visibly
+   growing, but nothing bounds them below by a fixed constant, so exhaustion is
+   currently "the inradius strictly increases", not "it diverges". Burial
+   forbids a shared edge but not a shared vertex, and a shared vertex would make
+   the collar inequality vacuous.
+8. **A unique limit map.** Bounded re-entry gives Hölder-1/2 and compactness, so
+   subsequential limits exist. Uniqueness needs a canonical reparameterisation
+   across levels, which the failure of the naive nesting makes non-obvious.
+9. **The shape of the complement.** The constant-slot union provably misses an
+   open set. Whether that complement is a sector, a half-plane or something else
+   is unknown.
+10. **Other exhausting addresses.** The greedy Gamma address also exhausts the
+   plane but its arcs settle at three without merging within six levels.
+   Classify which addresses give one curve and which give several.
+11. **The other three combinations.** Each family's quartet has the same Psi-root
    single-line property. Are the four limit curves the same curve up to mirror,
    or genuinely different FASS curves?
-8. **Gamma's arc-length recursion.** The fixed arc-incidence matrix predicts
+12. **Gamma's arc-length recursion.** The fixed arc-incidence matrix predicts
    every non-Gamma type's arc lengths but not Gamma's, because its empty slot
    splits two child arcs part-glued and part-outer at a level-dependent
    position. Extending the alphabet by those two sub-arcs should make it linear.
-9. **A structural reason two unit edges never cross at a non-lattice point.**
+13. **A structural reason two unit edges never cross at a non-lattice point.**
    The ambient ring permits it — there is an explicit witness — so the
    "residual boundary is a Jordan curve" step of L0 is currently a per-level
    check rather than a corollary.
-10. **The hexagon realisation's geometry.** The topological half transfers from
+14. **The hexagon realisation's geometry.** The topological half transfers from
    the spectre, but the hexagon tiling is a different metric object. Its
    space-filling limit deserves its own statement.

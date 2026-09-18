@@ -1096,21 +1096,27 @@ function section3b(dotMap: Map<string, DotImage>): void {
 
   // (ii) the cross-child interface table
   console.log(`\n  (ii) cross-child weld pairing + parent exposure, as indices into the children's exposed lists\n`);
-  console.log(`      ${'type'.padEnd(8)}${'k=1'.padEnd(9)}${'k=2'.padEnd(9)}${'k=3'.padEnd(9)}${'k=4'.padEnd(9)}${'k=5'.padEnd(9)}  family-agree / level-constant (k>=2)`);
+  console.log(
+    `      ${'type'.padEnd(8)}${[1, 2, 3, 4, 5, 6].map((k) => `k=${k}`.padEnd(7)).join('')}  family-agree / shape for k >= 3`,
+  );
   let famAgree = true;
   let pairingConstant = true;
   let allConstant = true;
+  let period2 = true;
+  let evenOddSame = false;
   const sample = new Map<string, Interface>();
   for (const T of ROOTS_ALL) {
     const full: string[] = [];
+    const fullS: string[] = [];
     const pairOnly: string[] = [];
     let agree = true;
-    for (let k = 1; k <= 5; k++) {
+    for (let k = 1; k <= 6; k++) {
       const h = interfaceTable('hex', HEX, T, k, dotMap);
       const s = interfaceTable('spectre', SPEC, T, k, dotMap);
       if (!h.ok || !s.ok) agree = false;
       if (!sameArray(h.pairing, s.pairing) || !sameArray(h.exposure, s.exposure)) agree = false;
       full.push(`${h.pairing.join(',')}||${h.exposure.join(',')}`);
+      fullS.push(`${s.pairing.join(',')}||${s.exposure.join(',')}`);
       pairOnly.push(h.pairing.join(','));
       if (k === 2) sample.set(T, h);
     }
@@ -1128,30 +1134,55 @@ function section3b(dotMap: Map<string, DotImage>): void {
     }
     if (new Set(full.slice(1)).size !== 1) allConstant = false;
     if (new Set(pairOnly.slice(1)).size !== 1) pairingConstant = false;
-    const tailConst = new Set(full.slice(2)).size === 1;
+    // period-2 from k = 3: table(k) == table(k + 2) for k = 3, 4
+    const per2 =
+      full[2] === full[4] && full[3] === full[5] && fullS[2] === fullS[4] && fullS[3] === fullS[5];
+    const const1 = new Set(full.slice(2)).size === 1;
+    if (!per2) period2 = false;
+    if (const1) evenOddSame = true;
     console.log(
-      `      ${T.padEnd(8)}${classes.map((c) => c.padEnd(9)).join('')}  ${agree ? 'agree' : 'DISAGREE'} / ${
-        new Set(full.slice(1)).size === 1 ? 'constant k>=2' : tailConst ? 'constant k>=3 only' : 'NOT constant'
+      `      ${T.padEnd(8)}${classes.map((c) => c.padEnd(7)).join('')}  ${agree ? 'agree' : 'DISAGREE'} / ${
+        const1 ? 'CONSTANT' : per2 ? 'PERIOD 2 (k=3,5 equal; k=4,6 equal)' : 'neither constant nor period-2'
       }`,
     );
   }
   console.log('');
-  check(famAgree, 'cross-child interface table is IDENTICAL in both families, all 9 types, k = 1..5');
-  verdict(
-    allConstant,
-    'cross-child interface table is the SAME for every k >= 2',
-    allConstant ? '' : 'it is NOT — see the class letters above; this kills the naive induction',
+  check(famAgree, 'cross-child interface table is IDENTICAL in both families, all 9 types, k = 1..6');
+  console.log(
+    `  [${allConstant ? ' OK ' : 'REFU'}] cross-child interface table is the SAME for every k >= 2` +
+      (allConstant ? '' : '  — NO: k = 2, k = 3 and k = 4 give three different tables'),
   );
-  verdict(
-    pairingConstant,
-    'the WELD PAIRING alone (ignoring which dots stay exposed) is level-independent for k >= 2',
+  console.log(
+    `  [${pairingConstant ? ' OK ' : 'REFU'}] the weld PAIRING alone is level-independent for k >= 2` +
+      (pairingConstant ? '' : '  — NO: the pairing itself alternates, not just the exposure'),
+  );
+  check(
+    period2,
+    'cross-child interface table has PERIOD 2 in k for k >= 3: table(k) == table(k+2), k = 3, 4',
+    `checked k = 3..6; k = 1 and k = 2 are seeds${evenOddSame ? '' : '; the two phases are genuinely different'}`,
   );
   console.log(
     `      (letters label distinct tables; equal letters = identical table. k = 1 is a seed:\n` +
       `       its children are single leaves, whose exposed list is all of their dots.)\n`,
   );
 
-  console.log('  sample interface tables (k = 2, both families identical):\n');
+  console.log('\n  (iii) one level deeper, to see a third period: table(7) vs table(5)\n');
+  for (const T of ['Psi', 'Delta'] as TileTypeId[]) {
+    const h5 = interfaceTable('hex', HEX, T, 5, dotMap);
+    const s5 = interfaceTable('spectre', SPEC, T, 5, dotMap);
+    const h7 = interfaceTable('hex', HEX, T, 7, dotMap);
+    const s7 = interfaceTable('spectre', SPEC, T, 7, dotMap);
+    const ok =
+      sameArray(h5.pairing, h7.pairing) &&
+      sameArray(h5.exposure, h7.exposure) &&
+      sameArray(s5.pairing, s7.pairing) &&
+      sameArray(s5.exposure, s7.exposure) &&
+      sameArray(h7.pairing, s7.pairing) &&
+      sameArray(h7.exposure, s7.exposure);
+    check(ok, `${T}: interface table(7) == table(5) in BOTH families, and the two families agree at k = 7`);
+  }
+
+  console.log('\n  sample interface tables (k = 2, both families identical):\n');
   for (const T of ['Psi', 'Delta', 'Gamma'] as TileTypeId[]) {
     const it = sample.get(T)!;
     console.log(`      ${T.padEnd(8)}welds  ${it.pairing.join('  ')}`);
