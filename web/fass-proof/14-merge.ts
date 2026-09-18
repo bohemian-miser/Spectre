@@ -146,6 +146,8 @@ function runNesting(
   let E: ZAffine = Z_IDENT;
   let childType = seedType;
   let prev: { owner: Map<string, number>; sizes: number[] } | null = null;
+  let prev2: { owner: Map<string, number>; sizes: number[] } | null = null;
+  const twoLevel: number[] = [];
   let ok = true;
   const mergeTrail: number[] = [];
 
@@ -193,11 +195,27 @@ function runNesting(
       merged = byChildArc.size > targets.size ? `yes, ${byChildArc.size} -> ${targets.size}` : 'no';
       mergeTrail.push(targets.size);
     }
+    // The load-bearing statement: everything a level-(k-2) patch holds lands in
+    // ONE arc of the level-k patch. Checked directly, not inferred from the
+    // one-level steps.
+    if (prev2) {
+      const targets = new Set<number>();
+      for (const k of prev2.owner.keys()) {
+        const pj = cur.owner.get(k);
+        if (pj === undefined) {
+          ok = verdict(false, `level ${lv}: a level-${lv - 2} segment is missing`) && ok;
+          break;
+        }
+        targets.add(pj);
+      }
+      twoLevel.push(targets.size);
+    }
     const r = inradius(family, instances, anchor);
     inradii.push(r);
     console.log(
       `  | ${lv} | ${pad(rootType, 7)} | ${pad(instances.length, 7)} | ${pad(cur.sizes.length, 4)} | ${pad(childArcs, 10)} | ${pad(landed, 7)} | ${pad(merged, 12)} | ${pad(r.toFixed(3), 8)} |`,
     );
+    prev2 = prev;
     prev = { owner: cur.owner, sizes: cur.sizes };
   }
 
@@ -214,6 +232,20 @@ function runNesting(
         ? '  -> over any two consecutive levels everything lands in ONE arc, so the nested union is a SINGLE curve'
         : `  -> the trail settles at ${tail.join('/')}, so within the levels computed this nesting does NOT collapse to one curve`,
     );
+    if (twoLevel.length) {
+      console.log(
+        `  TWO-LEVEL: a level-k patch lands in ${twoLevel.join(' then ')} arc(s) of the level-(k+2) patch`,
+      );
+      // Reported, not asserted: the Gamma address is EXPECTED not to merge, and
+      // that is one of this script's findings. The summary below carries the
+      // pass/fail, one expectation per nesting.
+      console.log(
+        twoLevel.every((t) => t === 1)
+          ? '  -> lands in ONE arc two levels up, so the nested union is a single curve'
+          : `  -> lands in ${twoLevel.join('/')} arcs two levels up, so this nesting is NOT one curve`,
+      );
+      TWO_LEVEL.set(`${cfg.id}: ${label}`, twoLevel.slice());
+    }
     const exhausts = inradii.length > 2 && inradii[inradii.length - 1] > 4 * inradii[0];
     console.log(
       `  inradius about the seed: ${inradii.map((r) => r.toFixed(2)).join(' -> ')}  ` +
@@ -225,6 +257,8 @@ function runNesting(
 }
 
 const RESULTS: { label: string; trail: number[]; collapses: boolean; exhausts: boolean }[] = [];
+/** Per-nesting: how many level-(k+2) arcs a level-k patch lands in. */
+const TWO_LEVEL = new Map<string, number[]>();
 let allOk = true;
 
 for (const key of ['hex128', 'spectre1278'] as const) {
@@ -267,6 +301,20 @@ for (const r of RESULTS) {
     `  merge: ${r.collapses ? 'ONE CURVE ' : 'NOT MERGED'}  exhausts: ${r.exhausts ? 'YES' : 'no '}  trail ${r.trail.join(' ')}   ${r.label}`,
   );
 }
+for (const [label, t] of TWO_LEVEL) {
+  console.log(`  two-level: ${t.join(' ')}   ${label}`);
+}
+const deltaTwo = [...TWO_LEVEL.entries()].filter(([l]) => l.includes('Delta inside Delta'));
+const gammaTwo = [...TWO_LEVEL.entries()].filter(([l]) => l.includes('the address'));
+allOk = verdict(
+  deltaTwo.length > 0 && deltaTwo.every(([, t]) => t.every((x) => x === 1)),
+  'Delta-inside-Delta: every level-k patch lies in ONE arc two levels up (checked directly)',
+) && allOk;
+allOk = verdict(
+  gammaTwo.length > 0 && gammaTwo.every(([, t]) => t.some((x) => x > 1)),
+  'the greedy Gamma address does NOT merge even over two levels',
+  'so exhausting the plane is not on its own enough',
+) && allOk;
 allOk = verdict(
   RESULTS.filter((r) => r.label.includes('Delta inside Delta')).every((r) => r.collapses && r.exhausts),
   'Delta-inside-Delta does BOTH: merges to one curve AND exhausts the plane',

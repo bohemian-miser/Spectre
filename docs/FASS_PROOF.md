@@ -579,8 +579,10 @@ at every level. But those four are *boundary cuts, not components*
 | 4 → 5 | 4 | **1** |
 | 5 → 6 | 4 | 2 |
 
-Over *any two consecutive levels* everything a patch holds lands in one arc. And
-this nesting does exhaust the plane — the inradius about the seed diverges at a
+Over *any two consecutive levels* everything a patch holds lands in one arc.
+Checked directly rather than inferred: a level-`k` patch lands in exactly
+**one** arc of the level-`(k+2)` patch, at every step computed, in both
+families. And this nesting does exhaust the plane — the inradius about the seed diverges at a
 rate approaching the linear inflation 2.8059:
 
 | level | 1 | 2 | 3 | 4 | 5 | 6 |
@@ -595,8 +597,8 @@ idea: the four tails of a Delta patch are four windows onto the same line.
 
 For contrast, the greedy address `Theta#0 → Gamma#3 → Gamma#7 → …` found by
 maximising the inradius also exhausts the plane, but its arcs settle at three
-and do not merge within the levels computed. So exhaustion alone is not enough;
-the nesting has to be chosen so the merge happens too.
+and do not merge — not over one level, and not over two either. So exhaustion
+alone is not enough; the nesting has to be chosen so the merge happens too.
 
 **Space-filling, and one point of hygiene.** The standard argument needs: the
 level-`k` arc restricted to any level-`j` sub-supertile stays inside that
