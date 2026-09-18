@@ -137,10 +137,10 @@ export function zConnectionPoints2(
   subset: readonly number[],
 ): readonly ZVec[] {
   const sel = new Set(subset);
-  if (sel.has(0)) throw new Error('class 0 is not supported by the exact path (see Lemma 1)');
   const labels = edgeLabels(family, type);
   const zpts = zLeafPts(family, type);
   const n = zpts.length;
+  const seams = metaEdges(family, type);
   const out: ZVec[] = [];
   // Mirrors core `connectionPoints` EXACTLY: physical-label order, one dot per
   // `minor == 0` label of a selected class. That order is load-bearing — the
@@ -148,7 +148,29 @@ export function zConnectionPoints2(
   for (let i = 0; i < labels.length; i++) {
     const { major, minor } = parseEdgeLabel(labels[i]);
     if (minor !== 0 || !sel.has(major)) continue;
-    out.push(zAdd(zpts[i], zpts[(i + 1) % n]));
+    if (major !== 0) {
+      // Classes 1..8 use DEFAULT_CONTRACTS (minor 0, t = 1/2): the midpoint of
+      // this physical edge. t = 1/2 is the fixed point of the gluing involution
+      // t -> 1 - t, which is exactly why abutting tiles' dots coincide.
+      out.push(zAdd(zpts[i], zpts[(i + 1) % n]));
+      continue;
+    }
+    // Class 0 glues to itself, so core forces its contract to the seam CENTRE:
+    // u = M/2 in edge units. A one-edge seam (hexagons) centres on the edge
+    // midpoint; a two-edge seam (spectre) centres on the vertex between them,
+    // which core writes canonically as (minor 0, t = 1).
+    const seam = seams.find((e) => e.edgeIndices.includes(i));
+    const M = seam ? seam.edgeIndices.length : 1;
+    if (M % 2 === 0) {
+      // Centre falls on a vertex: minor M/2 - 1 at t = 1, i.e. the far end of
+      // that edge. Doubling keeps it integral.
+      const idx = seam!.edgeIndices[M / 2 - 1];
+      const v = zpts[(idx + 1) % n];
+      out.push(zAdd(v, v));
+    } else {
+      const idx = seam!.edgeIndices[(M - 1) / 2];
+      out.push(zAdd(zpts[idx], zpts[(idx + 1) % n]));
+    }
   }
   return out;
 }

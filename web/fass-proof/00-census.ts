@@ -1,17 +1,23 @@
 /**
  * How special are the two conjectured configurations?
  *
- * Sweeps EVERY non-empty selection of non-zero edge classes in both families
- * and every non-crossing combination on the surviving selections, and reports
- * which ones give a single self-avoiding line. The answer is a uniqueness
- * statement: one selection per family, four combinations each, in exact
- * cross-family correspondence.
+ * Sweeps EVERY non-empty edge-class selection in both families — class 0
+ * INCLUDED — and every non-crossing combination on the surviving selections,
+ * and reports which give a single self-avoiding line. The answer is a complete
+ * classification: one selection per family, four combinations each, in exact
+ * cross-family correspondence, and nothing else anywhere.
  *
- * Class 0 is excluded throughout and that exclusion is principled, not a
- * convenience: class 0 is the self-gluing class, so a class-0 dot can carry
- * three tiles and the strand graph stops being a 1-manifold (see 01-local-
- * structure.ts). Everything here therefore lives in the regime where Lemma 1
- * applies.
+ * Class 0 is included deliberately. An earlier draft excluded it on the grounds
+ * that the self-gluing class lets three tiles meet at one dot and so produces
+ * degree-3 junctions. That is FALSE — see 01-local-structure.ts, which shows
+ * the maximum dot multiplicity is 2 for every class in both families, so no
+ * selection whatsoever produces a junction. Excluding class 0 would therefore
+ * have left a real gap in the classification, and this script closes it.
+ *
+ * The two near-full selections have 1,953,125 and 625,000 combinations, too
+ * many for a level-4 trace each, so they are cascaded: filter at level 1 (eight
+ * or nine tiles), then 2, 3, 4. Single-line at level 4 implies single-line at
+ * every lower level, so the cascade loses nothing.
  *
  * Run: cd web && npx --yes tsx fass-proof/00-census.ts
  */
@@ -52,9 +58,9 @@ const winners: Record<string, string[]> = {};
 
 for (const family of ['hex', 'spectre'] as TileFamilyId[]) {
   heading(`${family} — census over every selection and combination (Psi root, level ${LEVEL})`);
-  const majors = familyMajors(family).filter((m) => m !== 0);
+  const majors = familyMajors(family);
   const order = leafOrder(family);
-  console.log(`  classes available (class 0 excluded): ${majors.join(', ')}`);
+  console.log(`  classes available (class 0 included): ${majors.join(', ')}`);
   console.log(`  leaf types (${order.length}): ${order.join(', ')}\n`);
 
   let noDot = 0;
@@ -78,35 +84,64 @@ for (const family of ['hex', 'spectre'] as TileFamilyId[]) {
 
     const options = order.map((t) => nonCrossingForTile(family, t, sel).length);
     const combos = options.reduce((a, b) => a * b, 1);
-    const circuitFree: string[] = [];
-    const singleLine: string[] = [];
-
-    for (let n = 0; n < combos; n++) {
+    const comboAt = (n: number): string => {
       let rem = n;
-      const combo = options
+      return options
         .map((o) => {
           const d = rem % o;
           rem = Math.floor(rem / o);
           return comboDigitChar(d) ?? '0';
         })
         .join('');
+    };
+    const single = (combo: string, lv: number): boolean => {
       const cfg: Config = { id: `${family}-${subset.join('')}-${combo}`, family, subset, combo };
-      const instances = zExpand(family, 'Psi', LEVEL);
+      const instances = zExpand(family, 'Psi', lv);
       const tr = trace(buildStrands(cfg, instances));
-      if (tr.circuits.length === 0) circuitFree.push(combo);
-      if (
+      return (
         tr.circuits.length === 0 &&
         tr.arcs.length === 1 &&
         tr.maxDegree <= 2 &&
         tr.tilesCovered === instances.length
-      ) {
-        singleLine.push(combo);
+      );
+    };
+    const circuitFree: string[] = [];
+    let singleLine: string[] = [];
+
+    if (combos > 20000) {
+      // Cascade: a single line at level LEVEL is a single line at every lower
+      // level, so filtering cheaply first loses nothing.
+      for (let n = 0; n < combos; n++) {
+        const combo = comboAt(n);
+        if (single(combo, 1)) singleLine.push(combo);
+      }
+      console.log(`    (S = {${subset.join(',')}}: ${combos} combinations, cascaded; ${singleLine.length} pass level 1)`);
+      for (let lv = 2; lv <= LEVEL && singleLine.length; lv++) {
+        singleLine = singleLine.filter((c) => single(c, lv));
+      }
+      circuitFree.push(...singleLine);
+    } else {
+      for (let n = 0; n < combos; n++) {
+        const combo = comboAt(n);
+        const cfg: Config = { id: `${family}-${subset.join('')}-${combo}`, family, subset, combo };
+        const instances = zExpand(family, 'Psi', LEVEL);
+        const tr = trace(buildStrands(cfg, instances));
+        if (tr.circuits.length === 0) circuitFree.push(combo);
+        if (
+          tr.circuits.length === 0 &&
+          tr.arcs.length === 1 &&
+          tr.maxDegree <= 2 &&
+          tr.tilesCovered === instances.length
+        ) {
+          singleLine.push(combo);
+        }
       }
     }
     survivors.push({ subset, counts, options, combos, circuitFree, singleLine });
   }
 
-  console.log(`  ${noDot} selections leave some leaf type with NO dot -> that type is never visited`);
+  console.log(`  swept ${(1 << majors.length) - 1} non-empty selections`);
+  console.log(`  ${noDot} leave some leaf type with NO dot -> that type is never visited`);
   console.log(`  ${oddDot} more leave some leaf type with an ODD dot count -> no perfect matching`);
   console.log(`  ${survivors.length} selections survive the necessary condition:\n`);
 
