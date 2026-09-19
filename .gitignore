@@ -16,3 +16,6 @@ web/test-results/
 web/.verify-*
 
 node_modules/
+
+# Lean build artifacts
+lean/.lake/

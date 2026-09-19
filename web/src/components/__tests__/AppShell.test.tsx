@@ -21,12 +21,12 @@ describe('AppShell', () => {
     const ids = [...container.querySelectorAll('[data-nav-id]')].map((n) =>
       n.getAttribute('data-nav-id'),
     );
-    expect(ids).toEqual(['explorer', 'tails', 'stats', 'map', 'supertiles', 'legacy']);
+    expect(ids).toEqual(['explorer', 'tails', 'stats', 'map', 'supertiles', 'machine', 'legacy']);
 
     const legacy = container.querySelector('a[data-nav-id="legacy"]');
     expect(legacy?.getAttribute('href')).toBe('/Spectre/legacy.html');
 
-    // All six destinations are live links now that supertiles shipped too.
+    // All seven destinations are live links now that the strand machine shipped too.
     const tails = container.querySelector('a[data-nav-id="tails"]');
     expect(tails?.getAttribute('href')).toBe('/Spectre/tails.html');
     const stats = container.querySelector('a[data-nav-id="stats"]');
@@ -35,6 +35,8 @@ describe('AppShell', () => {
     expect(map?.getAttribute('href')).toBe('/Spectre/map.html');
     const supertiles = container.querySelector('a[data-nav-id="supertiles"]');
     expect(supertiles?.getAttribute('href')).toBe('/Spectre/supertiles.html');
+    const machine = container.querySelector('a[data-nav-id="machine"]');
+    expect(machine?.getAttribute('href')).toBe('/Spectre/machine.html');
   });
 
   it('marks the active entry and keeps the repo + paper links', () => {
