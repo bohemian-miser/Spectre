@@ -42,6 +42,13 @@ To run the project in the `web` directory, follow these steps:
 ## Infinite numbers of Lines and circuits.
 You can have \[a fixed number | an infinite number\] of infinite line/s and \[a fixed number | an infinite number\] of circuits of unique lengths. Work out what combinations of lines between edges generate these and what is not possible.
 
+One corner of this is settled: edge selection `15` has a **fixed, finite** set of circuits and
+no infinite line at all. Every circuit is a loop of 3, 6 or 9 segments, and up to congruence
+there are only five distinct circuits across all four of its combinations. Write-up in
+[`docs/CIRCUITS_15.md`](docs/CIRCUITS_15.md), exact-arithmetic scripts in
+[`web/sel15-proof/`](web/sel15-proof/), and a Lean 4 check of the combinatorial core in
+[`lean/`](lean/).
+
 I'm pretty sure I can make either an infinite line but haven't got a solid proof yet. I think I'd need to rework the generator to do a kind of substitution thing instead of the standard spectre algorithm and then I could show that you make a long line/circuit, and when you substitue all the tiles for the next superset you maintain all the paths (like a standard infinite line proof, like the hilbert curve).
 
 ## Lingo

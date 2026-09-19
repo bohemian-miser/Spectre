@@ -1,0 +1,5 @@
+name = "sel15"
+defaultTargets = ["Sel15"]
+
+[[lean_lib]]
+name = "Sel15"
