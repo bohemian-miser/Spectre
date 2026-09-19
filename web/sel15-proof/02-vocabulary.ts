@@ -236,7 +236,14 @@ for (const combo of COMBOS) {
   c5 = c5 && stable;
   console.log(`        ${combo}  congruence classes by level: ${seq.join(' -> ')}`);
 }
-verdict(c5, 'C5: the number of circuit congruence classes is constant over the last two levels');
+if (MAX >= 5 || c5) {
+  verdict(c5, 'C5: the number of circuit congruence classes is constant over the last two levels');
+} else {
+  note(
+    `C5 not yet settled at maxLevel ${MAX}`,
+    'the class counts first saturate at level 4, so run with maxLevel 5 or more',
+  );
+}
 
 heading('C6. Cross-check against graph_analysis/lvl{4,6}.csv');
 let c6 = true;

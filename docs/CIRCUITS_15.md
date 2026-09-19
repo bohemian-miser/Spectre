@@ -38,7 +38,8 @@ theorems, and the result is only as good as they are.
 * **V0b** — that a shared class-1 or class-5 edge always carries `+k.m` against `-k.m`. This is
   the hinge of the whole argument: V3, and therefore the length-3 bound, consumes it. It is a
   property of the label tables under the substitution, checked here over 947,142 interior dots
-  and recorded in `FASS_PROOF.md` §4.1 as verified rather than derived.
+  and recorded in `FASS_PROOF.md` §4.1 as verified rather than derived. §6 records a failed
+  attempt to prove it and why the obvious route does not work.
 * **V6** — that the vertex graph has no component other than a lone node or a 3-cycle. This is
   what the three flipped combinations need, and it is the finite-local-complexity gap.
 
@@ -297,21 +298,40 @@ object of interest is a single infinite arc.
 | Selection `15` admits no infinite strand | **established**, given V0, V0b and V6 |
 | The atlas and V6 survive an independent generator and 80 other tilings | **checked exactly**, 320 windows — evidence for V6, not a proof of it |
 | Finite local complexity | **OPEN** — inherited unchanged from `FASS_PROOF.md` §5 |
+| The boundary seam word's length obeys `L(n) = 4L(n-1) + L(n-2) - 4`, `L(0) = 6` | **checked exactly**, levels 1–5, identical for every supertile type |
+| No letter substitution relates consecutive boundary words, so the cheap induction for V0b fails | **proved** from that recurrence — a negative result, see §6 |
 
 ---
 
 ## 6. Closing the two gaps
 
-**V0b is the one to attack first**, because the length-3 bound depends on it and it looks the
-more tractable of the two. The statement is small: in every patch, a shared physical edge of
-class 1 or 5 carries `+k.m` on one side and `-k.m` on the other. Only three pairings ever occur,
-so what is wanted is an induction on the substitution showing those three are closed — that no
-substitution step ever abuts two tiles across a class-1 or class-5 edge with mismatched labels.
-That is a statement about `SUPER_RULES` and the eight child transforms, not about the tiling as a
-whole, and it does not obviously need finite local complexity. Until it is proved, "every circuit
-has length exactly 3" is conditional.
+**V0b is the one to attack first**, because the length-3 bound depends on it. The statement is
+small: in every patch, a shared physical edge of class 1 or 5 carries `+k.m` on one side and
+`-k.m` on the other, and only three pairings ever occur. The obvious induction is that the active
+adjacencies inside a level-`(n+1)` supertile are either inside one level-`n` child, where
+induction applies, or between two children, where they are governed by how the children's
+boundary label words glue. If the boundary word at level `n+1` were the image of the level-`n`
+word under a fixed letter substitution, the whole thing would follow from a level-1 check.
 
-**V6 is the harder one.** It is the only obligation that inspects more than two tiles, and it
+**An earlier draft of this section called that route tractable. That was wrong, and it is
+withdrawn.** Read the boundary of a level-`n` supertile as a cyclic word of seams — maximal runs
+of one label — and its length obeys
+
+    L(n) = 4·L(n-1) + L(n-2) - 4,     L(0) = 6, L(1) = 22
+
+exactly, and identically for every supertile type: 22, 90, 378, 1598, 6766 at levels 1 to 5
+([`06-boundary-word.ts`](../web/sel15-proof/06-boundary-word.ts)). A letter substitution forces a
+linear recurrence with **no** constant term, since the letter-count vector evolves by a fixed
+matrix and the length is a linear functional of it. The `-4` is a corner effect of closing the
+loop, and it rules out `W(n+1) = τ(W(n))` for every letter substitution `τ`. It is the same
+obstruction that puts a per-type constant into the perimeter recurrence of `FASS_PROOF.md` §4.3.
+
+That does not make V0b hard — a substitution on blocks, or one carrying marked corners, may still
+work, and neither has been tried. But the cheap route is closed, and the honest position is that
+V0b and V6 both now look like the same interface problem rather than one easy case and one hard
+one. Until V0b is settled, "every circuit has length exactly 3" is conditional on a finite check.
+
+**V6 is the other one.** It is the only obligation that inspects more than two tiles, and it
 reduces to a single statement:
 
 > Whenever three tiles meet at a vertex whose corners are all cut, the two four-dot tiles among
@@ -344,6 +364,7 @@ stay integral, reusing [`web/fass-proof/lib.ts`](../web/fass-proof/lib.ts).
 | [`03-vertex-machine.ts`](../web/sel15-proof/03-vertex-machine.ts) | the V3 cross-check over 42,310 interior seams; V6; the machine's five rows; the vocabularies it forces; emits `machine.json` |
 | [`04-emit-lean.ts`](../web/sel15-proof/04-emit-lean.ts) | generates `lean/Sel15/Certificate.lean` from `atlas.json` |
 | [`05-unrooted-check.ts`](../web/sel15-proof/05-unrooted-check.ts) | V0b and V6 again, on windows from the unrooted generator: a different code path, 80 different tilings, centres away from any supertile origin |
+| [`06-boundary-word.ts`](../web/sel15-proof/06-boundary-word.ts) | a negative result: the boundary seam word's length recurrence carries a constant, so no letter substitution relates consecutive levels and the cheap induction for V0b is closed |
 
 The Lean 4 development is in [`lean/`](../lean/): `lake build`, no Mathlib, no `sorry`, no
 `native_decide`. Every theorem is closed by `decide`, so the kernel re-runs the arithmetic, and

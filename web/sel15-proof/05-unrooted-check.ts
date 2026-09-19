@@ -232,7 +232,17 @@ console.log(`        distinct level-0 anchor types across seeds: ${[...anchors].
 console.log(`        vertex-graph component shapes: ${[...shapes].sort().map(([s, n]) => `${s} x${n.toLocaleString('en-US')}`).join('  |  ')}`);
 console.log(`        cluster types encountered: ${[...seenTypes].filter((x) => !x.startsWith('NEW')).sort().join(' ')}`);
 
-verdict(windows >= 20, 'enough independent windows were analysed', `${windows}`);
+verdict(
+  windows === SEEDS * 4,
+  'every requested window was analysed at leaf resolution',
+  `${windows} of ${SEEDS * 4}`,
+);
+if (SEEDS < 12) {
+  note(
+    `only ${SEEDS} seeds requested`,
+    'the figures quoted in docs/CIRCUITS_15.md come from 80 seeds; pass a larger first argument',
+  );
+}
 verdict(worstMult <= 2, 'no dot has multiplicity 3 or more', `max = ${worstMult}`);
 verdict(pairViolations === 0, 'every interior active seam pairs +k.m against -k.m', `${pairViolations} violations`);
 verdict(unknownClusters === 0, 'no cluster type outside the ten-type atlas', `${unknownClusters} new`);
