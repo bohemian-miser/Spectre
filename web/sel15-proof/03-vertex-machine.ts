@@ -23,7 +23,8 @@
  *  - D2  (Lemma V) every component of `G` is a single node, or a 3-cycle of
  *        three nodes joined by three four-dot tiles. Verified over all 9
  *        substitution roots at levels 1..5 and at level 6 for Delta and Psi.
- *        This is the one place the argument needs more than two tiles at a time.
+ *        This is the only place the argument needs more than two tiles at a time,
+ *        but it is not the only unproved input: see V0b in `01-clusters.ts`.
  *
  * Writes `sel15-proof/machine.json`; run:
  *   cd web && npx --yes tsx sel15-proof/03-vertex-machine.ts [maxLevel]
@@ -211,7 +212,10 @@ verdict(
   [...compShapes.keys()].every((s) => s === '1 node(s), degrees 0' || s === '3 node(s), degrees 222'),
   'D2b (Lemma V): every closed component of G is a lone node or a 3-cycle',
 );
-note('D2b is the one finite check in the argument', 'everything else needs at most two tiles at a time');
+note(
+  'D2b is the only check needing more than two tiles',
+  'the other unproved input is V0b in 01-clusters.ts; everything else is a label-table theorem',
+);
 
 // ---------------------------------------------------------------------------
 // D3 — the machine, and its agreement with the atlas

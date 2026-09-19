@@ -44,6 +44,7 @@ import {
   type Cluster,
   type Contact,
 } from './lib15';
+import { edgeLabels, parseEdgeLabel } from '../src/core';
 
 const MAX = Number(process.argv[2] ?? 5);
 const COMBOS = admissibleCombos();
@@ -81,6 +82,42 @@ function sweep(label: string, roots: readonly (typeof ROOTS)[number][], level: n
     `${contacts.size}${contacts.size === beforeN ? '' : ` (+${contacts.size - beforeN})`}`,
     `${atlas.size}${atlas.size === beforeC ? '' : ` (+${atlas.size - beforeC})`}`,
   ]);
+}
+
+heading('B0. V0b — does a shared active edge always pair +k.m against -k.m?');
+// This is the hinge of the whole argument: V3, and hence the length-3 bound,
+// consumes it. It is a property of the label TABLES under the substitution and
+// it is NOT derived here. docs/FASS_PROOF.md section 4.1 needs the same
+// property and records it as verified rather than derived. All this does is
+// check it directly for majors 1 and 5.
+{
+  const pairings = new Map<string, number>();
+  let dots = 0;
+  let violations = 0;
+  for (let lv = 1; lv <= MAX + 1; lv++) {
+    const roots = lv <= MAX ? ROOTS : (['Delta', 'Psi'] as typeof ROOTS);
+    for (const root of roots) {
+      const patch = buildPatch(root, lv);
+      for (const [, slots] of patch.dots) {
+        if (slots.length !== 2) continue;
+        dots++;
+        const [a, b] = slots.map((x) => {
+          const t = patch.instances[x.i].type;
+          return parseEdgeLabel(edgeLabels('spectre', t)[seamsOf(t)[x.s].labelIndex]);
+        });
+        if (!(a.major === b.major && a.sign === -b.sign && a.minor === b.minor)) violations++;
+        const show = (l: typeof a) => `${l.sign < 0 ? '-' : '+'}${l.major}.${l.minor}${l.variant}`;
+        const key = [show(a), show(b)].sort().join(' | ');
+        pairings.set(key, (pairings.get(key) ?? 0) + 1);
+      }
+    }
+  }
+  console.log(`        interior active dots examined: ${dots.toLocaleString('en-US')}`);
+  for (const [k, n] of [...pairings].sort()) {
+    console.log(`          ${k}   x${n.toLocaleString('en-US')}`);
+  }
+  verdict(violations === 0, 'V0b holds on every interior active dot examined', `${violations} violations`);
+  note('V0b is CHECKED, NOT PROVED', 'see docs/CIRCUITS_15.md section 6 — it is the first gap to close');
 }
 
 heading(`B. Contact set and cluster atlas, selection {${SELECTION.join(',')}}`);

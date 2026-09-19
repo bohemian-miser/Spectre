@@ -42,9 +42,11 @@ To run the project in the `web` directory, follow these steps:
 ## Infinite numbers of Lines and circuits.
 You can have \[a fixed number | an infinite number\] of infinite line/s and \[a fixed number | an infinite number\] of circuits of unique lengths. Work out what combinations of lines between edges generate these and what is not possible.
 
-One corner of this is settled: edge selection `15` has a **fixed, finite** set of circuits and
-no infinite line at all. Every circuit is a loop of 3, 6 or 9 segments, and up to congruence
-there are only five distinct circuits across all four of its combinations. Write-up in
+One corner of this is mostly settled: edge selection `15` has a **fixed, finite** set of circuits
+and no infinite line at all. Every circuit is a loop of 3, 6 or 9 segments, and up to congruence
+there are only five distinct circuits across all four of its combinations. Two steps are finite
+checks rather than theorems and are flagged as such, so read it as a strong conditional result
+rather than a closed one. Write-up in
 [`docs/CIRCUITS_15.md`](docs/CIRCUITS_15.md), exact-arithmetic scripts in
 [`web/sel15-proof/`](web/sel15-proof/), and a Lean 4 check of the combinatorial core in
 [`lean/`](lean/).

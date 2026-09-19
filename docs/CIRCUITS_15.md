@@ -18,12 +18,13 @@ far the supertiling is expanded.
 | | obligation | status |
 |---|---|---|
 | V0 | the tiles actually tile: disjoint interiors, edge-to-edge | cited from `FASS_PROOF.md` §4.1 — **proved, all levels**, given its per-level Jordan-curve step |
+| V0b | every shared physical edge of class 1 or 5 carries `+k.m` against `-k.m` | **checked exactly**, 947,142 interior dots, levels 1–6 — **OPEN** to prove; `FASS_PROOF.md` §4.1 records the same property as verified rather than derived |
 | V1 | welded degree ≤ 2, so every strand component is a path or a cycle | cited from `FASS_PROOF.md` §4.1 — **proved, all levels**, given V0 |
 | V2 | the local data of `15`: dot counts, four combinations, consecutive seams, 120° corners, the start/end rule | **proved**, from the label tables alone |
-| V3 | the two tiles at an active seam cut the **same** tiling vertex | **proved**, from V2 and the gluing convention |
-| V4 | the base combination is one triangle per active vertex, of length exactly 3 | **proved**, from V0, V2 and V3 |
-| V5 | flipping a four-dot tile is one transposition, so the whole system is a machine on the vertex graph | **proved** |
-| V6 | every closed component of the vertex graph is a lone node, or a 3-cycle decorated `Pi Pi Psi`, `Pi Psi Psi` or `Psi Psi Psi` | **checked exactly** over all 9 substitution roots, levels 1–6; **OPEN** to prove |
+| V3 | the two tiles at an active seam cut the **same** tiling vertex | **proved given V0b** — the derivation is a one-liner from V2, but it consumes V0b, which is checked and not derived |
+| V4 | the base combination is one triangle per active vertex, of length exactly 3 | **proved**, given V0, V0b and V2 |
+| V5 | flipping a four-dot tile is one transposition | **proved**; the specific machine table of §3 is **validated against the atlas**, not derived independently of it |
+| V6 | every closed component of the vertex graph is a lone node, or a 3-cycle decorated `Pi Pi Psi`, `Pi Psi Psi` or `Psi Psi Psi` | **checked exactly** over all 9 substitution roots at levels 1–6, and again on 320 windows of 80 different tilings from an independent generator; **OPEN** to prove |
 
 **The short answer.** Selection `15` is not a space-filling selection — it is the opposite
 extreme. It admits **no infinite strand at all**. The plane is partitioned into closed
@@ -31,10 +32,18 @@ circuits, every one of length 3, 6 or 9, and up to congruence there are at most 
 in total across all four combinations. The number of circuits grows without bound with the
 patch; the number of *kinds* of circuit does not.
 
-**Where the content sits.** Only V6 needs to look at more than two tiles at once. Everything
-else — including the sharp bound "length exactly 3" for the base combination — comes from the
-14-entry label tables, the rule that `+k.m` glues to `-k.m` reversed, and the fact that the
-tiles tile.
+**What this rests on, stated plainly.** Two obligations are finite checks rather than
+theorems, and the result is only as good as they are.
+
+* **V0b** — that a shared class-1 or class-5 edge always carries `+k.m` against `-k.m`. This is
+  the hinge of the whole argument: V3, and therefore the length-3 bound, consumes it. It is a
+  property of the label tables under the substitution, checked here over 947,142 interior dots
+  and recorded in `FASS_PROOF.md` §4.1 as verified rather than derived.
+* **V6** — that the vertex graph has no component other than a lone node or a 3-cycle. This is
+  what the three flipped combinations need, and it is the finite-local-complexity gap.
+
+Everything else is a theorem given those. Nothing else in the argument looks at more than two
+tiles at a time.
 
 * **The base combination is exactly one triangle per vertex** (§2). Every chord cuts a tile
   corner of interior angle 120°, and the two tiles at any active seam cut the *same* corner, so
@@ -98,18 +107,28 @@ Three facts about the label tables, each a finite check with no tiling input
 
 > **V3.** *At every active seam of the tiling, the two tiles cut the same vertex.*
 >
-> *Proof.* A `+k.m` edge glues to a neighbour's `-k.m` edge traversed in reverse, so one tile's
-> start is the other's end. By fact 3 the positive side cuts at its start and the negative side
-> at its end, and those are the same point of the plane. ∎
+> *Proof, given V0b.* By V0b the seam's two labels are `+k.m` and `-k.m`, and the shared edge is
+> traversed in opposite directions by the two tiles, so one tile's start is the other's end. By
+> fact 3 the positive side cuts at its start and the negative side at its end, and those are the
+> same point of the plane. ∎
 
-That is the whole geometric engine, and it is a theorem rather than a measurement — the
-exact-arithmetic run confirms it over 42,310 contacts and finds no exception, which is a
-cross-check, not the argument.
+**Read that hypothesis carefully, because it is the weakest link.** V3 is a one-line
+consequence of fact 3 *and* V0b, and V0b — that a shared class-1 or class-5 edge always pairs
+`+k.m` with `-k.m` — is **not** proved. It is a property of the label tables under the
+substitution. `FASS_PROOF.md` §4.1 needs the same property for its "degree exactly 2 at
+interior dots" and records it as verified to level 6 rather than derived, and nothing here
+improves on that. What this document adds is a direct check for majors 1 and 5: over 947,142
+interior active dots at levels 1–6, the pairing holds without exception, and only three
+pairings occur at all (`+1.0A|-1.0A`, `+5.0A|-5.0A`, `+5.0B|-5.0A`). The geometric conclusion
+is separately confirmed over 42,310 interior seams.
+
+So V4 below is a theorem *conditional on a finite check*, not an unconditional one. That is a
+real weakness and it is not repaired anywhere in this document.
 
 > **V4.** *In combination `0000000000` every circuit has length exactly 3, and is the loop
 > around a single tiling vertex where three tiles meet.*
 >
-> *Proof.* Start on any chord. It cuts a corner at some vertex `v` and leaves through one of the
+> *Proof, given V0 and V3 (hence given V0b).* Start on any chord. It cuts a corner at some vertex `v` and leaves through one of the
 > two edges of the tile at `v`. By V3 the neighbour across that edge also cuts its corner at
 > `v`, so the strand stays at `v` and steps to the next tile round `v`. The tiles around an
 > interior vertex of an edge-to-edge tiling form a cycle (V0), so the walk returns to its start
@@ -155,7 +174,15 @@ disjoint 3-cycles, and each flipped edge transposes two images
 The last row is the ceiling: a triangle has only three edges, and the third flip splits what
 the first two merged. **Nothing in this table reaches 12.**
 
-> **V6 (the one finite check).** *Every closed component of `G` is a lone node, or a 3-cycle
+**One caveat on how much the machine proves.** That a single flip is a transposition, and that a
+transposition merges two cycles or splits one, are both standard. What is *not* derived from
+first principles is the slot incidence the table is built on — which two of a component's `3n`
+slots a given flipped edge exchanges. That encoding was written down by hand and then checked
+against the atlas, and it agrees on all forty cluster-combination pairs. So the machine is an
+explanation of the numbers and a compact way to see why 9 is the ceiling; it is **not** a second
+independent derivation of them. The atlas of §4 is the primary computation.
+
+> **V6 (the second finite check).** *Every closed component of `G` is a lone node, or a 3-cycle
 > whose three edges are decorated `Pi Pi Psi`, `Pi Psi Psi` or `Psi Psi Psi`.*
 
 Verified in exact `Z[ζ₁₂]` arithmetic over all nine substitution roots at levels 1–5 and at
@@ -217,7 +244,23 @@ Counting the circuits themselves, modulo translation and the 24 lattice isometri
 
 Five shapes in total across all four combinations. The class counts are constant from level 4
 through level 6 while the circuit counts grow by a factor near 74 per two levels, which is the
-whole point: the vocabulary is fixed and the census is not.
+whole point: the vocabulary is fixed and the census is not. Note what these counts are and are
+not: as measured they are **lower bounds** on the number of shapes in the infinite tiling, and
+they are exact only if the atlas is complete, which is V6.
+
+**An independent test of V6.** Every patch in the table above is built by `zExpand`: one
+supertile expanded downward from a chosen root, anchored at a supertile origin, drawn from the
+substitution's fixed point. That is a narrow family of patches, and V6 holding only for them
+would be worth little. `src/core/unrooted.ts` builds the plane the other way round — a level-0
+anchor tile with the hierarchy grown upward, the ancestor chain driven by a seeded PRNG, so each
+seed names a different tiling and a viewport query returns a window centred wherever you ask. It
+shares the substitution rules and the leaf geometry with `zExpand` and nothing else.
+[`05-unrooted-check.ts`](../web/sel15-proof/05-unrooted-check.ts) re-runs the V6 checks there:
+320 windows across 80 seeds, 7 distinct anchor types, 126,428 tiles, 23,177 complete clusters.
+All ten atlas types occur, no eleventh appears, every component is a lone node or a 3-cycle,
+every circuit is an atlas circuit, and every length is 3, 6 or 9. That is still a finite check —
+but it is a different generator over different tilings, which is the closest thing to
+independent evidence available without closing the gap.
 
 **On the tails.** The open paths in the CSV are pure patch-boundary artefacts. They are
 combination-independent — 609 at level 4 and 10,945 at level 6, which are `F(15) − 1` and
@@ -238,26 +281,38 @@ object of interest is a single infinite arc.
 | Every base chord cuts a pair of consecutive edges | **proved**, label tables |
 | Every cut corner has interior angle exactly 120° | **proved**, label tables |
 | Positive slots cut at the edge start, negative slots at the end | **proved**, label tables, all 20 slots |
-| The two tiles at an active seam cut the same vertex (V3) | **proved**, from the start/end rule and the gluing convention |
-| Base combination: every circuit is the 3-loop at a 3-valent vertex (V4) | **proved**, given V0 |
+| A shared class-1 or class-5 edge pairs `+k.m` against `-k.m` (V0b) | **checked exactly**, 947,142 interior dots, levels 1–6 — **OPEN**; the same property is verified rather than derived in `FASS_PROOF.md` §4.1 |
+| The two tiles at an active seam cut the same vertex (V3) | **proved given V0b** — one line from the start/end rule, but it consumes a checked hypothesis |
+| Base combination: every circuit is the 3-loop at a 3-valent vertex (V4) | **proved**, given V0 and V0b |
 | A flipped four-dot tile is one transposition (V5) | **proved** |
-| The machine's five rows, and the four vocabularies they force | **proved**, and machine-checked in `lean/` |
-| Every closed component of `G` is a lone node or a 3-cycle (V6) | **checked exactly**, 9 roots, levels 1–6 — **OPEN** |
-| `Pi Pi Pi` never decorates a component | **checked exactly**, same run — **OPEN** |
-| The cluster atlas is exactly 10 types | **checked exactly**, levels 1–6, unchanged from level 4 — **OPEN**, equivalent to V6 |
+| The machine's slot incidence — which slots a flipped edge exchanges | **validated against the atlas**, not derived; the machine is a reformulation, not a second leg |
+| The machine's five rows, and the four vocabularies they force | **proved** from that incidence, and machine-checked in `lean/` |
+| Every closed component of `G` is a lone node or a 3-cycle (V6) | **checked exactly**, 9 roots, levels 1–6, plus 320 windows of 80 tilings from an independent generator — **OPEN** |
+| `Pi Pi Pi` never decorates a component | **checked exactly**, same runs — **OPEN** |
+| The cluster atlas is exactly 10 types | **checked exactly**, levels 1–6 and the unrooted windows, unchanged from level 4 — **OPEN**, equivalent to V6 |
 | The two-tile contact set is exactly 24 types | **checked exactly**, levels 1–6, unchanged from level 3 |
-| Circuit congruence classes: 1, 5, 3, 3 | **checked exactly**, constant over levels 4–6 |
+| Circuit congruence classes: 1, 5, 3, 3 | **checked exactly**, constant over levels 4–6; exact only given V6, otherwise lower bounds |
 | No dot in any computed patch has multiplicity 3 or more | **checked exactly**, levels 1–6 |
 | The level-4 and level-6 census agrees with `graph_analysis/lvl{4,6}.csv` | **checked exactly** — independent recomputation of code not in the repo |
-| Selection `15` admits no infinite strand | **established**, given V0 and V6 |
+| Selection `15` admits no infinite strand | **established**, given V0, V0b and V6 |
+| The atlas and V6 survive an independent generator and 80 other tilings | **checked exactly**, 320 windows — evidence for V6, not a proof of it |
 | Finite local complexity | **OPEN** — inherited unchanged from `FASS_PROOF.md` §5 |
 
 ---
 
-## 6. Closing the one gap
+## 6. Closing the two gaps
 
-V6 is the only obligation that inspects more than two tiles, and it reduces to a single
-statement:
+**V0b is the one to attack first**, because the length-3 bound depends on it and it looks the
+more tractable of the two. The statement is small: in every patch, a shared physical edge of
+class 1 or 5 carries `+k.m` on one side and `-k.m` on the other. Only three pairings ever occur,
+so what is wanted is an induction on the substitution showing those three are closed — that no
+substitution step ever abuts two tiles across a class-1 or class-5 edge with mismatched labels.
+That is a statement about `SUPER_RULES` and the eight child transforms, not about the tiling as a
+whole, and it does not obviously need finite local complexity. Until it is proved, "every circuit
+has length exactly 3" is conditional.
+
+**V6 is the harder one.** It is the only obligation that inspects more than two tiles, and it
+reduces to a single statement:
 
 > Whenever three tiles meet at a vertex whose corners are all cut, the two four-dot tiles among
 > them lead to two further such vertices, and those three vertices close up into a triangle.
@@ -288,6 +343,7 @@ stay integral, reusing [`web/fass-proof/lib.ts`](../web/fass-proof/lib.ts).
 | [`02-vocabulary.ts`](../web/sel15-proof/02-vocabulary.ts) | the four vocabularies; every traced circuit is an atlas circuit; congruence-class counts; the CSV cross-check; V4's vertex loops |
 | [`03-vertex-machine.ts`](../web/sel15-proof/03-vertex-machine.ts) | the V3 cross-check over 42,310 interior seams; V6; the machine's five rows; the vocabularies it forces; emits `machine.json` |
 | [`04-emit-lean.ts`](../web/sel15-proof/04-emit-lean.ts) | generates `lean/Sel15/Certificate.lean` from `atlas.json` |
+| [`05-unrooted-check.ts`](../web/sel15-proof/05-unrooted-check.ts) | V0b and V6 again, on windows from the unrooted generator: a different code path, 80 different tilings, centres away from any supertile origin |
 
 The Lean 4 development is in [`lean/`](../lean/): `lake build`, no Mathlib, no `sorry`, no
 `native_decide`. Every theorem is closed by `decide`, so the kernel re-runs the arithmetic, and
@@ -298,10 +354,14 @@ The Lean 4 development is in [`lean/`](../lean/): `lake build`, no Mathlib, no `
 | `Sel15/Basic.lean` | tile kinds, the four combinations, the chord rule |
 | `Sel15/Machine.lean` | the machine's five rows; `vocabulary` for each combination; every length is 3, 6 or 9 and divisible by 3; 9 is attained |
 | `Sel15/Certificate.lean` | generated: the ten cluster graphs from the exact-arithmetic atlas |
-| `Sel15/Atlas.lean` | recomputes each cluster's circuits from the raw certificate, with no machine input, and shows the two legs agree |
+| `Sel15/Atlas.lean` | recomputes each cluster's circuits from the raw certificate, by a different traversal, and shows it agrees with the machine |
 
-What Lean does **not** check is V6 — that the ten clusters are the only ones. That is geometry,
-it is stated as a hypothesis in `Sel15.lean`, and it is the open item of §6.
+**What the Lean development is and is not.** It removes arithmetic and bookkeeping error from the
+combinatorial step, and it does so twice by two different traversals. It does **not** make the
+geometry rigorous: V0, V0b and V6 are all outside it, and V6 in particular — that the ten
+clusters are the only ones — is stated as a hypothesis in `Sel15.lean`. Anyone who distrusts this
+paper should distrust it at V0b and V6, not at the combinatorics; the combinatorics is the part a
+machine has checked.
 
 ---
 
