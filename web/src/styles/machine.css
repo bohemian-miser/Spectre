@@ -1,0 +1,239 @@
+/* Strand machine explorer. Shares the site shell; only the board is bespoke. */
+
+.machine {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.machine__intro h1 {
+  margin: 0 0 0.35rem;
+}
+.machine__intro p {
+  margin: 0;
+  max-width: 68ch;
+  color: var(--fg-muted, #9aa4b2);
+}
+
+.machine__controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.85rem;
+  border: 1px solid var(--rule, #2a3140);
+  border-radius: 8px;
+}
+
+.machine__label {
+  font-weight: 600;
+  margin-right: 0.5rem;
+}
+
+.machine__chooser,
+.machine__relation {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.machine__choice {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.machine__relation button {
+  padding: 0.3rem 0.7rem;
+  border-radius: 6px;
+  border: 1px solid var(--rule, #2a3140);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.machine__relation button.is-active {
+  border-color: var(--accent, #6ea8fe);
+  background: color-mix(in srgb, var(--accent, #6ea8fe) 18%, transparent);
+}
+
+.machine__hint {
+  color: var(--fg-muted, #9aa4b2);
+  font-size: 0.85rem;
+}
+
+.machine__tiles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.machine__tile {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
+  padding: 0.5rem 0.75rem;
+  border: 2px solid;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  min-width: 9.5rem;
+  text-align: left;
+}
+.machine__tile:hover {
+  background: color-mix(in srgb, currentColor 10%, transparent);
+}
+.machine__key,
+.machine__options kbd {
+  display: inline-block;
+  min-width: 1.35em;
+  padding: 0 0.3em;
+  border: 1px solid var(--rule, #2a3140);
+  border-radius: 4px;
+  font-family: ui-monospace, monospace;
+  text-align: center;
+}
+.machine__tilename {
+  font-weight: 600;
+}
+.machine__seam {
+  font-size: 0.8rem;
+  color: var(--fg-muted, #9aa4b2);
+}
+
+.machine__board {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 21rem;
+  gap: 1rem;
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .machine__board {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.machine__svg {
+  width: 100%;
+  max-height: 68vh;
+  border: 1px solid var(--rule, #2a3140);
+  border-radius: 8px;
+  background: var(--bg-sunken, #0e1218);
+}
+
+.machine__placed {
+  stroke: #0b0e13;
+  stroke-width: 0.03;
+  fill-opacity: 0.85;
+}
+.machine__ghost {
+  fill: #6ea8fe;
+  fill-opacity: 0.12;
+  stroke: #6ea8fe;
+  stroke-width: 0.04;
+  stroke-dasharray: 0.12 0.08;
+  cursor: pointer;
+}
+.machine__ghost:hover {
+  fill-opacity: 0.3;
+}
+.machine__ghost.is-seen {
+  stroke: #56d364;
+  fill: #56d364;
+}
+.machine__ghost.is-blocked {
+  stroke: #f85149;
+  fill: #f85149;
+  fill-opacity: 0.08;
+  cursor: not-allowed;
+}
+.machine__ghostkey {
+  font-size: 0.42px;
+  fill: #e6edf3;
+  text-anchor: middle;
+  dominant-baseline: middle;
+  pointer-events: none;
+  font-family: ui-monospace, monospace;
+}
+.machine__strand {
+  fill: none;
+  stroke: #ffd866;
+  stroke-width: 0.07;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.machine__panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.machine__status p {
+  margin: 0 0 0.5rem;
+}
+.machine__closed {
+  color: #56d364;
+  font-weight: 600;
+}
+.machine__buttons {
+  display: flex;
+  gap: 0.5rem;
+}
+.machine__buttons button {
+  padding: 0.3rem 0.6rem;
+  border-radius: 6px;
+  border: 1px solid var(--rule, #2a3140);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.machine__options {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.machine__options button {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--rule, #2a3140);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.machine__options li.is-blocked button {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.machine__optname {
+  font-family: ui-monospace, monospace;
+}
+.machine__tag {
+  margin-left: auto;
+  font-size: 0.72rem;
+  padding: 0.05rem 0.35rem;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  white-space: nowrap;
+}
+.machine__tag.is-close {
+  color: #56d364;
+}
+.machine__tag.is-unseen {
+  color: #d29922;
+}
+.machine__tag.is-bad {
+  color: #f85149;
+}
+.machine__deadend {
+  color: var(--fg-muted, #9aa4b2);
+}

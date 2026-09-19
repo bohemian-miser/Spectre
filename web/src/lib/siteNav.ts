@@ -68,6 +68,13 @@ export const SITE_NAV: readonly NavItem[] = Object.freeze([
     blurb: 'Push a supertile apart into the pieces it is made of, one substitution at a time.',
   },
   {
+    id: 'machine',
+    label: 'Strand machine',
+    entry: 'machine.html',
+    status: 'ready',
+    blurb: 'Walk a strand by hand and see which joins the labels permit, which the tiling uses.',
+  },
+  {
     id: 'legacy',
     label: 'Legacy p5 app',
     entry: 'legacy.html',
