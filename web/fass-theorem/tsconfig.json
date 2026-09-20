@@ -1,0 +1,7 @@
+{
+  // Typecheck for the theorem scripts: `cd web && npx tsc -p fass-theorem/tsconfig.json --noEmit`.
+  // They run under tsx (node), so node types replace the site's vite/client types.
+  "extends": "../tsconfig.json",
+  "compilerOptions": { "types": ["node"], "noEmit": true },
+  "include": ["./*.ts", "../fass-proof/lib.ts", "../src/core"]
+}

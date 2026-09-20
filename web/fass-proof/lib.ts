@@ -25,7 +25,6 @@ import {
   parseEdgeLabel,
   SUPER_RULES,
   zAdd,
-  zApply,
   zBasePairXform,
   zConj,
   zKey,
