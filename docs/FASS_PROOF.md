@@ -9,6 +9,15 @@ infinite space-filling FASS curve (space-**F**illing, self-**A**voiding,
 | **(A)** | `hex` (Hexagons) | **128** = {1, 2, 8} | **`010100000`** |
 | **(B)** | `spectre` (Tile(1,1)) | **1278** = {1, 2, 7, 8} | **`0101000000`** |
 
+> **Status (2026-09).** The plan below has been carried out in
+> [`FASS_THEOREM.md`](FASS_THEOREM.md), which proves L0 for both families,
+> closes the crux L3 (§4.3, §6) as a corollary of a combinatorial substitution
+> extracted from the geometry, proves self-avoidance of the spectre at every
+> level, and settles exhaustion (§4.5, Open Question 7) by a covering-space
+> argument. Its §7 maps each obligation here to the result there; its §9 lists
+> what remains open (a continuous rescaled limit, and the flagship's
+> non-touching chords). This document is kept as the plan and evidence record.
+
 This document is the *proof plan*: what has to be established, in what order,
 which parts are genuine theorems, which are finite machine checks, and exactly
 what remains open. It is the companion to [`FASS_1278.md`](FASS_1278.md), which

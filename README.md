@@ -51,7 +51,19 @@ rather than a closed one. Write-up in
 [`web/sel15-proof/`](web/sel15-proof/), and a Lean 4 check of the combinatorial core in
 [`lean/`](lean/).
 
-I'm pretty sure I can make either an infinite line but haven't got a solid proof yet. I think I'd need to rework the generator to do a kind of substitution thing instead of the standard spectre algorithm and then I could show that you make a long line/circuit, and when you substitue all the tiles for the next superset you maintain all the paths (like a standard infinite line proof, like the hilbert curve).
+The infinite line is now proved. Selection `128` on hexagons with combination `010100000`,
+and selection `1278` on Tile(1,1) with `0101000000`, make the Psi supertile's strands a
+**single self-avoiding arc through every tile at every level**, and along a chain of nested
+Psi supertiles that exhausts the plane those arcs grow at both ends into one bi-infinite curve.
+The proof is the substitution argument sketched below, made exact: every supertile is a
+combinatorial hexagon whose six edges compose from its children's edges by a fixed table, so
+the strand routing is a fixed operator; non-overlap of the pieces at every level comes from a
+covering-space argument rather than a per-level check. Write-up in
+[`docs/FASS_THEOREM.md`](docs/FASS_THEOREM.md), scripts in [`web/fass-theorem/`](web/fass-theorem/);
+the earlier proof plan and evidence dossier are [`docs/FASS_PROOF.md`](docs/FASS_PROOF.md) and
+[`docs/FASS_1278.md`](docs/FASS_1278.md).
+
+The original intuition, kept for the record: I'm pretty sure I can make either an infinite line but haven't got a solid proof yet. I think I'd need to rework the generator to do a kind of substitution thing instead of the standard spectre algorithm and then I could show that you make a long line/circuit, and when you substitue all the tiles for the next superset you maintain all the paths (like a standard infinite line proof, like the hilbert curve).
 
 ## Lingo
 * 'Thumbs' - The editable tiles at the top of the page. Short for 'Thumbnails'.
