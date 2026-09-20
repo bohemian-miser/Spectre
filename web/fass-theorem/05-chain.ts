@@ -22,7 +22,7 @@ import { CONFIGS, buildStrands, heading, trace, verdict, zExpand, type ZInstance
 import { leaves, outlineOf } from './geom';
 
 const cfg = CONFIGS[process.argv[2] ?? 'hex128'];
-const MAX = Number(process.argv[3] ?? 6);
+const MAX = Number(process.argv[3] ?? 5); // T_5 is level 6 (242k / 273k tiles); level 7 has 1.9M tiles and takes ~10 minutes
 const WORD = [0, 5, 0, 0];
 let allOk = true;
 const check = (ok: boolean, label: string, detail = ''): boolean => { allOk = verdict(ok, label, detail) && allOk; return ok; };
@@ -39,7 +39,9 @@ for (let i = 0; i <= MAX; i++) {
   check(tr.arcs.length === 1 && tr.circuits.length === 0 && tr.tilesCovered === insts.length, `T_${i} (level ${level}, ${insts.length} tiles): one arc, no circuit, every tile visited`);
   const arc = tr.arcs[0]; const segs = arc.segIdxs.map((k) => { const [a, b] = strands.segs[k]; return a < b ? `${a}|${b}` : `${b}|${a}`; });
   if (prevSegs) {
-    const pos = prevSegs.map((s) => segs.indexOf(s)); const start = Math.min(...pos), end = Math.max(...pos);
+    const where = new Map(segs.map((s, i) => [s, i] as const));
+    const pos = prevSegs.map((s) => where.get(s) ?? -1);
+    let start = Infinity, end = -Infinity; for (const p of pos) { if (p < start) start = p; if (p > end) end = p; } // no spread: the arrays reach millions of entries
     const contiguous = pos.every((p) => p >= 0) && end - start + 1 === prevSegs.length && (pos.every((p, k) => p === start + k) || pos.every((p, k) => p === end - k));
     check(contiguous, `the arc of T_${i - 1} is a contiguous sub-path of the arc of T_${i}`, `${start} segments before it, ${segs.length - end - 1} after`);
   }
