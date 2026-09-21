@@ -15,7 +15,7 @@ prints pass/fail lines and exits non-zero if any check fails.
 | `03-strands.ts` | `hex128` \| `spectre1278` \| `flagship` | the boundary-dot datum from the tables, the fixed routing operator, its 2-cycle, zero circuits, Psi one arc |
 | `04-stars.ts` | config `[level]` | all vertex stars of all levels (45 hex, 125 spectre), validated against geometry; no chord crossings; separation constants |
 | `05-chain.ts` | config `[levels]` | the ancestor chain `0,5,0,0`: contiguous nesting, two-sided growth, burial |
-| `06-isabelle-data.ts` | config | emits `isabelle/FASS_Data_*.thy` for the Isabelle session |
+| `06-isabelle-data.ts` | config `[lean]` | emits `lean/FASS/Data*.lean` (with `lean`) for the machine-checked Lean library, or `isabelle/FASS_Data_*.thy` for the Isabelle session |
 | `geom.ts` | — | shared exact geometry |
 
 `tables-hex.json` and `tables-spectre.json` are the outputs of `01`, committed

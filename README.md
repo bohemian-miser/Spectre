@@ -59,7 +59,8 @@ The proof is the substitution argument sketched below, made exact: every superti
 combinatorial hexagon whose six edges compose from its children's edges by a fixed table, so
 the strand routing is a fixed operator; non-overlap of the pieces at every level comes from a
 covering-space argument rather than a per-level check. Write-up in
-[`docs/FASS_THEOREM.md`](docs/FASS_THEOREM.md), scripts in [`web/fass-theorem/`](web/fass-theorem/);
+[`docs/FASS_THEOREM.md`](docs/FASS_THEOREM.md), scripts in [`web/fass-theorem/`](web/fass-theorem/),
+and the combinatorial core machine-checked in Lean 4 in [`lean/FASS/`](lean/FASS/);
 the earlier proof plan and evidence dossier are [`docs/FASS_PROOF.md`](docs/FASS_PROOF.md) and
 [`docs/FASS_1278.md`](docs/FASS_1278.md).
 
