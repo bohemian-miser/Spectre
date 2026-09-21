@@ -565,6 +565,36 @@ failed check.
 | `03-strands.ts` | `hex128` \| `spectre1278` \| `flagship` | dot datum, `F`, its 2-cycle, zero circuits, Psi one arc | 1 min |
 | `04-stars.ts` | config, `[validation level]` | 45 / 125 vertex stars, validated to level 5; chord crossings; separation constants | 4 min |
 | `05-chain.ts` | config, `[levels]` | the chain `0,5,0,0`: contiguity, growth, burial, seed distance | 5 min at 5 |
+| `06-isabelle-data.ts` | config | emits the data theories of the Isabelle development (§11) | 1 min |
 
 The `tables-*.json` files are committed so that `02`–`05` can be run without
 re-deriving them; `01` regenerates them.
+
+---
+
+## 11. The combinatorial core in Isabelle/HOL
+
+[`isabelle/`](../isabelle/) carries the finite part of this proof as an Isabelle
+session, in the same spirit as the Lean check of selection 15 in `lean/`. The
+kernel re-runs the computations and the all-levels statements are proved from
+them by induction:
+
+* `claims_all_levels` and `labclaims_all_levels` are C2 as theorems: if the
+  claim set is closed under one substitution step and every claim holds at
+  level 1, every claim holds at every level. The step lemma `holds_step` is
+  the algebra of §3 (reverse, negate, and the direction maps) written out.
+* `routing_all_levels`: a period-2 orbit of the routing operator from the
+  level-1 states, with zero circuits and a one-arc Psi on both states of the
+  period, gives zero circuits and a one-arc Psi at every level.
+* `angles_all_levels`, and the constancy of the boundary dot counts, by the
+  same periodicity argument (`funpow_period_all`).
+* C1, C3 (with SameCorner), C4, C6 and C7 are executable checks run by `eval`.
+
+The data theories are generated from the verified pipeline by
+`06-isabelle-data.ts`. The session has not yet been run through Isabelle in
+this repository (no installation was reachable when it was written); every
+`eval` statement was validated by `isabelle/shadow.py`, a third independent
+implementation of the same definitions. What the session does not cover is
+what no combinatorics covers: that the tables describe the real level-1 and
+level-2 patches, the winding-number lemma, the covering argument of §4, and the
+vertex stars of §6.
