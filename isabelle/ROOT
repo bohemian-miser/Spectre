@@ -1,0 +1,9 @@
+session FASS = HOL +
+  description "The combinatorial core of docs/FASS_THEOREM.md: substitution tables, closure of the word claims, corner coincidences, disk structure, angle periodicity, burial, and the routing operator, for the hexagon and spectre families."
+  options [document = false]
+  theories
+    FASS_Core
+    FASS_Data_Hex
+    FASS_Data_Spectre
+    FASS_Hex
+    FASS_Spectre
