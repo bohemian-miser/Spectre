@@ -568,36 +568,289 @@ def scIter (t : Tables) : Nat → List (Corner × Corner) → List (Corner × Co
   | n + 1, S => scIter t n (scRefine t S)
 
 def sameCorner (t : Tables) : List (Corner × Corner) := scIter t 20 (scStart t)
-def sameCornerClosed (t : Tables) : Bool := scRefine t (sameCorner t) == sameCorner t
-def sameCornerBase (t : Tables) (corners1 : List (List Nat)) : Bool :=
-  (sameCorner t).all (fun p =>
+
+/-- The checks below take the relation as a parameter, so that a configuration file can compute
+  `sameCorner t` once (`sameCorner t = scLit`, a single kernel computation) and run everything
+  else on the literal. -/
+def sameCornerClosedWith (t : Tables) (sc : List (Corner × Corner)) : Bool := scRefine t sc == sc
+def sameCornerBaseWith (sc : List (Corner × Corner)) (corners1 : List (List Nat)) : Bool :=
+  sc.all (fun p =>
     (corners1.getD p.1.1 []).getD p.1.2 0 == (corners1.getD p.2.1 []).getD p.2.2 0)
+def sameCornerClosed (t : Tables) : Bool := sameCornerClosedWith t (sameCorner t)
+def sameCornerBase (t : Tables) (corners1 : List (List Nat)) : Bool :=
+  sameCornerBaseWith (sameCorner t) corners1
 
-/-- For a parent with an empty slot (Gamma), transfer the coincidences of a parent without one,
-  through corners that the children in the same slot share as points. -/
-def transferSeeds (t : Tables) (T : Nat) : List (Corner × Corner) :=
+/-- The SameCorner relation of both families (they share the tables `rules` and `CT`, so the
+  relation is the same); each configuration file proves `sameCorner T = scLit`. -/
+def scLit : List (Corner × Corner) := [((1, 1), 1, 1),
+ ((1, 2), 1, 2),
+ ((1, 3), 1, 3),
+ ((1, 4), 1, 4),
+ ((1, 5), 1, 5),
+ ((1, 1), 2, 1),
+ ((1, 2), 2, 2),
+ ((1, 1), 3, 1),
+ ((1, 2), 3, 2),
+ ((1, 3), 3, 3),
+ ((1, 4), 3, 4),
+ ((1, 2), 4, 2),
+ ((1, 2), 5, 2),
+ ((1, 3), 5, 3),
+ ((1, 4), 5, 4),
+ ((1, 1), 6, 1),
+ ((1, 2), 6, 2),
+ ((1, 3), 6, 3),
+ ((1, 4), 6, 4),
+ ((1, 5), 6, 5),
+ ((1, 1), 7, 1),
+ ((1, 2), 7, 2),
+ ((1, 3), 7, 3),
+ ((1, 2), 8, 2),
+ ((1, 3), 8, 3),
+ ((2, 1), 1, 1),
+ ((2, 2), 1, 2),
+ ((2, 1), 2, 1),
+ ((2, 2), 2, 2),
+ ((2, 3), 2, 3),
+ ((2, 4), 2, 4),
+ ((2, 5), 2, 5),
+ ((2, 1), 3, 1),
+ ((2, 2), 3, 2),
+ ((2, 5), 3, 5),
+ ((2, 2), 4, 2),
+ ((2, 3), 4, 3),
+ ((2, 4), 4, 4),
+ ((2, 5), 4, 5),
+ ((2, 2), 5, 2),
+ ((2, 5), 5, 5),
+ ((2, 1), 6, 1),
+ ((2, 2), 6, 2),
+ ((2, 1), 7, 1),
+ ((2, 2), 7, 2),
+ ((2, 4), 7, 4),
+ ((2, 5), 7, 5),
+ ((2, 2), 8, 2),
+ ((2, 4), 8, 4),
+ ((2, 5), 8, 5),
+ ((3, 1), 1, 1),
+ ((3, 2), 1, 2),
+ ((3, 3), 1, 3),
+ ((3, 4), 1, 4),
+ ((3, 1), 2, 1),
+ ((3, 2), 2, 2),
+ ((3, 5), 2, 5),
+ ((3, 1), 3, 1),
+ ((3, 2), 3, 2),
+ ((3, 3), 3, 3),
+ ((3, 4), 3, 4),
+ ((3, 5), 3, 5),
+ ((3, 2), 4, 2),
+ ((3, 5), 4, 5),
+ ((3, 2), 5, 2),
+ ((3, 3), 5, 3),
+ ((3, 4), 5, 4),
+ ((3, 5), 5, 5),
+ ((3, 1), 6, 1),
+ ((3, 2), 6, 2),
+ ((3, 3), 6, 3),
+ ((3, 4), 6, 4),
+ ((3, 1), 7, 1),
+ ((3, 2), 7, 2),
+ ((3, 3), 7, 3),
+ ((3, 5), 7, 5),
+ ((3, 2), 8, 2),
+ ((3, 3), 8, 3),
+ ((3, 5), 8, 5),
+ ((4, 2), 1, 2),
+ ((4, 2), 2, 2),
+ ((4, 3), 2, 3),
+ ((4, 4), 2, 4),
+ ((4, 5), 2, 5),
+ ((4, 2), 3, 2),
+ ((4, 5), 3, 5),
+ ((4, 1), 4, 1),
+ ((4, 2), 4, 2),
+ ((4, 3), 4, 3),
+ ((4, 4), 4, 4),
+ ((4, 5), 4, 5),
+ ((4, 1), 5, 1),
+ ((4, 2), 5, 2),
+ ((4, 5), 5, 5),
+ ((4, 2), 6, 2),
+ ((4, 2), 7, 2),
+ ((4, 4), 7, 4),
+ ((4, 5), 7, 5),
+ ((4, 1), 8, 1),
+ ((4, 2), 8, 2),
+ ((4, 4), 8, 4),
+ ((4, 5), 8, 5),
+ ((5, 2), 1, 2),
+ ((5, 3), 1, 3),
+ ((5, 4), 1, 4),
+ ((5, 2), 2, 2),
+ ((5, 5), 2, 5),
+ ((5, 2), 3, 2),
+ ((5, 3), 3, 3),
+ ((5, 4), 3, 4),
+ ((5, 5), 3, 5),
+ ((5, 1), 4, 1),
+ ((5, 2), 4, 2),
+ ((5, 5), 4, 5),
+ ((5, 1), 5, 1),
+ ((5, 2), 5, 2),
+ ((5, 3), 5, 3),
+ ((5, 4), 5, 4),
+ ((5, 5), 5, 5),
+ ((5, 2), 6, 2),
+ ((5, 3), 6, 3),
+ ((5, 4), 6, 4),
+ ((5, 2), 7, 2),
+ ((5, 3), 7, 3),
+ ((5, 5), 7, 5),
+ ((5, 1), 8, 1),
+ ((5, 2), 8, 2),
+ ((5, 3), 8, 3),
+ ((5, 5), 8, 5),
+ ((6, 1), 1, 1),
+ ((6, 2), 1, 2),
+ ((6, 3), 1, 3),
+ ((6, 4), 1, 4),
+ ((6, 5), 1, 5),
+ ((6, 1), 2, 1),
+ ((6, 2), 2, 2),
+ ((6, 1), 3, 1),
+ ((6, 2), 3, 2),
+ ((6, 3), 3, 3),
+ ((6, 4), 3, 4),
+ ((6, 2), 4, 2),
+ ((6, 2), 5, 2),
+ ((6, 3), 5, 3),
+ ((6, 4), 5, 4),
+ ((6, 0), 6, 0),
+ ((6, 1), 6, 1),
+ ((6, 2), 6, 2),
+ ((6, 3), 6, 3),
+ ((6, 4), 6, 4),
+ ((6, 5), 6, 5),
+ ((6, 1), 7, 1),
+ ((6, 2), 7, 2),
+ ((6, 3), 7, 3),
+ ((6, 2), 8, 2),
+ ((6, 3), 8, 3),
+ ((7, 1), 1, 1),
+ ((7, 2), 1, 2),
+ ((7, 3), 1, 3),
+ ((7, 1), 2, 1),
+ ((7, 2), 2, 2),
+ ((7, 4), 2, 4),
+ ((7, 5), 2, 5),
+ ((7, 1), 3, 1),
+ ((7, 2), 3, 2),
+ ((7, 3), 3, 3),
+ ((7, 5), 3, 5),
+ ((7, 2), 4, 2),
+ ((7, 4), 4, 4),
+ ((7, 5), 4, 5),
+ ((7, 2), 5, 2),
+ ((7, 3), 5, 3),
+ ((7, 5), 5, 5),
+ ((7, 1), 6, 1),
+ ((7, 2), 6, 2),
+ ((7, 3), 6, 3),
+ ((7, 1), 7, 1),
+ ((7, 2), 7, 2),
+ ((7, 3), 7, 3),
+ ((7, 4), 7, 4),
+ ((7, 5), 7, 5),
+ ((7, 2), 8, 2),
+ ((7, 3), 8, 3),
+ ((7, 4), 8, 4),
+ ((7, 5), 8, 5),
+ ((8, 2), 1, 2),
+ ((8, 3), 1, 3),
+ ((8, 2), 2, 2),
+ ((8, 4), 2, 4),
+ ((8, 5), 2, 5),
+ ((8, 2), 3, 2),
+ ((8, 3), 3, 3),
+ ((8, 5), 3, 5),
+ ((8, 1), 4, 1),
+ ((8, 2), 4, 2),
+ ((8, 4), 4, 4),
+ ((8, 5), 4, 5),
+ ((8, 1), 5, 1),
+ ((8, 2), 5, 2),
+ ((8, 3), 5, 3),
+ ((8, 5), 5, 5),
+ ((8, 2), 6, 2),
+ ((8, 3), 6, 3),
+ ((8, 2), 7, 2),
+ ((8, 3), 7, 3),
+ ((8, 4), 7, 4),
+ ((8, 5), 7, 5),
+ ((8, 1), 8, 1),
+ ((8, 2), 8, 2),
+ ((8, 3), 8, 3),
+ ((8, 4), 8, 4),
+ ((8, 5), 8, 5)]
+
+/-- For a parent with an empty slot (Gamma), transfer the coincidences of a parent `P` without
+  one, through corners that the children in the same slot share as points. -/
+def transferFrom (t : Tables) (sc : List (Corner × Corner)) (T P : Nat) : List (Corner × Corner) :=
+  ((cornerClasses t P).map (fun cls =>
+    let here := ((cls.map (·.1)).map (fun sp =>
+      allEdges.filter (fun c => hasChild t T sp &&
+        cls.any (fun q => q.1 == sp && sc.contains ((child t T sp, c), (child t P sp, q.2))))
+      |>.map (fun c => (sp, c)))).flatten
+    match here with
+    | [] => []
+    | h :: rest => rest.map (fun x => (h, x)))).flatten
+
+def transferSeedsWith (t : Tables) (sc : List (Corner × Corner)) (T : Nat) : List (Corner × Corner) :=
   if allSlots.all (hasChild t T) then []
-  else
-    let sc := sameCorner t
-    ((nonGammaTypes t).map (fun P =>
-      ((cornerClasses t P).map (fun cls =>
-        let here := ((cls.map (·.1)).map (fun sp =>
-          allEdges.filter (fun c => hasChild t T sp &&
-            cls.any (fun q => q.1 == sp && sc.contains ((child t T sp, c), (child t P sp, q.2))))
-          |>.map (fun c => (sp, c)))).flatten
-        match here with
-        | [] => []
-        | h :: rest => rest.map (fun x => (h, x)))).flatten)).flatten
+  else ((nonGammaTypes t).map (transferFrom t sc T)).flatten
+def transferSeeds (t : Tables) (T : Nat) : List (Corner × Corner) := transferSeedsWith t (sameCorner t) T
 
-def c3_ok (t : Tables) (Qt : List (List Int)) : Bool :=
-  allTypes.all (fun T =>
-    match chainSeeds t Qt T with
-    | none => false
-    | some seedsT =>
-      let A := cornerClasses t T
-      seedsT.all (fun xy => sameClass A xy.1 xy.2) &&
-      (let K0 := (seedsT ++ transferSeeds t T).foldl (fun P xy => mergeClass P xy.1 xy.2) (initialClasses t T)
-       refines (propagateN t T 20 K0) A))
+/-- The seeds transferred into Gamma (type 0) from the eight other types, in both families; each
+  configuration file proves `transferSeedsWith T scLit 0 = tsLit`. -/
+def tsLit : List (Corner × Corner) :=
+  [((5, 5), 6, 2), ((4, 4), 6, 1), ((4, 3), 5, 1), ((3, 5), 4, 2), ((1, 5), 4, 1), ((1, 4), 3, 1), ((0, 5), 1, 2), ((5, 5), 6, 2), ((4, 4), 6, 1), ((4, 3), 5, 1), ((3, 5), 4, 2), ((1, 5), 4, 1), ((1, 4), 3, 1), ((0, 5), 1, 2), ((5, 5), 6, 2), ((4, 4), 6, 1), ((4, 3), 5, 1), ((3, 5), 4, 2), ((1, 5), 4, 1), ((1, 4), 3, 1), ((0, 5), 1, 2), ((5, 5), 6, 2), ((4, 4), 6, 1), ((4, 3), 5, 1), ((3, 5), 4, 2), ((1, 5), 4, 1), ((1, 4), 3, 1), ((0, 5), 1, 2), ((5, 5), 6, 2), ((4, 4), 6, 1), ((4, 3), 5, 1), ((3, 5), 4, 2), ((1, 5), 4, 1), ((1, 4), 3, 1), ((0, 5), 1, 2), ((5, 5), 6, 2), ((4, 4), 6, 1), ((4, 3), 5, 1), ((3, 5), 4, 2), ((1, 5), 4, 1), ((1, 4), 3, 1), ((0, 5), 1, 2), ((5, 5), 6, 2), ((4, 4), 6, 1), ((4, 3), 5, 1), ((3, 5), 4, 2), ((1, 5), 4, 1), ((1, 4), 3, 1), ((0, 5), 1, 2), ((5, 5), 6, 2), ((4, 4), 6, 1), ((4, 3), 5, 1), ((3, 5), 4, 2), ((1, 5), 4, 1), ((1, 4), 3, 1), ((0, 5), 1, 2)]
+
+/-- C3 for one parent type, with the transferred seeds given. -/
+def c3_okTWith (t : Tables) (Qt : List (List Int)) (extra : List (Corner × Corner)) (T : Nat) : Bool :=
+  match chainSeeds t Qt T with
+  | none => false
+  | some seedsT =>
+    let A := cornerClasses t T
+    seedsT.all (fun xy => sameClass A xy.1 xy.2) &&
+    (let K0 := (seedsT ++ extra).foldl (fun P xy => mergeClass P xy.1 xy.2) (initialClasses t T)
+     refines (propagateN t T 20 K0) A)
+
+/-- C3 for one parent type: the chain seeds (and the transferred ones) propagate to every
+  intrinsic corner class. -/
+def c3_okT (t : Tables) (Qt : List (List Int)) (sc : List (Corner × Corner)) (T : Nat) : Bool :=
+  c3_okTWith t Qt (transferSeedsWith t sc T) T
+
+def c3_ok (t : Tables) (Qt : List (List Int)) : Bool := allTypes.all (c3_okT t Qt (sameCorner t))
+
+theorem c3_ok_of {t : Tables} {Qt : List (List Int)} {sc : List (Corner × Corner)}
+    (hsc : sameCorner t = sc) (h : ∀ T, T < 9 → c3_okT t Qt sc T = true) : c3_ok t Qt = true := by
+  unfold c3_ok
+  rw [hsc]
+  exact List.all_eq_true.mpr (fun T hT => h T (List.mem_range.mp hT))
+
+theorem c3_okT_of {t : Tables} {Qt : List (List Int)} {sc extra : List (Corner × Corner)} {T : Nat}
+    (hts : transferSeedsWith t sc T = extra) (h : c3_okTWith t Qt extra T = true) : c3_okT t Qt sc T = true := by
+  unfold c3_okT; rw [hts]; exact h
+
+theorem sameCornerClosed_of {t : Tables} {sc : List (Corner × Corner)} (hsc : sameCorner t = sc)
+    (h : sameCornerClosedWith t sc = true) : sameCornerClosed t = true := by
+  unfold sameCornerClosed; rw [hsc]; exact h
+
+theorem sameCornerBase_of {t : Tables} {sc : List (Corner × Corner)} {corners1 : List (List Nat)}
+    (hsc : sameCorner t = sc) (h : sameCornerBaseWith sc corners1 = true) :
+    sameCornerBase t corners1 = true := by
+  unfold sameCornerBase; rw [hsc]; exact h
 
 /-! ## C4: the glued children form a disk -/
 
