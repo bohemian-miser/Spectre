@@ -592,9 +592,10 @@ induction:
 * C1, C3 (with SameCorner), C4, C6 and C7 are executable checks.
 
 The data files are generated from the verified pipeline by
-`06-isabelle-data.ts <config> lean`. The general lemmas depend only on Lean's
-standard axioms; the closed computations are discharged by `native_decide`,
-which trusts the compiled code (`Lean.ofReduceBool`). See
+`06-isabelle-data.ts <config> lean`. The closed computations are discharged by
+`decide +kernel`, so the Lean kernel itself re-runs them: every theorem of the
+library depends only on Lean's standard axioms (`propext`, `Classical.choice`,
+`Quot.sound`), with no `native_decide` and no trust in the compiler. See
 [`lean/README.md`](../lean/README.md) for the file layout, the theorem
 statements and the trust base.
 

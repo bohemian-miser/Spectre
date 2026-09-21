@@ -14,8 +14,12 @@ cd lean && lake build
 ```
 
 The toolchain is pinned by `lean-toolchain` (`leanprover/lean4:v4.15.0`); `elan`
-installs it on first use. Both libraries build in about a minute. There is no
-`sorry` anywhere.
+installs it on first use. `Sel15` builds in under a minute. `FASS` takes
+about 13 minutes per configuration file (26 in all) because the kernel
+re-runs every computation, and each configuration file needs about 9 GB of
+memory at its peak;
+`FASS/Spectre.lean` imports `FASS/Hex.lean` only so that lake builds the two
+one after the other rather than side by side. There is no `sorry` anywhere.
 
 ## FASS
 
@@ -50,13 +54,22 @@ level `k`:
 
 The general lemmas (`holds_step`, `claims_all_levels`, `labclaims_all_levels`,
 `iterate_period_all`, `routing_all_levels`, `angles_all_levels`,
-`dotCounts_all_levels`) are ordinary tactic proofs; `#print axioms` reports only
-`propext`, `Classical.choice` and `Quot.sound`. The closed computations on the
-data are discharged by `native_decide`, which runs the compiled definitions and
-trusts the compiler through the axiom `Lean.ofReduceBool`; so the
-configuration theorems additionally depend on that axiom. Every one of those
-computations is also carried out, independently, by the TypeScript scripts of
-`web/fass-theorem/` and by `isabelle/shadow.py`.
+`dotCounts_all_levels`) are ordinary tactic proofs. The closed computations on
+the data are discharged by `decide +kernel`: the Lean kernel itself reduces the
+decision procedure, so nothing is trusted beyond the kernel, and `#print axioms`
+on every configuration theorem reports only `propext`, `Classical.choice` and
+`Quot.sound` (no `Lean.ofReduceBool`, i.e. no `native_decide` and no trust in
+the compiler). Every one of those computations is also carried out,
+independently, by the TypeScript scripts of `web/fass-theorem/` and by
+`isabelle/shadow.py`.
+
+Two computations are too large for one kernel run and are split: the SameCorner
+relation is computed once per configuration (`sc_eq : sameCorner T = scLit`,
+about three minutes) and everything else in C3 runs on the literal; the seeds
+transferred into Gamma are computed per source type (`tf_1` … `tf_8`) and
+concatenated (`ts_eq`). Both literals live in `Core.lean` because the two
+families share them. The per-type C3 checks, and every other check, then take
+seconds each.
 
 ### What is not formalised
 
