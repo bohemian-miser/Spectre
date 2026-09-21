@@ -366,7 +366,7 @@ stay integral, reusing [`web/fass-proof/lib.ts`](../web/fass-proof/lib.ts).
 | [`05-unrooted-check.ts`](../web/sel15-proof/05-unrooted-check.ts) | V0b and V6 again, on windows from the unrooted generator: a different code path, 80 different tilings, centres away from any supertile origin |
 | [`06-boundary-word.ts`](../web/sel15-proof/06-boundary-word.ts) | a negative result: the boundary seam word's length recurrence carries a constant, so no letter substitution relates consecutive levels and the cheap induction for V0b is closed |
 
-The Lean 4 development is in [`lean/`](../lean/): `lake build`, no Mathlib, no `sorry`, no
+The Lean 4 development is in [`lean/Sel15/`](../lean/Sel15/): `lake build`, no Mathlib, no `sorry`, no
 `native_decide`. Every theorem is closed by `decide`, so the kernel re-runs the arithmetic, and
 `#print axioms` reports that none of them depends on any axiom at all.
 

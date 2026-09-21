@@ -1,9 +1,10 @@
 # isabelle
 
 The combinatorial core of [`docs/FASS_THEOREM.md`](../docs/FASS_THEOREM.md) as an
-Isabelle/HOL session, in the same spirit as the Lean check in [`lean/`](../lean/)
-for selection 15: the kernel re-runs every finite computation, and the
-all-levels statements are proved from them by induction.
+Isabelle/HOL session: the kernel re-runs every finite computation, and the
+all-levels statements are proved from them by induction. The same development
+exists in Lean 4 in [`lean/FASS/`](../lean/FASS/), where it builds and is
+machine-checked; this session is the Isabelle twin and has not yet been built.
 
 ## Files
 
@@ -24,7 +25,9 @@ python3 isabelle/shadow.py      # no Isabelle needed
 
 **Status.** The session was written in an environment with no Isabelle
 installation and no network route to the Isabelle distribution, so it has not
-been run through Isabelle yet. Two things mitigate that. Every `by eval` line
+been run through Isabelle yet. The Lean 4 port in [`lean/FASS/`](../lean/FASS/)
+has been built and checked, so the mathematics of every statement here is
+machine-verified; only the Isabelle text itself is unverified. Two things mitigate that. Every `by eval` line
 was validated by `shadow.py`, an independent implementation of the same
 definitions, so the computational claims are true; and the general proofs
 (`holds_step`, `claims_all_levels`, `funpow_period_all`, `routing_all_levels`,
@@ -46,4 +49,4 @@ tables describe the actual level-1 and level-2 patches (`01-tables.ts`, exact
 arithmetic), the validity of those patches (winding number, Lemma 1.1), the
 covering-space argument of §4, and the vertex stars and chord crossings of §6.
 These are the inputs of the development, exactly as V0b and V6 are the inputs
-of the Lean development in `lean/`.
+of the `Sel15` development in `lean/`.
