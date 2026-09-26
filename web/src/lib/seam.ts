@@ -53,6 +53,11 @@ export interface SeamPartner {
 /**
  * A leaf type that can sit across a class-`major` seam from `tileA`.
  * Class 0 glues to itself, so the partner carries the same sign.
+ *
+ * A class can have seams of more than one shape (in the 'spectre-iso' labels
+ * Gamma2 carries a `6` towards the Delta and a `-6` towards the Sigma, and
+ * the two are bent differently), so a partner whose seam actually fits A's
+ * is preferred over the first one with the right label.
  */
 export function findSeamPartner(
   family: TileFamilyId,
@@ -64,11 +69,26 @@ export function findSeamPartner(
   const wantSign: 1 | -1 = major === 0 ? signA : ((-signA) as 1 | -1);
   const order = leafOrder(family);
   const candidates = [...order.filter((t) => t !== tileA && t !== exclude), tileA];
+  const seamA = findSeam(family, tileA, major, signA);
+  let first: SeamPartner | null = null;
   for (const type of candidates) {
     const seam = findSeam(family, type, major, wantSign);
-    if (seam) return { type, seam };
+    if (!seam) continue;
+    if (!seamA || seamsFit(leafPts(family, tileA), seamA, leafPts(family, type), seam)) {
+      return { type, seam };
+    }
+    first ??= { type, seam };
   }
-  return null;
+  return first;
+}
+
+/** True when B's seam, reversed, is congruent to A's (same lengths and bends). */
+function seamsFit(ptsA: readonly Pt[], seamA: MetaEdge, ptsB: readonly Pt[], seamB: MetaEdge): boolean {
+  const chainA = seamPolyline(ptsA, seamA);
+  const chainB = seamPolyline(ptsB, seamB);
+  if (chainA.length !== chainB.length || chainA.length < 2) return false;
+  const m = rigidAlign(chainB[0], chainB[chainB.length - 1], chainA[chainA.length - 1], chainA[0]);
+  return chainB.every((p, i) => dist(transPt(m, p), chainA[chainA.length - 1 - i]) < 1e-6);
 }
 
 /**

@@ -87,7 +87,9 @@ export function FamilyCoda(): JSX.Element {
         <p className="muted">
           The hexagon skeleton plays a slightly different game — its Gamma is one fused tile with no
           class-7 edges, and its Sigma carries a class-6 edge the Spectre's does not — so its kernel
-          is a different set. The eight answers above are specifically the Spectre's.
+          is a different set. The eight answers above are specifically the Spectre's. The
+          "hex-isomorphic labels" family is the Spectre again, with its Sigma's long class-4 seam split
+          into a 6 and a 4 the way the hexagon's is; its kernel is the hexagons', with 7 riding along.
         </p>
       </aside>
     </div>
