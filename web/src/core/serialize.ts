@@ -72,6 +72,13 @@ export interface ExplorerState {
    */
   readonly mode?: ExplorerMode;
   /**
+   * Draw a HEXAGON rule on Spectre tiles (`sh=s`), strand for strand: the
+   * 'spectre-iso' tiles with the Mystic as one tile (`hexRuleSpectreChords`).
+   * Only meaningful with `family: 'hex'` — the rule, matchings and URL stay
+   * the hexagons'; only the drawing changes. Omitted when off.
+   */
+  readonly shape?: 'spectre';
+  /**
    * Instance budget for infinite mode (`bg=`). Additive in the same way: only
    * a non-default value is written, and only while the mode that uses it is
    * active. Read it as `state.budget ?? DEFAULT_INSTANCE_BUDGET`.
@@ -485,6 +492,7 @@ export function encodeExplorerState(s: ExplorerState): URLSearchParams {
   // Additive: only a non-default mode appears, and only where it is real.
   const infinite = s.mode === 'infinite' && supportsInfiniteMode(s.family);
   if (infinite) q.set('md', 'infinite');
+  if (s.shape === 'spectre' && s.family === 'hex') q.set('sh', 's');
   // The budget only means anything in infinite mode, so it rides along with it
   // rather than cluttering every rooted link.
   if (infinite && s.budget !== undefined) {
@@ -598,6 +606,7 @@ export function decodeExplorerState(q: URLSearchParams): ExplorerState {
 
   // Only meaningful alongside `md=infinite`; a stray `bg=` on a rooted link is
   // dropped the same way a stray `md=` on a hex link is.
+  const shape = q.get('sh') === 's' && family === 'hex' ? ('spectre' as const) : undefined;
   const bgRaw = Number.parseInt(q.get('bg') ?? '', 10);
   const budget =
     mode === 'infinite' && Number.isFinite(bgRaw) ? clampInstanceBudget(bgRaw) : undefined;
@@ -654,6 +663,7 @@ export function decodeExplorerState(q: URLSearchParams): ExplorerState {
     ...(contracts ? { contracts } : {}),
     ...(camera ? { camera } : {}),
     ...(mode ? { mode } : {}),
+    ...(shape ? { shape } : {}),
     ...(budget !== undefined ? { budget } : {}),
     ...(lineWidth !== undefined ? { lineWidth } : {}),
     ...(trace === false ? { trace } : {}),

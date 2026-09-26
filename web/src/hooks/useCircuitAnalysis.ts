@@ -38,6 +38,7 @@ function signature(input: AnalysisInput): string {
     input.matchingIndexByType,
     input.contracts ?? null,
     input.rainbowTails ?? false,
+    input.hexRule ?? false,
   ]);
 }
 

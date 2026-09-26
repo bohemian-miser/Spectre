@@ -70,6 +70,7 @@ export type ExplorerAction =
   | { readonly type: 'clearOverlays'; readonly tileType?: TileTypeId }
   | { readonly type: 'setCamera'; readonly camera: Camera | undefined }
   | { readonly type: 'setMode'; readonly mode: ExplorerMode }
+  | { readonly type: 'setShape'; readonly shape: 'hex' | 'spectre' }
   | { readonly type: 'setBudget'; readonly budget: number }
   | { readonly type: 'setLineWidth'; readonly lineWidth: number }
   | { readonly type: 'setTrace'; readonly trace: boolean }
@@ -142,8 +143,9 @@ export function explorerReducer(state: ExplorerState, action: ExplorerAction): E
       if (action.family === state.family) return state;
       // The hex family has one Gamma leaf instead of Gamma1/Gamma2, so the
       // vector changes length (DESIGN.md §12.9).
+      const { shape: _shape, ...rest } = state;
       const next: ExplorerState = {
-        ...state,
+        ...rest,
         family: action.family,
         matching: normalizeMatchingVector(action.family, state.subset, state.matching),
         overlays: {},
@@ -151,6 +153,17 @@ export function explorerReducer(state: ExplorerState, action: ExplorerAction): E
       // The un-rooted engine only generates spectre; leaving `infinite` set
       // for another family would be a lie, so drop back to rooted.
       return supportsInfiniteMode(action.family) ? next : stripMode(next);
+    }
+
+    // Hexagons drawn as Spectres: a drawing choice over the same hexagon rule,
+    // so nothing else changes. Only the hex family has it.
+    case 'setShape': {
+      if (action.shape === 'spectre') {
+        return state.family === 'hex' && state.shape !== 'spectre' ? { ...state, shape: 'spectre' } : state;
+      }
+      if (state.shape === undefined) return state;
+      const { shape: _s, ...rest } = state;
+      return rest as ExplorerState;
     }
 
     case 'setMode': {

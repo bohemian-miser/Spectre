@@ -21,3 +21,4 @@ export * from './stats';
 export * from './exact';
 export * from './automaton';
 export * from './unrooted';
+export * from './hexRule';

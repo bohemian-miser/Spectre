@@ -30,7 +30,9 @@
 
 import {
   DEFAULT_CONTRACTS,
+  HEX_RULE_SPECTRE_FAMILY,
   LEAF_ORDER,
+  hexRuleSpectreDrawing,
   leafOrder,
   leafPts,
   localChords,
@@ -46,6 +48,11 @@ export const CHORD_ROWS = LEAF_ORDER.length;
 export const CHORD_STRIDE = 4;
 
 export interface LeafChordTable {
+  /**
+   * Chords (entries of `segments`) that are drawn and walked but do not count
+   * towards a circuit's length — see `hexRuleSpectreDrawing`.
+   */
+  readonly aux?: ReadonlySet<Segment>;
   /** Family whose leaf order the rows follow (= the engine's type bytes). */
   readonly family: TileFamilyId;
   /** Vertices per instance = `2 * maxChords`; 0 when nothing is drawable. */
@@ -132,16 +139,49 @@ export function buildLeafChordTable(
   if (selected.size === 0) return emptyChordTable(family);
 
   const order = leafOrder(family);
+  return leafChordTableFromSegments(
+    family,
+    order.map((type, i) => localChords(family, type, selected, matching[i] ?? 0, contracts)),
+  );
+}
+
+/**
+ * A hexagon rule (`subset`, the hexagon `matching` vector) as a chord table
+ * for 'spectre-iso' tiles, with the Mystic as one tile — the Explorer's
+ * "draw hexagons as Spectres" view (see `hexRuleSpectreChords`).
+ */
+export function buildHexRuleSpectreChordTable(
+  subset: readonly number[],
+  matching: readonly number[],
+  contracts: EdgeContracts = DEFAULT_CONTRACTS,
+): LeafChordTable {
+  const selected = new Set(subset);
+  if (selected.size === 0) return emptyChordTable(HEX_RULE_SPECTRE_FAMILY);
+  const record: Record<string, number> = {};
+  leafOrder('hex').forEach((type, i) => {
+    record[type] = matching[i] ?? 0;
+  });
+  const { chords, auxChords } = hexRuleSpectreDrawing(selected, record, contracts);
+  const table = leafChordTableFromSegments(
+    HEX_RULE_SPECTRE_FAMILY,
+    leafOrder(HEX_RULE_SPECTRE_FAMILY).map((type) => chords[type] ?? []),
+  );
+  return { ...table, aux: new Set(Object.values(auxChords).flat()) };
+}
+
+/** Pack per-leaf segments (in `leafOrder(family)` order) into a chord table. */
+export function leafChordTableFromSegments(
+  family: TileFamilyId,
+  segments: readonly (readonly Segment[])[],
+): LeafChordTable {
+  const order = leafOrder(family);
   const rows = order.length;
-  const segments: (readonly Segment[])[] = [];
   const emptyTypes: string[] = [];
   let maxChords = 0;
   let chordCount = 0;
   for (let i = 0; i < rows; i++) {
-    const type = order[i];
-    const local = localChords(family, type, selected, matching[i] ?? 0, contracts);
-    segments.push(local);
-    if (local.length === 0) emptyTypes.push(type);
+    const local = segments[i] ?? [];
+    if (local.length === 0) emptyTypes.push(order[i]);
     if (local.length > maxChords) maxChords = local.length;
     chordCount += local.length;
   }
@@ -150,7 +190,7 @@ export function buildLeafChordTable(
   const vertsPerInstance = maxChords * 2;
   const data = new Float32Array(rows * vertsPerInstance * CHORD_STRIDE);
   for (let row = 0; row < rows; row++) {
-    const local = segments[row];
+    const local = segments[row] ?? [];
     const base = row * vertsPerInstance * CHORD_STRIDE;
     for (let c = 0; c < local.length; c++) {
       const [a, b] = local[c];
