@@ -44,7 +44,10 @@ import {
   type Rgb,
   type TileFamilyId,
   type TileTypeId,
+  type Affine,
+  type HexSpectreMorph,
   HEX_RULE_SPECTRE_FAMILY,
+  buildHexSpectreMorph,
 } from '../core';
 import {
   CircuitLayer,
@@ -90,7 +93,16 @@ import { buildTilingModel } from '../lib/tilingModel';
 import { overlayChordsD, pathsBox } from '../lib/overlayPaths';
 import { EXPLORER_ROUTE, shareUrl } from '../lib/urlState';
 import { copyText, shareLinkBase } from '../hooks/shareLink';
-import { expandBox, isEmptyBox, roundCamera, transformBox } from '../lib/viewport';
+import {
+  expandBox,
+  fitToBounds,
+  isEmptyBox,
+  roundCamera,
+  transformBox,
+  type Camera,
+} from '../lib/viewport';
+import { tileColor } from '../lib/palette';
+import { MorphCanvas } from '../components/MorphCanvas';
 import { sceneFilename, serializeSceneSvg } from '../lib/exportScene';
 import { downloadBlob, downloadText, svgTextToPngBlob } from './sceneDownload';
 import { createCamera, levelForScale, scaleForLevel } from './map/camera';
@@ -137,6 +149,25 @@ const INFINITE_SEED = 1;
  * instead; the multiplier is what the two have in common.
  */
 const BASE_CIRCUIT_STROKE = 0.12;
+
+/**
+ * Deepest rooted level the hexagons ↔ Spectres switch animates at. Building
+ * the morph is ~0.1 s at level 3 and ~0.5 s at level 4 (it runs the circuit
+ * analysis for the strand colours); past that the switch is instant.
+ */
+const MORPH_MAX_LEVEL = 4;
+
+interface ShapeMorph {
+  readonly data: HexSpectreMorph;
+  readonly direction: 'toSpectre' | 'toHex';
+  readonly from: Camera;
+  readonly to: Camera;
+  readonly viewTransform: Affine;
+}
+
+function prefersReducedMotion(): boolean {
+  return typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
 /**
  * Breathing room when framing a circuit, as a FRACTION of the viewport per
  * side — the unit `fitToBounds` actually wants. 0.08 leaves the shape 84% of
@@ -403,6 +434,47 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
   const panRef = useRef<PanZoomApi | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const pinned = state.camera !== undefined;
+  const [morph, setMorph] = useState<ShapeMorph | null>(null);
+  const endMorph = useCallback(() => setMorph(null), []);
+
+  /** Flip hexagons ↔ Spectres, animating the patch between them when it can. */
+  const switchShape = (shape: 'hex' | 'spectre'): void => {
+    if ((shape === 'spectre') === asSpectres) return;
+    const api = panRef.current;
+    if (
+      !infinite &&
+      renderLevel <= MORPH_MAX_LEVEL &&
+      api &&
+      api.size.width > 0 &&
+      api.size.height > 0 &&
+      !prefersReducedMotion()
+    ) {
+      const target = buildTilingModel({
+        family: shape === 'spectre' ? HEX_RULE_SPECTRE_FAMILY : 'hex',
+        rootTile: state.rootTile,
+        level: renderLevel,
+        curvy: false,
+        stabilizeChirality: true,
+      });
+      setMorph({
+        data: buildHexSpectreMorph({
+          rootTile: state.rootTile,
+          level: renderLevel,
+          subset: state.subset,
+          matchingIndexByType: matchingRecord,
+          contracts: state.contracts,
+          rainbowTails: hasFlag(state, FLAG.RAINBOW_TAILS),
+          lines: linesOn,
+        }),
+        direction: shape === 'spectre' ? 'toSpectre' : 'toHex',
+        from: api.camera,
+        to: pinned ? api.camera : fitToBounds(target.bounds, api.size),
+        viewTransform: target.viewTransform,
+      });
+    }
+    dispatch({ type: 'setShape', shape });
+  };
+
   const fitKey = `${drawFamily}:${state.rootTile}:${state.level}:${pinned ? 'pin' : 'fit'}`;
 
   /**
@@ -643,7 +715,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
                   role="radio"
                   aria-checked={!asSpectres}
                   className={!asSpectres ? 'is-active' : ''}
-                  onClick={() => dispatch({ type: 'setShape', shape: 'hex' })}
+                  onClick={() => switchShape('hex')}
                 >
                   Hexagons
                 </button>
@@ -653,7 +725,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
                   aria-checked={asSpectres}
                   className={asSpectres ? 'is-active' : ''}
                   data-testid="draw-as-spectres"
-                  onClick={() => dispatch({ type: 'setShape', shape: 'spectre' })}
+                  onClick={() => switchShape('spectre')}
                 >
                   Spectres
                 </button>
@@ -1453,7 +1525,24 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
           </PanZoom>
         )}
 
-        {analysis.running ? (
+        {morph ? (
+          <MorphCanvas
+            key={`${morph.direction}:${morph.data.tiles.length}`}
+            morph={morph.data}
+            direction={morph.direction}
+            viewTransform={morph.viewTransform}
+            fromCamera={morph.from}
+            toCamera={morph.to}
+            fillOf={(type) => tileColor(type, state.colorScheme, state.customColors)}
+            showBackgrounds={hasFlag(state, FLAG.BACKGROUNDS)}
+            showOutlines={hasFlag(state, FLAG.OUTLINES)}
+            showLines={linesOn}
+            strokeWidth={BASE_CIRCUIT_STROKE * lineWidth}
+            onDone={endMorph}
+          />
+        ) : null}
+
+        {analysis.running && !morph ? (
           <div className="analysis-veil" role="status">
             <span className="spinner" aria-hidden="true" />
             Analysing {tileCount.toLocaleString()} tiles…

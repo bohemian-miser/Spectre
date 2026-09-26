@@ -233,3 +233,14 @@
 .share-pin {
   align-self: flex-start;
 }
+
+/* The hexagons ↔ Spectres morph plays over (and hides) the live view. */
+.explorer-viewport .morph-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  background: var(--panel);
+  pointer-events: none;
+  z-index: 5;
+}

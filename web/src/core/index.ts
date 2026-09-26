@@ -22,3 +22,4 @@ export * from './exact';
 export * from './automaton';
 export * from './unrooted';
 export * from './hexRule';
+export * from './morph';
