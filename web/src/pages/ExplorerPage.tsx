@@ -44,6 +44,7 @@ import {
   type Rgb,
   type TileFamilyId,
   type TileTypeId,
+  HEX_RULE_SPECTRE_FAMILY,
 } from '../core';
 import {
   CircuitLayer,
@@ -93,7 +94,7 @@ import { expandBox, isEmptyBox, roundCamera, transformBox } from '../lib/viewpor
 import { sceneFilename, serializeSceneSvg } from '../lib/exportScene';
 import { downloadBlob, downloadText, svgTextToPngBlob } from './sceneDownload';
 import { createCamera, levelForScale, scaleForLevel } from './map/camera';
-import { buildLeafChordTable } from './map/chords';
+import { buildHexRuleSpectreChordTable, buildLeafChordTable } from './map/chords';
 import { describeWalk } from './map/strandWalk';
 import {
   InfiniteCanvas,
@@ -160,6 +161,13 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
   const { state, dispatch } = useExplorerStore({ syncUrl: props.syncUrl ?? true, route });
 
   const family = state.family;
+  /**
+   * Hexagons drawn as Spectres (`sh=s`): the rule, matchings and sidebar stay
+   * the hexagons'; the scene is 'spectre-iso' tiles with the Mystic as one
+   * tile, strand for strand the same (`hexRuleSpectreChords`).
+   */
+  const asSpectres = family === 'hex' && state.shape === 'spectre';
+  const drawFamily: TileFamilyId = asSpectres ? HEX_RULE_SPECTRE_FAMILY : family;
   const selected = useMemo(() => new Set(state.subset), [state.subset]);
   const curvy = hasFlag(state, FLAG.CURVY) && family !== 'hex';
   const linesOn = hasFlag(state, FLAG.LINES);
@@ -246,13 +254,13 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
   const model = useMemo(
     () =>
       buildTilingModel({
-        family,
+        family: drawFamily,
         rootTile: state.rootTile,
         level: modelLevel,
         curvy,
         stabilizeChirality: true,
       }),
-    [family, state.rootTile, modelLevel, curvy],
+    [drawFamily, state.rootTile, modelLevel, curvy],
   );
 
   const matchingRecord = useMemo(
@@ -267,7 +275,8 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
     () =>
       !infinite && linesOn && state.subset.length
         ? {
-            family,
+            family: drawFamily,
+            hexRule: asSpectres,
             rootTile: state.rootTile,
             level: state.level,
             subset: state.subset,
@@ -279,7 +288,8 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
     [
       infinite,
       linesOn,
-      family,
+      drawFamily,
+      asSpectres,
       state.rootTile,
       state.level,
       state.subset,
@@ -296,16 +306,18 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
   const infiniteStatusRef = useRef<InfiniteCanvasStatus | null>(null);
   const infiniteHudSubRef = useRef<((s: InfiniteCanvasStatus) => void) | null>(null);
   /** Record-the-canvas wiring, shared with the map page (`map/useRecording`). */
-  const rec = useCanvasRecording(infiniteApiRef, family, INFINITE_SEED);
+  const rec = useCanvasRecording(infiniteApiRef, drawFamily, INFINITE_SEED);
   const pendingLevelRef = useRef<number | null>(null);
 
   /** Strand chords: local geometry, identical to what the rooted view draws. */
   const infiniteChords = useMemo(
     () =>
       infinite && linesOn && state.subset.length
-        ? buildLeafChordTable(family, state.subset, state.matching, state.contracts)
+        ? asSpectres
+          ? buildHexRuleSpectreChordTable(state.subset, state.matching, state.contracts)
+          : buildLeafChordTable(family, state.subset, state.matching, state.contracts)
         : null,
-    [infinite, linesOn, family, state.subset, state.matching, state.contracts],
+    [infinite, linesOn, asSpectres, family, state.subset, state.matching, state.contracts],
   );
 
   const infiniteStyle = useMemo<MapRenderStyle>(() => {
@@ -323,7 +335,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
     };
     const fills = hasFlag(state, FLAG.BACKGROUNDS);
     return {
-      leafColors: leafOrder(family).map(colorOf),
+      leafColors: leafOrder(drawFamily).map(colorOf),
       aggColors: TILE_NAMES.map(colorOf),
       showFills: fills,
       showOutlines: hasFlag(state, FLAG.OUTLINES),
@@ -331,7 +343,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
       lineColor: fills ? DEFAULT_LINE_COLOR : LIGHT_LINE_COLOR,
       lineScale: lineWidth,
     };
-  }, [family, state.colorScheme, state.customColors, state.flags, lineWidth]);
+  }, [drawFamily, state.colorScheme, state.customColors, state.flags, lineWidth]);
 
   /** Tile colours for the trace ticker — the palette the tiles are drawn in. */
   const leafCss = useMemo(
@@ -353,10 +365,10 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
       if (!api) return false;
       const { width, height } = api.getSize();
       if (width <= 0 || height <= 0) return false;
-      api.setCamera({ scale: scaleForLevel(level, width, height, averageLeafArea(family)) });
+      api.setCamera({ scale: scaleForLevel(level, width, height, averageLeafArea(drawFamily)) });
       return true;
     },
-    [family],
+    [drawFamily],
   );
 
   useEffect(() => {
@@ -391,7 +403,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
   const panRef = useRef<PanZoomApi | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const pinned = state.camera !== undefined;
-  const fitKey = `${family}:${state.rootTile}:${state.level}:${pinned ? 'pin' : 'fit'}`;
+  const fitKey = `${drawFamily}:${state.rootTile}:${state.level}:${pinned ? 'pin' : 'fit'}`;
 
   /**
    * Frame the given paths.
@@ -475,13 +487,14 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
 
   const overlayDefs = useMemo(() => {
     const out: { type: TileTypeId; d: string }[] = [];
+    if (asSpectres) return out; // hand-drawn overlays are per hexagon tile
     for (const [type, chords] of Object.entries(state.overlays)) {
       if (!chords.length) continue;
       const d = overlayChordsD(family, type as TileTypeId, chords, state.contracts);
       if (d) out.push({ type: type as TileTypeId, d });
     }
     return out;
-  }, [state.overlays, family, state.contracts]);
+  }, [state.overlays, family, asSpectres, state.contracts]);
 
   const overlayUses = useMemo(() => {
     if (!overlayDefs.length || model.instances.length > OVERLAY_BUDGET) return null;
@@ -620,6 +633,39 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
               ))}
             </select>
           </label>
+
+          {family === 'hex' ? (
+            <div className="control-row mode-row" role="radiogroup" aria-label="Draw hexagons as">
+              <span>Draw as</span>
+              <span className="mode-switch">
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={!asSpectres}
+                  className={!asSpectres ? 'is-active' : ''}
+                  onClick={() => dispatch({ type: 'setShape', shape: 'hex' })}
+                >
+                  Hexagons
+                </button>
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={asSpectres}
+                  className={asSpectres ? 'is-active' : ''}
+                  data-testid="draw-as-spectres"
+                  onClick={() => dispatch({ type: 'setShape', shape: 'spectre' })}
+                >
+                  Spectres
+                </button>
+              </span>
+            </div>
+          ) : null}
+          {asSpectres ? (
+            <p className="muted" role="note">
+              The same rule on Spectre tiles, strand for strand. Each Mystic (the Gamma pair) acts as
+              one tile, as the hexagon Gamma does.
+            </p>
+          ) : null}
 
           <div className="control-row mode-row" role="radiogroup" aria-label="Renderer mode">
             <span>Mode</span>
@@ -1259,11 +1305,11 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
       <div className="explorer-viewport" ref={viewportRef}>
         {infinite ? (
           <InfiniteCanvas
-            key={family}
+            key={drawFamily}
             className="map-viewport explorer-infinite"
             ariaLabel="Infinite tiling viewport — drag to pan, wheel or pinch to zoom"
             seed={INFINITE_SEED}
-            family={family}
+            family={drawFamily}
             budget={budget}
             chords={infiniteChords}
             trace={traceOn && !!infiniteChords}
@@ -1295,9 +1341,9 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
               traceOn={traceOn && !!infiniteChords}
               followOn={followOn && traceOn && !!infiniteChords}
               fillsOn={hasFlag(state, FLAG.BACKGROUNDS)}
-              leafNames={leafOrder(family)}
+              leafNames={leafOrder(drawFamily)}
               leafCss={leafCss}
-              tileArea={averageLeafArea(family)}
+              tileArea={averageLeafArea(drawFamily)}
               tickerOn={tickerOn}
               transitionsOn={transitionsOn}
               hlScreen={hlScreen}
@@ -1328,7 +1374,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
           >
             {(api) => (
               <TilingView
-                family={family}
+                family={drawFamily}
                 rootTile={state.rootTile}
                 level={state.level}
                 curvy={curvy}
@@ -1340,7 +1386,9 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
                 showBackgrounds={hasFlag(state, FLAG.BACKGROUNDS)}
                 showOutlines={hasFlag(state, FLAG.OUTLINES)}
                 showDots={hasFlag(state, FLAG.DOTS)}
-                markOddTiles
+                // Mystic halves each see an odd count under a hexagon rule;
+                // the Mystic as a whole is even.
+                markOddTiles={!asSpectres}
                 idPrefix="ex"
               >
                 {overlayDefs.length ? (
@@ -1382,7 +1430,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
           >
             {(api) => (
               <TilingCanvas
-                family={family}
+                family={drawFamily}
                 rootTile={state.rootTile}
                 level={state.level}
                 curvy={curvy}
@@ -1413,7 +1461,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
         ) : null}
 
         <div className="viewport-caption muted">
-          {FAMILY_DISPLAY_NAMES[family]} ·{' '}
+          {asSpectres ? 'Hexagon rule drawn as Spectres' : FAMILY_DISPLAY_NAMES[family]} ·{' '}
           {infinite
             ? `infinite plane · seed ${INFINITE_SEED} · level ${state.level} zoom`
             : `${state.rootTile} · level ${state.level} · ${tileCount.toLocaleString()} tiles`}

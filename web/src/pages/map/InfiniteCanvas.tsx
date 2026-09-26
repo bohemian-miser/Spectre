@@ -44,6 +44,8 @@ import {
   circuitLengthRgb,
   isAggregateType,
   pathLength,
+  pathSegments,
+  segmentKey,
   tracePaths,
   weldSegments,
   type Pt,
@@ -1108,6 +1110,7 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
       return;
     }
     const segs: Segment[] = [];
+    const auxAt: number[] = [];
     for (let i = 0; i < cut.count; i++) {
       const tb = cut.type[i];
       if (isAggregateType(tb)) continue;
@@ -1120,14 +1123,24 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
       const si = SIN30[rot];
       const px = cut.pos[i * 2] + cut.origin.x;
       const py = cut.pos[i * 2 + 1] + cut.origin.y;
-      for (const [a, b] of local) {
+      for (const seg of local) {
+        const [a, b] = seg;
+        if (table.aux?.has(seg)) auxAt.push(segs.length);
         segs.push([
           { x: co * mir * a.x - si * a.y + px, y: si * mir * a.x + co * a.y + py },
           { x: co * mir * b.x - si * b.y + px, y: si * mir * b.x + co * b.y + py },
         ]);
       }
     }
-    const { circuits } = tracePaths(weldSegments(segs));
+    const welded = weldSegments(segs);
+    const { circuits } = tracePaths(welded);
+    // Links that do not count towards length (a hexagon rule drawn on
+    // Spectres), so a circuit keeps its hexagon colour.
+    const auxKeys = new Set(auxAt.map((k) => segmentKey(welded[k])));
+    const lengthOf = (path: (typeof circuits)[number]): number =>
+      auxKeys.size
+        ? pathLength(path) - pathSegments(path).filter((sg) => auxKeys.has(segmentKey(sg))).length
+        : pathLength(path);
     let geoms: TrailGeometry[] = [];
     for (const path of circuits) {
       const pts = path.points;
@@ -1146,7 +1159,7 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
         }
         arc[i] = total;
       }
-      const rgb = circuitLengthRgb(pathLength(path));
+      const rgb = circuitLengthRgb(lengthOf(path));
       geoms.push({
         color: [rgb[0] / 255, rgb[1] / 255, rgb[2] / 255],
         origin: cut.origin,

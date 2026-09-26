@@ -10,6 +10,7 @@
 import { analyze, pathLength, type CircuitAnalysis, type Path } from './circuits';
 import type { EdgeContracts } from './edges';
 import type { TileFamilyId, TileTypeId } from './families';
+import { hexRuleSpectreDrawing } from './hexRule';
 import { buildSystem, flatten } from './tiles';
 
 export interface AnalysisRequest {
@@ -24,6 +25,12 @@ export interface AnalysisRequest {
   readonly matchingIndexByType: Readonly<Record<string, number>>;
   readonly contracts?: EdgeContracts;
   readonly rainbowTails?: boolean;
+  /**
+   * `subset` and `matchingIndexByType` are a HEXAGON rule, drawn on the
+   * 'spectre-iso' tiles with the Mystic as one tile (`hexRuleSpectreChords`).
+   * `family` must then be 'spectre-iso'.
+   */
+  readonly hexRule?: boolean;
 }
 
 export interface PathSummary {
@@ -60,6 +67,9 @@ function summarize(paths: readonly Path[]): PathSummary[] {
 export function runAnalysis(req: AnalysisRequest): AnalysisResponse {
   const started = Date.now();
   const instances = flatten(buildSystem(req.family, req.level)[req.rootTile]);
+  const drawing = req.hexRule
+    ? hexRuleSpectreDrawing(new Set(req.subset), req.matchingIndexByType, req.contracts)
+    : undefined;
   const result: CircuitAnalysis = analyze(
     {
       family: req.family,
@@ -67,6 +77,8 @@ export function runAnalysis(req: AnalysisRequest): AnalysisResponse {
       selected: new Set(req.subset),
       matchingIndexByType: req.matchingIndexByType,
       contracts: req.contracts,
+      chords: drawing?.chords,
+      auxChords: drawing?.auxChords,
     },
     { rainbowTails: req.rainbowTails },
   );
