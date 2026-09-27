@@ -628,3 +628,228 @@ export function circuitNesting(g: StrandGraph, c: StrandComponents): CircuitNest
   }
   return { depth, maxDepth, depthSum, nested };
 }
+
+export interface PatchBoundary {
+  /** The patch outline as one closed loop, anticlockwise: vertex k to k+1 is edge k. */
+  readonly xs: Float64Array;
+  readonly ys: Float64Array;
+  /** prefix[k] = sum of cross(V_i, V_{i+1}) for i < k (twice the signed area swept). */
+  readonly prefix: Float64Array;
+  /** Twice the enclosed area. */
+  readonly twiceArea: number;
+  /** Per graph node on the boundary (degree 1): edge index + fraction along it; NaN elsewhere. */
+  readonly nodePos: Float64Array;
+  /** Mean tile area, to turn areas into tile counts. */
+  readonly tileArea: number;
+}
+
+const boundaryCache = new WeakMap<StrandGraph, PatchBoundary>();
+
+/**
+ * The outline of the patch (a level-L supertile is a topological disk), with
+ * every boundary crossing located on it. Tile edges used by exactly one tile
+ * are the outline; they chain into a single loop.
+ */
+export function patchBoundary(g: StrandGraph): PatchBoundary {
+  const hit = boundaryCache.get(g);
+  if (hit) return hit;
+  const insts = flatten(buildSystem(g.family, g.level)['Delta']);
+  const key = (x: number, y: number) => `${Math.round(x * 200)},${Math.round(y * 200)}`;
+  const count = new Map<string, number>();
+  const pts = new Map<string, { x: number; y: number }>();
+  const edges: [string, string][] = [];
+  for (const inst of insts) {
+    const poly = leafPts(g.family, inst.type).map((p) => transPt(inst.xform, p));
+    for (let i = 0; i < poly.length; i++) {
+      const a = poly[i];
+      const b = poly[(i + 1) % poly.length];
+      const ka = key(a.x, a.y);
+      const kb = key(b.x, b.y);
+      pts.set(ka, a);
+      pts.set(kb, b);
+      const e = ka < kb ? `${ka}|${kb}` : `${kb}|${ka}`;
+      count.set(e, (count.get(e) ?? 0) + 1);
+      edges.push([ka, kb]);
+    }
+  }
+  const next = new Map<string, string>();
+  for (const [ka, kb] of edges) {
+    const e = ka < kb ? `${ka}|${kb}` : `${kb}|${ka}`;
+    if (count.get(e) === 1) next.set(ka, kb);
+  }
+  const loop: { x: number; y: number }[] = [];
+  const start = next.keys().next().value as string;
+  let k = start;
+  do {
+    loop.push(pts.get(k) as { x: number; y: number });
+    k = next.get(k) as string;
+  } while (k !== start && loop.length <= next.size);
+  if (loop.length !== next.size) {
+    throw new Error(`patch outline is not one loop (${loop.length} of ${next.size} edges)`);
+  }
+  let twice = 0;
+  for (let i = 0; i < loop.length; i++) {
+    const a = loop[i];
+    const b = loop[(i + 1) % loop.length];
+    twice += a.x * b.y - b.x * a.y;
+  }
+  if (twice < 0) loop.reverse();
+  const m = loop.length;
+  const xs = Float64Array.from(loop, (p) => p.x);
+  const ys = Float64Array.from(loop, (p) => p.y);
+  const prefix = new Float64Array(m + 1);
+  for (let i = 0; i < m; i++) {
+    const j = (i + 1) % m;
+    prefix[i + 1] = prefix[i] + xs[i] * ys[j] - xs[j] * ys[i];
+  }
+  // Locate each boundary node on the outline (grid over edges for speed).
+  const nodePos = new Float64Array(g.nNodes).fill(Number.NaN);
+  const cell = 2;
+  const buckets = new Map<string, number[]>();
+  const ck = (x: number, y: number) => `${Math.floor(x / cell)},${Math.floor(y / cell)}`;
+  for (let i = 0; i < m; i++) {
+    const j = (i + 1) % m;
+    const x0 = Math.min(xs[i], xs[j]);
+    const x1 = Math.max(xs[i], xs[j]);
+    const y0 = Math.min(ys[i], ys[j]);
+    const y1 = Math.max(ys[i], ys[j]);
+    for (let cx = Math.floor(x0 / cell); cx <= Math.floor(x1 / cell); cx++) {
+      for (let cy = Math.floor(y0 / cell); cy <= Math.floor(y1 / cell); cy++) {
+        const kk = `${cx},${cy}`;
+        (buckets.get(kk) ?? buckets.set(kk, []).get(kk) as number[]).push(i);
+      }
+    }
+  }
+  for (let n = 0; n < g.nNodes; n++) {
+    if (g.nodeDeg[n] !== 1) continue;
+    const px = g.nodeX[n];
+    const py = g.nodeY[n];
+    let best = Number.NaN;
+    let bestD = 1e-6;
+    for (const i of buckets.get(ck(px, py)) ?? []) {
+      const j = (i + 1) % m;
+      const dx = xs[j] - xs[i];
+      const dy = ys[j] - ys[i];
+      const len2 = dx * dx + dy * dy;
+      const t = Math.min(1, Math.max(0, ((px - xs[i]) * dx + (py - ys[i]) * dy) / len2));
+      const ex = xs[i] + t * dx - px;
+      const ey = ys[i] + t * dy - py;
+      const d = ex * ex + ey * ey;
+      if (d < bestD) {
+        bestD = d;
+        best = i + t;
+      }
+    }
+    nodePos[n] = best;
+  }
+  const out: PatchBoundary = {
+    xs,
+    ys,
+    prefix,
+    twiceArea: Math.abs(twice),
+    nodePos,
+    tileArea: g.patchArea / g.nTiles,
+  };
+  boundaryCache.set(g, out);
+  return out;
+}
+
+export interface BridgeStats {
+  /** Strands that run from the patch edge to the patch edge (simple paths). */
+  readonly count: number;
+  /** Per bridge: (area of the smaller side, in tiles) / (tiles the strand crosses). */
+  readonly mean: number;
+  readonly min: number;
+  readonly max: number;
+  /** The best bridge's smaller side as a share of the whole patch. */
+  readonly bestShare: number;
+  /** Tiles crossed by the best bridge. */
+  readonly bestLength: number;
+}
+
+/**
+ * Bridges: every open strand is a path from the patch edge to the patch edge,
+ * cutting the patch (a disk) in two. Its ratio is the smaller side's area in
+ * tiles over the number of tiles the strand crosses (its segments), so a high
+ * ratio is a short strand that cuts off a lot. The side's area is the strand
+ * path closed by the outline arc between its ends, via prefix sums.
+ */
+export function bridgeStats(g: StrandGraph, c: StrandComponents): BridgeStats {
+  const b = patchBoundary(g);
+  const m = b.xs.length;
+  const visited = new Uint8Array(c.n);
+  let count = 0;
+  let sum = 0;
+  let min = Infinity;
+  let max = 0;
+  let bestShare = 0;
+  let bestLength = 0;
+  // cross from point (x0,y0) along the outline from position p to position q (forward).
+  const arc = (p: number, q: number): number => {
+    const kp = Math.floor(p);
+    const kq = Math.floor(q);
+    const at = (pos: number): [number, number] => {
+      const i = Math.floor(pos) % m;
+      const j = (i + 1) % m;
+      const t = pos - Math.floor(pos);
+      return [b.xs[i] + t * (b.xs[j] - b.xs[i]), b.ys[i] + t * (b.ys[j] - b.ys[i])];
+    };
+    const [px, py] = at(p);
+    const [qx, qy] = at(q);
+    if (kp === kq && q >= p) return px * qy - qx * py;
+    // p -> V(kp+1) ... V(kq) -> q, wrapping.
+    const v1 = (kp + 1) % m;
+    let s = px * b.ys[v1] - b.xs[v1] * py;
+    const from = kp + 1;
+    const to = kq >= from ? kq : kq + m;
+    const pre = (k: number) => (k <= m ? b.prefix[k] : b.prefix[m] + b.prefix[k - m]);
+    s += pre(to) - pre(from);
+    const vq = kq % m;
+    s += b.xs[vq] * qy - qx * b.ys[vq];
+    return s;
+  };
+  for (let n = 0; n < g.nNodes; n++) {
+    if (g.nodeDeg[n] !== 1) continue;
+    const k = c.comp[n];
+    if (visited[k] || c.ends[k] !== 2 || c.junc[k] !== 0) continue;
+    visited[k] = 1;
+    // Walk the strand from this end to the other, summing cross products.
+    let node = n;
+    let occ = g.nodeOcc[g.nodeOccStart[n]];
+    let s = 0;
+    for (;;) {
+      const p = c.partner[occ];
+      const nxt = g.occNode[p];
+      s += g.nodeX[node] * g.nodeY[nxt] - g.nodeX[nxt] * g.nodeY[node];
+      node = nxt;
+      if (g.nodeDeg[node] === 1) break;
+      const k0 = g.nodeOccStart[node];
+      occ = g.nodeOcc[k0] === p ? g.nodeOcc[k0 + 1] : g.nodeOcc[k0];
+    }
+    const pa = b.nodePos[n];
+    const pb = b.nodePos[node];
+    if (Number.isNaN(pa) || Number.isNaN(pb)) continue;
+    // Path a -> b, then the outline forward (anticlockwise) from b back to a:
+    // the signed area of that loop is the side on the strand's left. A chord
+    // can cut just outside the patch at a concave corner, so clamp at 0.
+    const side = (s + arc(pb, pa)) / 2;
+    const smaller = Math.max(0, Math.min(side, b.twiceArea / 2 - side));
+    const ratio = smaller / b.tileArea / c.segs[k];
+    count++;
+    sum += ratio;
+    if (ratio < min) min = ratio;
+    if (ratio > max) {
+      max = ratio;
+      bestShare = smaller / (b.twiceArea / 2);
+      bestLength = c.segs[k];
+    }
+  }
+  return {
+    count,
+    mean: count ? sum / count : 0,
+    min: count ? min : 0,
+    max,
+    bestShare,
+    bestLength,
+  };
+}
