@@ -99,3 +99,67 @@ describe('decomposeCombo', () => {
     expect(whole).toEqual(union);
   });
 });
+
+describe('circuitNesting', () => {
+  it('matches brute-force point-in-polygon on real patterns', async () => {
+    const { circuitNesting } = await import('..');
+    // Triangle fractals nest deeply; 15 and 2578 barely nest.
+    const cases: [number[], number][] = [
+      [[0, 3, 5, 6], 3],
+      [[0, 2, 3, 6, 7, 8], 4],
+      [[2, 5, 7, 8], 4],
+      [[0, 1, 2, 3, 5, 6, 7, 8], 3],
+    ];
+    for (const [rule, level] of cases) {
+      const g = buildStrandGraph('spectre', rule, level);
+      const counts = comboOptionCounts('spectre', rule);
+      const total = counts.reduce((a, b) => a * b, 1);
+      for (const i of [0, Math.floor(total / 3), total - 1]) {
+        const c = strandComponents(g, comboDigitsFromIndex(counts, i));
+        const fast = circuitNesting(g, c);
+        // Brute force: polygon of each circuit, depth = circuits containing a point of it.
+        const polys = new Map<number, [number, number][]>();
+        for (let n = 0; n < g.nNodes; n++) {
+          const k = c.comp[n];
+          if (fast.depth[k] < 0) continue;
+          if (!polys.has(k)) {
+            const pts: [number, number][] = [];
+            let node = n;
+            let occ = g.nodeOcc[g.nodeOccStart[n]];
+            for (;;) {
+              pts.push([g.nodeX[node], g.nodeY[node]]);
+              const p = c.partner[occ];
+              node = g.occNode[p];
+              if (node === n) break;
+              const k0 = g.nodeOccStart[node];
+              occ = g.nodeOcc[k0] === p ? g.nodeOcc[k0 + 1] : g.nodeOcc[k0];
+            }
+            polys.set(k, pts);
+          }
+        }
+        const inside = (x: number, y: number, poly: [number, number][]) => {
+          if (poly.length < 3) return false; // a 2-cycle encloses nothing
+          let on = false;
+          for (let a = 0, b = poly.length - 1; a < poly.length; b = a++) {
+            const [xa, ya] = poly[a];
+            const [xb, yb] = poly[b];
+            if (ya > y !== yb > y && x < xa + ((y - ya) / (yb - ya)) * (xb - xa)) on = !on;
+          }
+          return on;
+        };
+        let maxD = 0;
+        let sum = 0;
+        for (const [k, poly] of polys) {
+          const [x, y] = [poly[0][0] + 1e-6, poly[0][1] + 1.3e-6];
+          let d = 0;
+          for (const [k2, other] of polys) if (k2 !== k && inside(x, y, other)) d++;
+          expect(fast.depth[k]).toBe(d);
+          maxD = Math.max(maxD, d);
+          sum += d;
+        }
+        expect(fast.maxDepth).toBe(maxD);
+        expect(fast.depthSum).toBe(sum);
+      }
+    }
+  });
+});

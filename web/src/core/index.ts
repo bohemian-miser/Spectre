@@ -23,5 +23,6 @@ export * from './automaton';
 export * from './unrooted';
 export * from './strandGraph';
 export * from './decompose';
+export * from './isomorphism';
 export * from './hexRule';
 export * from './morph';

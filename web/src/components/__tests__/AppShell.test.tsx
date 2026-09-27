@@ -21,7 +21,7 @@ describe('AppShell', () => {
     const ids = [...container.querySelectorAll('[data-nav-id]')].map((n) =>
       n.getAttribute('data-nav-id'),
     );
-    expect(ids).toEqual(['explorer', 'tails', 'classifications', 'map', 'supertiles', 'machine', 'legacy']);
+    expect(ids).toEqual(['explorer', 'tails', 'classifications', 'rules', 'map', 'supertiles', 'machine', 'legacy']);
 
     const legacy = container.querySelector('a[data-nav-id="legacy"]');
     expect(legacy?.getAttribute('href')).toBe('/Spectre/legacy.html');

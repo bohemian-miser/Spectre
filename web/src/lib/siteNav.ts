@@ -54,6 +54,13 @@ export const SITE_NAV: readonly NavItem[] = Object.freeze([
     blurb: 'Every combination of every rule, sorted into triangle fractals, infinite lines and the rest.',
   },
   {
+    id: 'rules',
+    label: 'Rules & isomorphism',
+    entry: 'rules.html',
+    status: 'ready',
+    blurb: 'How the rules of Tile(1,1), the hexagons and the iso labels line up, and where their combinations agree.',
+  },
+  {
     id: 'map',
     label: 'Infinite Map',
     entry: 'map.html',
