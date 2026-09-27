@@ -12,6 +12,7 @@ import react from '@vitejs/plugin-react';
  *
  * Future pages register by adding one line here (`tails`, `stats`) alongside
  * their own HTML entry; `src/lib/siteNav.ts` links them once they are `ready`.
+ * `stats.html` is now a redirect in `public/` to `classifications.html`.
  */
 export default defineConfig({
   base: '/Spectre/',
@@ -24,7 +25,7 @@ export default defineConfig({
       input: {
         main: resolve(__dirname, 'index.html'),
         tails: resolve(__dirname, 'tails.html'),
-        stats: resolve(__dirname, 'stats.html'),
+        classifications: resolve(__dirname, 'classifications.html'),
         map: resolve(__dirname, 'map.html'),
         supertiles: resolve(__dirname, 'supertiles.html'),
         machine: resolve(__dirname, 'machine.html'),

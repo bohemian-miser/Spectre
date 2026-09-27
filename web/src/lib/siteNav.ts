@@ -47,11 +47,11 @@ export const SITE_NAV: readonly NavItem[] = Object.freeze([
     blurb: 'Why only eight sets of seams close up — and what happens when they do not.',
   },
   {
-    id: 'stats',
-    label: 'Circuits & Stats',
-    entry: 'stats.html',
+    id: 'classifications',
+    label: 'Classifications',
+    entry: 'classifications.html',
     status: 'ready',
-    blurb: 'Every analysed combination, its circuits, its wanderers.',
+    blurb: 'Every combination of every rule, sorted into triangle fractals, infinite lines and the rest.',
   },
   {
     id: 'map',

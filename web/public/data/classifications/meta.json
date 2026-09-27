@@ -1,0 +1,292 @@
+{
+ "version": 1,
+ "rowBytes": 16,
+ "classes": [
+  {
+   "id": "triangle",
+   "label": "Triangle fractal"
+  },
+  {
+   "id": "thin",
+   "label": "Chaotic thin circuits"
+  },
+  {
+   "id": "line",
+   "label": "Infinite line"
+  },
+  {
+   "id": "mixed",
+   "label": "Space-filling + triangle"
+  },
+  {
+   "id": "blob",
+   "label": "Space-filling circuits"
+  },
+  {
+   "id": "bounded",
+   "label": "Bounded loops"
+  },
+  {
+   "id": "unclear",
+   "label": "Unclear"
+  }
+ ],
+ "fields": [
+  {
+   "key": "gC",
+   "label": "Largest circuit: growth",
+   "lo": 0,
+   "hi": 2.5,
+   "scale": "linear",
+   "description": "a in \"length of the largest circuit ∝ N^a\", from level 4 to level 6 (N = tiles). 0 bounded, ~0.7 triangle outline, ~0.85 thin wanderer, 1 space-filling."
+  },
+  {
+   "key": "gO",
+   "label": "Longest open strand: growth",
+   "lo": 0,
+   "hi": 1.5,
+   "scale": "linear",
+   "description": "The same exponent for the longest strand that reaches the edge of the patch."
+  },
+  {
+   "key": "fo",
+   "label": "Share of segments on open strands",
+   "lo": 0,
+   "hi": 1,
+   "scale": "linear",
+   "description": "Fraction of all strand segments on strands that reach the patch edge (level 6)."
+  },
+  {
+   "key": "cFill",
+   "label": "Biggest circuit: fill",
+   "lo": 0,
+   "hi": 1.5,
+   "scale": "linear",
+   "description": "Its segments over what its convex hull holds at average density. ~1 space-filling, small = an outline or a thread."
+  },
+  {
+   "key": "cFat",
+   "label": "Biggest circuit: enclosed area / hull",
+   "lo": 0,
+   "hi": 1,
+   "scale": "linear",
+   "description": "Area the circuit encloses over its convex hull area. Triangles ~0.6, thin circuits ~0.2."
+  },
+  {
+   "key": "cTri",
+   "label": "Biggest circuit: triangularity",
+   "lo": 0,
+   "hi": 1,
+   "scale": "linear",
+   "description": "Hull area over the smallest enclosing equilateral triangle. 1 triangle, 0.67 hexagon, 0.6 disk."
+  },
+  {
+   "key": "cElong",
+   "label": "Biggest circuit: elongation",
+   "lo": 1,
+   "hi": 8,
+   "scale": "linear",
+   "description": "Square root of the ratio of its principal moments."
+  },
+  {
+   "key": "oFill",
+   "label": "Longest open strand: fill",
+   "lo": 0,
+   "hi": 1.5,
+   "scale": "linear",
+   "description": "Fill of the longest open strand. Infinite lines fill their region; cut-open triangle outlines do not."
+  },
+  {
+   "key": "oElong",
+   "label": "Longest open strand: elongation",
+   "lo": 1,
+   "hi": 10,
+   "scale": "linear",
+   "description": "Slivers cut off along the patch edge are very elongated."
+  },
+  {
+   "key": "top4",
+   "label": "Share on the 4 longest strands",
+   "lo": 0,
+   "hi": 1,
+   "scale": "linear",
+   "description": "Fraction of all segments on the four largest components."
+  },
+  {
+   "key": "bigMass",
+   "label": "Share on circuits of 64+ segments",
+   "lo": 0,
+   "hi": 1,
+   "scale": "linear",
+   "description": "Fraction of all segments on circuits at least 64 segments long."
+  },
+  {
+   "key": "Lc",
+   "label": "Longest circuit (segments)",
+   "lo": 0,
+   "hi": 20,
+   "scale": "log2",
+   "description": "Length of the longest circuit at level 6."
+  },
+  {
+   "key": "Lo",
+   "label": "Longest open strand (segments)",
+   "lo": 0,
+   "hi": 20,
+   "scale": "log2",
+   "description": "Length of the longest open strand at level 6."
+  },
+  {
+   "key": "nClosed",
+   "label": "Number of circuits",
+   "lo": 0,
+   "hi": 20,
+   "scale": "log2",
+   "description": "How many circuits the level-6 patch holds."
+  },
+  {
+   "key": "distinct",
+   "label": "Distinct circuit lengths",
+   "lo": 0,
+   "hi": 255,
+   "scale": "linear",
+   "description": "How many different circuit lengths occur at level 6."
+  }
+ ],
+ "blocks": [
+  {
+   "family": "spectre",
+   "rule": "15",
+   "count": 4,
+   "done": 4,
+   "offset": 0
+  },
+  {
+   "family": "spectre",
+   "rule": "0136",
+   "count": 2,
+   "done": 2,
+   "offset": 4
+  },
+  {
+   "family": "spectre",
+   "rule": "0356",
+   "count": 8,
+   "done": 8,
+   "offset": 6
+  },
+  {
+   "family": "spectre",
+   "rule": "1278",
+   "count": 32,
+   "done": 32,
+   "offset": 14
+  },
+  {
+   "family": "spectre",
+   "rule": "2578",
+   "count": 64,
+   "done": 64,
+   "offset": 46
+  },
+  {
+   "family": "spectre",
+   "rule": "023678",
+   "count": 160,
+   "done": 160,
+   "offset": 110
+  },
+  {
+   "family": "spectre",
+   "rule": "01235678",
+   "count": 625000,
+   "done": 625000,
+   "offset": 270
+  },
+  {
+   "family": "hex",
+   "rule": "15",
+   "count": 4,
+   "done": 4,
+   "offset": 625270
+  },
+  {
+   "family": "hex",
+   "rule": "128",
+   "count": 32,
+   "done": 32,
+   "offset": 625274
+  },
+  {
+   "family": "hex",
+   "rule": "258",
+   "count": 64,
+   "done": 64,
+   "offset": 625306
+  },
+  {
+   "family": "hex",
+   "rule": "01346",
+   "count": 8,
+   "done": 8,
+   "offset": 625370
+  },
+  {
+   "family": "hex",
+   "rule": "03456",
+   "count": 16,
+   "done": 16,
+   "offset": 625378
+  },
+  {
+   "family": "hex",
+   "rule": "023468",
+   "count": 320,
+   "done": 320,
+   "offset": 625394
+  },
+  {
+   "family": "spectre-iso",
+   "rule": "15",
+   "count": 4,
+   "done": 4,
+   "offset": 625714
+  },
+  {
+   "family": "spectre-iso",
+   "rule": "1278",
+   "count": 32,
+   "done": 32,
+   "offset": 625718
+  },
+  {
+   "family": "spectre-iso",
+   "rule": "2578",
+   "count": 64,
+   "done": 64,
+   "offset": 625750
+  },
+  {
+   "family": "spectre-iso",
+   "rule": "01346",
+   "count": 8,
+   "done": 8,
+   "offset": 625814
+  },
+  {
+   "family": "spectre-iso",
+   "rule": "03456",
+   "count": 32,
+   "done": 32,
+   "offset": 625822
+  },
+  {
+   "family": "spectre-iso",
+   "rule": "0234678",
+   "count": 800,
+   "done": 800,
+   "offset": 625854
+  }
+ ],
+ "levels": "Growth from level 4 to level 6; everything else at level 6."
+}

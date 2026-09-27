@@ -20,7 +20,7 @@ describe('siteNav', () => {
     expect(SITE_NAV.map((i) => i.id)).toEqual([
       'explorer',
       'tails',
-      'stats',
+      'classifications',
       'map',
       'supertiles',
       'machine',
@@ -33,7 +33,7 @@ describe('siteNav', () => {
     expect(readyNav().map((i) => i.id)).toEqual([
       'explorer',
       'tails',
-      'stats',
+      'classifications',
       'map',
       'supertiles',
       'machine',

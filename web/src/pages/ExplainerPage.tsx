@@ -435,8 +435,8 @@ export function ExplainerPage(): JSX.Element {
           I don’t know yet. But the{' '}
           <a href={pageHref('explorer')}>Explorer</a> lets you toggle classes, drag every tile’s
           matchmaker, and watch circuits light up by length — and the{' '}
-          <a href={pageHref('stats')}>stats page</a> has the full census: every kernel element, every
-          matching profile, tail counts, circuit-length spectra, and those four suspicious wanderers.
+          <a href={pageHref('classifications')}>Classifications</a> page sorts every combination of
+          every rule into triangle fractals, infinite lines, chaotic thin circuits and the rest.
           Go find a longer wriggle than mine.
         </p>
         <p className="tails-cta">

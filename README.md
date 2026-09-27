@@ -26,7 +26,7 @@ Mostly vibe coded and plagiarised from https://cs.uwaterloo.ca/~csk/spectre/app.
 <td><a href="https://bohemian-miser.github.io/Spectre/tails.html"><img src="docs/screenshots/tails.png" alt="The Tails Problem page"></a><br>The Tails Problem</td>
 </tr>
 <tr>
-<td><a href="https://bohemian-miser.github.io/Spectre/stats.html"><img src="docs/screenshots/stats.png" alt="Circuits and stats page"></a><br>Circuits &amp; Stats</td>
+<td><a href="https://bohemian-miser.github.io/Spectre/classifications.html"><img src="docs/screenshots/classifications.png" alt="Classifications page: every combination as a dot, coloured by pattern class"></a><br>Classifications</td>
 <td><a href="https://bohemian-miser.github.io/Spectre/machine.html"><img src="docs/screenshots/machine.png" alt="Strand machine page"></a><br>Strand machine</td>
 </tr>
 </table>
@@ -59,7 +59,7 @@ The open question: you can have [a fixed number | an infinite number] of infinit
 * **Explorer** (`/`) - the main thing. Build supertiles, pick which edges join up, and watch the circuits light up. Switch it to infinite mode and tap a strand to follow it. It colours the line in a rainbow as far as the tiles on screen go, and keeps going as you pan.
 * **Infinite Map** (`/map.html`) - one endless tiling per seed, expanded around the camera. Same tap-to-colour trick, plus seed and instance-budget controls. Works for all four tile families (Tile(1,1), Hexagons, Turtles in Hats, Hats in Turtles) via the family selector or `f=` in the URL. Auto-follow rides the traced strand with a smoothed camera, the Damping slider sets how floaty it is, and Record video saves the canvas to a WebM/MP4 file.
 * **The Tails Problem** (`/tails.html`) - an explainer for the edge-matching stuff and why some tiles end up with tails.
-* **Circuits & Stats** (`/stats.html`) - the census of every edge combination, with the numbers behind it.
+* **Classifications** (`/classifications.html`) - every combination of every rule (over 600,000) as one dot, sorted into triangle fractals, infinite lines, chaotic thin circuits, space-filling hybrids and bounded loops. Pick the axes from the measurements, hover a dot to draw that combination, click to pin it. Method and scripts in [`web/circuit-classes/`](web/circuit-classes/).
 * **Supertiles** (`/supertiles.html`) - pull a supertile apart into the pieces it's made of.
 * **Strand machine** (`/machine.html`) - walk a strand one tile at a time and see which joins the labels allow vs which the tiling actually uses.
 * **Legacy app** (`/legacy.html`) - the original p5 version. It lets you draw on each of the 10 flavours of tile, has better navigation, and you can change the colours.
