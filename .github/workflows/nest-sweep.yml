@@ -1,0 +1,81 @@
+# Compute experiment: run the spectre-01235678 nesting sweep (levels 4,6)
+# across 80 shards on 20 hosted runners (4 shards per runner).
+name: Nest sweep (compute experiment)
+
+on:
+  push:
+    branches: ["compute-experiment"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nest-sweep-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  sweep:
+    name: shards ${{ matrix.job }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix:
+        job: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Hardware info
+        run: |
+          mkdir -p out
+          {
+            echo "job=${{ matrix.job }}"
+            echo "runner_name=$RUNNER_NAME"
+            echo "nproc=$(nproc)"
+            lscpu
+            free -m
+            node --version
+          } | tee out/hw-job${{ matrix.job }}.txt
+
+      - name: Warm up tsx
+        working-directory: web/circuit-classes
+        run: npx --yes tsx --version
+
+      - name: Run 4 shards in parallel
+        working-directory: web/circuit-classes
+        run: |
+          J=${{ matrix.job }}
+          OUT=$GITHUB_WORKSPACE/out
+          echo "start_epoch=$(date +%s) start=$(date -u +%FT%TZ)" | tee $OUT/timing-job$J.txt
+          pids=()
+          for s in 0 1 2 3; do
+            k=$((4*J+s))
+            ( echo "shard $k start $(date -u +%FT%TZ) epoch $(date +%s)"
+              npx --yes tsx nest-sweep.ts spectre 01235678 4,6 $OUT/shard-$k.jsonl $k 80
+              rc=$?
+              echo "shard $k exit $rc end $(date -u +%FT%TZ) epoch $(date +%s)"
+              exit $rc ) >$OUT/shard-$k.log 2>&1 &
+            pids+=($!)
+          done
+          fail=0
+          for p in "${pids[@]}"; do wait $p || fail=1; done
+          echo "end_epoch=$(date +%s) end=$(date -u +%FT%TZ)" | tee -a $OUT/timing-job$J.txt
+          tail -n 2 $OUT/shard-*.log
+          wc -l $OUT/shard-*.jsonl
+          exit $fail
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nest-sweep-job${{ matrix.job }}
+          path: out/
+          retention-days: 30
