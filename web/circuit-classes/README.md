@@ -13,7 +13,17 @@ what its strands do as the patch grows:
 | `bounded` | only small loops | nothing grows |
 | `unclear` | falls between thresholds | look at it |
 
-The thresholds are all at the top of `classify.py`.
+The thresholds are all at the top of `classify.py`, in `THRESHOLDS`.
+`export-site.py` copies them into `meta.json`, and the page's "How a class is
+decided" section reads them from there, so it cannot drift from the classifier.
+
+The "dimension" numbers are estimates. A patch of N tiles is about √N wide, so
+a curve of dimension d that spans it has length about N^(d/2), and d ≈ 2 × gC.
+The page also shows a mass-radius estimate, `log(Lc₆/Lc₄) / log(Rg₆/Rg₄)`,
+which compares the biggest circuit's length with its own radius of gyration.
+Both come from one two-level window (level 4 to 6, about 62 times the tiles),
+the biggest circuit at each level is a different circuit, and the patch edge
+can cut the level-4 one short, so treat them as rough.
 
 ## Files
 
@@ -29,7 +39,13 @@ The thresholds are all at the top of `classify.py`.
 - `classify.py` turns the lines into classes (CSV on stdout).
 - `export-site.py` packs every class and measurement into
   `web/public/data/classifications/` for the Classifications page
-  (`classifications.html`): 16 bytes a combination, about 5 MB gzipped.
+  (`classifications.html`): one byte for the class and one per field (38
+  bytes a combination), stored column by column so it gzips to about 10 MB.
+  Each field's label, group, level, formula, description and quantisation
+  bounds are in `meta.json`, along with the thresholds. It also derives the
+  stats `classify.py` does not need: dimension estimates, one-level growth,
+  per-level lengths, counts, the biggest circuit's radius of gyration, and
+  nesting at levels 4 and 6 from `data/nest/`.
 - `render.ts` / `render-cli.ts` render PNGs coloured by circuit length.
 - `small-rules.sh` runs every rule except the full one, for all five
   families, at levels 3 to 6.

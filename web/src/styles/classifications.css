@@ -109,7 +109,7 @@
 .cls-controls {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-end;
+  align-items: flex-start;
   gap: 10px 14px;
 }
 .cls-controls label {
@@ -134,9 +134,31 @@
   gap: 6px;
   font-size: 13px;
   color: var(--text);
-  padding-bottom: 7px;
+  padding-top: 25px;
+}
+.cls-controls .cls-field {
+  width: min(330px, 100%);
+}
+.cls-controls .cls-field select {
+  width: 100%;
+}
+.cls-field-help {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+.cls-field-help b {
+  color: var(--text);
+  font-weight: 600;
+}
+.cls-field-help a,
+.cls-axes-help a,
+.cls-pin a,
+.cls-method a {
+  color: var(--accent);
 }
 .cls-swap {
+  margin-top: 18px;
   font: inherit;
   font-size: 16px;
   width: 34px;
@@ -174,11 +196,61 @@
   border-radius: var(--radius);
   touch-action: none;
 }
+.cls-plot-surface {
+  position: absolute;
+  inset: 0;
+  cursor: crosshair;
+  touch-action: none;
+}
 .cls-plot-layer {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
+}
+/* The dots, clipped to the plot area. During a zoom or pan gesture the bitmap
+   is moved with a CSS transform until the full redraw. */
+.cls-plot-clip {
+  position: absolute;
+  overflow: hidden;
+}
+.cls-plot-dots {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  transform-origin: 0 0;
+}
+
+.cls-zoom {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  z-index: 4;
+  display: flex;
+  gap: 4px;
+}
+.cls-zoom button {
+  font: inherit;
+  font-size: 13px;
+  min-width: 30px;
+  height: 30px;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--panel-2) 88%, transparent);
+  color: var(--text);
+  cursor: pointer;
+}
+.cls-zoom button:disabled {
+  color: var(--muted);
+  cursor: default;
+  opacity: 0.6;
+}
+.cls-zoom button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .cls-hover {
@@ -334,8 +406,29 @@
   margin: 0;
   color: var(--muted);
 }
+.cls-axes-help dd.mono {
+  color: var(--text);
+  margin-top: 4px;
+}
+.cls-axes-help dd + dd {
+  margin-top: 4px;
+}
+.cls-values-groups {
+  display: grid;
+  gap: 10px;
+}
+.cls-values-groups h3 {
+  margin: 0 0 2px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
 
 .cls-classes h2,
+.cls-method h2,
+.cls-glossary h2,
 .cls-table-section h2 {
   font-size: 18px;
   margin: 8px 0;
@@ -397,11 +490,163 @@
   border-bottom: 0;
 }
 
+/* How a class is decided. */
+.cls-method {
+  max-width: 90ch;
+  font-size: 14px;
+  line-height: 1.55;
+}
+.cls-method p {
+  margin: 0 0 10px;
+}
+.cls-method h3 {
+  font-size: 15px;
+  margin: 18px 0 6px;
+}
+.cls-method-terms {
+  display: grid;
+  grid-template-columns: minmax(150px, max-content) 1fr;
+  gap: 8px 18px;
+  margin: 0 0 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+.cls-method-terms dt {
+  font-weight: 600;
+}
+.cls-method-terms dd {
+  margin: 0;
+  color: var(--muted);
+}
+.cls-rules {
+  margin: 0 0 12px;
+  padding-left: 24px;
+  display: grid;
+  gap: 6px;
+}
+.cls-rules .cls-name {
+  display: inline;
+  white-space: nowrap;
+}
+.cls-rules .cls-name i {
+  margin-right: 5px;
+  vertical-align: 0;
+}
+.cls-rules .cls-name i,
+.cls-gloss-typical i {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  display: inline-block;
+  flex: none;
+}
+.cls-thresholds {
+  margin: 0 0 10px;
+}
+.cls-thresholds summary {
+  cursor: pointer;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.cls-thresholds .cls-table {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  margin-bottom: 8px;
+}
+.cls-table td.cls-wrap {
+  white-space: normal;
+  text-align: left;
+  color: var(--muted);
+}
+.cls-thresholds .cls-table th:nth-child(3) {
+  text-align: left;
+}
+
+/* Glossary of every measurement. */
+.cls-glossary > p {
+  max-width: 90ch;
+  font-size: 13px;
+  margin: 0 0 8px;
+}
+.cls-gloss-group h3 {
+  font-size: 15px;
+  margin: 16px 0 8px;
+}
+.cls-gloss-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 12px;
+}
+.cls-gloss-item {
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  font-size: 13px;
+  display: grid;
+  gap: 6px;
+  align-content: start;
+  scroll-margin-top: 16px;
+}
+.cls-gloss-item:target {
+  border-color: var(--accent);
+}
+.cls-gloss-item h4 {
+  margin: 0;
+  font-size: 14px;
+}
+.cls-gloss-item p {
+  margin: 0;
+}
+.cls-gloss-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.cls-gloss-meta .mono {
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.cls-gloss-typical {
+  list-style: none;
+  margin: 2px 0 0;
+  padding: 8px 0 0;
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 2px;
+  font-size: 12px;
+}
+.cls-gloss-typical li {
+  display: grid;
+  grid-template-columns: 9px 1fr auto;
+  align-items: center;
+  gap: 8px;
+}
+.cls-gloss-typical span {
+  color: var(--muted);
+}
+.cls-gloss-typical b {
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
 @media (max-width: 900px) {
   .cls-main {
     grid-template-columns: minmax(0, 1fr);
   }
   .cls-plot {
     height: 62vh;
+  }
+  .cls-method-terms {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .cls-gloss-list {
+    grid-template-columns: minmax(0, 1fr);
   }
 }

@@ -36,6 +36,7 @@ import {
   ruleSubset,
   type ClassificationData,
 } from './classifications/data';
+import { FieldSelect, Glossary, GroupedValues, MethodSection, decidingStep, fieldAnchor, levelText, scrollToAnchor } from './classifications/Explain';
 import { ScatterPlot, type PlotHover } from './classifications/ScatterPlot';
 import { Thumbnail } from './classifications/Thumbnail';
 import '../styles/classifications.css';
@@ -186,7 +187,7 @@ export default function ClassificationsPage(props: ClassificationsPageProps = {}
       </header>
       {load.status === 'loading' && (
         <p className="cls-status" role="status">
-          Loading every combination (about 5 MB)…
+          Loading every combination (about 10 MB)…
         </p>
       )}
       {load.status === 'error' && (
@@ -363,6 +364,7 @@ function ClassificationsView(props: {
   const fy = meta.fields[yField];
   const hoverInfo = hover ? describe(hover.row) : null;
   const pinInfo = pinned !== null ? describe(pinned) : null;
+  const pinStep = pinned !== null ? decidingStep(data, pinned) : null;
   const shownTotal = shownCounts.reduce((a, b) => a + b, 0);
 
   return (
@@ -388,21 +390,14 @@ function ClassificationsView(props: {
       </div>
 
       <form className="cls-controls" onSubmit={(e) => e.preventDefault()}>
-        <label>
-          <span>Across</span>
-          <select
-            value={xField}
-            onChange={(e) => setXField(Number(e.target.value))}
-            aria-label="Horizontal axis"
-            data-testid="cls-x"
-          >
-            {meta.fields.map((f, i) => (
-              <option key={f.key} value={i}>
-                {f.label}
-              </option>
-            ))}
-          </select>
-        </label>
+        <FieldSelect
+          fields={meta.fields}
+          value={xField}
+          onChange={setXField}
+          label="Across"
+          ariaLabel="Horizontal axis"
+          testId="cls-x"
+        />
         <button
           type="button"
           className="cls-swap"
@@ -415,21 +410,14 @@ function ClassificationsView(props: {
         >
           ⇄
         </button>
-        <label>
-          <span>Up</span>
-          <select
-            value={yField}
-            onChange={(e) => setYField(Number(e.target.value))}
-            aria-label="Vertical axis"
-            data-testid="cls-y"
-          >
-            {meta.fields.map((f, i) => (
-              <option key={f.key} value={i}>
-                {f.label}
-              </option>
-            ))}
-          </select>
-        </label>
+        <FieldSelect
+          fields={meta.fields}
+          value={yField}
+          onChange={setYField}
+          label="Up"
+          ariaLabel="Vertical axis"
+          testId="cls-y"
+        />
         <label>
           <span>Rule</span>
           <select value={rule} onChange={(e) => setRule(e.target.value)} aria-label="Rule" data-testid="cls-rule">
@@ -576,25 +564,53 @@ function ClassificationsView(props: {
                 </div>
               ))}
               <p className="muted">{CLASS_COPY[pinInfo.cls.id]}</p>
-              <dl className="cls-values">
-                {meta.fields.map((f, i) => (
-                  <div key={f.key} title={f.description}>
-                    <dt>{f.label}</dt>
-                    <dd>≈ {formatValue(f, fieldValue(data, pinned, i))}</dd>
-                  </div>
-                ))}
-              </dl>
+              {pinStep && (
+                <p className="muted" data-testid="cls-pin-step">
+                  {pinStep.cls === pinInfo.cls.id ? (
+                    <>
+                      Decided by rule {pinStep.step} of{' '}
+                      <a href="#cls-method" onClick={(e) => scrollToAnchor(e, 'cls-method')}>
+                        how a class is decided
+                      </a>
+                      .
+                    </>
+                  ) : (
+                    <>
+                      Its rounded values below sit too close to a threshold to replay{' '}
+                      <a href="#cls-method" onClick={(e) => scrollToAnchor(e, 'cls-method')}>
+                        the rules
+                      </a>{' '}
+                      exactly.
+                    </>
+                  )}
+                </p>
+              )}
+              <GroupedValues data={data} row={pinned} />
             </div>
           ) : (
             <div className="cls-axes-help">
               <h2>The axes</h2>
               <dl>
-                <dt>{fx.label}</dt>
-                <dd>{fx.description}</dd>
-                <dt>{fy.label}</dt>
-                <dd>{fy.description}</dd>
+                {[fx, fy].map((f, i) => (
+                  <div key={i}>
+                    <dt>{f.label}</dt>
+                    <dd>
+                      {levelText(f) && <b>{levelText(f)}. </b>}
+                      {f.description}
+                    </dd>
+                    {f.formula && <dd className="mono">{f.formula}</dd>}
+                    <dd>
+                      <a href={`#${fieldAnchor(f.key)}`} onClick={(e) => scrollToAnchor(e, fieldAnchor(f.key))}>
+                        Typical values per class
+                      </a>
+                    </dd>
+                  </div>
+                ))}
               </dl>
-              <p className="muted">Click a dot to pin it here with all its numbers and an Explorer link.</p>
+              <p className="muted">
+                Click a dot to pin it here with all its numbers and an Explorer link. Scroll over the
+                plot to zoom, drag to pan, and double-click to zoom back out.
+              </p>
             </div>
           )}
         </aside>
@@ -627,6 +643,10 @@ function ClassificationsView(props: {
           .
         </p>
       </section>
+
+      <MethodSection data={data} />
+
+      <Glossary data={data} classTotals={counts.total} />
 
       <section className="cls-table-section" aria-labelledby="cls-table-h">
         <h2 id="cls-table-h">Counts by family and rule</h2>

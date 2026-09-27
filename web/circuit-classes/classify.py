@@ -26,16 +26,22 @@ CLASSES = {
 }
 
 # Thresholds, in one place so they are easy to move. See README.md.
-GROW = 0.5        # gC/gO at or above this: the strand keeps growing with the patch
-STATIC = 0.3      # below this: it has stopped growing
-LINE_G = 0.9      # an open strand growing ~N^1 is a space-filling infinite line
-LINE_FO = 0.5     # ...and it must carry at least half of all segments
-SLIVER = 4        # open strands this elongated are boundary cut-offs, not lines
-OFILL = 0.35      # ...and a line fills its hull; a cut-open triangle outline does not
-FILL = 0.45       # a circuit covering this share of its hull is space-filling
-TRI = 0.8         # hull / enclosing equilateral triangle
-FAT = 0.35        # enclosed area / hull area: outline (fat) vs thread (thin)
-THIN = 0.3
+# export-site.py copies THRESHOLDS into meta.json so the page explains the
+# classifier with the numbers it actually used.
+THRESHOLDS = {
+    'GROW': (0.5, 'gC or gO at or above this: the strand keeps growing with the patch'),
+    'STATIC': (0.3, 'below this: it has stopped growing'),
+    'LINE_G': (0.9, 'an open strand growing like N^1 or faster is a space-filling infinite line'),
+    'LINE_FO': (0.5, '...and open strands must carry at least this share of all segments'),
+    'SLIVER': (4, 'open strands at least this elongated are cut-offs along the patch edge, not lines'),
+    'OFILL': (0.35, '...and a line fills its hull; a cut-open triangle outline does not'),
+    'FILL': (0.45, 'a circuit covering this share of its hull is space-filling'),
+    'TRI': (0.8, 'hull area over the smallest enclosing equilateral triangle: triangular at or above this'),
+    'FAT': (0.35, 'enclosed area over hull area: a triangle outline encloses at least this much'),
+    'THIN': (0.3, 'enclosed area over hull area: a thin thread encloses less than this'),
+}
+GROW, STATIC, LINE_G, LINE_FO, SLIVER, OFILL, FILL, TRI, FAT, THIN = (
+    THRESHOLDS[k][0] for k in ('GROW', 'STATIC', 'LINE_G', 'LINE_FO', 'SLIVER', 'OFILL', 'FILL', 'TRI', 'FAT', 'THIN'))
 
 def growth(a, b, na, nb):
     return math.log(max(b, 1) / max(a, 1)) / math.log(nb / na)

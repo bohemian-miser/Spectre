@@ -21,7 +21,9 @@ const meta: ClassificationMeta = {
     hi: 1,
     scale: 'linear' as const,
     description: `About field ${i}`,
+    ...(i === 0 ? { level: '4 → 6', formula: 'gC = log(Lc₆ / Lc₄) / log(N₆ / N₄)' } : {}),
   })),
+  thresholds: { GROW: { value: 0.55, meaning: 'grows' } },
   blocks: [
     { family: 'spectre', rule: '15', count: 4, done: 4, offset: 0 },
     { family: 'spectre', rule: '2578', count: 64, done: 2, offset: 4 },
@@ -82,5 +84,55 @@ describe('ClassificationsPage', () => {
     fireEvent.change(screen.getByTestId('cls-rule'), { target: { value: 'spectre-2578' } });
     expect(screen.getByTestId('cls-chip-bounded').textContent).toContain('0');
     expect(screen.getByTestId('cls-chip-line').textContent).toContain('1');
+  });
+
+  it('groups the axis options and explains the current choice', () => {
+    render(
+      <ClassificationsPage
+        data={makeData()}
+        syncUrl={false}
+        thumbnailClient={createThumbnailClient({ forceSync: true })}
+      />,
+    );
+    const x = screen.getByTestId('cls-x') as HTMLSelectElement;
+    const groups = [...x.querySelectorAll('optgroup')].map((g) => g.label);
+    expect(groups).toContain('Growth & dimension');
+    expect(groups).toContain('Biggest circuit shape');
+    expect(x.querySelector('option[value="0"]')!.getAttribute('title')).toBe('About field 0');
+    expect(screen.getByTestId('cls-x-help').textContent).toContain('About field 0');
+    fireEvent.change(x, { target: { value: '5' } });
+    expect(screen.getByTestId('cls-x-help').textContent).toContain('About field 5');
+    // A field with a level and formula shows both in the glossary.
+    expect(screen.getByTestId('cls-field-gC').textContent).toContain('Levels 4 → 6');
+    expect(screen.getByTestId('cls-field-gC').textContent).toContain('log(Lc₆ / Lc₄)');
+  });
+
+  it('explains the classifier with the thresholds in the data', () => {
+    render(
+      <ClassificationsPage
+        data={makeData()}
+        syncUrl={false}
+        thumbnailClient={createThumbnailClient({ forceSync: true })}
+      />,
+    );
+    expect(screen.getByRole('heading', { name: 'How a class is decided' })).toBeTruthy();
+    const rules = screen.getByTestId('cls-rules');
+    expect(rules.querySelectorAll('li').length).toBe(8);
+    // meta.json says GROW is 0.55 here, not classify.py's 0.5.
+    expect(rules.parentElement!.textContent).toContain('gC ≥ 0.55');
+    expect(screen.getByRole('heading', { name: 'Every measurement' })).toBeTruthy();
+  });
+
+  it('has a reset zoom control that is off until the plot is zoomed', () => {
+    render(
+      <ClassificationsPage
+        data={makeData()}
+        syncUrl={false}
+        thumbnailClient={createThumbnailClient({ forceSync: true })}
+      />,
+    );
+    const reset = screen.getByTestId('cls-zoom-reset') as HTMLButtonElement;
+    expect(reset.disabled).toBe(true);
+    expect(screen.getByRole('button', { name: 'Zoom in' })).toBeTruthy();
   });
 });
