@@ -1,0 +1,407 @@
+/* Classifications page. Shell tokens come from widgets.css; the class colours
+   are the categorical slots of the site's chart palette, stepped per theme. */
+
+.cls-page {
+  --cls-line: #3987e5;
+  --cls-mixed: #d95926;
+  --cls-blob: #199e70;
+  --cls-bounded: #c98500;
+  --cls-unclear: #8b919c;
+  --cls-thin: #9085e9;
+  --cls-triangle: #e66767;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 20px 16px 40px;
+  max-width: 1480px;
+  width: 100%;
+  margin: 0 auto;
+  box-sizing: border-box;
+}
+
+@media (prefers-color-scheme: light) {
+  .cls-page {
+    --cls-line: #2a78d6;
+    --cls-mixed: #eb6834;
+    --cls-blob: #1baf7a;
+    --cls-bounded: #eda100;
+    --cls-unclear: #8a909a;
+    --cls-thin: #4a3aa7;
+    --cls-triangle: #e34948;
+  }
+}
+
+.cls-header {
+  display: grid;
+  gap: 6px;
+}
+.cls-header h1 {
+  margin: 0;
+  font-size: 26px;
+}
+.cls-header p {
+  margin: 0;
+  max-width: 78ch;
+}
+.muted {
+  color: var(--muted);
+}
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.92em;
+}
+
+.cls-status {
+  padding: 24px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+
+.cls-view {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* Class legend: one toggle chip per class, count of the dots shown. */
+.cls-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.cls-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 11px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.cls-chip span {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.cls-chip[aria-pressed='false'] {
+  opacity: 0.45;
+  text-decoration: line-through;
+}
+.cls-chip i,
+.cls-name i,
+.cls-classes dt i {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+  flex: none;
+}
+.cls-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cls-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px 14px;
+}
+.cls-controls label {
+  display: grid;
+  gap: 3px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.cls-controls select {
+  font: inherit;
+  font-size: 14px;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px 8px;
+  max-width: 100%;
+}
+.cls-controls .cls-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text);
+  padding-bottom: 7px;
+}
+.cls-swap {
+  font: inherit;
+  font-size: 16px;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+}
+.cls-controls button:focus-visible,
+.cls-chip:focus-visible,
+.cls-controls select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Plot + side panel. */
+.cls-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 16px;
+  align-items: start;
+}
+.cls-plot-wrap {
+  position: relative;
+  min-width: 0;
+}
+.cls-plot {
+  position: relative;
+  height: min(72vh, 780px);
+  min-height: 360px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  touch-action: none;
+}
+.cls-plot-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.cls-hover {
+  position: absolute;
+  z-index: 5;
+  pointer-events: none;
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  width: 222px;
+  box-sizing: border-box;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.35);
+  font-size: 12px;
+}
+.cls-hover-text {
+  display: grid;
+  gap: 2px;
+}
+.cls-hover-text b {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-weight: 600;
+}
+
+.cls-thumb {
+  position: relative;
+  border-radius: 6px;
+  background: var(--panel);
+  overflow: hidden;
+}
+.cls-thumb canvas {
+  display: block;
+}
+.cls-thumb-status {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 12px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--panel) 70%, transparent);
+}
+.cls-thumb-note {
+  position: absolute;
+  right: 6px;
+  bottom: 4px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.cls-side {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  display: grid;
+  gap: 10px;
+  font-size: 13px;
+}
+.cls-side h2 {
+  margin: 0;
+  font-size: 16px;
+}
+.cls-side p {
+  margin: 0;
+}
+.cls-pin {
+  display: grid;
+  gap: 10px;
+}
+.cls-pin-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+.cls-pin-head h2 {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 15px;
+  overflow-wrap: anywhere;
+}
+.cls-pin-head button {
+  font: inherit;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--text);
+  border-radius: 6px;
+  width: 28px;
+  height: 28px;
+  cursor: pointer;
+}
+.cls-pin-links {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.cls-pin-links a,
+.cls-classes a {
+  color: var(--accent);
+}
+.cls-decomp {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel-2);
+}
+.cls-decomp ul {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 4px;
+}
+.cls-decomp a {
+  color: var(--accent);
+}
+
+.cls-values {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+}
+.cls-values div {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 3px 0;
+  border-bottom: 1px solid var(--line);
+}
+.cls-values dt {
+  color: var(--muted);
+}
+.cls-values dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.cls-axes-help dl {
+  margin: 0;
+  display: grid;
+  gap: 4px;
+}
+.cls-axes-help dt {
+  font-weight: 600;
+  margin-top: 6px;
+}
+.cls-axes-help dd {
+  margin: 0;
+  color: var(--muted);
+}
+
+.cls-classes h2,
+.cls-table-section h2 {
+  font-size: 18px;
+  margin: 8px 0;
+}
+.cls-classes dl {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px 24px;
+  margin: 0 0 12px;
+}
+.cls-classes dt {
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cls-classes dd {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+.cls-classes > p {
+  max-width: 90ch;
+  font-size: 13px;
+}
+
+.cls-table-box {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+.cls-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.cls-table th,
+.cls-table td {
+  padding: 7px 12px;
+  text-align: right;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--line);
+}
+.cls-table th {
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 12px;
+}
+.cls-table th:nth-child(-n + 2),
+.cls-table td:nth-child(-n + 2) {
+  text-align: left;
+}
+.cls-table td.is-zero {
+  color: var(--line);
+}
+.cls-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+@media (max-width: 900px) {
+  .cls-main {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .cls-plot {
+    height: 62vh;
+  }
+}

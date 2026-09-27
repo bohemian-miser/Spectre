@@ -21,7 +21,7 @@ describe('AppShell', () => {
     const ids = [...container.querySelectorAll('[data-nav-id]')].map((n) =>
       n.getAttribute('data-nav-id'),
     );
-    expect(ids).toEqual(['explorer', 'tails', 'stats', 'map', 'supertiles', 'machine', 'legacy']);
+    expect(ids).toEqual(['explorer', 'tails', 'classifications', 'map', 'supertiles', 'machine', 'legacy']);
 
     const legacy = container.querySelector('a[data-nav-id="legacy"]');
     expect(legacy?.getAttribute('href')).toBe('/Spectre/legacy.html');
@@ -29,8 +29,8 @@ describe('AppShell', () => {
     // All seven destinations are live links now that the strand machine shipped too.
     const tails = container.querySelector('a[data-nav-id="tails"]');
     expect(tails?.getAttribute('href')).toBe('/Spectre/tails.html');
-    const stats = container.querySelector('a[data-nav-id="stats"]');
-    expect(stats?.getAttribute('href')).toBe('/Spectre/stats.html');
+    const classifications = container.querySelector('a[data-nav-id="classifications"]');
+    expect(classifications?.getAttribute('href')).toBe('/Spectre/classifications.html');
     const map = container.querySelector('a[data-nav-id="map"]');
     expect(map?.getAttribute('href')).toBe('/Spectre/map.html');
     const supertiles = container.querySelector('a[data-nav-id="supertiles"]');

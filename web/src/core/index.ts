@@ -21,5 +21,7 @@ export * from './stats';
 export * from './exact';
 export * from './automaton';
 export * from './unrooted';
+export * from './strandGraph';
+export * from './decompose';
 export * from './hexRule';
 export * from './morph';
