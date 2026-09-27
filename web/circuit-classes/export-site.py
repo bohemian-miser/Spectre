@@ -30,6 +30,7 @@ CIRCUIT = 'Biggest circuit shape'
 OPEN = 'Longest open strand'
 COUNTS = 'Counts & lengths'
 NESTING = 'Nesting'
+BRIDGES = 'Bridges'
 
 
 def F(key, label, group, lo, hi, scale, level, formula, description, integer=False):
@@ -164,12 +165,34 @@ FIELDS = [
       'How fast nesting grows with the patch. 1 means the nest sum grows in step with the tile count, as it does '
       'when circuits of every size keep nesting; above 1, depth keeps increasing too. The +1 keeps patterns '
       'without nesting at 0.'),
+    # Bridges: strands that run from the patch edge to the patch edge
+    F('bridgeCount', 'Bridges', BRIDGES, 0, 20, 'log2', '6',
+      'number of strands running from the patch edge to the patch edge',
+      'Every open strand is a bridge: it enters and leaves the patch, cutting it in two. Includes the tiny ones '
+      'that clip a corner of the patch.', integer=True),
+    F('bridgeMean', 'Bridge ratio: mean', BRIDGES, 0, 5, 'log2', '6',
+      'mean over bridges of (smaller side\'s area in tiles) / (tiles the bridge crosses)',
+      'How much patch a bridge cuts off per tile of its own length, averaged. Most bridges are short strands near '
+      'the edge, so this is usually small.'),
+    F('bridgeMin', 'Bridge ratio: min', BRIDGES, 0, 5, 'log2', '6',
+      'min over bridges of (smaller side in tiles) / (tiles crossed)',
+      'The least efficient bridge. Usually a strand that clips a corner of the patch and cuts off almost nothing.'),
+    F('bridgeMax', 'Bridge ratio: max', BRIDGES, 0, 7, 'log2', '6',
+      'max over bridges of (smaller side in tiles) / (tiles crossed)',
+      'The best bridge: the most patch cut off per tile of strand. A high value is a short strand that still '
+      'splits off a big region, a good bridge-building pattern.'),
+    F('bridgeBestShare', 'Best bridge: share cut off', BRIDGES, 0, 0.5, 'linear', '6',
+      'smaller side of the best bridge / area of the patch',
+      'How much of the patch the best bridge cuts off. 0.5 would be a clean halving.'),
+    F('bridgeBestLength', 'Best bridge: length', BRIDGES, 0, 20, 'log2', '6',
+      'tiles crossed by the best bridge',
+      'How long the best bridge is, in tiles.', integer=True),
 ]
 NEST_KEYS = ('maxNest4', 'maxNest', 'nestSum4', 'nestSum', 'nested')
 MIN_RG_RATIO = 1.5
 
 
-def extra_features(d, nest):
+def extra_features(d, nest, bridge):
     """Everything the page shows beyond what classify.features gives."""
     L = d['levels']
     a, m, b = L[-3], L[-2], L[-1]
@@ -181,6 +204,7 @@ def extra_features(d, nest):
     dCr = 0.0
     if ca and cb and ca['rg'] > 0 and cb['rg'] >= MIN_RG_RATIO * ca['rg']:
         dCr = math.log(cb['segs'] / ca['segs']) / math.log(cb['rg'] / ca['rg'])
+    b6 = bridge.get(6, {'count': 0, 'mean': 0, 'min': 0, 'max': 0, 'bestShare': 0, 'bestLength': 0})
     n4 = nest.get(4, {'max': 0, 'sum': 0})
     n6 = nest.get(6, {'max': 0, 'sum': 0, 'nested': 0})
     return dict(
@@ -197,6 +221,8 @@ def extra_features(d, nest):
         maxNest4=n4['max'], maxNest=n6['max'], nestSum4=n4['sum'], nestSum=n6['sum'],
         nested=n6.get('nested', 0),
         nestGrowth=math.log((1 + n6['sum']) / (1 + n4['sum'])) / math.log(b['tiles'] / a['tiles']),
+        bridgeCount=b6['count'], bridgeMean=b6['mean'], bridgeMin=b6['min'], bridgeMax=b6['max'],
+        bridgeBestShare=b6['bestShare'], bridgeBestLength=b6['bestLength'],
     )
 
 
@@ -226,7 +252,12 @@ def main():
     for path in sorted(glob.glob('data/nest/*.jsonl')):
         for d in read_jsonl(path):
             nest[(d['family'], d['rule'], d['combo'])] = {n['level']: n for n in d['nest']}
+    bridge = {}
+    for path in sorted(glob.glob('data/bridge/*.jsonl')):
+        for d in read_jsonl(path):
+            bridge[(d['family'], d['rule'], d['combo'])] = {x['level']: x for x in d['bridge']}
     missing_nest = 0
+    missing_bridge = 0
     clamped = {f['key']: [0, 0] for f in FIELDS}
     rows = {}
     for path in sorted(glob.glob('data/*.jsonl')):
@@ -243,7 +274,13 @@ def main():
                 if not partial:
                     sys.exit(f"no nesting for {d['family']} {d['rule']} {d['combo']}; run nest-all.sh or pass --allow-partial")
                 n = {}
-            f.update(extra_features(d, n))
+            br = bridge.get((d['family'], d['rule'], d['combo']))
+            if br is None or 6 not in br:
+                missing_bridge += 1
+                if not partial:
+                    sys.exit(f"no bridges for {d['family']} {d['rule']} {d['combo']}; run bridge-sweep.ts or pass --allow-partial")
+                br = {}
+            f.update(extra_features(d, n, br))
             row = [cls]
             for fd in FIELDS:
                 v, lo, hi = f[fd['key']], fd['lo'], fd['hi']
@@ -299,6 +336,8 @@ def main():
             print(f'note: {k}: {lo} rows below its range, {hi} above (clamped)')
     if missing_nest:
         print(f'warning: {missing_nest} rows have no nesting yet (written as 0)')
+    if missing_bridge:
+        print(f'warning: {missing_bridge} rows have no bridge stats yet (written as 0)')
     print(len(blocks), 'blocks,', offset, 'rows,', os.path.getsize(f'{OUT}/points.bin.gz'), 'bytes gzipped')
 
 
