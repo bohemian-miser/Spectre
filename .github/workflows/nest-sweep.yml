@@ -1,5 +1,5 @@
 # Compute experiment: run the spectre-01235678 nesting sweep (levels 4,6)
-# across 80 shards on 20 hosted runners (4 shards per runner).
+# shards 0-39 of an 80-way partition on 10 hosted runners (4 shards per runner).
 name: Nest sweep (compute experiment)
 
 on:
@@ -21,9 +21,10 @@ jobs:
     timeout-minutes: 180
     strategy:
       fail-fast: false
-      max-parallel: 20
+      max-parallel: 10
       matrix:
-        job: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
+        # Shards 0-39 of 80 only; shards 40-79 run elsewhere.
+        job: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
