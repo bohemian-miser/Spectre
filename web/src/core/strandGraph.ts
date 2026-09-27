@@ -387,3 +387,244 @@ export function rasterizeStrands(
   }
   return img;
 }
+
+export interface CircuitNesting {
+  /** Per component: how many circuits enclose it (-1 for anything not a circuit). */
+  readonly depth: Int32Array;
+  /** Deepest nesting: the most circuits enclosing any one circuit. */
+  readonly maxDepth: number;
+  /** Sum of all depths: +1 for every (circuit, circuit inside it) pair. */
+  readonly depthSum: number;
+  /** Circuits inside at least one other circuit. */
+  readonly nested: number;
+}
+
+interface NestingBuffers {
+  readonly isCircuit: Uint8Array;
+  readonly flat: Uint8Array;
+  readonly start: Int32Array;
+  readonly rightmost: Int32Array;
+  readonly hitComp: Int32Array;
+  readonly hitUp: Uint8Array;
+  readonly segA: Int32Array;
+  readonly segB: Int32Array;
+  readonly segComp: Int32Array;
+  readonly listed: Int32Array;
+  readonly r0s: Int32Array;
+  readonly r1s: Int32Array;
+  readonly c0s: Int32Array;
+  readonly c1s: Int32Array;
+  cellCount: Int32Array;
+  cellSegs: Int32Array;
+}
+
+/** Scratch space per graph, so sweeping many combinations allocates little. */
+const nestingCache = new WeakMap<StrandGraph, NestingBuffers>();
+
+function nestingBuffers(g: StrandGraph): NestingBuffers {
+  let b = nestingCache.get(g);
+  if (!b) {
+    const nSegMax = g.occNode.length; // segments <= occurrences / 2
+    b = {
+      isCircuit: new Uint8Array(g.nNodes),
+      flat: new Uint8Array(g.nNodes),
+      start: new Int32Array(g.nNodes),
+      rightmost: new Int32Array(g.nNodes),
+      hitComp: new Int32Array(g.nNodes),
+      hitUp: new Uint8Array(g.nNodes),
+      segA: new Int32Array(nSegMax),
+      segB: new Int32Array(nSegMax),
+      segComp: new Int32Array(nSegMax),
+      listed: new Int32Array(nSegMax),
+      r0s: new Int32Array(nSegMax),
+      r1s: new Int32Array(nSegMax),
+      c0s: new Int32Array(nSegMax),
+      c1s: new Int32Array(nSegMax),
+      cellCount: new Int32Array(0),
+      cellSegs: new Int32Array(0),
+    };
+    nestingCache.set(g, b);
+  }
+  return b;
+}
+
+/**
+ * How deeply circuits nest. Strands never cross, so circuits form a laminar
+ * family (any two are disjoint or one encloses the other), and the parent of a
+ * circuit is found with one ray: from its rightmost point, go right to the
+ * first segment of another circuit. With every circuit oriented
+ * anticlockwise, a segment heading up there has its interior on the ray's
+ * side, so the circuit is inside that one (depth + 1); heading down means the
+ * two are siblings (same depth). The circuit hit always reaches further right,
+ * so resolving depths this way terminates. Open strands and components with a
+ * junction are not circuits and are skipped.
+ */
+export function circuitNesting(g: StrandGraph, c: StrandComponents): CircuitNesting {
+  const buf = nestingBuffers(g);
+  const nComp = c.n;
+  const depth = new Int32Array(nComp).fill(-1);
+  const isCircuit = buf.isCircuit.subarray(0, nComp);
+  for (let k = 0; k < nComp; k++) isCircuit[k] = c.segs[k] > 1 && c.ends[k] === 0 && c.junc[k] === 0 ? 1 : 0;
+
+  // Ordered walk of each circuit: directed segments (x1,y1)->(x2,y2), made
+  // anticlockwise, and its rightmost node.
+  const start = buf.start.subarray(0, nComp).fill(-1);
+  for (let n = 0; n < g.nNodes; n++) {
+    const k = c.comp[n];
+    if (isCircuit[k] && start[k] < 0) start[k] = n;
+  }
+  let nSeg = 0;
+  for (let k = 0; k < nComp; k++) if (isCircuit[k]) nSeg += c.segs[k];
+  const segA = buf.segA;
+  const segB = buf.segB;
+  const segComp = buf.segComp;
+  const rightmost = buf.rightmost.subarray(0, nComp).fill(-1);
+  // Zero-area circuits (a 2-cycle is the same chord drawn twice, by two
+  // neighbouring tiles) enclose nothing and are never a ray's target.
+  const flat = buf.flat.subarray(0, nComp).fill(0);
+  let s = 0;
+  for (let k = 0; k < nComp; k++) {
+    if (!isCircuit[k]) continue;
+    const first = s;
+    const n0 = start[k];
+    let node = n0;
+    let occ = g.nodeOcc[g.nodeOccStart[n0]];
+    let area = 0;
+    let right = n0;
+    for (;;) {
+      const p = c.partner[occ];
+      const next = g.occNode[p];
+      segA[s] = node;
+      segB[s] = next;
+      segComp[s] = k;
+      s++;
+      area += g.nodeX[node] * g.nodeY[next] - g.nodeX[next] * g.nodeY[node];
+      if (g.nodeX[next] > g.nodeX[right]) right = next;
+      node = next;
+      if (node === n0) break;
+      const k0 = g.nodeOccStart[node];
+      occ = g.nodeOcc[k0] === p ? g.nodeOcc[k0 + 1] : g.nodeOcc[k0];
+    }
+    if (Math.abs(area) < 1e-9) flat[k] = 1;
+    if (area < 0) {
+      for (let i = first; i < s; i++) {
+        const t = segA[i];
+        segA[i] = segB[i];
+        segB[i] = t;
+      }
+    }
+    rightmost[k] = right;
+  }
+
+  // Uniform grid over the patch; each segment is listed in every row band its
+  // y-range touches, bucketed by the column of its larger x.
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (let n = 0; n < g.nNodes; n++) {
+    if (g.nodeX[n] < minX) minX = g.nodeX[n];
+    if (g.nodeX[n] > maxX) maxX = g.nodeX[n];
+    if (g.nodeY[n] < minY) minY = g.nodeY[n];
+    if (g.nodeY[n] > maxY) maxY = g.nodeY[n];
+  }
+  const cell = 4;
+  const cols = Math.max(1, Math.ceil((maxX - minX) / cell) + 1);
+  const rows = Math.max(1, Math.ceil((maxY - minY) / cell) + 1);
+  if (buf.cellCount.length < cols * rows + 1) buf.cellCount = new Int32Array(cols * rows + 1);
+  const cellCount = buf.cellCount.subarray(0, cols * rows + 1).fill(0);
+  const rowOf = (y: number) => Math.min(rows - 1, Math.max(0, Math.floor((y - minY) / cell)));
+  const colOf = (x: number) => Math.min(cols - 1, Math.max(0, Math.floor((x - minX) / cell)));
+  // Cell range of each listed segment, computed once.
+  const listed = buf.listed;
+  let nl = 0;
+  for (let i = 0; i < nSeg; i++) if (!flat[segComp[i]]) listed[nl++] = i;
+  const { r0s, r1s, c0s, c1s } = buf;
+  for (let j = 0; j < nl; j++) {
+    const i = listed[j];
+    const xa = g.nodeX[segA[i]];
+    const xb = g.nodeX[segB[i]];
+    const ya = g.nodeY[segA[i]];
+    const yb = g.nodeY[segB[i]];
+    r0s[j] = rowOf(ya < yb ? ya : yb);
+    r1s[j] = rowOf(ya < yb ? yb : ya);
+    c0s[j] = colOf(xa < xb ? xa : xb);
+    c1s[j] = colOf(xa < xb ? xb : xa);
+    for (let r = r0s[j]; r <= r1s[j]; r++) for (let q = c0s[j]; q <= c1s[j]; q++) cellCount[r * cols + q + 1]++;
+  }
+  for (let i = 0; i < cols * rows; i++) cellCount[i + 1] += cellCount[i];
+  const fill = cellCount.slice(0, cols * rows);
+  if (buf.cellSegs.length < cellCount[cols * rows]) buf.cellSegs = new Int32Array(cellCount[cols * rows]);
+  const cellSegs = buf.cellSegs;
+  for (let j = 0; j < nl; j++) {
+    for (let r = r0s[j]; r <= r1s[j]; r++) {
+      for (let q = c0s[j]; q <= c1s[j]; q++) cellSegs[fill[r * cols + q]++] = listed[j];
+    }
+  }
+
+  // First hit of a rightward ray from each circuit's rightmost node. The ray
+  // runs a hair above the node so it never passes exactly through a vertex.
+  const hitComp = buf.hitComp.subarray(0, nComp).fill(-1);
+  const hitUp = buf.hitUp.subarray(0, nComp);
+  const EPS = 1e-7;
+  for (let k = 0; k < nComp; k++) {
+    if (!isCircuit[k]) continue;
+    const px = g.nodeX[rightmost[k]];
+    const py = g.nodeY[rightmost[k]] + EPS;
+    const r = rowOf(py);
+    let bestX = Infinity;
+    let best = -1;
+    for (let q = colOf(px); q < cols; q++) {
+      const ci = r * cols + q;
+      for (let j = cellCount[ci]; j < cellCount[ci + 1]; j++) {
+        const i = cellSegs[j];
+        if (segComp[i] === k) continue;
+        const ya = g.nodeY[segA[i]];
+        const yb = g.nodeY[segB[i]];
+        if (ya > py === yb > py) continue;
+        const xa = g.nodeX[segA[i]];
+        const xb = g.nodeX[segB[i]];
+        const x = xa + ((py - ya) / (yb - ya)) * (xb - xa);
+        if (x > px && x < bestX) {
+          bestX = x;
+          best = i;
+        }
+      }
+      // Anything in a later column lies further right than this cell's edge.
+      if (best >= 0 && bestX <= minX + (q + 1) * cell) break;
+    }
+    if (best >= 0) {
+      hitComp[k] = segComp[best];
+      hitUp[k] = g.nodeY[segB[best]] > g.nodeY[segA[best]] ? 1 : 0;
+    }
+  }
+
+  const resolve = (k0: number): number => {
+    // Iterative: follow the chain of hits, then unwind.
+    const chain: number[] = [];
+    let k = k0;
+    while (depth[k] < 0 && hitComp[k] >= 0) {
+      chain.push(k);
+      k = hitComp[k];
+    }
+    let d = depth[k] >= 0 ? depth[k] : 0;
+    if (depth[k] < 0) depth[k] = 0;
+    for (let i = chain.length - 1; i >= 0; i--) {
+      const m = chain[i];
+      d = hitUp[m] ? depth[hitComp[m]] + 1 : depth[hitComp[m]];
+      depth[m] = d;
+    }
+    return depth[k0];
+  };
+  let maxDepth = 0;
+  let depthSum = 0;
+  let nested = 0;
+  for (let k = 0; k < nComp; k++) {
+    if (!isCircuit[k]) continue;
+    const d = resolve(k);
+    if (d > maxDepth) maxDepth = d;
+    depthSum += d;
+    if (d > 0) nested++;
+  }
+  return { depth, maxDepth, depthSum, nested };
+}

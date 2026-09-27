@@ -4,7 +4,7 @@
  *
  * Two files under `public/data/classifications/`:
  *   meta.json      classes, fields (with quantisation bounds) and blocks;
- *   points.bin.gz  16 bytes a row — the class id, then one byte per field.
+ *   points.bin.gz  one byte for the class id, then one byte per field.
  *
  * Rows are grouped in blocks, one per (family, rule), each in combination
  * enumeration order, so a row's combination string is recovered from its index
@@ -35,6 +35,8 @@ export interface FieldInfo {
   readonly hi: number;
   readonly scale: 'linear' | 'log2';
   readonly description: string;
+  /** Whole numbers: shown without decimals. */
+  readonly integer?: boolean;
 }
 
 export interface BlockInfo {
@@ -169,28 +171,60 @@ export const FAMILY_LABEL: Readonly<Record<string, string>> = {
   'spectre-iso': 'Tile(1,1), hex labels',
 };
 
-/** Axis ticks in field units, returned as [value, unit position 0..1]. */
-export function fieldTicks(f: FieldInfo, maxTicks = 6): [number, number][] {
+/** A field's value -> its unit position 0..1 (inverse of the quantisation). */
+export function valueToUnit(f: FieldInfo, v: number): number {
+  const s = f.scale === 'log2' ? Math.log2(1 + Math.max(0, v)) : v;
+  return (s - f.lo) / (f.hi - f.lo);
+}
+
+/** A unit position 0..1 -> the field's value. */
+export function unitToValue(f: FieldInfo, u: number): number {
+  const s = f.lo + u * (f.hi - f.lo);
+  return f.scale === 'log2' ? Math.max(0, 2 ** s - 1) : s;
+}
+
+/**
+ * Axis ticks between unit positions u0..u1, as [value, unit position].
+ * Log fields tick at 0 and powers of ten; integer fields at whole steps.
+ */
+export function fieldTicks(f: FieldInfo, u0 = 0, u1 = 1, maxTicks = 6): [number, number][] {
   const out: [number, number][] = [];
+  const inRange = (u: number) => u >= u0 - 1e-9 && u <= u1 + 1e-9;
   if (f.scale === 'log2') {
-    for (let v = 1; v < 2 ** f.hi; v *= 10) {
-      const u = (Math.log2(1 + v) - f.lo) / (f.hi - f.lo);
-      if (u >= 0 && u <= 1) out.push([v, u]);
+    for (let v = 0; v < 2 ** f.hi; v = v === 0 ? 1 : v * 10) {
+      const u = valueToUnit(f, v);
+      if (inRange(u)) out.push([v, u]);
     }
-    return [[0, (0 - f.lo) / (f.hi - f.lo)], ...out];
+    if (out.length >= 3) return out;
+    // A narrow log range: add the 2s and 5s so the axis still reads.
+    const more: [number, number][] = [];
+    for (let d = 1; d < 2 ** f.hi; d *= 10) {
+      for (const m of [1, 2, 5]) {
+        const u = valueToUnit(f, m * d);
+        if (inRange(u)) more.push([m * d, u]);
+      }
+    }
+    return more;
   }
-  const span = f.hi - f.lo;
-  const raw = span / maxTicks;
+  const v0 = unitToValue(f, u0);
+  const v1 = unitToValue(f, u1);
+  const raw = Math.max((v1 - v0) / maxTicks, f.integer ? 1 : 1e-6);
   const mag = 10 ** Math.floor(Math.log10(raw));
-  const step = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((s) => s >= raw) ?? raw;
-  for (let v = Math.ceil(f.lo / step) * step; v <= f.hi + 1e-9; v += step) {
-    out.push([Number(v.toFixed(6)), (v - f.lo) / span]);
+  const step = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((st) => st >= raw && (!f.integer || Number.isInteger(st))) ?? raw;
+  for (let v = Math.ceil(v0 / step - 1e-9) * step; v <= v1 + 1e-9; v += step) {
+    out.push([Number(v.toFixed(6)), valueToUnit(f, v)]);
   }
   return out;
 }
 
+/** Short tick label: 1k, 10k, 1M for big numbers. */
+export function tickLabel(v: number): string {
+  if (v >= 1e6) return `${Number((v / 1e6).toFixed(1))}M`;
+  if (v >= 1e4) return `${Number((v / 1e3).toFixed(1))}k`;
+  return String(v);
+}
+
 export function formatValue(f: FieldInfo, v: number): string {
-  if (f.scale === 'log2') return Math.round(v).toLocaleString('en-US');
-  if (f.key === 'distinct') return String(Math.round(v));
+  if (f.scale === 'log2' || f.integer) return Math.round(v).toLocaleString('en-US');
   return v.toFixed(2);
 }

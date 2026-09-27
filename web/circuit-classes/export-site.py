@@ -4,8 +4,9 @@ data: web/public/data/classifications/meta.json + points.bin.gz.
 
 Each (family, rule) is a block of rows in combination-enumeration order (the
 page turns a row index back into the combination string with
-`comboDigitsFromIndex`, so no strings are stored). A row is 16 bytes: the class
-id, then one byte per feature, quantised linearly (or on log2(1+x)) between
+`comboDigitsFromIndex`, so no strings are stored). A row is one byte for the class
+id, then one byte per feature (including the nesting stats from
+nest-sweep.ts), quantised linearly (or on log2(1+x)) between
 the bounds given in meta.json. Rows not yet swept get class 255 and are skipped
 by the page.
 
@@ -50,7 +51,13 @@ FIELDS = [
      'How many circuits the level-6 patch holds.'),
     ('distinct', 'Distinct circuit lengths', 0, 255, 'linear',
      'How many different circuit lengths occur at level 6.'),
+    ('maxNest', 'Max nested', 0, 255, 'linear',
+     'The most circuits enclosing any one circuit at level 6. Circuits cut open by the patch edge enclose nothing.'),
+    ('nestSum', 'Nest sum', 0, 24, 'log2',
+     'Every circuit\'s depth added up at level 6: +1 for every circuit inside another circuit, counted once for each circuit around it.'),
 ]
+INTEGER = {'distinct', 'maxNest', 'nestSum'}
+NEST = {'maxNest', 'nestSum'}
 
 def q(v, lo, hi, scale):
     if scale == 'log2':
@@ -61,6 +68,16 @@ def main():
     partial = '--allow-partial' in sys.argv
     counts = json.loads(subprocess.run(['npx', '--yes', 'tsx', 'option-counts.ts'], capture_output=True,
                                        text=True, check=True).stdout)
+    nest = {}
+    for path in sorted(glob.glob('data/nest/*.jsonl')):
+        with open(path) as fh:
+            for line in fh:
+                if line.strip():
+                    d = json.loads(line)
+                    top = d['nest'][-1]
+                    if top['level'] == 6:
+                        nest[(d['family'], d['rule'], d['combo'])] = {'maxNest': top['max'], 'nestSum': top['sum']}
+    missing_nest = 0
     rows = {}
     for path in sorted(glob.glob('data/*.jsonl')):
         with open(path) as fh:
@@ -74,6 +91,13 @@ def main():
                 if f['level'] != 6:
                     continue
                 cls = CLASS_IDS.index(classify(f))
+                n = nest.get((d['family'], d['rule'], d['combo']))
+                if n is None:
+                    missing_nest += 1
+                    if not partial:
+                        sys.exit(f"no nesting for {d['family']} {d['rule']} {d['combo']}; run nest-all.sh or pass --allow-partial")
+                    n = {'maxNest': 0, 'nestSum': 0}
+                f.update(n)
                 rows.setdefault((d['family'], d['rule']), {})[d['combo']] = bytes(
                     [cls] + [q(f[k], lo, hi, sc) for k, _, lo, hi, sc, _ in FIELDS])
     blocks, chunks, offset = [], [], 0
@@ -85,12 +109,13 @@ def main():
         if len(have) < total and not partial:
             sys.exit(f'{fam} {rule}: only {len(have)} of {total} rows; pass --allow-partial')
         # Enumeration order == lexicographic order of the combination string.
+        rb = 1 + len(FIELDS)
         out = bytearray(b'\xff' + bytes(len(FIELDS))) * total
         for combo, row in have.items():
             idx = 0
             for digit, k in zip(combo, oc):
                 idx = idx * k + int(digit, 36)
-            out[idx * 16:(idx + 1) * 16] = row
+            out[idx * rb:(idx + 1) * rb] = row
         chunks.append(bytes(out))
         blocks.append({'family': fam, 'rule': rule, 'count': total, 'done': len(have), 'offset': offset})
         offset += total
@@ -99,15 +124,18 @@ def main():
         for c in chunks:
             fh.write(c)
     meta = {
-        'version': 1,
-        'rowBytes': 16,
+        'version': 2,
+        'rowBytes': 1 + len(FIELDS),
         'classes': [{'id': c, 'label': CLASSES[c]} for c in CLASS_IDS],
-        'fields': [{'key': k, 'label': l, 'lo': lo, 'hi': hi, 'scale': sc, 'description': desc}
+        'fields': [{'key': k, 'label': l, 'lo': lo, 'hi': hi, 'scale': sc, 'description': desc,
+                    **({'integer': True} if k in INTEGER else {})}
                    for k, l, lo, hi, sc, desc in FIELDS],
         'blocks': blocks,
         'levels': 'Growth from level 4 to level 6; everything else at level 6.',
     }
     json.dump(meta, open(f'{OUT}/meta.json', 'w'), indent=1, ensure_ascii=False)
+    if missing_nest:
+        print(f'warning: {missing_nest} rows have no nesting yet (written as 0)')
     print(len(blocks), 'blocks,', offset, 'rows,', os.path.getsize(f'{OUT}/points.bin.gz'), 'bytes gzipped')
 
 if __name__ == '__main__':

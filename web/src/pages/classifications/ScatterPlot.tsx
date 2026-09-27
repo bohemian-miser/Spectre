@@ -14,8 +14,10 @@ import {
   fieldTicks,
   fieldUnit,
   rowClass,
+  tickLabel,
   MISSING_CLASS,
   type ClassificationData,
+  type FieldInfo,
 } from './data';
 
 export interface PlotHover {
@@ -148,11 +150,50 @@ export function ScatterPlot(props: ScatterPlotProps): JSX.Element {
 
     const pw = w - M.left - M.right;
     const ph = h - M.top - M.bottom;
-    const jx = jitter ? 1 / 255 : 0;
+    const rb = data.meta.rowBytes;
+    const nClasses = data.meta.classes.length;
+
+    // Fit each axis to the dots that are shown, so a stat whose values sit in
+    // a sliver of its range (max nesting 0..6 of 0..255) still fills the plot.
+    let ux0 = 1;
+    let ux1 = 0;
+    let uy0 = 1;
+    let uy1 = 0;
+    for (let r = 0; r < data.nRows; r++) {
+      const c = data.rows[r * rb];
+      if (c >= nClasses || !visibleClass[c] || !visibleBlock[data.blockOf[r]]) continue;
+      const u = data.rows[r * rb + 1 + xField] / 255;
+      const v = data.rows[r * rb + 1 + yField] / 255;
+      if (u < ux0) ux0 = u;
+      if (u > ux1) ux1 = u;
+      if (v < uy0) uy0 = v;
+      if (v > uy1) uy1 = v;
+    }
+    const fit = (a: number, b: number, f: FieldInfo): [number, number] => {
+      if (a > b) return [0, 1];
+      // At least a few whole steps for integer fields, a little room otherwise.
+      const minSpan = f.integer ? Math.min(1, 4 / (f.hi - f.lo)) : 0.05;
+      let span = Math.max(b - a, minSpan);
+      const mid = (a + b) / 2;
+      let lo = Math.max(0, mid - span / 2);
+      let hi = Math.min(1, lo + span);
+      lo = Math.max(0, hi - span);
+      const pad = (hi - lo) * 0.04;
+      lo = Math.max(0, lo - pad);
+      hi = Math.min(1, hi + pad);
+      span = hi - lo;
+      return [lo, lo + span];
+    };
+    const [x0, x1] = fit(ux0, ux1, fx);
+    const [y0, y1] = fit(uy0, uy1, fy);
+    // Spread within a quantisation bin, or within ±0.35 of a step for whole numbers.
+    const spread = (f: FieldInfo) => (!jitter ? 0 : f.integer ? 0.7 / (f.hi - f.lo) : 1 / 255);
+    const jx = spread(fx);
+    const jy = spread(fy);
     const px = (row: number): [number, number] => {
       const u = fieldUnit(data, row, xField) + jx * hashJitter(row, 17);
-      const v = fieldUnit(data, row, yField) + jx * hashJitter(row, 91);
-      return [M.left + u * pw, M.top + (1 - v) * ph];
+      const v = fieldUnit(data, row, yField) + jy * hashJitter(row, 91);
+      return [M.left + ((u - x0) / (x1 - x0)) * pw, M.top + (1 - (v - y0) / (y1 - y0)) * ph];
     };
 
     // Axes first (vector, under the dots).
@@ -164,23 +205,23 @@ export function ScatterPlot(props: ScatterPlotProps): JSX.Element {
     ctx.fillStyle = muted;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
-    for (const [v, u] of fieldTicks(fx)) {
-      const x = Math.round(M.left + u * pw) + 0.5;
+    for (const [v, u] of fieldTicks(fx, x0, x1)) {
+      const x = Math.round(M.left + ((u - x0) / (x1 - x0)) * pw) + 0.5;
       ctx.beginPath();
       ctx.moveTo(x, M.top);
       ctx.lineTo(x, M.top + ph);
       ctx.stroke();
-      ctx.fillText(fx.scale === 'log2' ? v.toLocaleString('en-US') : String(v), x, M.top + ph + 6);
+      ctx.fillText(tickLabel(v), x, M.top + ph + 6);
     }
     ctx.textAlign = 'right';
     ctx.textBaseline = 'middle';
-    for (const [v, u] of fieldTicks(fy)) {
-      const y = Math.round(M.top + (1 - u) * ph) + 0.5;
+    for (const [v, u] of fieldTicks(fy, y0, y1)) {
+      const y = Math.round(M.top + (1 - (u - y0) / (y1 - y0)) * ph) + 0.5;
       ctx.beginPath();
       ctx.moveTo(M.left, y);
       ctx.lineTo(M.left + pw, y);
       ctx.stroke();
-      ctx.fillText(fy.scale === 'log2' ? v.toLocaleString('en-US') : String(v), M.left - 6, y);
+      ctx.fillText(tickLabel(v), M.left - 6, y);
     }
     ctx.font = '12px system-ui, -apple-system, "Segoe UI", sans-serif';
     ctx.textAlign = 'center';
@@ -194,7 +235,6 @@ export function ScatterPlot(props: ScatterPlotProps): JSX.Element {
     ctx.restore();
 
     // Dots: common classes first so rare ones sit on top.
-    const nClasses = data.meta.classes.length;
     const totals = new Array<number>(nClasses).fill(0);
     for (let r = 0; r < data.nRows; r++) {
       const c = rowClass(data, r);
