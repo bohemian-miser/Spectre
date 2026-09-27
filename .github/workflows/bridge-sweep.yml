@@ -1,0 +1,64 @@
+# Bridge sweep: every combination of the Tile(1,1) full rule (80 shards on
+# 20 runners) plus every small rule of Tile(1,1), hexagons and the iso
+# labels, at levels 4 and 6. Runs only on pushes to this branch.
+name: bridge-sweep
+on:
+  push:
+    branches: [sweep-bridges]
+  workflow_dispatch:
+
+jobs:
+  full-rule:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        job: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Sweep 4 shards
+        working-directory: web/circuit-classes
+        run: |
+          mkdir -p out
+          date -u +%FT%TZ > out/timing-job${{ matrix.job }}.txt
+          lscpu | grep 'Model name' >> out/timing-job${{ matrix.job }}.txt
+          npx --yes tsx --version > /dev/null
+          for i in 0 1 2 3; do
+            k=$(( ${{ matrix.job }} * 4 + i ))
+            npx --yes tsx bridge-sweep.ts spectre 01235678 4,6 out/bridge-spectre-01235678.n80s$k.jsonl $k 80 > out/shard-$k.log 2>&1 &
+          done
+          wait
+          date -u +%FT%TZ >> out/timing-job${{ matrix.job }}.txt
+          tail -n 1 out/shard-*.log
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bridges-full-${{ matrix.job }}
+          path: web/circuit-classes/out/
+
+  small-rules:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Sweep every small rule
+        working-directory: web/circuit-classes
+        run: |
+          mkdir -p out
+          for fam in spectre hex spectre-iso; do
+            for rule in $(npx --yes tsx -e "import {validEdgeSubsets} from '../src/core'; console.log(validEdgeSubsets('$fam').filter(s=>s.edges.length>0 && s.edges.length<8).map(s=>s.edges.join('')).join(' '))"); do
+              npx --yes tsx bridge-sweep.ts $fam $rule 4,6 out/bridge-$fam-$rule.jsonl &
+            done
+            wait
+          done
+          ls -la out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bridges-small
+          path: web/circuit-classes/out/
