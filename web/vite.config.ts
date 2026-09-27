@@ -26,6 +26,7 @@ export default defineConfig({
         main: resolve(__dirname, 'index.html'),
         tails: resolve(__dirname, 'tails.html'),
         classifications: resolve(__dirname, 'classifications.html'),
+        rules: resolve(__dirname, 'rules.html'),
         map: resolve(__dirname, 'map.html'),
         supertiles: resolve(__dirname, 'supertiles.html'),
         machine: resolve(__dirname, 'machine.html'),

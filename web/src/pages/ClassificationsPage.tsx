@@ -229,7 +229,9 @@ function ClassificationsView(props: {
   };
   const [xField, setXField] = useState(() => fieldIndex(initial.x, DEFAULT_X));
   const [yField, setYField] = useState(() => fieldIndex(initial.y, DEFAULT_Y));
-  const [rule, setRule] = useState(initial.rule);
+  const [rule, setRule] = useState(() =>
+    meta.blocks.some((b) => `${b.family}-${b.rule}` === initial.rule) ? initial.rule : 'all',
+  );
   const [hidden, setHidden] = useState<Set<string>>(() => new Set(initial.hide));
   const [thumbLevel, setThumbLevel] = useState(initial.tl);
   const [jitter, setJitter] = useState(true);

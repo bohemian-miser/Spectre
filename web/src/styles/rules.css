@@ -1,0 +1,84 @@
+/* Rules & isomorphism page. Shell tokens come from widgets.css. */
+
+.rules-page {
+  display: grid;
+  gap: 28px;
+}
+.rules-page h1 {
+  margin: 0 0 6px;
+  font-size: 26px;
+}
+.rules-page h2 {
+  margin: 0 0 8px;
+  font-size: 19px;
+}
+.rules-page h3 {
+  margin: 16px 0 6px;
+  font-size: 15px;
+}
+.rules-page p,
+.rules-page ul {
+  margin: 0 0 10px;
+  line-height: 1.6;
+}
+.rules-page ul {
+  padding-left: 20px;
+}
+.rules-page .muted {
+  color: var(--muted);
+}
+.rules-page .mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.92em;
+}
+.rules-page a {
+  color: var(--accent);
+}
+
+.rules-table-box {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+.rules-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.rules-table th,
+.rules-table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  text-align: right;
+  vertical-align: top;
+  white-space: nowrap;
+}
+.rules-table thead th {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  vertical-align: bottom;
+}
+.rules-table th:first-child,
+.rules-table th.rules-rel {
+  text-align: left;
+}
+.rules-table tbody tr:last-child > * {
+  border-bottom: 0;
+}
+.rules-table td.rules-rel {
+  text-align: left;
+  white-space: normal;
+  min-width: 220px;
+  color: var(--muted);
+}
+.rules-table td.is-none {
+  color: var(--muted);
+}
+.rules-alias {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+}
