@@ -58,7 +58,7 @@ for (const iso of validEdgeSubsets('spectre-iso')) {
     const di = d.map((v, k) => maps[k][v]);
     if (di.some((v) => v < 0)) { unmapped++; continue; }
     tested++;
-    const a = lengths('spectre', sRule, d, gs), b = lengths('spectre-iso', iso.edges, di, gi);
+    const a = lengths('spectre', sRule, d, gs), b = lengths('spectre-iso', [...iso.edges], di, gi);
     const extra = [...b];
     for (const x of a) { const j = extra.indexOf(x); if (j >= 0) extra.splice(j, 1); }
     const onlyBubbles = extra.every((x) => x === 2) && extra.length + a.length === b.length;

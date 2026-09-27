@@ -163,3 +163,73 @@ describe('circuitNesting', () => {
     }
   });
 });
+
+describe('bridgeStats', () => {
+  it('matches explicit polygons and the outline encloses the whole patch', async () => {
+    const { bridgeStats, patchBoundary } = await import('..');
+    for (const [family, rule, level] of [
+      ['spectre', [2, 5, 7, 8], 3],
+      ['spectre', [1, 2, 7, 8], 3],
+      ['spectre', [0, 1, 2, 3, 5, 6, 7, 8], 3],
+      ['hex', [1, 2, 8], 3],
+    ] as const) {
+      const g = buildStrandGraph(family, [...rule], level);
+      const b = patchBoundary(g);
+      expect(b.twiceArea / 2).toBeCloseTo(g.patchArea, 6);
+      const counts = comboOptionCounts(family, [...rule]);
+      const d = comboDigitsFromIndex(counts, Math.floor(counts.reduce((x, y) => x * y, 1) / 2));
+      const c = strandComponents(g, d);
+      const fast = bridgeStats(g, c);
+      // Brute force: build each side's polygon explicitly.
+      const m = b.xs.length;
+      const at = (pos: number): [number, number] => {
+        const i = Math.floor(pos) % m;
+        const j = (i + 1) % m;
+        const t = pos - Math.floor(pos);
+        return [b.xs[i] + t * (b.xs[j] - b.xs[i]), b.ys[i] + t * (b.ys[j] - b.ys[i])];
+      };
+      const ratios: number[] = [];
+      const seen = new Set<number>();
+      for (let n = 0; n < g.nNodes; n++) {
+        const k = c.comp[n];
+        if (g.nodeDeg[n] !== 1 || seen.has(k) || c.ends[k] !== 2 || c.junc[k] !== 0) continue;
+        seen.add(k);
+        const poly: [number, number][] = [];
+        let node = n;
+        let occ = g.nodeOcc[g.nodeOccStart[n]];
+        poly.push([g.nodeX[n], g.nodeY[n]]);
+        for (;;) {
+          const p = c.partner[occ];
+          node = g.occNode[p];
+          poly.push([g.nodeX[node], g.nodeY[node]]);
+          if (g.nodeDeg[node] === 1) break;
+          const k0 = g.nodeOccStart[node];
+          occ = g.nodeOcc[k0] === p ? g.nodeOcc[k0 + 1] : g.nodeOcc[k0];
+        }
+        // Outline forward from the far end back to the start.
+        let pos = b.nodePos[node];
+        const end = b.nodePos[n];
+        let target = end >= pos ? end : end + m;
+        if (Math.floor(end) === Math.floor(pos) && end >= pos) target = end;
+        for (let v = Math.floor(pos) + 1; v <= Math.floor(target); v++) poly.push([b.xs[v % m], b.ys[v % m]]);
+        poly.push(at(end));
+        let s = 0;
+        for (let i = 0; i < poly.length; i++) {
+          const [x1, y1] = poly[i];
+          const [x2, y2] = poly[(i + 1) % poly.length];
+          s += x1 * y2 - x2 * y1;
+        }
+        const side = s / 2;
+        const smaller = Math.max(0, Math.min(side, g.patchArea - side));
+        ratios.push(smaller / b.tileArea / c.segs[k]);
+        pos = 0;
+      }
+      expect(fast.count).toBe(ratios.length);
+      if (ratios.length) {
+        expect(fast.max).toBeCloseTo(Math.max(...ratios), 9);
+        expect(fast.min).toBeCloseTo(Math.min(...ratios), 9);
+        expect(fast.mean).toBeCloseTo(ratios.reduce((x, y) => x + y, 0) / ratios.length, 9);
+      }
+    }
+  });
+});
