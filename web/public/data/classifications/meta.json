@@ -1,6 +1,6 @@
 {
  "version": 3,
- "rowBytes": 38,
+ "rowBytes": 44,
  "layout": "columns",
  "classes": [
   {
@@ -453,6 +453,74 @@
    "level": "4 → 6",
    "formula": "log((1 + nest sum₆) / (1 + nest sum₄)) / log(N₆ / N₄)",
    "description": "How fast nesting grows with the patch. 1 means the nest sum grows in step with the tile count, as it does when circuits of every size keep nesting; above 1, depth keeps increasing too. The +1 keeps patterns without nesting at 0."
+  },
+  {
+   "key": "bridgeCount",
+   "label": "Bridges",
+   "group": "Bridges",
+   "lo": 0,
+   "hi": 20,
+   "scale": "log2",
+   "level": "6",
+   "formula": "number of strands running from the patch edge to the patch edge",
+   "description": "Every open strand is a bridge: it enters and leaves the patch, cutting it in two. Includes the tiny ones that clip a corner of the patch.",
+   "integer": true
+  },
+  {
+   "key": "bridgeMean",
+   "label": "Bridge ratio: mean",
+   "group": "Bridges",
+   "lo": 0,
+   "hi": 5,
+   "scale": "log2",
+   "level": "6",
+   "formula": "mean over bridges of (smaller side's area in tiles) / (tiles the bridge crosses)",
+   "description": "How much patch a bridge cuts off per tile of its own length, averaged. Most bridges are short strands near the edge, so this is usually small."
+  },
+  {
+   "key": "bridgeMin",
+   "label": "Bridge ratio: min",
+   "group": "Bridges",
+   "lo": 0,
+   "hi": 5,
+   "scale": "log2",
+   "level": "6",
+   "formula": "min over bridges of (smaller side in tiles) / (tiles crossed)",
+   "description": "The least efficient bridge. Usually a strand that clips a corner of the patch and cuts off almost nothing."
+  },
+  {
+   "key": "bridgeMax",
+   "label": "Bridge ratio: max",
+   "group": "Bridges",
+   "lo": 0,
+   "hi": 7,
+   "scale": "log2",
+   "level": "6",
+   "formula": "max over bridges of (smaller side in tiles) / (tiles crossed)",
+   "description": "The best bridge: the most patch cut off per tile of strand. A high value is a short strand that still splits off a big region, a good bridge-building pattern."
+  },
+  {
+   "key": "bridgeBestShare",
+   "label": "Best bridge: share cut off",
+   "group": "Bridges",
+   "lo": 0,
+   "hi": 0.5,
+   "scale": "linear",
+   "level": "6",
+   "formula": "smaller side of the best bridge / area of the patch",
+   "description": "How much of the patch the best bridge cuts off. 0.5 would be a clean halving."
+  },
+  {
+   "key": "bridgeBestLength",
+   "label": "Best bridge: length",
+   "group": "Bridges",
+   "lo": 0,
+   "hi": 20,
+   "scale": "log2",
+   "level": "6",
+   "formula": "tiles crossed by the best bridge",
+   "description": "How long the best bridge is, in tiles.",
+   "integer": true
   }
  ],
  "blocks": [
