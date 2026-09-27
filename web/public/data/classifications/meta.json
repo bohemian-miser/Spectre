@@ -1,6 +1,7 @@
 {
- "version": 1,
- "rowBytes": 16,
+ "version": 3,
+ "rowBytes": 38,
+ "layout": "columns",
  "classes": [
   {
    "id": "triangle",
@@ -35,122 +36,423 @@
   {
    "key": "gC",
    "label": "Largest circuit: growth",
+   "group": "Growth & dimension",
    "lo": 0,
    "hi": 2.5,
    "scale": "linear",
-   "description": "a in \"length of the largest circuit ∝ N^a\", from level 4 to level 6 (N = tiles). 0 bounded, ~0.7 triangle outline, ~0.85 thin wanderer, 1 space-filling."
+   "level": "4 → 6",
+   "formula": "gC = log(Lc₆ / Lc₄) / log(N₆ / N₄), N = tiles in the patch",
+   "description": "The exponent a in \"length of the largest circuit ∝ N^a\". 0 bounded, about 0.7 for triangle outlines, about 0.9 for thin wandering circuits, 1 for space-filling ones. Above 1 means the biggest circuit at level 4 was still cut open by the patch edge."
   },
   {
    "key": "gO",
    "label": "Longest open strand: growth",
+   "group": "Growth & dimension",
    "lo": 0,
    "hi": 1.5,
    "scale": "linear",
+   "level": "4 → 6",
+   "formula": "gO = log(Lo₆ / Lo₄) / log(N₆ / N₄)",
    "description": "The same exponent for the longest strand that reaches the edge of the patch."
   },
   {
-   "key": "fo",
-   "label": "Share of segments on open strands",
+   "key": "dC",
+   "label": "Largest circuit: dimension from growth",
+   "group": "Growth & dimension",
    "lo": 0,
-   "hi": 1,
+   "hi": 5,
    "scale": "linear",
-   "description": "Fraction of all strand segments on strands that reach the patch edge (level 6)."
+   "level": "4 → 6",
+   "formula": "dC = 2 × gC",
+   "description": "Twice gC: roughly the fractal dimension of the largest circuit, if it spans the patch. A patch of N tiles is about N^½ tiles wide, so a curve of dimension d across it is about N^(d/2) long. About 1.4 for triangle outlines, 1.9 for thin circuits, 2 for space-filling ones. Only meaningful between 1 and 2; values above 2 are an artefact of the level-4 circuit being cut short."
+  },
+  {
+   "key": "dO",
+   "label": "Longest open strand: dimension from growth",
+   "group": "Growth & dimension",
+   "lo": 0,
+   "hi": 3,
+   "scale": "linear",
+   "level": "4 → 6",
+   "formula": "dO = 2 × gO",
+   "description": "Twice gO: roughly the fractal dimension of the longest open strand. About 2 for an infinite space-filling line."
+  },
+  {
+   "key": "dCr",
+   "label": "Largest circuit: mass-radius dimension",
+   "group": "Growth & dimension",
+   "lo": 0,
+   "hi": 3,
+   "scale": "linear",
+   "level": "4 → 6",
+   "formula": "dCr = log(Lc₆ / Lc₄) / log(Rg₆ / Rg₄), Rg = radius of gyration",
+   "description": "Fractal dimension from the largest circuit's length against its own radius, not the patch's. It agrees with dC when the biggest circuit grows with the patch and does not depend on it spanning the patch. 0 when the circuit does not grow (its radius grows by less than 1.5 times), where no dimension can be read off."
+  },
+  {
+   "key": "gC45",
+   "label": "Largest circuit: growth, level 4 → 5",
+   "group": "Growth & dimension",
+   "lo": 0,
+   "hi": 4.5,
+   "scale": "linear",
+   "level": "4 → 5",
+   "formula": "log(Lc₅ / Lc₄) / log(N₅ / N₄)",
+   "description": "One-level growth exponent. Triangle circuits grow on alternate levels, so this and the 5 → 6 step often flicker between about 0 and about 1.4 while their average (gC) stays steady."
+  },
+  {
+   "key": "gC56",
+   "label": "Largest circuit: growth, level 5 → 6",
+   "group": "Growth & dimension",
+   "lo": 0,
+   "hi": 4.5,
+   "scale": "linear",
+   "level": "5 → 6",
+   "formula": "log(Lc₆ / Lc₅) / log(N₆ / N₅)",
+   "description": "The next one-level step. Plot it against the 4 → 5 step to see the alternating-level rhythm."
+  },
+  {
+   "key": "gO45",
+   "label": "Longest open strand: growth, level 4 → 5",
+   "group": "Growth & dimension",
+   "lo": 0,
+   "hi": 4.5,
+   "scale": "linear",
+   "level": "4 → 5",
+   "formula": "log(Lo₅ / Lo₄) / log(N₅ / N₄)",
+   "description": "One-level growth exponent of the longest open strand."
+  },
+  {
+   "key": "gO56",
+   "label": "Longest open strand: growth, level 5 → 6",
+   "group": "Growth & dimension",
+   "lo": 0,
+   "hi": 4.5,
+   "scale": "linear",
+   "level": "5 → 6",
+   "formula": "log(Lo₆ / Lo₅) / log(N₆ / N₅)",
+   "description": "The next one-level step of the longest open strand."
   },
   {
    "key": "cFill",
    "label": "Biggest circuit: fill",
+   "group": "Biggest circuit shape",
    "lo": 0,
    "hi": 1.5,
    "scale": "linear",
-   "description": "Its segments over what its convex hull holds at average density. ~1 space-filling, small = an outline or a thread."
+   "level": "6",
+   "formula": "segments / (hull area × segments per unit area of the whole patch)",
+   "description": "Its segments over what its convex hull holds at average density. About 1 space-filling, small for an outline or a thread."
   },
   {
    "key": "cFat",
    "label": "Biggest circuit: enclosed area / hull",
+   "group": "Biggest circuit shape",
    "lo": 0,
    "hi": 1,
    "scale": "linear",
-   "description": "Area the circuit encloses over its convex hull area. Triangles ~0.6, thin circuits ~0.2."
+   "level": "6",
+   "formula": "area inside the circuit (shoelace) / convex hull area",
+   "description": "How much of its convex hull the circuit encloses. Triangle outlines about 0.6, thin circuits about 0.2."
   },
   {
    "key": "cTri",
    "label": "Biggest circuit: triangularity",
+   "group": "Biggest circuit shape",
    "lo": 0,
    "hi": 1,
    "scale": "linear",
-   "description": "Hull area over the smallest enclosing equilateral triangle. 1 triangle, 0.67 hexagon, 0.6 disk."
+   "level": "6",
+   "formula": "hull area / area of the smallest equilateral triangle around the hull (any rotation)",
+   "description": "How close its hull is to an equilateral triangle: 1 for a triangle, 0.67 for a regular hexagon, 0.6 for a disk."
   },
   {
    "key": "cElong",
    "label": "Biggest circuit: elongation",
+   "group": "Biggest circuit shape",
    "lo": 1,
    "hi": 8,
    "scale": "linear",
-   "description": "Square root of the ratio of its principal moments."
+   "level": "6",
+   "formula": "√(λ₁ / λ₂), the principal moments of its points",
+   "description": "How stretched it is: 1 for a round or triangular shape, large for a long thin one."
+  },
+  {
+   "key": "cRg",
+   "label": "Biggest circuit: radius of gyration",
+   "group": "Biggest circuit shape",
+   "lo": 0,
+   "hi": 10,
+   "scale": "log2",
+   "level": "6",
+   "formula": "Rg = √(mean squared distance of its points from their centre), in tile edge lengths",
+   "description": "How big the biggest circuit is. It stays a few edges for bounded loops and reaches a good part of the patch for growing classes."
   },
   {
    "key": "oFill",
    "label": "Longest open strand: fill",
+   "group": "Longest open strand",
    "lo": 0,
    "hi": 1.5,
    "scale": "linear",
-   "description": "Fill of the longest open strand. Infinite lines fill their region; cut-open triangle outlines do not."
+   "level": "6",
+   "formula": "as for the circuit fill",
+   "description": "How much of its convex hull the longest open strand covers. Infinite lines fill their region; cut-open triangle outlines do not."
   },
   {
    "key": "oElong",
    "label": "Longest open strand: elongation",
+   "group": "Longest open strand",
    "lo": 1,
    "hi": 10,
    "scale": "linear",
-   "description": "Slivers cut off along the patch edge are very elongated."
+   "level": "6",
+   "formula": "√(λ₁ / λ₂)",
+   "description": "How stretched the longest open strand is. Slivers cut off along the patch edge are very elongated."
+  },
+  {
+   "key": "oTri",
+   "label": "Longest open strand: triangularity",
+   "group": "Longest open strand",
+   "lo": 0,
+   "hi": 1,
+   "scale": "linear",
+   "level": "6",
+   "formula": "hull area / smallest enclosing equilateral triangle",
+   "description": "How close its hull is to an equilateral triangle. A triangle outline cut open by the patch edge still scores high."
+  },
+  {
+   "key": "fo",
+   "label": "Share of segments on open strands",
+   "group": "Counts & lengths",
+   "lo": 0,
+   "hi": 1,
+   "scale": "linear",
+   "level": "6",
+   "formula": "segments on strands that reach the patch edge / all segments",
+   "description": "How much of the drawing reaches the patch edge. Near 1 when one or a few lines carry everything, small when nearly everything closes up."
+  },
+  {
+   "key": "top1",
+   "label": "Share on the longest strand",
+   "group": "Counts & lengths",
+   "lo": 0,
+   "hi": 1,
+   "scale": "linear",
+   "level": "6",
+   "formula": "segments of the largest component / all segments",
+   "description": "How much of the drawing one strand carries, open or closed. High for an infinite line that carries most of the drawing."
   },
   {
    "key": "top4",
    "label": "Share on the 4 longest strands",
+   "group": "Counts & lengths",
    "lo": 0,
    "hi": 1,
    "scale": "linear",
-   "description": "Fraction of all segments on the four largest components."
+   "level": "6",
+   "formula": "segments of the four largest components / all segments",
+   "description": "How much of the drawing the four largest strands carry, open or closed."
   },
   {
    "key": "bigMass",
    "label": "Share on circuits of 64+ segments",
+   "group": "Counts & lengths",
    "lo": 0,
    "hi": 1,
    "scale": "linear",
-   "description": "Fraction of all segments on circuits at least 64 segments long."
+   "level": "6",
+   "formula": "segments on circuits at least 64 long / all segments",
+   "description": "How much of the drawing is in big circuits."
+  },
+  {
+   "key": "Lc4",
+   "label": "Longest circuit at level 4",
+   "group": "Counts & lengths",
+   "lo": 0,
+   "hi": 20,
+   "scale": "log2",
+   "level": "4",
+   "formula": "Lc₄, in segments",
+   "description": "Length of the longest circuit at level 4.",
+   "integer": true
+  },
+  {
+   "key": "Lc5",
+   "label": "Longest circuit at level 5",
+   "group": "Counts & lengths",
+   "lo": 0,
+   "hi": 20,
+   "scale": "log2",
+   "level": "5",
+   "formula": "Lc₅, in segments",
+   "description": "Length of the longest circuit at level 5.",
+   "integer": true
   },
   {
    "key": "Lc",
-   "label": "Longest circuit (segments)",
+   "label": "Longest circuit at level 6",
+   "group": "Counts & lengths",
    "lo": 0,
    "hi": 20,
    "scale": "log2",
-   "description": "Length of the longest circuit at level 6."
+   "level": "6",
+   "formula": "Lc₆, in segments",
+   "description": "Length of the longest circuit at level 6.",
+   "integer": true
+  },
+  {
+   "key": "Lo4",
+   "label": "Longest open strand at level 4",
+   "group": "Counts & lengths",
+   "lo": 0,
+   "hi": 20,
+   "scale": "log2",
+   "level": "4",
+   "formula": "Lo₄, in segments",
+   "description": "Length of the longest open strand at level 4.",
+   "integer": true
+  },
+  {
+   "key": "Lo5",
+   "label": "Longest open strand at level 5",
+   "group": "Counts & lengths",
+   "lo": 0,
+   "hi": 20,
+   "scale": "log2",
+   "level": "5",
+   "formula": "Lo₅, in segments",
+   "description": "Length of the longest open strand at level 5.",
+   "integer": true
   },
   {
    "key": "Lo",
-   "label": "Longest open strand (segments)",
+   "label": "Longest open strand at level 6",
+   "group": "Counts & lengths",
    "lo": 0,
    "hi": 20,
    "scale": "log2",
-   "description": "Length of the longest open strand at level 6."
+   "level": "6",
+   "formula": "Lo₆, in segments",
+   "description": "Length of the longest open strand at level 6.",
+   "integer": true
   },
   {
    "key": "nClosed",
    "label": "Number of circuits",
+   "group": "Counts & lengths",
    "lo": 0,
    "hi": 20,
    "scale": "log2",
-   "description": "How many circuits the level-6 patch holds."
+   "level": "6",
+   "formula": "count of closed strands",
+   "description": "How many circuits the level-6 patch holds.",
+   "integer": true
+  },
+  {
+   "key": "nOpen",
+   "label": "Number of open strands",
+   "group": "Counts & lengths",
+   "lo": 0,
+   "hi": 20,
+   "scale": "log2",
+   "level": "6",
+   "formula": "count of strands with an end on the patch edge",
+   "description": "How many strands reach the patch edge at level 6. Mostly set by the rule and the patch outline, since every strand crossing the edge counts.",
+   "integer": true
+  },
+  {
+   "key": "cPerTile",
+   "label": "Circuits per tile",
+   "group": "Counts & lengths",
+   "lo": 0,
+   "hi": 0.6,
+   "scale": "linear",
+   "level": "6",
+   "formula": "number of circuits / tiles",
+   "description": "How many circuits there are for each tile. High for many small loops."
   },
   {
    "key": "distinct",
    "label": "Distinct circuit lengths",
+   "group": "Counts & lengths",
    "lo": 0,
    "hi": 255,
    "scale": "linear",
-   "description": "How many different circuit lengths occur at level 6."
+   "level": "6",
+   "formula": "number of different circuit lengths (capped at 255)",
+   "description": "Low for a few repeated loop shapes, high for a hierarchy of sizes.",
+   "integer": true
+  },
+  {
+   "key": "maxNest4",
+   "label": "Max nested at level 4",
+   "group": "Nesting",
+   "lo": 0,
+   "hi": 255,
+   "scale": "linear",
+   "level": "4",
+   "formula": "max over circuits of the number of circuits around it",
+   "description": "The deepest nesting at level 4.",
+   "integer": true
+  },
+  {
+   "key": "maxNest",
+   "label": "Max nested at level 6",
+   "group": "Nesting",
+   "lo": 0,
+   "hi": 255,
+   "scale": "linear",
+   "level": "6",
+   "formula": "max over circuits of the number of circuits around it",
+   "description": "The most circuits enclosing any one circuit at level 6. Circuits cut open by the patch edge enclose nothing.",
+   "integer": true
+  },
+  {
+   "key": "nestSum4",
+   "label": "Nest sum at level 4",
+   "group": "Nesting",
+   "lo": 0,
+   "hi": 24,
+   "scale": "log2",
+   "level": "4",
+   "formula": "sum over circuits of the number of circuits around it",
+   "description": "Every circuit's depth added up at level 4.",
+   "integer": true
+  },
+  {
+   "key": "nestSum",
+   "label": "Nest sum at level 6",
+   "group": "Nesting",
+   "lo": 0,
+   "hi": 24,
+   "scale": "log2",
+   "level": "6",
+   "formula": "sum over circuits of the number of circuits around it",
+   "description": "Every circuit's depth added up at level 6: +1 for every circuit inside another circuit, counted once for each circuit around it.",
+   "integer": true
+  },
+  {
+   "key": "nested",
+   "label": "Circuits inside another",
+   "group": "Nesting",
+   "lo": 0,
+   "hi": 20,
+   "scale": "log2",
+   "level": "6",
+   "formula": "count of circuits with depth at least 1",
+   "description": "How many circuits sit inside at least one other circuit at level 6.",
+   "integer": true
+  },
+  {
+   "key": "nestGrowth",
+   "label": "Nest sum: growth",
+   "group": "Nesting",
+   "lo": 0,
+   "hi": 3,
+   "scale": "linear",
+   "level": "4 → 6",
+   "formula": "log((1 + nest sum₆) / (1 + nest sum₄)) / log(N₆ / N₄)",
+   "description": "How fast nesting grows with the patch. 1 means the nest sum grows in step with the tile count, as it does when circuits of every size keep nesting; above 1, depth keeps increasing too. The +1 keeps patterns without nesting at 0."
   }
  ],
  "blocks": [
@@ -288,5 +590,47 @@
    "offset": 625854
   }
  ],
- "levels": "Growth from level 4 to level 6; everything else at level 6."
+ "levels": "Growth from level 4 to level 6; everything else at level 6 unless the field says otherwise.",
+ "thresholds": {
+  "GROW": {
+   "value": 0.5,
+   "meaning": "gC or gO at or above this: the strand keeps growing with the patch"
+  },
+  "STATIC": {
+   "value": 0.3,
+   "meaning": "below this: it has stopped growing"
+  },
+  "LINE_G": {
+   "value": 0.9,
+   "meaning": "an open strand growing like N^1 or faster is a space-filling infinite line"
+  },
+  "LINE_FO": {
+   "value": 0.5,
+   "meaning": "...and open strands must carry at least this share of all segments"
+  },
+  "SLIVER": {
+   "value": 4,
+   "meaning": "open strands at least this elongated are cut-offs along the patch edge, not lines"
+  },
+  "OFILL": {
+   "value": 0.35,
+   "meaning": "...and a line fills its hull; a cut-open triangle outline does not"
+  },
+  "FILL": {
+   "value": 0.45,
+   "meaning": "a circuit covering this share of its hull is space-filling"
+  },
+  "TRI": {
+   "value": 0.8,
+   "meaning": "hull area over the smallest enclosing equilateral triangle: triangular at or above this"
+  },
+  "FAT": {
+   "value": 0.35,
+   "meaning": "enclosed area over hull area: a triangle outline encloses at least this much"
+  },
+  "THIN": {
+   "value": 0.3,
+   "meaning": "enclosed area over hull area: a thin thread encloses less than this"
+  }
+ }
 }

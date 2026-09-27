@@ -159,7 +159,7 @@ FIELDS = [
     F('nested', 'Circuits inside another', NESTING, 0, 20, 'log2', '6',
       'count of circuits with depth at least 1',
       'How many circuits sit inside at least one other circuit at level 6.', integer=True),
-    F('nestGrowth', 'Nest sum: growth', NESTING, 0, 2.5, 'linear', '4 → 6',
+    F('nestGrowth', 'Nest sum: growth', NESTING, 0, 3, 'linear', '4 → 6',
       'log((1 + nest sum₆) / (1 + nest sum₄)) / log(N₆ / N₄)',
       'How fast nesting grows with the patch. 1 means the nest sum grows in step with the tile count, as it does '
       'when circuits of every size keep nesting; above 1, depth keeps increasing too. The +1 keeps patterns '
