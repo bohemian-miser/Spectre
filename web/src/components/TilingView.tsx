@@ -52,6 +52,8 @@ export interface TilingViewProps {
    * would visually flip the scene without this (default true, DESIGN.md §3.4).
    */
   readonly stabilizeChirality?: boolean;
+  /** Lay a 'spectre-iso' patch over its hexagon patch (see `buildTilingModel`). */
+  readonly alignToHex?: boolean;
 
   /** Screen-space camera; identity when omitted. */
   readonly camera?: Camera;
@@ -86,6 +88,7 @@ export function TilingView(props: TilingViewProps): JSX.Element {
     selectedEdges,
     markOddTiles = false,
     stabilizeChirality = true,
+    alignToHex = false,
     camera,
     width = '100%',
     height = '100%',
@@ -100,8 +103,8 @@ export function TilingView(props: TilingViewProps): JSX.Element {
   const prefix = useMemo(() => idPrefix ?? `tv${++uid}`, [idPrefix]);
 
   const model = useMemo(
-    () => buildTilingModel({ family, rootTile, level, curvy, stabilizeChirality }),
-    [family, rootTile, level, curvy, stabilizeChirality],
+    () => buildTilingModel({ family, rootTile, level, curvy, stabilizeChirality, alignToHex }),
+    [family, rootTile, level, curvy, stabilizeChirality, alignToHex],
   );
   useEffect(() => {
     onModel?.(model);

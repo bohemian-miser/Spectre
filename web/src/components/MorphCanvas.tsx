@@ -5,6 +5,11 @@
  * Every tile's vertices and every strand's ends are interpolated in world
  * space, and the camera glides from the view the user was looking at to the
  * one the other shape will open with. One Canvas2D pass per frame.
+ *
+ * Both ends of the morph are in the hexagons' frame (the Spectre side is
+ * fitted over them, `morph.align`), so the pass runs under the hexagon view
+ * transform. The Spectre view draws its strokes in its own units, which the
+ * fit scales, so the stroke widths glide to meet them.
  */
 
 import { useEffect, useRef } from 'react';
@@ -60,6 +65,9 @@ export function MorphCanvas(props: MorphCanvasProps): JSX.Element {
     canvas.width = Math.round(w * dpr);
     canvas.height = Math.round(h * dpr);
 
+    // What the fit does to a Spectre unit: the Spectre view's strokes are that much thinner.
+    const unit = Math.hypot(morph.align[0], morph.align[3]) || 1;
+
     // Group strands by colour once: one stroke per colour per frame.
     const byColor = new Map<string, number[]>();
     morph.chords.forEach((c, i) => {
@@ -88,9 +96,10 @@ export function MorphCanvas(props: MorphCanvasProps): JSX.Element {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.setTransform(dpr * a, dpr * b, dpr * c, dpr * d, dpr * tx, dpr * ty);
       const lerp = (x: number, y: number) => x + (y - x) * t;
+      const stroke = lerp(1, unit);
 
       const outlines = p.showOutlines && cam.scale * dpr > 1.2;
-      ctx.lineWidth = 0.08;
+      ctx.lineWidth = 0.08 * stroke;
       ctx.lineJoin = 'round';
       ctx.strokeStyle = 'rgba(0,0,0,0.85)';
       for (const tile of morph.tiles) {
@@ -107,7 +116,7 @@ export function MorphCanvas(props: MorphCanvasProps): JSX.Element {
       }
 
       if (p.showLines) {
-        ctx.lineWidth = p.strokeWidth;
+        ctx.lineWidth = p.strokeWidth * stroke;
         ctx.lineCap = 'round';
         for (const [color, list] of byColor) {
           ctx.beginPath();

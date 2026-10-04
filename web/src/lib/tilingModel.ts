@@ -15,6 +15,7 @@ import {
   countTiles,
   edgeLabels,
   flatten,
+  hexSpectreAlignment,
   leafOrder,
   leafPts,
   levelMirror,
@@ -171,6 +172,14 @@ export interface TilingModelOptions {
    * view pre-multiplies `levelMirror(level)` to keep stepping visually stable.
    */
   readonly stabilizeChirality?: boolean;
+  /**
+   * For the 'spectre-iso' drawing of a hexagon rule: lay the patch over the
+   * hexagon patch of the same root and level (`hexSpectreAlignment`), so the
+   * two shapes of one rule sit in one frame — no turn or jump between them,
+   * and the morph (`buildHexSpectreMorph`) ends exactly on this view. Ignored
+   * for any other family.
+   */
+  readonly alignToHex?: boolean;
 }
 
 export interface TilingModel {
@@ -182,7 +191,7 @@ export interface TilingModel {
   readonly instances: readonly TileInstance[];
   /** One `<defs>` outline per distinct leaf type present. */
   readonly defs: readonly TileDef[];
-  /** Outer view transform (identity unless chirality stabilization is on). */
+  /** Outer view transform (identity unless chirality stabilization or `alignToHex` is on). */
   readonly viewTransform: Affine;
   /** Bounds AFTER `viewTransform` — what the camera should fit. */
   readonly bounds: Box;
@@ -195,14 +204,18 @@ const modelCache = new Map<string, TilingModel>();
 export function buildTilingModel(opts: TilingModelOptions): TilingModel {
   const curvy = opts.curvy ?? false;
   const stabilize = opts.stabilizeChirality ?? true;
+  const align = opts.alignToHex === true && opts.family === 'spectre-iso';
   const level = Math.max(0, Math.floor(opts.level));
-  const key = `${opts.family}/${opts.rootTile}/${level}/${curvy ? 'c' : 's'}/${stabilize ? 'm' : 'r'}`;
+  const key = `${opts.family}/${opts.rootTile}/${level}/${curvy ? 'c' : 's'}/${stabilize ? 'm' : 'r'}/${align ? 'a' : 'o'}`;
   const hit = modelCache.get(key);
   if (hit) return hit;
 
   const sys = buildSystem(opts.family, level);
   const root = sys[opts.rootTile] ?? sys['Delta'];
-  const viewTransform = stabilize ? levelMirror(level) : IDENT;
+  // The mirror is applied after the fit: the fit is between the two patches
+  // as built, and both are mirrored the same way at a level.
+  const fit = align ? hexSpectreAlignment(opts.rootTile, level) : IDENT;
+  const viewTransform = mul(stabilize ? levelMirror(level) : IDENT, fit);
   const instances = flatten(root);
 
   const seen = new Set<TileTypeId>();

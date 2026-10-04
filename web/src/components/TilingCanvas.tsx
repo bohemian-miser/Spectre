@@ -37,6 +37,8 @@ export interface TilingCanvasProps {
   readonly showDots?: boolean;
   readonly selectedEdges?: ReadonlySet<number>;
   readonly stabilizeChirality?: boolean;
+  /** Lay a 'spectre-iso' patch over its hexagon patch (see `buildTilingModel`). */
+  readonly alignToHex?: boolean;
   /** Omit to auto-fit the tiling into the element. */
   readonly camera?: Camera;
   readonly circuits?: readonly Path[];
@@ -92,6 +94,7 @@ export function TilingCanvas(props: TilingCanvasProps): JSX.Element {
     showDots = false,
     selectedEdges,
     stabilizeChirality = true,
+    alignToHex = false,
     camera,
     circuits,
     tails,
@@ -108,8 +111,8 @@ export function TilingCanvas(props: TilingCanvasProps): JSX.Element {
   const size = useElementSize(hostRef);
 
   const model = useMemo(
-    () => buildTilingModel({ family, rootTile, level, curvy, stabilizeChirality }),
-    [family, rootTile, level, curvy, stabilizeChirality],
+    () => buildTilingModel({ family, rootTile, level, curvy, stabilizeChirality, alignToHex }),
+    [family, rootTile, level, curvy, stabilizeChirality, alignToHex],
   );
 
   const overlay = useMemo(

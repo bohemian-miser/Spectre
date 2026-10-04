@@ -2,6 +2,17 @@
  * Hexagons ↔ Spectres morph: where every Spectre vertex and strand end sits in
  * the hexagon tiling, so a patch can be animated from one shape to the other.
  *
+ * The two patches come out of the substitution turned ~21° against each other
+ * and at different scales (a hexagon's edge is the Spectre's, but the Spectre
+ * patch is 1/0.53 wider). Left alone, a morph would spin the whole patch as
+ * it went. So the Spectre patch is fitted over the hexagon patch first
+ * (`hexSpectreAlignment`: the least-squares similarity over the tiles'
+ * centres), and everything on the Spectre side is given in the hexagons'
+ * coordinates. What the fit leaves is local — under half a unit per tile —
+ * so the morph is each vertex gliding into place and the camera can stay put.
+ * The Explorer draws its Spectre view of a hexagon rule under the same fit
+ * (`buildTilingModel`'s `alignToHex`), so the morph ends on that view.
+ *
  * Both families come out of the same substitution tree, so a tile has the
  * same id in both (the hexagon `Gamma` at `P` is the Mystic `P.0` + `P.1`),
  * and under the 'spectre-iso' labels a Spectre seam and its hexagon edge
@@ -21,7 +32,7 @@
 import { analyze, segmentKey, type Segment } from './circuits';
 import { DEFAULT_CONTRACTS, connectionPoints, parseEdgeLabel, type EdgeContracts } from './edges';
 import { edgeLabels, leafPts, type TileTypeId } from './families';
-import { lerpPt, transPt, type Pt } from './geom';
+import { lerpPt, mul, transPt, type Affine, type Pt } from './geom';
 import { HEX_RULE_SPECTRE_FAMILY, hexRuleSpectreDrawing } from './hexRule';
 import { buildSystem, flatten, type TileInstance } from './tiles';
 
@@ -46,6 +57,12 @@ export interface MorphChord {
 export interface HexSpectreMorph {
   readonly tiles: readonly MorphTile[];
   readonly chords: readonly MorphChord[];
+  /**
+   * The similarity that fitted the Spectre patch over the hexagon patch:
+   * Spectre world → hexagon world. Every `to` above is already through it
+   * (the identity when `align` was off).
+   */
+  readonly align: Affine;
 }
 
 export interface HexSpectreMorphInput {
@@ -58,6 +75,11 @@ export interface HexSpectreMorphInput {
   readonly rainbowTails?: boolean;
   /** Skip the strands (no analysis is run). */
   readonly lines?: boolean;
+  /**
+   * Fit the Spectre side over the hexagons (default true), so the morph has
+   * no net rotation or scale. Off, both sides are the patches as built.
+   */
+  readonly align?: boolean;
 }
 
 const key = (p: Pt): string => `${Math.round(p.x * 1000)},${Math.round(p.y * 1000)}`;
@@ -80,6 +102,96 @@ class Mean {
 
 const hexIdOf = (inst: TileInstance): string =>
   inst.type === 'Gamma1' || inst.type === 'Gamma2' ? inst.id.replace(/\.[01]$/, '') : inst.id;
+
+/**
+ * The least-squares similarity (rotation, uniform scale, shift) taking points
+ * `b` on to points `a`, as an affine.
+ */
+export function fitSimilarity(a: readonly Pt[], b: readonly Pt[]): Affine {
+  const n = Math.min(a.length, b.length);
+  if (n === 0) return [1, 0, 0, 0, 1, 0];
+  let max = 0, may = 0, mbx = 0, mby = 0;
+  for (let i = 0; i < n; i++) {
+    max += a[i].x;
+    may += a[i].y;
+    mbx += b[i].x;
+    mby += b[i].y;
+  }
+  max /= n;
+  may /= n;
+  mbx /= n;
+  mby /= n;
+  let sxx = 0, sxy = 0, nb = 0;
+  for (let i = 0; i < n; i++) {
+    const ax = a[i].x - max, ay = a[i].y - may, bx = b[i].x - mbx, by = b[i].y - mby;
+    sxx += bx * ax + by * ay;
+    sxy += bx * ay - by * ax;
+    nb += bx * bx + by * by;
+  }
+  if (nb === 0) return [1, 0, max - mbx, 0, 1, may - mby];
+  const theta = Math.atan2(sxy, sxx);
+  const s = Math.hypot(sxx, sxy) / nb;
+  const c = s * Math.cos(theta);
+  const d = s * Math.sin(theta);
+  return [c, -d, max - (c * mbx - d * mby), d, c, may - (d * mbx + c * mby)];
+}
+
+const alignCache = new Map<string, Affine>();
+
+/**
+ * The similarity that lays the 'spectre-iso' patch of `rootTile` at `level`
+ * over the hexagon patch: Spectre world → hexagon world. Fitted by least
+ * squares over the tiles' centres (a Mystic's two halves against their
+ * Gamma), it converges with level to ~21.3° and ×0.530; what it leaves is
+ * under half a unit per tile. Memoized.
+ */
+export function hexSpectreAlignment(rootTile: TileTypeId, level: number): Affine {
+  const lv = Math.max(0, Math.floor(level));
+  const key = `${rootTile}:${lv}`;
+  const hit = alignCache.get(key);
+  if (hit) return hit;
+  const hexSys = buildSystem('hex', lv);
+  const specSys = buildSystem(HEX_RULE_SPECTRE_FAMILY, lv);
+  const hex = flatten(hexSys[rootTile] ?? hexSys['Delta']);
+  const spec = flatten(specSys[rootTile] ?? specSys['Delta']);
+  // An affine map keeps centroids, so a tile's centre is its transform on the leaf's.
+  const centreOf = (pts: readonly Pt[]): Pt => {
+    let x = 0, y = 0;
+    for (const p of pts) {
+      x += p.x / pts.length;
+      y += p.y / pts.length;
+    }
+    return { x, y };
+  };
+  const hexCentre = centreOf(leafPts('hex', 'Delta'));
+  const specCentre = centreOf(leafPts(HEX_RULE_SPECTRE_FAMILY, 'Delta'));
+  const hexById = new Map(hex.map((i) => [i.id, transPt(i.xform, hexCentre)]));
+  const a: Pt[] = [];
+  const b: Pt[] = [];
+  const halves = new Map<string, Pt>();
+  for (const inst of spec) {
+    const h = hexById.get(hexIdOf(inst));
+    if (!h) continue;
+    const c = transPt(inst.xform, specCentre);
+    if (inst.type === 'Gamma1' || inst.type === 'Gamma2') {
+      // The Mystic's centre: the mean of its halves', once both are in.
+      const id = hexIdOf(inst);
+      const other = halves.get(id);
+      if (!other) {
+        halves.set(id, c);
+        continue;
+      }
+      a.push(h);
+      b.push({ x: (c.x + other.x) / 2, y: (c.y + other.y) / 2 });
+      continue;
+    }
+    a.push(h);
+    b.push(c);
+  }
+  const out = fitSimilarity(a, b);
+  alignCache.set(key, out);
+  return out;
+}
 
 /**
  * For each vertex of a Spectre leaf, its hexagon-local home, or null when it
@@ -129,10 +241,13 @@ export function buildHexSpectreMorph(input: HexSpectreMorphInput): HexSpectreMor
   const specRoot = specSys[input.rootTile] ?? specSys['Delta'];
   const hexById = new Map(flatten(hexRoot).map((i) => [i.id, i]));
   const spec = flatten(specRoot);
+  // The Spectre side, fitted over the hexagons (see the header).
+  const align: Affine = input.align === false ? [1, 0, 0, 0, 1, 0] : hexSpectreAlignment(input.rootTile, input.level);
+  const specXform = spec.map((inst) => mul(align, inst.xform));
 
   // --- vertices -------------------------------------------------------------
   const placed = new Mean();
-  const worldPts = spec.map((inst) => leafPts(HEX_RULE_SPECTRE_FAMILY, inst.type).map((p) => transPt(inst.xform, p)));
+  const worldPts = spec.map((inst, t) => leafPts(HEX_RULE_SPECTRE_FAMILY, inst.type).map((p) => transPt(specXform[t], p)));
   spec.forEach((inst, t) => {
     const hex = hexById.get(hexIdOf(inst));
     if (!hex) return;
@@ -173,7 +288,7 @@ export function buildHexSpectreMorph(input: HexSpectreMorphInput): HexSpectreMor
     return { type: inst.type, from, to };
   });
 
-  if (input.lines === false || selected.size === 0) return { tiles, chords: [] };
+  if (input.lines === false || selected.size === 0) return { tiles, chords: [], align };
 
   // --- strands --------------------------------------------------------------
   const drawing = hexRuleSpectreDrawing(selected, input.matchingIndexByType, contracts);
@@ -191,15 +306,15 @@ export function buildHexSpectreMorph(input: HexSpectreMorphInput): HexSpectreMor
   // Hexagon dot of every Spectre dot that has one; Gamma2's `6` | `-6` pick
   // theirs up from the Delta and Sigma across the seam.
   const dotHome = new Mean();
-  for (const inst of spec) {
+  spec.forEach((inst, t) => {
     const hex = hexById.get(hexIdOf(inst));
-    if (!hex) continue;
+    if (!hex) return;
     const homes = hexDotsOf(hex.type);
     for (const c of connectionPoints(HEX_RULE_SPECTRE_FAMILY, inst.type, selected, contracts)) {
       const h = homes.get(tagOf(c.edge));
-      if (h) dotHome.add(key(transPt(inst.xform, c.pt)), transPt(hex.xform, h));
+      if (h) dotHome.add(key(transPt(specXform[t], c.pt)), transPt(hex.xform, h));
     }
-  }
+  });
   /** A strand end that is not a dot lies on its tile's outline: ride it. */
   const onOutline = (t: number, p: Pt): Pt => {
     const pts = worldPts[t];
@@ -220,15 +335,16 @@ export function buildHexSpectreMorph(input: HexSpectreMorphInput): HexSpectreMor
   const ends: [Pt, Pt][] = [];
   spec.forEach((inst, t) => {
     for (const [a, b] of drawing.chords[inst.type] ?? []) {
-      const wa = transPt(inst.xform, a);
-      const wb = transPt(inst.xform, b);
+      const wa = transPt(specXform[t], a);
+      const wb = transPt(specXform[t], b);
       collected.push([wa, wb]);
       ends.push([dotHome.get(key(wa)) ?? onOutline(t, wa), dotHome.get(key(wb)) ?? onOutline(t, wb)]);
     }
   });
 
   // Colours from the same analysis the Spectre view runs (hexagon lengths);
-  // `analyze` keeps collection order, which the loop above reproduces.
+  // `analyze` keeps collection order, which the loop above reproduces. It
+  // runs on the patch as built: colours don't care where it sits.
   const analysis = analyze(
     {
       family: HEX_RULE_SPECTRE_FAMILY,
@@ -250,5 +366,5 @@ export function buildHexSpectreMorph(input: HexSpectreMorphInput): HexSpectreMor
       color: (welded && analysis.segmentColor.get(segmentKey(welded))) ?? '#444',
     };
   });
-  return { tiles, chords };
+  return { tiles, chords, align };
 }
