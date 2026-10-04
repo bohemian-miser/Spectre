@@ -48,6 +48,28 @@ describe('outline memoization', () => {
 });
 
 describe('buildTilingModel', () => {
+  it('alignToHex lays the spectre-iso patch over the hexagon patch', () => {
+    const hex = buildTilingModel({ family: 'hex', rootTile: 'Delta', level: 3 });
+    const plain = buildTilingModel({ family: 'spectre-iso', rootTile: 'Delta', level: 3 });
+    const aligned = buildTilingModel({ family: 'spectre-iso', rootTile: 'Delta', level: 3, alignToHex: true });
+    expect(aligned).not.toBe(plain);
+    expect(aligned.instances).toHaveLength(plain.instances.length);
+    expect(aligned.instances[0].xform).toEqual(plain.instances[0].xform);
+    // Same handedness, and the bounds now lie where the hexagons' do: the
+    // same centre to within a few units, and a box only as much bigger as
+    // the Spectres' spikier edge makes it (the patch as built is ×1.9 wider).
+    expect(Math.sign(det(aligned.viewTransform))).toBe(Math.sign(det(hex.viewTransform)));
+    const span = (b: { min: { x: number; y: number }; max: { x: number; y: number } }) => Math.max(b.max.x - b.min.x, b.max.y - b.min.y);
+    expect(span(aligned.bounds) / span(hex.bounds)).toBeGreaterThan(1);
+    expect(span(aligned.bounds) / span(hex.bounds)).toBeLessThan(1.5);
+    expect(span(plain.bounds) / span(hex.bounds)).toBeGreaterThan(1.5);
+    for (const k of ['x', 'y'] as const) {
+      expect(Math.abs((aligned.bounds.min[k] + aligned.bounds.max[k]) / 2 - (hex.bounds.min[k] + hex.bounds.max[k]) / 2)).toBeLessThan(3);
+    }
+    // Any other family ignores it.
+    expect(buildTilingModel({ family: 'hex', rootTile: 'Delta', level: 3, alignToHex: true })).toBe(hex);
+  });
+
   it('matches the DESIGN.md tile-count budget for spectre Delta', () => {
     const expected = [1, 9, 71, 559, 4401];
     expected.forEach((count, level) => {

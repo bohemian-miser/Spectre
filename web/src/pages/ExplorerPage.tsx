@@ -153,7 +153,9 @@ const BASE_CIRCUIT_STROKE = 0.12;
 /**
  * Deepest rooted level the hexagons ↔ Spectres switch animates at. Building
  * the morph is ~0.1 s at level 3 and ~0.5 s at level 4 (it runs the circuit
- * analysis for the strand colours); past that the switch is instant.
+ * analysis for the strand colours); past that the switch is instant — and
+ * still in place, since the Spectre view is laid over the hexagons
+ * (`alignToHex`).
  */
 const MORPH_MAX_LEVEL = 4;
 
@@ -290,8 +292,10 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
         level: modelLevel,
         curvy,
         stabilizeChirality: true,
+        // The Spectres sit over the hexagons they stand for: one frame for both shapes.
+        alignToHex: asSpectres,
       }),
-    [drawFamily, state.rootTile, modelLevel, curvy],
+    [drawFamily, asSpectres, state.rootTile, modelLevel, curvy],
   );
 
   const matchingRecord = useMemo(
@@ -449,13 +453,27 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
       api.size.height > 0 &&
       !prefersReducedMotion()
     ) {
-      const target = buildTilingModel({
-        family: shape === 'spectre' ? HEX_RULE_SPECTRE_FAMILY : 'hex',
+      // The morph is given in the hexagons' frame on both sides (the Spectre
+      // view is fitted over them), so it plays under the hexagon view
+      // transform and ends on the view the other shape opens with.
+      const hexModel = buildTilingModel({
+        family: 'hex',
         rootTile: state.rootTile,
         level: renderLevel,
         curvy: false,
         stabilizeChirality: true,
       });
+      const target =
+        shape === 'spectre'
+          ? buildTilingModel({
+              family: HEX_RULE_SPECTRE_FAMILY,
+              rootTile: state.rootTile,
+              level: renderLevel,
+              curvy: false,
+              stabilizeChirality: true,
+              alignToHex: true,
+            })
+          : hexModel;
       setMorph({
         data: buildHexSpectreMorph({
           rootTile: state.rootTile,
@@ -469,7 +487,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
         direction: shape === 'spectre' ? 'toSpectre' : 'toHex',
         from: api.camera,
         to: pinned ? api.camera : fitToBounds(target.bounds, api.size),
-        viewTransform: target.viewTransform,
+        viewTransform: hexModel.viewTransform,
       });
     }
     dispatch({ type: 'setShape', shape });
@@ -1461,6 +1479,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
                 // Mystic halves each see an odd count under a hexagon rule;
                 // the Mystic as a whole is even.
                 markOddTiles={!asSpectres}
+                alignToHex={asSpectres}
                 idPrefix="ex"
               >
                 {overlayDefs.length ? (
@@ -1514,6 +1533,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
                 showBackgrounds={hasFlag(state, FLAG.BACKGROUNDS)}
                 showOutlines={hasFlag(state, FLAG.OUTLINES)}
                 showDots={hasFlag(state, FLAG.DOTS)}
+                alignToHex={asSpectres}
                 circuits={linesOn ? analysis.result?.circuits : undefined}
                 tails={linesOn ? analysis.result?.tails : undefined}
                 circuitColorByLength={analysis.result?.circuitColors}
