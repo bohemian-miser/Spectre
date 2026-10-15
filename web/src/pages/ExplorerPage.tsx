@@ -40,6 +40,7 @@ import {
   mul,
   pathLength,
   svgMatrixString,
+  type DualGraph,
   type Path,
   type Rgb,
   type TileFamilyId,
@@ -103,6 +104,7 @@ import {
 } from '../lib/viewport';
 import { tileColor } from '../lib/palette';
 import { MorphCanvas } from '../components/MorphCanvas';
+import { DualLayer, dualDepthColor } from '../components/DualLayer';
 import { sceneFilename, serializeSceneSvg } from '../lib/exportScene';
 import { downloadBlob, downloadText, svgTextToPngBlob } from './sceneDownload';
 import { createCamera, levelForScale, scaleForLevel } from './map/camera';
@@ -318,6 +320,9 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
             matchingIndexByType: matchingRecord,
             contracts: state.contracts,
             rainbowTails: hasFlag(state, FLAG.RAINBOW_TAILS),
+            dual: hasFlag(state, FLAG.DUAL),
+            // Region fills only where the view is SVG; past it the dual is stats only.
+            dualPieces: hasFlag(state, FLAG.DUAL) && state.level <= SVG_MAX_LEVEL,
           }
         : null,
     [
@@ -697,6 +702,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
 
   const tileCount = model.tileCount;
   const heavy = !infinite && state.level > SVG_MAX_LEVEL;
+  const dualOn = hasFlag(state, FLAG.DUAL);
   /** Tiles a level-L patch holds — the count the infinite view targets. */
   const levelTiles = Math.round(SUBSTITUTION_GROWTH ** state.level);
 
@@ -1377,6 +1383,12 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
                 onSelectLength={onSelectLength}
                 onClearLengths={clearLengths}
               />
+              {dualOn && linesOn ? (
+                <DualStats
+                  dual={analysis.result?.dual ?? null}
+                  drawn={!heavy}
+                />
+              ) : null}
               {highlightLengths.size ? (
                 <div className="control-row length-focus">
                   <button type="button" onClick={nextExample}>
@@ -1492,6 +1504,11 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
                     {overlayUses}
                   </g>
                 ) : null}
+                {analysis.result?.dual && linesOn && dualOn ? (
+                  <g transform={svgMatrixString(model.viewTransform)}>
+                    <DualLayer dual={analysis.result.dual} showGraph={false} />
+                  </g>
+                ) : null}
                 {analysis.result && linesOn ? (
                   <g transform={svgMatrixString(model.viewTransform)}>
                     <CircuitLayer
@@ -1504,6 +1521,15 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
                       tailEndMarkers={state.level <= 3}
                       maxRecords={40000}
                       strokeWidth={BASE_CIRCUIT_STROKE * lineWidth}
+                    />
+                  </g>
+                ) : null}
+                {analysis.result?.dual && linesOn && dualOn ? (
+                  <g transform={svgMatrixString(model.viewTransform)}>
+                    <DualLayer
+                      dual={analysis.result.dual}
+                      showFills={false}
+                      strokeWidth={BASE_CIRCUIT_STROKE * lineWidth * 0.6}
                     />
                   </g>
                 ) : null}
@@ -1729,3 +1755,64 @@ function InfiniteHud(props: {
 }
 
 export default ExplorerPage;
+
+/**
+ * Readout for the dual of the strand graph: one node per region between the
+ * strands, one edge per pair of regions a strand separates.
+ */
+function DualStats(props: { dual: DualGraph | null; drawn: boolean }): JSX.Element {
+  const { dual, drawn } = props;
+  if (!dual) return <p className="muted">Building the dual…</p>;
+  const depthCounts = new Map<number, number>();
+  for (const d of dual.regionDepth) depthCounts.set(d, (depthCounts.get(d) ?? 0) + 1);
+  const edgeRegions = dual.regionBoundary.reduce((a, b) => a + b, 0);
+  return (
+    <div className="dual-stats" data-testid="dual-stats">
+      <h4>Dual graph</h4>
+      <p className="muted">
+        One node per region between the strands; an edge wherever a strand separates two
+        regions. Each region has its own fill; a node’s colour is its depth, the strands
+        crossed to reach it from the patch edge.
+      </p>
+      <dl className="dual-stats-grid">
+        <dt>Regions</dt>
+        <dd data-testid="dual-regions">{dual.nRegions.toLocaleString()}</dd>
+        <dt>Dual edges</dt>
+        <dd data-testid="dual-edges">{dual.edges.length.toLocaleString()}</dd>
+        <dt>Shape</dt>
+        <dd data-testid="dual-shape">
+          {dual.isTree ? 'tree' : `${dual.cycleRank.toLocaleString()} independent cycle${dual.cycleRank === 1 ? '' : 's'}`}
+        </dd>
+        <dt>On the patch edge</dt>
+        <dd>{edgeRegions.toLocaleString()}</dd>
+        <dt>Max depth</dt>
+        <dd data-testid="dual-depth">{dual.maxDepth}</dd>
+        {dual.danglingChords ? (
+          <>
+            <dt>Dead-end segments</dt>
+            <dd>{dual.danglingChords.toLocaleString()}</dd>
+          </>
+        ) : null}
+        {dual.badTiles ? (
+          <>
+            <dt>Tiles with crossing chords</dt>
+            <dd>{dual.badTiles.toLocaleString()} (left uncut)</dd>
+          </>
+        ) : null}
+      </dl>
+      <div className="dual-depths">
+        {[...depthCounts.entries()]
+          .sort((a, b) => a[0] - b[0])
+          .map(([depth, count]) => (
+            <span key={depth} className="dual-depth-chip" title={`${count} regions at depth ${depth}`}>
+              <span className="dual-swatch" style={{ background: dualDepthColor(depth) }} />
+              {depth}: {count.toLocaleString()}
+            </span>
+          ))}
+      </div>
+      {drawn ? null : (
+        <p className="muted">Above level {SVG_MAX_LEVEL} the dual is counted but not drawn.</p>
+      )}
+    </div>
+  );
+}

@@ -526,3 +526,44 @@ button {
 .info-tip-body p:last-child {
   margin-bottom: 0;
 }
+
+/* Dual of the strand graph (Explorer analysis panel). */
+.dual-stats {
+  margin-top: 10px;
+}
+.dual-stats h4 {
+  margin: 0 0 4px;
+}
+.dual-stats-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 10px;
+  margin: 6px 0;
+}
+.dual-stats-grid dt {
+  color: var(--muted);
+}
+.dual-stats-grid dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+.dual-depths {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.dual-depth-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 0.85em;
+  font-variant-numeric: tabular-nums;
+}
+.dual-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}

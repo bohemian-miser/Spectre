@@ -23,6 +23,7 @@ const ITEMS: readonly { flag: number; label: string }[] = [
   { flag: FLAG.CURVY, label: 'Curvy tiles' },
   { flag: FLAG.NON_CROSSING_ONLY, label: 'Non-crossing only' },
   { flag: FLAG.HIDE_STATS, label: 'Hide stats' },
+  { flag: FLAG.DUAL, label: 'Dual graph' },
 ];
 
 export function DisplayToggles(props: DisplayTogglesProps): JSX.Element {
