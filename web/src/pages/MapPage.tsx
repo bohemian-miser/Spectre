@@ -131,6 +131,7 @@ export function MapPage(props: MapPageProps): JSX.Element {
   const [keepCircuits, setKeepCircuits] = useState<boolean>(initial.keepCircuits ?? true);
   const [keepTails, setKeepTails] = useState<boolean>(initial.keepTails ?? true);
   const [findCircuits, setFindCircuits] = useState<boolean>(initial.findCircuits ?? true);
+  const [regions, setRegions] = useState<boolean>(initial.regions ?? false);
   const [persistFound, setPersistFound] = useState<boolean>(initial.persistFound ?? true);
   const [showTicker, setShowTicker] = useState<boolean>(initial.showTicker ?? true);
   const [showHud, setShowHud] = useState<boolean>(initial.showHud ?? true);
@@ -206,6 +207,7 @@ export function MapPage(props: MapPageProps): JSX.Element {
     keepCircuits,
     keepTails,
     findCircuits,
+    regions,
     persistFound,
     showTicker,
     showHud,
@@ -232,6 +234,7 @@ export function MapPage(props: MapPageProps): JSX.Element {
     keepCircuits,
     keepTails,
     findCircuits,
+    regions,
     persistFound,
     showTicker,
     showHud,
@@ -292,6 +295,7 @@ export function MapPage(props: MapPageProps): JSX.Element {
       keepCircuits: w.keepCircuits,
       keepTails: w.keepTails,
       findCircuits: w.findCircuits,
+      regions: w.regions,
       persistFound: w.persistFound,
       showTicker: w.showTicker,
       showHud: w.showHud,
@@ -354,6 +358,7 @@ export function MapPage(props: MapPageProps): JSX.Element {
     keepCircuits,
     keepTails,
     findCircuits,
+    regions,
     persistFound,
     showTicker,
     showHud,
@@ -393,6 +398,7 @@ export function MapPage(props: MapPageProps): JSX.Element {
         keepCircuits: w.keepCircuits,
         keepTails: w.keepTails,
         findCircuits: w.findCircuits,
+        regions: w.regions,
         persistFound: w.persistFound,
         showTicker: w.showTicker,
         showHud: w.showHud,
@@ -422,6 +428,7 @@ export function MapPage(props: MapPageProps): JSX.Element {
       setKeepCircuits(st.keepCircuits ?? true);
       setKeepTails(st.keepTails ?? true);
       setFindCircuits(st.findCircuits ?? true);
+      setRegions(st.regions ?? false);
       setPersistFound(st.persistFound ?? true);
       setShowTicker(st.showTicker ?? true);
       setShowHud(st.showHud ?? true);
@@ -731,6 +738,17 @@ export function MapPage(props: MapPageProps): JSX.Element {
             <label className="control-row">
               <input
                 type="checkbox"
+                aria-label="Colour each region between the strands"
+                data-testid="map-regions"
+                checked={regions}
+                disabled={!lines}
+                onChange={(e) => setRegions(e.target.checked)}
+              />
+              <span>Region colours</span>
+            </label>
+            <label className="control-row">
+              <input
+                type="checkbox"
                 aria-label="Keep found circuits on screen when zoomed out"
                 data-testid="map-persist-found"
                 checked={persistFound}
@@ -940,6 +958,7 @@ export function MapPage(props: MapPageProps): JSX.Element {
         keepCircuits={lines && trace && keepCircuits}
         keepTails={lines && trace && keepTails}
         findCircuits={lines && findCircuits}
+        regionFill={lines && regions}
         persistFound={persistFound}
         findCeiling={findCeiling}
         foundHold={foundHold}

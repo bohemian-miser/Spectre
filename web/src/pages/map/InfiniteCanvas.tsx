@@ -70,6 +70,7 @@ import {
 } from './camera';
 import { CANVAS2D_MAX_INSTANCES } from './canvasRenderer';
 import type { LeafChordTable } from './chords';
+import { buildRegionMesh, createRegionTracker, type RegionMesh, type RegionTracker } from './regionFill';
 import {
   buildTransitionIndex,
   chainCounts,
@@ -421,6 +422,12 @@ export interface InfiniteCanvasProps {
   readonly chords?: LeafChordTable | null;
   readonly style?: MapRenderStyle | null;
   /**
+   * Fill every region between the strands with its own colour (leaf cuts
+   * only; needs `chords`). Colours are tracked across cuts — see
+   * `regionFill.ts` — so a region keeps its colour as the camera moves.
+   */
+  readonly regionFill?: boolean;
+  /**
    * Tapping the canvas traces the strand under the pointer. Needs `chords`:
    * without a strand rule there is no line to follow. Turning it off drops any
    * trace in progress.
@@ -547,6 +554,7 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
     budget,
     chords = null,
     style = null,
+    regionFill = false,
     trace = false,
     follow = false,
     followHold = null,
@@ -594,6 +602,28 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
   const lastCutRef = useRef<Parameters<MapRenderer['setCut']>[0] | null>(null);
   const chordsRef = useRef<LeafChordTable | null>(chords);
   const styleRef = useRef<MapRenderStyle | null>(style);
+  const regionOnRef = useRef(regionFill);
+  regionOnRef.current = regionFill;
+  const regionTrackerRef = useRef<RegionTracker | null>(null);
+  const regionMeshRef = useRef<RegionMesh | null>(null);
+
+  /**
+   * Recolour the regions of the cut on screen (or clear them). Cheap enough
+   * to run per cut: one map lookup per tile edge piece.
+   */
+  const syncRegionFill = useCallback((): void => {
+    const renderer = rendererRef.current;
+    if (!renderer?.setRegionFill) return;
+    const table = chordsRef.current;
+    const cut = lastCutRef.current;
+    if (!regionOnRef.current || !table || table.chordCount === 0 || !cut || cut.cutLevel !== 0) {
+      renderer.setRegionFill(null);
+      return;
+    }
+    if (!regionMeshRef.current) regionMeshRef.current = buildRegionMesh(table);
+    if (!regionTrackerRef.current) regionTrackerRef.current = createRegionTracker();
+    renderer.setRegionFill(regionTrackerRef.current.colour(cut, regionMeshRef.current));
+  }, []);
   const statusRef = useRef<InfiniteCanvasStatus>({
     mode: 'pending',
     cut: null,
@@ -1542,6 +1572,7 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
         lastCutRef.current = res.cut;
         coveredRef.current = req.view;
         rendererRef.current?.setCut(res.cut);
+        syncRegionFill();
         publish({
           error: null,
           cut: {
@@ -1657,6 +1688,7 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
       renderer.setStyle(styleRef.current);
       renderer.setChords(chordsRef.current);
       if (lastCutRef.current) renderer.setCut(lastCutRef.current);
+      syncRegionFill();
       // A lost context takes the trail's buffers with it; the walk itself lives
       // in world doubles on this side, so it survives and just re-uploads.
       if (trailRef.current) renderer.setTrail(trailGeometry(trailRef.current));
@@ -1781,6 +1813,20 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
     publishTrace();
     scheduleDraw();
   }, [follow, followHold, publishTrace, scheduleDraw]);
+
+  // A new rule cuts the tiles differently (new mesh) and draws different
+  // regions; a new seed is a different world. Either way, start the map over.
+  useEffect(() => {
+    regionMeshRef.current = null;
+    regionTrackerRef.current?.reset();
+    syncRegionFill();
+    scheduleDraw();
+  }, [chords, seed, syncRegionFill, scheduleDraw]);
+
+  useEffect(() => {
+    syncRegionFill();
+    scheduleDraw();
+  }, [regionFill, syncRegionFill, scheduleDraw]);
 
   useEffect(() => {
     styleRef.current = style ?? null;

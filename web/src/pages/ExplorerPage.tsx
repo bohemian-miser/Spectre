@@ -129,6 +129,13 @@ export type OverlayTool = 'cursor' | 'line' | 'erase';
 
 /** SVG renderer ceiling; above this the Canvas2D renderer takes over (§5.2). */
 const SVG_MAX_LEVEL = 4;
+
+/**
+ * Deepest rooted level whose region colours are filled. Piece polygons cost
+ * ~3 per tile; at level 6 that is ~800k polygons, past what is worth shipping
+ * from the worker for a fill.
+ */
+const REGION_FILL_MAX_LEVEL = 5;
 /**
  * Deepest level the rooted view will actually flatten. Tiles grow ≈7.87× per
  * level (level 7 ≈ 2.1M, level 8 ≈ 17M), so this is where materializing stops
@@ -320,9 +327,9 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
             matchingIndexByType: matchingRecord,
             contracts: state.contracts,
             rainbowTails: hasFlag(state, FLAG.RAINBOW_TAILS),
-            dual: hasFlag(state, FLAG.DUAL),
-            // Region fills only where the view is SVG; past it the dual is stats only.
-            dualPieces: hasFlag(state, FLAG.DUAL) && state.level <= SVG_MAX_LEVEL,
+            dual: hasFlag(state, FLAG.DUAL) || hasFlag(state, FLAG.REGIONS),
+            // Region colours need the piece polygons; the dual graph alone does not.
+            dualPieces: hasFlag(state, FLAG.REGIONS) && state.level <= REGION_FILL_MAX_LEVEL,
           }
         : null,
     [
@@ -703,6 +710,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
   const tileCount = model.tileCount;
   const heavy = !infinite && state.level > SVG_MAX_LEVEL;
   const dualOn = hasFlag(state, FLAG.DUAL);
+  const regionsOn = hasFlag(state, FLAG.REGIONS);
   /** Tiles a level-L patch holds — the count the infinite view targets. */
   const levelTiles = Math.round(SUBSTITUTION_GROWTH ** state.level);
 
@@ -1383,6 +1391,14 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
                 onSelectLength={onSelectLength}
                 onClearLengths={clearLengths}
               />
+              {regionsOn && linesOn && !infinite && state.level > REGION_FILL_MAX_LEVEL ? (
+                <p className="muted" data-testid="regions-too-deep">
+                  Region colours are filled up to level {REGION_FILL_MAX_LEVEL}.
+                </p>
+              ) : null}
+              {(regionsOn || dualOn) && !linesOn ? (
+                <p className="muted">Region colours and the dual graph follow the circuit lines.</p>
+              ) : null}
               {dualOn && linesOn ? (
                 <DualStats
                   dual={analysis.result?.dual ?? null}
@@ -1420,6 +1436,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
             keepCircuits={keepCircuitsOn && traceOn && !!infiniteChords}
             keepTails={keepTailsOn && traceOn && !!infiniteChords}
             findCircuits={findOn && !!infiniteChords}
+            regionFill={regionsOn && !!infiniteChords}
             persistFound={persistFoundOn}
             findCeiling={findCeiling}
             foundHold={foundHold}
@@ -1504,7 +1521,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
                     {overlayUses}
                   </g>
                 ) : null}
-                {analysis.result?.dual && linesOn && dualOn ? (
+                {analysis.result?.dual && linesOn && regionsOn ? (
                   <g transform={svgMatrixString(model.viewTransform)}>
                     <DualLayer dual={analysis.result.dual} showGraph={false} />
                   </g>
@@ -1566,6 +1583,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
                 rainbowTails={hasFlag(state, FLAG.RAINBOW_TAILS)}
                 highlightLengths={highlightLengths}
                 strokeWidth={BASE_CIRCUIT_STROKE * lineWidth}
+                regionFill={linesOn && regionsOn ? analysis.result?.dual : undefined}
               />
             )}
           </PanZoom>
@@ -1771,8 +1789,8 @@ function DualStats(props: { dual: DualGraph | null; drawn: boolean }): JSX.Eleme
       <h4>Dual graph</h4>
       <p className="muted">
         One node per region between the strands; an edge wherever a strand separates two
-        regions. Each region has its own fill; a node’s colour is its depth, the strands
-        crossed to reach it from the patch edge.
+        regions. A node’s colour is its depth: the strands crossed to reach it from the
+        patch edge.
       </p>
       <dl className="dual-stats-grid">
         <dt>Regions</dt>
@@ -1811,7 +1829,7 @@ function DualStats(props: { dual: DualGraph | null; drawn: boolean }): JSX.Eleme
           ))}
       </div>
       {drawn ? null : (
-        <p className="muted">Above level {SVG_MAX_LEVEL} the dual is counted but not drawn.</p>
+        <p className="muted">Above level {SVG_MAX_LEVEL} the dual graph is counted but not drawn.</p>
       )}
     </div>
   );

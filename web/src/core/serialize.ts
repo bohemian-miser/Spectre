@@ -325,8 +325,10 @@ export const FLAG = {
    * meant.
    */
   HIDE_STATS: 256,
-  /** Draw the dual of the strand graph: regions between strands, by depth. */
+  /** Draw the dual of the strand graph: a node per region, an edge per strand. */
   DUAL: 512,
+  /** Fill each region between the strands with its own colour. */
+  REGIONS: 1024,
 } as const;
 
 /**

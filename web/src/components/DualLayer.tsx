@@ -9,7 +9,7 @@
  */
 
 import { useMemo } from 'react';
-import type { DualGraph } from '../core';
+import { regionFillBucket, regionFillCss, type DualGraph } from '../core';
 
 export interface DualLayerProps {
   readonly dual: DualGraph;
@@ -26,13 +26,6 @@ export function dualDepthColor(depth: number): string {
   return `hsl(${(200 + depth * 47) % 360} 70% 58%)`;
 }
 
-const FILL_BUCKETS = 24;
-
-/** Neighbouring regions get far-apart hues (golden-angle steps over the region index). */
-function regionBucket(region: number): number {
-  return Math.floor(((region * 0.618033988749895) % 1) * FILL_BUCKETS);
-}
-
 const fmt = (v: number): string => (Math.round(v * 1000) / 1000).toString();
 
 export function DualLayer(props: DualLayerProps): JSX.Element {
@@ -43,7 +36,7 @@ export function DualLayer(props: DualLayerProps): JSX.Element {
     if (!showFills || !pieceStart || !pieceXY || !pieceRegion) return [];
     const byBucket = new Map<number, string[]>();
     for (let p = 0; p + 1 < pieceStart.length; p++) {
-      const bucket = regionBucket(pieceRegion[p]);
+      const bucket = regionFillBucket(pieceRegion[p]);
       const parts: string[] = [];
       for (let k = pieceStart[p]; k < pieceStart[p + 1]; k++) {
         parts.push(`${k === pieceStart[p] ? 'M' : 'L'}${fmt(pieceXY[2 * k])} ${fmt(pieceXY[2 * k + 1])}`);
@@ -76,7 +69,7 @@ export function DualLayer(props: DualLayerProps): JSX.Element {
           key={f.bucket}
           className="dual-fill"
           d={f.d}
-          fill={`hsl(${Math.round((f.bucket * 360) / FILL_BUCKETS)} 65% 62%)`}
+          fill={regionFillCss(f.bucket)}
           fillOpacity={0.7}
           stroke="none"
         />

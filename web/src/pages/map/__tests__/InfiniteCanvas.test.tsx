@@ -20,7 +20,7 @@ import { comboToMatchingIndices, type ViewportCut } from '../../../core';
 import { createCamera, worldToScreen, viewRectFor, type MapCamera } from '../camera';
 import { buildLeafChordTable, type LeafChordTable } from '../chords';
 import { InfiniteCanvas, type InfiniteCanvasApi, type InfiniteCanvasStatus } from '../InfiniteCanvas';
-import type { MapRenderStats, MapRenderStyle, MapRenderer, TrailGeometry } from '../rendererTypes';
+import type { MapRenderStats, MapRenderStyle, MapRenderer, RegionFillGeometry, TrailGeometry } from '../rendererTypes';
 import { buildChordIndex, hitTestChord } from '../strandWalk';
 import type { GraphSelection } from '../transitions';
 import { createUnrootedEngine } from '../../../core';
@@ -85,6 +85,7 @@ interface FakeRenderer extends MapRenderer {
   readonly circuitSets: (readonly TrailGeometry[] | null)[];
   readonly highlightSets: (readonly TrailGeometry[] | null)[];
   readonly cuts: ViewportCut[];
+  readonly regionFills: (RegionFillGeometry | null)[];
   frames: number;
 }
 
@@ -93,18 +94,21 @@ function makeRenderer(): FakeRenderer {
   const circuitSets: (readonly TrailGeometry[] | null)[] = [];
   const highlightSets: (readonly TrailGeometry[] | null)[] = [];
   const cuts: ViewportCut[] = [];
+  const regionFills: (RegionFillGeometry | null)[] = [];
   const r: FakeRenderer = {
     mode: 'webgl2',
     trails,
     circuitSets,
     highlightSets,
     cuts,
+    regionFills,
     frames: 0,
     setCut: (cut) => cuts.push(cut),
     setChords: (_t: LeafChordTable | null) => {},
     setTrail: (t) => trails.push(t),
     setCircuits: (c) => circuitSets.push(c),
     setHighlights: (h) => highlightSets.push(h),
+    setRegionFill: (f) => regionFills.push(f),
     setStyle: (_s: MapRenderStyle | null) => {},
     render: (): MapRenderStats => {
       r.frames++;
@@ -161,6 +165,7 @@ interface HarnessProps {
   readonly keepCircuits?: boolean;
   readonly keepTails?: boolean;
   readonly findCircuits?: boolean;
+  readonly regionFill?: boolean;
   readonly persistFound?: boolean;
   readonly findCeiling?: number;
   readonly highlight?: GraphSelection | null;
@@ -190,6 +195,7 @@ function Harness(props: HarnessProps): JSX.Element {
       keepCircuits={props.keepCircuits ?? false}
       keepTails={props.keepTails ?? false}
       findCircuits={props.findCircuits ?? false}
+      regionFill={props.regionFill ?? false}
       persistFound={props.persistFound ?? false}
       findCeiling={props.findCeiling}
       highlight={props.highlight ?? null}
@@ -272,6 +278,24 @@ async function mount(props: Partial<HarnessProps> = {}): Promise<Mounted> {
 }
 
 // ---------------------------------------------------------------------------
+
+describe('InfiniteCanvas — region colours', () => {
+  it('hands each leaf cut a piece colouring while on, and clears it when off', async () => {
+    const m = await mount({ regionFill: true });
+    await settleUntil(() => m.renderer.regionFills.some((f) => f && f.count > 0), 'a region fill');
+    const fill = m.renderer.regionFills.filter(Boolean).at(-1)!;
+    expect(fill.count).toBeGreaterThan(m.renderer.cuts.at(-1)!.count);
+    expect(fill.rgb.length).toBe(fill.count * 3);
+
+    await m.rerender({ regionFill: false });
+    expect(m.renderer.regionFills.at(-1)).toBeNull();
+  });
+
+  it('draws nothing without a strand rule', async () => {
+    const m = await mount({ regionFill: true, chords: null });
+    expect(m.renderer.regionFills.every((f) => f === null)).toBe(true);
+  });
+});
 
 describe('InfiniteCanvas — tap to trace', () => {
   it('colours the strand under a tap and hands it to the renderer', async () => {
@@ -638,12 +662,11 @@ describe('InfiniteCanvas — the chase feeds itself at any zoom', () => {
 
     // Zoom far out: the display cut turns aggregate (no leaf chords at all).
     act(() => m.api.current?.setCamera({ scale: 0.05 }));
-    await settle();
+    await settleUntil(() => (m.status().cut?.cutLevel ?? 0) > 0, 'an aggregate cut');
     expect(m.status().cut?.cutLevel ?? 0).toBeGreaterThan(0);
 
     // The walk must keep growing anyway — fed by its own head-centred cuts.
-    await settle();
-    await settle();
+    await settleUntil(() => m.status().trace.length > before, 'the walk to grow');
     const after = m.status().trace;
     expect(after.active).toBe(true);
     expect(after.length).toBeGreaterThan(before);

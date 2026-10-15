@@ -78,7 +78,7 @@ export interface DualGraph {
 }
 
 /** Tile-local piece structure of one leaf type under one set of chords. */
-interface LocalPieces {
+export interface LocalPieces {
   /** Piece polygons, tile-local. */
   readonly polys: readonly (readonly Pt[])[];
   readonly area: readonly number[];
@@ -95,6 +95,35 @@ interface LocalPieces {
 }
 
 const ON_EDGE_EPS = 1e-6;
+
+/** Region fills cycle through this many hues. */
+export const REGION_FILL_BUCKETS = 24;
+
+/**
+ * Hue bucket for the `index`-th region: golden-ratio steps, so regions
+ * numbered close together (neighbours, usually) land far apart in hue.
+ */
+export function regionFillBucket(index: number): number {
+  return Math.floor(((index * 0.618033988749895) % 1) * REGION_FILL_BUCKETS);
+}
+
+/** Fill colour of a hue bucket, as CSS (`hsl(h 65% 62%)`). */
+export function regionFillCss(bucket: number): string {
+  return `hsl(${Math.round((bucket * 360) / REGION_FILL_BUCKETS)} 65% 62%)`;
+}
+
+/** {@link regionFillCss} as 0..255 RGB, for the canvas and GPU renderers. */
+export function regionFillRgb(bucket: number): [number, number, number] {
+  const h = (bucket * 360) / REGION_FILL_BUCKETS;
+  const s = 0.65;
+  const l = 0.62;
+  const a = s * Math.min(l, 1 - l);
+  const f = (n: number): number => {
+    const k = (n + h / 30) % 12;
+    return Math.round(255 * (l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1))));
+  };
+  return [f(0), f(8), f(4)];
+}
 
 /** Boundary parameter s = edge index + t of a point on the polygon, or -1. */
 function boundaryParam(poly: readonly Pt[], p: Pt): number {

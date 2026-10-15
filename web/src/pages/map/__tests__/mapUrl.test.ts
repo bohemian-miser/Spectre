@@ -279,6 +279,18 @@ describe('kt / fc params (map codec)', () => {
   });
 });
 
+describe('rg param (map codec)', () => {
+  it('is silent while region colours are off and round-trips them on', () => {
+    const base = { ...DEFAULT_MAP_STATE, lines: true };
+    expect(encodeMapQuery(base)).not.toContain('rg=');
+    expect(decodeMapQuery(encodeMapQuery(base)).regions).toBe(false);
+    const q = encodeMapQuery({ ...base, regions: true });
+    expect(q).toContain('rg=1');
+    expect(decodeMapQuery(q).regions).toBe(true);
+    expect(encodeMapQuery(decodeMapQuery(q))).toBe(q);
+  });
+});
+
 describe('tk / tg / fx params (map codec)', () => {
   it('says nothing while the ticker is on and the graph is off', () => {
     const q = encodeMapQuery({ ...DEFAULT_MAP_STATE, lines: true });
