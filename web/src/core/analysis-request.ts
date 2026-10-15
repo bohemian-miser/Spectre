@@ -7,9 +7,10 @@
  * few lines: `onmessage = (e) => postMessage(runAnalysis(e.data))`.
  */
 
-import { analyze, pathLength, type CircuitAnalysis, type Path } from './circuits';
+import { analyze, localChords, pathLength, type CircuitAnalysis, type Path, type Segment } from './circuits';
+import { buildDualGraph, type DualGraph } from './dual';
 import type { EdgeContracts } from './edges';
-import type { TileFamilyId, TileTypeId } from './families';
+import { leafOrder, type TileFamilyId, type TileTypeId } from './families';
 import { hexRuleSpectreDrawing } from './hexRule';
 import { buildSystem, flatten } from './tiles';
 
@@ -31,6 +32,10 @@ export interface AnalysisRequest {
    * `family` must then be 'spectre-iso'.
    */
   readonly hexRule?: boolean;
+  /** Also build the dual of the strand graph (`buildDualGraph`). */
+  readonly dual?: boolean;
+  /** With `dual`: include the piece polygons, for filling regions. */
+  readonly dualPieces?: boolean;
 }
 
 export interface PathSummary {
@@ -49,6 +54,8 @@ export interface AnalysisResponse {
   /** Entries of the segmentKey -> color map (Maps clone fine, arrays are cheaper). */
   readonly segmentColors: readonly (readonly [string, string])[];
   readonly circuitColors: readonly (readonly [number, string])[];
+  /** Present when the request asked for `dual`. */
+  readonly dual?: DualGraph;
   readonly elapsedMs: number;
 }
 
@@ -70,11 +77,24 @@ export function runAnalysis(req: AnalysisRequest): AnalysisResponse {
   const drawing = req.hexRule
     ? hexRuleSpectreDrawing(new Set(req.subset), req.matchingIndexByType, req.contracts)
     : undefined;
+  const selected = new Set(req.subset);
+  let dual: DualGraph | undefined;
+  if (req.dual) {
+    let chords: Readonly<Record<string, readonly Segment[]>> | undefined = drawing?.chords;
+    if (!chords) {
+      const own: Record<string, readonly Segment[]> = {};
+      for (const t of leafOrder(req.family)) {
+        own[t] = localChords(req.family, t, selected, req.matchingIndexByType[t] ?? 0, req.contracts);
+      }
+      chords = own;
+    }
+    dual = buildDualGraph({ family: req.family, instances, chords, withPieces: req.dualPieces ?? false });
+  }
   const result: CircuitAnalysis = analyze(
     {
       family: req.family,
       instances,
-      selected: new Set(req.subset),
+      selected,
       matchingIndexByType: req.matchingIndexByType,
       contracts: req.contracts,
       chords: drawing?.chords,
@@ -92,6 +112,7 @@ export function runAnalysis(req: AnalysisRequest): AnalysisResponse {
     tailSummary: summarize(result.tails),
     segmentColors: [...result.segmentColor.entries()],
     circuitColors: [...result.circuitColorByLength.entries()],
+    dual,
     elapsedMs: Date.now() - started,
   };
 }

@@ -39,6 +39,8 @@ function signature(input: AnalysisInput): string {
     input.contracts ?? null,
     input.rainbowTails ?? false,
     input.hexRule ?? false,
+    input.dual ?? false,
+    input.dualPieces ?? false,
   ]);
 }
 
