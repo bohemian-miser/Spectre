@@ -9,6 +9,10 @@
 
 import { useEffect, useMemo, useRef } from 'react';
 import {
+  REGION_FILL_BUCKETS,
+  regionFillBucket,
+  regionFillCss,
+  type DualGraph,
   DEFAULT_CONTRACTS,
   mul,
   type Affine,
@@ -53,6 +57,11 @@ export interface TilingCanvasProps {
   readonly highlightLengths?: ReadonlySet<number> | null;
   /** Strand stroke width, world units (matches `CircuitLayer`). */
   readonly strokeWidth?: number;
+  /**
+   * Fill each region between the strands with its own colour (the piece
+   * polygons of `buildDualGraph`, in the same frame as `circuits`).
+   */
+  readonly regionFill?: Pick<DualGraph, 'pieceStart' | 'pieceXY' | 'pieceRegion'> | null;
   readonly className?: string;
   readonly ariaLabel?: string;
 }
@@ -102,6 +111,7 @@ export function TilingCanvas(props: TilingCanvasProps): JSX.Element {
     rainbowTails = false,
     highlightLengths = null,
     strokeWidth = 0.12,
+    regionFill = null,
     className,
     ariaLabel,
   } = props;
@@ -125,6 +135,30 @@ export function TilingCanvas(props: TilingCanvasProps): JSX.Element {
         : [],
     [circuits, tails, circuitColorByLength, rainbowTails],
   );
+
+  /**
+   * Pieces ordered by hue bucket, so the fill style changes at most 24 times
+   * a frame. Filled one path at a time: a Path2D holding ~100k sub-paths
+   * takes seconds to BUILD, while filling the pieces directly is as cheap as
+   * filling the tiles.
+   */
+  const regionOrder = useMemo(() => {
+    const start = regionFill?.pieceStart;
+    const region = regionFill?.pieceRegion;
+    if (!start || !regionFill?.pieceXY || !region) return null;
+    const n = start.length - 1;
+    const bucket = new Uint8Array(n);
+    const counts = new Int32Array(REGION_FILL_BUCKETS + 1);
+    for (let p = 0; p < n; p++) {
+      bucket[p] = regionFillBucket(region[p]);
+      counts[bucket[p] + 1]++;
+    }
+    for (let b = 0; b < REGION_FILL_BUCKETS; b++) counts[b + 1] += counts[b];
+    const order = new Int32Array(n);
+    const fill = counts.slice(0, REGION_FILL_BUCKETS);
+    for (let p = 0; p < n; p++) order[fill[bucket[p]]++] = p;
+    return { order, bucket, start, xy: regionFill.pieceXY };
+  }, [regionFill]);
 
   const effectiveCamera = useMemo(
     () => camera ?? fitToBounds(model.bounds, size),
@@ -164,6 +198,27 @@ export function TilingCanvas(props: TilingCanvasProps): JSX.Element {
           ctx.strokeStyle = 'rgba(0,0,0,0.85)';
           ctx.stroke(p);
         }
+      }
+
+      if (regionOrder) {
+        const { order, bucket, start, xy } = regionOrder;
+        applyTransform(ctx, dpr, effectiveCamera, model.viewTransform);
+        ctx.globalAlpha = 0.7;
+        let current = -1;
+        for (let i = 0; i < order.length; i++) {
+          const p = order[i];
+          if (bucket[p] !== current) {
+            current = bucket[p];
+            ctx.fillStyle = regionFillCss(current);
+          }
+          ctx.beginPath();
+          for (let k = start[p]; k < start[p + 1]; k++) {
+            if (k === start[p]) ctx.moveTo(xy[2 * k], xy[2 * k + 1]);
+            else ctx.lineTo(xy[2 * k], xy[2 * k + 1]);
+          }
+          ctx.fill();
+        }
+        ctx.globalAlpha = 1;
       }
 
       if (showDots && selectedEdges?.size) {
@@ -217,6 +272,7 @@ export function TilingCanvas(props: TilingCanvasProps): JSX.Element {
     selectedEdges,
     contracts,
     overlay,
+    regionOrder,
     highlightLengths,
     strokeWidth,
   ]);

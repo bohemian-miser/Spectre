@@ -50,6 +50,8 @@ import {
   type MapRenderStats,
   type MapRenderStyle,
   type MapRenderer,
+  type RegionFillGeometry,
+  type RegionMeshTable,
   type TrailGeometry,
 } from './rendererTypes';
 
@@ -353,6 +355,36 @@ in vec3 vColor;
 out vec4 o;
 void main() { o = vec4(vColor, 1.0); }`;
 
+/**
+ * Region-colour pass: one instance per tile PIECE (a tile cut by its chords),
+ * vertex-pulled from the piece mesh table by row, riding its tile's decode,
+ * coloured per instance (`regionFill.ts` keeps the colours stable across cuts).
+ */
+const VS_REGION = `#version 300 es
+layout(location=1) in vec2 aPos;
+layout(location=2) in float aCode;
+layout(location=3) in float aType;
+layout(location=8) in vec3 aRgb;
+uniform sampler2D uRegionTex;
+uniform vec4 uView;
+out vec3 vColor;
+void main() {
+  int t = int(aType + 0.5);
+  vec2 v = texelFetch(uRegionTex, ivec2(gl_VertexID, t), 0).rg;
+${DECODE_GLSL}
+  vColor = aRgb;
+}`;
+
+const FS_REGION = `#version 300 es
+precision mediump float;
+in vec3 vColor;
+uniform float uAlpha;
+out vec4 o;
+void main() { o = vec4(vColor, uAlpha); }`;
+
+/** Region colours over the tile fills (as the rooted view lays them over its tiles). */
+export const REGION_FILL_ALPHA = 0.7;
+
 const FS_LINE = `#version 300 es
 precision mediump float;
 uniform vec4 uLine;
@@ -471,12 +503,14 @@ export function createWebGLRenderer(
   let progGlyph: WebGLProgram;
   let progChord: WebGLProgram;
   let progTrail: WebGLProgram;
+  let progRegion: WebGLProgram;
   try {
     progLeaf = link(VS_LEAF, FS_COLOR);
     progLine = link(VS_LEAF_LINE, FS_LINE);
     progGlyph = link(VS_GLYPH, FS_COLOR);
     progChord = link(VS_CHORD, FS_CHORD);
     progTrail = link(VS_TRAIL, FS_TRAIL);
+    progRegion = link(VS_REGION, FS_REGION);
   } catch {
     return null; // context exists but shaders failed — let the caller fall back
   }
@@ -533,6 +567,35 @@ export function createWebGLRenderer(
   const vaoLine = makeInstanceVao();
   const vaoGlyph = makeInstanceVao();
   const vaoChord = makeInstanceVao();
+
+  // --- region colours (own instance stream: one instance per tile piece) ------
+  const vboRegionPos = G.createBuffer();
+  const vboRegionCode = G.createBuffer();
+  const vboRegionRow = G.createBuffer();
+  const vboRegionRgb = G.createBuffer();
+  const vaoRegion = G.createVertexArray();
+  G.bindVertexArray(vaoRegion);
+  G.bindBuffer(G.ARRAY_BUFFER, vboRegionPos);
+  G.enableVertexAttribArray(1);
+  G.vertexAttribPointer(1, 2, G.FLOAT, false, 0, 0);
+  G.vertexAttribDivisor(1, 1);
+  G.bindBuffer(G.ARRAY_BUFFER, vboRegionCode);
+  G.enableVertexAttribArray(2);
+  G.vertexAttribPointer(2, 1, G.UNSIGNED_BYTE, false, 0, 0);
+  G.vertexAttribDivisor(2, 1);
+  G.bindBuffer(G.ARRAY_BUFFER, vboRegionRow);
+  G.enableVertexAttribArray(3);
+  G.vertexAttribPointer(3, 1, G.UNSIGNED_BYTE, false, 0, 0);
+  G.vertexAttribDivisor(3, 1);
+  G.bindBuffer(G.ARRAY_BUFFER, vboRegionRgb);
+  G.enableVertexAttribArray(8);
+  G.vertexAttribPointer(8, 3, G.UNSIGNED_BYTE, true, 0, 0);
+  G.vertexAttribDivisor(8, 1);
+  G.bindVertexArray(null);
+  let regionTex: WebGLTexture | null = null;
+  let regionMesh: RegionMeshTable | null = null;
+  let regionCount = 0;
+  let regionOrigin = { x: 0, y: 0 };
 
   // --- traced strand --------------------------------------------------------
   // Segment i reads points i and i+1, so ONE point buffer is bound twice at a
@@ -677,6 +740,9 @@ export function createWebGLRenderer(
   const uTrailTotal = loc(progTrail, 'uTotalLen');
   const uTrailAlpha = loc(progTrail, 'uAlpha');
   const uTrailSolid = loc(progTrail, 'uSolid');
+  const uRegionView = loc(progRegion, 'uView');
+  const uRegionAlpha = loc(progRegion, 'uAlpha');
+  const uRegionTexLoc = loc(progRegion, 'uRegionTex');
 
   // --- state ------------------------------------------------------------------
   let count = 0;
@@ -716,6 +782,26 @@ export function createWebGLRenderer(
   const setChords = (table: LeafChordTable | null): void => {
     if (disposed || contextLost) return;
     uploadChords(table);
+  };
+
+  const setRegionFill = (fill: RegionFillGeometry | null): void => {
+    if (disposed || contextLost) return;
+    regionCount = fill ? fill.count : 0;
+    if (!fill || fill.count === 0) return;
+    if (fill.mesh !== regionMesh) {
+      if (regionTex) G.deleteTexture(regionTex);
+      regionTex = makeMeshTexture(fill.mesh.data, fill.mesh.verts, fill.mesh.rows);
+      regionMesh = fill.mesh;
+    }
+    regionOrigin = fill.origin;
+    G.bindBuffer(G.ARRAY_BUFFER, vboRegionPos);
+    G.bufferData(G.ARRAY_BUFFER, fill.pos, G.DYNAMIC_DRAW);
+    G.bindBuffer(G.ARRAY_BUFFER, vboRegionCode);
+    G.bufferData(G.ARRAY_BUFFER, fill.code, G.DYNAMIC_DRAW);
+    G.bindBuffer(G.ARRAY_BUFFER, vboRegionRow);
+    G.bufferData(G.ARRAY_BUFFER, fill.row, G.DYNAMIC_DRAW);
+    G.bindBuffer(G.ARRAY_BUFFER, vboRegionRgb);
+    G.bufferData(G.ARRAY_BUFFER, fill.rgb, G.DYNAMIC_DRAW);
   };
 
   const setTrail = (next: TrailGeometry | null): void => {
@@ -848,6 +934,24 @@ export function createWebGLRenderer(
             drawCalls++;
           }
 
+          // Region colours: over the fills (or straight on the background
+          // when fills are off), under the outlines and the strands.
+          if (regionCount > 0 && regionTex && regionMesh) {
+            const roff = originRelativeCenter(cam, regionOrigin);
+            G.useProgram(progRegion);
+            G.uniform4f(uRegionView, -roff.x, -roff.y, kx, ky);
+            G.uniform1f(uRegionAlpha, showFills ? REGION_FILL_ALPHA : 1);
+            G.activeTexture(G.TEXTURE0);
+            G.bindTexture(G.TEXTURE_2D, regionTex);
+            G.uniform1i(uRegionTexLoc, 0);
+            G.enable(G.BLEND);
+            G.blendFunc(G.SRC_ALPHA, G.ONE_MINUS_SRC_ALPHA);
+            G.bindVertexArray(vaoRegion);
+            G.drawArraysInstanced(G.TRIANGLES, 0, regionMesh.verts, regionCount);
+            G.disable(G.BLEND);
+            drawCalls++;
+          }
+
           const alpha = showOutlines ? outlineAlphaForScale(cam.scale) : 0;
           if (alpha > 0.02) {
             G.useProgram(progLine);
@@ -959,6 +1063,7 @@ export function createWebGLRenderer(
     setTrail,
     setCircuits,
     setHighlights,
+    setRegionFill,
     setStyle,
     render,
     dispose(): void {
@@ -985,6 +1090,13 @@ export function createWebGLRenderer(
       G.deleteProgram(progGlyph);
       G.deleteProgram(progChord);
       G.deleteProgram(progTrail);
+      G.deleteProgram(progRegion);
+      if (regionTex) G.deleteTexture(regionTex);
+      G.deleteBuffer(vboRegionPos);
+      G.deleteBuffer(vboRegionCode);
+      G.deleteBuffer(vboRegionRow);
+      G.deleteBuffer(vboRegionRgb);
+      G.deleteVertexArray(vaoRegion);
     },
   };
 }

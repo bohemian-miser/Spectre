@@ -50,6 +50,35 @@ export interface TrailGeometry {
  * omitting the whole record keeps the Infinite Map's own look (bright
  * per-flavour fills, fading outlines, white strand lines).
  */
+/**
+ * Triangulated tile pieces (a tile cut by its chords), vertex-pulled like the
+ * leaf meshes: row `r`, `verts` vertices (padded with repeats), 2 floats each.
+ * `rowPolys[r]` is the same piece as a polygon, for the Canvas2D path.
+ */
+export interface RegionMeshTable {
+  readonly rows: number;
+  readonly verts: number;
+  readonly data: Float32Array;
+  readonly rowPolys: readonly (readonly Pt[])[];
+}
+
+/**
+ * Region colours for one leaf cut: one instance per tile piece, riding its
+ * tile's position and orientation, drawing mesh row `row[i]` in `rgb[i]`.
+ * The mesh is compared by identity, so it uploads once per chord table.
+ */
+export interface RegionFillGeometry {
+  readonly mesh: RegionMeshTable;
+  readonly origin: Pt;
+  readonly count: number;
+  /** f32 ×2 per piece, relative to `origin` (the cut's own positions). */
+  readonly pos: Float32Array;
+  readonly code: Uint8Array;
+  readonly row: Uint8Array;
+  /** 0..255 RGB per piece. */
+  readonly rgb: Uint8Array;
+}
+
 export interface MapRenderStyle {
   /**
    * Leaf fill colours in `leafOrder(family)` order for the renderer's family
@@ -131,6 +160,12 @@ export interface MapRenderer {
    * invisible — which is what a highlight of the path being traced was.
    */
   setHighlights(highlights: readonly TrailGeometry[] | null): void;
+  /**
+   * Adopt region colours for the current leaf cut (null clears them). Drawn
+   * over the tile fills, under the outlines and strands, at leaf cuts only.
+   * Optional so renderer fakes need not care.
+   */
+  setRegionFill?(fill: RegionFillGeometry | null): void;
   /** Override appearance (merged over the defaults). */
   setStyle(style: MapRenderStyle | null): void;
   /** Draw the current cut under `cam`. CSS-pixel size + devicePixelRatio. */

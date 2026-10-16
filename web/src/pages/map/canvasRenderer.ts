@@ -40,6 +40,8 @@ import {
   type MapRenderStats,
   type MapRenderStyle,
   type MapRenderer,
+  type RegionFillGeometry,
+  type RegionMeshTable,
   type TrailGeometry,
 } from './rendererTypes';
 import {
@@ -47,6 +49,7 @@ import {
   DEFAULT_LINE_COLOR,
   DEFAULT_TRAIL_SCALE,
   OUTLINE_FADE_START,
+  REGION_FILL_ALPHA,
   outlineAlphaForScale,
 } from './webglRenderer';
 
@@ -164,6 +167,23 @@ export function createCanvas2dRenderer(
     chordCounts = live ? live.segments.map((s) => s.length) : [];
   };
 
+  let regionFill: RegionFillGeometry | null = null;
+  let regionPaths: Path2D[] = [];
+  let regionPathsFor: RegionMeshTable | null = null;
+
+  const setRegionFill = (fill: RegionFillGeometry | null): void => {
+    regionFill = fill && fill.count > 0 ? fill : null;
+    if (regionFill && regionFill.mesh !== regionPathsFor) {
+      regionPathsFor = regionFill.mesh;
+      regionPaths = regionFill.mesh.rowPolys.map((poly) => {
+        const p = new Path2D();
+        poly.forEach((q, i) => (i ? p.lineTo(q.x, q.y) : p.moveTo(q.x, q.y)));
+        p.closePath();
+        return p;
+      });
+    }
+  };
+
   const setTrail = (next: TrailGeometry | null): void => {
     trail = next && next.pointCount >= 2 ? next : null;
   };
@@ -256,6 +276,30 @@ export function createCanvas2dRenderer(
         }
       }
 
+      // Region colours — leaf cuts only, over the fills, under the strands.
+      const rf = regionFill;
+      if (!aggregate && rf) {
+        C.globalAlpha = showFills ? REGION_FILL_ALPHA : 1;
+        const n = Math.min(rf.count, CANVAS2D_MAX_INSTANCES * 4);
+        for (let i = 0; i < n; i++) {
+          const path = regionPaths[rf.row[i]];
+          if (!path) continue;
+          const m = instanceScreenTransform(
+            cam,
+            cssW,
+            cssH,
+            rf.origin,
+            rf.pos[i * 2],
+            rf.pos[i * 2 + 1],
+            rf.code[i],
+          );
+          C.setTransform(dpr * m[0], dpr * m[3], dpr * m[1], dpr * m[4], dpr * m[2], dpr * m[5]);
+          C.fillStyle = `rgb(${rf.rgb[i * 3]},${rf.rgb[i * 3 + 1]},${rf.rgb[i * 3 + 2]})`;
+          C.fill(path);
+        }
+        C.globalAlpha = 1;
+      }
+
       // Strand lines — leaf cuts only, same rule as the WebGL2 path.
       if (!aggregate && chordPaths) {
         // The instance transform carries the camera scale, so a constant width
@@ -346,6 +390,7 @@ export function createCanvas2dRenderer(
     mode: 'canvas2d',
     setCut,
     setChords,
+    setRegionFill,
     setTrail,
     setCircuits,
     setHighlights,
