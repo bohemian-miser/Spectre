@@ -1,0 +1,218 @@
+/* Flow lattice page. Shell tokens come from widgets.css. */
+
+.lattice-page {
+  display: grid;
+  gap: 24px;
+  width: min(1240px, 100%);
+  margin: 0 auto;
+  padding: 24px 16px;
+  box-sizing: border-box;
+}
+.lattice-page h1 {
+  margin: 0 0 6px;
+  font-size: 26px;
+}
+.lattice-page h2 {
+  margin: 0 0 8px;
+  font-size: 19px;
+}
+.lattice-page p {
+  margin: 0 0 10px;
+  line-height: 1.6;
+  max-width: 78ch;
+}
+.lattice-page .muted {
+  color: var(--muted);
+}
+.lattice-page .mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.92em;
+}
+
+.lattice-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 18px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+.lattice-controls label {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+  min-width: 0;
+  max-width: 100%;
+}
+.lattice-controls select {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  text-overflow: ellipsis;
+  padding: 5px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+
+.lattice-panels {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr);
+  gap: 18px;
+}
+@media (max-width: 860px) {
+  .lattice-panels {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.lattice-panel {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  min-width: 0;
+}
+
+.lattice-plot,
+.lattice-patch {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.lattice-patch {
+  max-height: 80vh;
+}
+.lattice-counts {
+  margin-top: 8px;
+  font-size: 13px;
+}
+
+.lattice-axis {
+  stroke: var(--line);
+  stroke-width: 1.5;
+}
+.lattice-axis-label {
+  fill: var(--muted);
+  font-size: 13px;
+  font-style: italic;
+}
+
+.lattice-pt {
+  cursor: pointer;
+}
+.lattice-pt circle {
+  stroke-width: 2;
+  transition: r 0.1s;
+}
+.lattice-pt text {
+  font-size: 12px;
+  font-weight: 600;
+  pointer-events: none;
+  fill: var(--bg);
+}
+.lattice-pt-zero circle {
+  fill: var(--panel-2);
+  stroke: var(--text);
+}
+.lattice-pt-zero text {
+  fill: var(--text);
+}
+.lattice-pt-1 circle {
+  fill: var(--accent);
+  stroke: var(--accent);
+}
+.lattice-pt-2 circle {
+  fill: var(--ok);
+  stroke: var(--ok);
+}
+.lattice-pt-3 circle {
+  fill: var(--warn);
+  stroke: var(--warn);
+}
+.lattice-pt-out circle {
+  fill: var(--panel);
+  stroke: var(--line);
+}
+.lattice-pt-out text {
+  fill: var(--muted);
+  font-weight: 400;
+}
+.lattice-pt:hover circle,
+.lattice-pt:focus-visible circle {
+  stroke: var(--text);
+}
+.lattice-pt:focus {
+  outline: none;
+}
+.lattice-pt.is-picked circle {
+  stroke: var(--text);
+  stroke-width: 4;
+}
+
+.lattice-readout {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 12px;
+  margin: 12px 0 0;
+  font-size: 13px;
+}
+.lattice-readout dt {
+  color: var(--muted);
+}
+.lattice-readout dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.lattice-tile {
+  fill: var(--panel-2);
+  stroke: var(--line);
+  stroke-width: 0.03;
+}
+.lattice-strand path {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 0.07;
+  stroke-linecap: round;
+}
+.lattice-strand .lattice-arrow {
+  fill: var(--accent);
+  stroke: none;
+}
+
+.lattice-table-box {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  margin-bottom: 10px;
+}
+.lattice-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.lattice-table th,
+.lattice-table td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--line);
+  text-align: center;
+  white-space: nowrap;
+}
+.lattice-table thead th {
+  color: var(--muted);
+  font-size: 12px;
+}
+.lattice-table tbody th {
+  text-align: left;
+  font-weight: 500;
+}
+.lattice-table td.is-zero {
+  color: var(--muted);
+}

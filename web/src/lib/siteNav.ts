@@ -82,6 +82,13 @@ export const SITE_NAV: readonly NavItem[] = Object.freeze([
     blurb: 'Walk a strand by hand and see which joins the labels permit, which the tiling uses.',
   },
   {
+    id: 'lattice',
+    label: 'Flow lattice',
+    entry: 'lattice.html',
+    status: 'ready',
+    blurb: 'Give every edge a direction: the circuits form a lattice you can click through.',
+  },
+  {
     id: 'legacy',
     label: 'Legacy p5 app',
     entry: 'legacy.html',

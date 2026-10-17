@@ -30,6 +30,7 @@ export default defineConfig({
         map: resolve(__dirname, 'map.html'),
         supertiles: resolve(__dirname, 'supertiles.html'),
         machine: resolve(__dirname, 'machine.html'),
+        lattice: resolve(__dirname, 'lattice.html'),
         legacy: resolve(__dirname, 'legacy.html'),
         widgets: resolve(__dirname, 'widgets.html'),
       },
