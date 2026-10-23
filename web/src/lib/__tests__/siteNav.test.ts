@@ -16,7 +16,7 @@ import {
 } from '../siteNav';
 
 describe('siteNav', () => {
-  it('lists the nine destinations with unique ids', () => {
+  it('lists the ten destinations with unique ids', () => {
     expect(SITE_NAV.map((i) => i.id)).toEqual([
       'explorer',
       'tails',
@@ -26,12 +26,13 @@ describe('siteNav', () => {
       'supertiles',
       'machine',
       'lattice',
+      'multiedge',
       'legacy',
     ]);
     expect(new Set(SITE_NAV.map((i) => i.id)).size).toBe(SITE_NAV.length);
   });
 
-  it('ships all nine destinations', () => {
+  it('ships all ten destinations', () => {
     expect(readyNav().map((i) => i.id)).toEqual([
       'explorer',
       'tails',
@@ -41,6 +42,7 @@ describe('siteNav', () => {
       'supertiles',
       'machine',
       'lattice',
+      'multiedge',
       'legacy',
     ]);
   });
@@ -64,6 +66,7 @@ describe('siteNav', () => {
     expect(activeNavId('/Spectre/supertiles.html')).toBe('supertiles');
     expect(activeNavId('/Spectre/machine.html')).toBe('machine');
     expect(activeNavId('/Spectre/lattice.html')).toBe('lattice');
+    expect(activeNavId('/Spectre/multiedge.html')).toBe('multiedge');
     expect(activeNavId('/Spectre/widgets.html')).toBeNull();
   });
 

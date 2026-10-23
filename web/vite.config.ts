@@ -31,6 +31,7 @@ export default defineConfig({
         supertiles: resolve(__dirname, 'supertiles.html'),
         machine: resolve(__dirname, 'machine.html'),
         lattice: resolve(__dirname, 'lattice.html'),
+        multiedge: resolve(__dirname, 'multiedge.html'),
         legacy: resolve(__dirname, 'legacy.html'),
         widgets: resolve(__dirname, 'widgets.html'),
       },

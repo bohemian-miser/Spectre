@@ -89,6 +89,13 @@ export const SITE_NAV: readonly NavItem[] = Object.freeze([
     blurb: 'Give every edge a direction: the circuits form a lattice you can click through.',
   },
   {
+    id: 'multiedge',
+    label: 'Multi-edge',
+    entry: 'multiedge.html',
+    status: 'ready',
+    blurb: 'No directions, any number of strands per edge: a parity cube times stacks of pairs.',
+  },
+  {
     id: 'legacy',
     label: 'Legacy p5 app',
     entry: 'legacy.html',
