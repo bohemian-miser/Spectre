@@ -49,10 +49,14 @@ import {
   type HexSpectreMorph,
   HEX_RULE_SPECTRE_FAMILY,
   buildHexSpectreMorph,
+  buildSystem,
+  flatten,
+  flowOverlay,
 } from '../core';
 import {
   CircuitLayer,
   ColorSchemePicker,
+  FlowLayer,
   DisplayToggles,
   InfoTip,
   PanZoom,
@@ -346,6 +350,37 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
     ],
   );
   const analysis = useCircuitAnalysis(analysisInput, { workerMinLevel: 3 });
+
+  // Flow overlay: the same chords with their labels' directions. Drawn on the
+  // SVG path only (a rooted patch up to SVG_MAX_LEVEL), and not for the
+  // hexagon rule on Spectres, whose chords are borrowed from the hexagons.
+  const flowOn = hasFlag(state, FLAG.FLOW);
+  const flowBlocker = !flowOn
+    ? null
+    : infinite
+      ? 'Flow shows on a rooted patch, not the infinite view.'
+      : state.level > SVG_MAX_LEVEL
+        ? `Flow shows up to level ${SVG_MAX_LEVEL}.`
+        : asSpectres
+          ? 'Flow is not drawn for the hexagon rule on Spectres.'
+          : !linesOn
+            ? 'Turn circuit lines on to see the flow.'
+            : !state.subset.length
+              ? 'Pick some edge classes to see the flow.'
+              : null;
+  const flow = useMemo(
+    () =>
+      flowOn && flowBlocker === null
+        ? flowOverlay({
+            family: drawFamily,
+            instances: flatten(buildSystem(drawFamily, state.level)[state.rootTile]),
+            selected,
+            matchingIndexByType: matchingRecord,
+            contracts: state.contracts,
+          })
+        : null,
+    [flowOn, flowBlocker, drawFamily, state.level, state.rootTile, selected, matchingRecord, state.contracts],
+  );
 
   // --- infinite mode ---------------------------------------------------------
 
@@ -999,6 +1034,22 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
               : [FLAG.NON_CROSSING_ONLY]
           }
         />
+        {flowOn ? (
+          <p className="flow-summary muted" data-testid="flow-summary">
+            {flow ? (
+              <>
+                Flow follows each edge&rsquo;s <code>+k</code> / <code>−k</code> label.{' '}
+                <span className="flow-key is-source" /> {flow.sources.length} source{flow.sources.length === 1 ? '' : 's'},{' '}
+                <span className="flow-key is-sink" /> {flow.sinks.length} sink{flow.sinks.length === 1 ? '' : 's'},{' '}
+                {flow.runs.length} run{flow.runs.length === 1 ? '' : 's'} ({flow.runs.filter((r) => r.closed).length} closed flow
+                loop{flow.runs.filter((r) => r.closed).length === 1 ? '' : 's'}).
+                {flow.chords.some((c) => c.kind === 'neutral') ? ' Dashed strands touch class 0, which has no direction.' : ''}
+              </>
+            ) : (
+              flowBlocker
+            )}
+          </p>
+        ) : null}
 
         <label className="control-row line-width-row">
           <span>Line weight</span>
@@ -1526,7 +1577,11 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
                     <DualLayer dual={analysis.result.dual} showGraph={false} />
                   </g>
                 ) : null}
-                {analysis.result && linesOn ? (
+                {flow ? (
+                  <g transform={svgMatrixString(model.viewTransform)}>
+                    <FlowLayer overlay={flow} strokeWidth={BASE_CIRCUIT_STROKE * lineWidth} arrows={state.level <= 3} />
+                  </g>
+                ) : analysis.result && linesOn ? (
                   <g transform={svgMatrixString(model.viewTransform)}>
                     <CircuitLayer
                       circuits={analysis.result.circuits}

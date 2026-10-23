@@ -25,6 +25,7 @@ const ITEMS: readonly { flag: number; label: string }[] = [
   { flag: FLAG.HIDE_STATS, label: 'Hide stats' },
   { flag: FLAG.REGIONS, label: 'Region colours' },
   { flag: FLAG.DUAL, label: 'Dual graph' },
+  { flag: FLAG.FLOW, label: 'Flow: sources & sinks' },
 ];
 
 export function DisplayToggles(props: DisplayTogglesProps): JSX.Element {

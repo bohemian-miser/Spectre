@@ -386,4 +386,36 @@ describe('ExplorerPage — infinite mode', () => {
       'only generates',
     );
   });
+
+  it('the flow toggle draws runs, sources and sinks from the labels\' directions', () => {
+    // fl = default 23 + FLOW 2048.
+    window.history.replaceState(null, '', '/#/explorer?v=1&f=hex&lv=2&e=128&fl=2071');
+    const { container } = render(<ExplorerPage />);
+    const layer = container.querySelector('g.flow-layer');
+    expect(layer).not.toBeNull();
+    expect(Number(layer!.getAttribute('data-sources'))).toBeGreaterThan(0);
+    expect(Number(layer!.getAttribute('data-sinks'))).toBeGreaterThan(0);
+    expect(container.querySelector('[data-testid="flow-summary"]')?.textContent).toMatch(/\d+ sources?, .*\d+ sinks?/);
+    cleanup();
+
+    // 15 is a true flow: nothing starts or ends.
+    window.history.replaceState(null, '', '/#/explorer?v=1&f=hex&lv=2&e=15&fl=2071');
+    const again = render(<ExplorerPage />);
+    const layer15 = again.container.querySelector('g.flow-layer');
+    expect(layer15?.getAttribute('data-sources')).toBe('0');
+    expect(layer15?.getAttribute('data-sinks')).toBe('0');
+    cleanup();
+
+    // Off: the usual circuit colouring, no flow layer.
+    window.history.replaceState(null, '', '/#/explorer?v=1&f=hex&lv=2&e=128');
+    const off = render(<ExplorerPage />);
+    expect(off.container.querySelector('g.flow-layer')).toBeNull();
+    expect(off.container.querySelector('[data-testid="flow-summary"]')).toBeNull();
+  });
+
+  it('says why the flow cannot show in the infinite view', () => {
+    window.history.replaceState(null, '', '/#/explorer?v=1&md=infinite&e=2578&fl=2071');
+    const { container } = render(<ExplorerPage />);
+    expect(container.querySelector('[data-testid="flow-summary"]')?.textContent).toContain('rooted patch');
+  });
 });

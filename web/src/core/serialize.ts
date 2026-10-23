@@ -329,6 +329,8 @@ export const FLAG = {
   DUAL: 512,
   /** Fill each region between the strands with its own colour. */
   REGIONS: 1024,
+  /** Give strands their labels' directions: colour by run, mark sources and sinks. */
+  FLOW: 2048,
 } as const;
 
 /**

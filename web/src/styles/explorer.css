@@ -244,3 +244,23 @@
   pointer-events: none;
   z-index: 5;
 }
+
+/* Flow overlay summary under the display toggles. */
+.flow-summary {
+  margin: 6px 0 10px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.flow-key {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  vertical-align: baseline;
+}
+.flow-key.is-source {
+  background: #2ea043;
+}
+.flow-key.is-sink {
+  background: #e5534b;
+}

@@ -28,3 +28,4 @@ export * from './isomorphism';
 export * from './hexRule';
 export * from './morph';
 export * from './flowLattice';
+export * from './flowOverlay';

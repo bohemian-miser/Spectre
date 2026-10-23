@@ -33,6 +33,8 @@ export type { PanZoomProps, PanZoomApi } from './PanZoom';
 
 export { CircuitLayer } from './CircuitLayer';
 export type { CircuitLayerProps } from './CircuitLayer';
+export { FlowLayer } from './FlowLayer';
+export type { FlowLayerProps } from './FlowLayer';
 
 export { EdgeClassLegend } from './controls/EdgeClassLegend';
 export type { EdgeClassLegendProps } from './controls/EdgeClassLegend';
