@@ -11,6 +11,7 @@ import {
   combine,
   defaultAxes,
   describeFlow,
+  edgeVar,
   flowModel,
   hexPatch,
   linesNeeded,
@@ -21,7 +22,9 @@ import {
   type FlowModel,
   type Strand,
 } from '../core/flowLattice';
+import { HEX_PTS, type TileTypeId } from '../core/families';
 import type { Pt } from '../core/geom';
+import { edgeClassColor } from '../lib/palette';
 import '../styles/lattice.css';
 
 const RANGE = 3;
@@ -39,6 +42,8 @@ function vecAt(model: FlowModel, axes: readonly [number, number], a: number, b: 
   const coeffs = model.basis.map((_, i) => (i === axes[0] ? a : 0) + (i === axes[1] && axes[1] !== axes[0] ? b : 0));
   return combine(model.basis, coeffs, model.vars.length);
 }
+
+const signed = (n: number) => (n > 0 ? `+${n}` : n < 0 ? `−${-n}` : '0');
 
 const sameFlow = (p: readonly number[], q: readonly number[]) => p.length === q.length && p.every((v, k) => v === q[k]);
 
@@ -63,11 +68,13 @@ export default function LatticePage(): JSX.Element {
   const [maxLines, setMaxLines] = useState(1);
   const [level, setLevel] = useState(2);
   const [x, setX] = useState<number[]>(() => firstFlow(flowModel('labels')));
+  const [hoverVar, setHoverVar] = useState<number | null>(null);
 
   const pickMode = (m: FlowMode) => {
     setMode(m);
     setAxes(defaultAxes(flowModel(m)));
     setX(firstFlow(flowModel(m)));
+    setHoverVar(null);
   };
   const flat = model.basis.length < 2;
   const sel = slicePoint(model, axes, flat, x);
@@ -87,7 +94,7 @@ export default function LatticePage(): JSX.Element {
         <p className="muted">
           The plot shows a slice of that lattice: <em>a</em> copies of one basis loop plus{' '}
           <em>b</em> of another. Each dot shows how many lines its busiest edge needs. Click one to
-          draw it, or set the flow on each class yourself with the counters: −2 on class 3 means two
+          draw it, or set the flow on each class yourself in the matrix below: −2 on class 3 means two
           strands running through class 3 the reverse way.
         </p>
       </header>
@@ -157,7 +164,6 @@ export default function LatticePage(): JSX.Element {
             sel={sel}
             onPick={(a, b) => setX(vecAt(model, axes, a, b))}
           />
-          <FlowCounters model={model} x={x} onChange={setX} />
           <Readout model={model} x={x} sel={sel} flat={flat} />
         </section>
         <section className="lattice-panel" aria-labelledby="lattice-patch-h">
@@ -167,16 +173,30 @@ export default function LatticePage(): JSX.Element {
       </div>
 
       <section aria-labelledby="lattice-matrix-h">
-        <h2 id="lattice-matrix-h">The signed matrix</h2>
+        <h2 id="lattice-matrix-h">Balance it by hand</h2>
         <p>
-          One row per tile type, one column per unknown. An entry is the tile&rsquo;s outward edges of
-          that kind minus its inward ones, so a circuit is a column of numbers that makes every row
-          sum to zero. Dropped as directionless:{' '}
+          One row per tile type, one column per {model.mode === 'labels' ? 'class' : 'group'}. An entry
+          is the tile&rsquo;s outward edges of that kind minus its inward ones. Set a flow in the top
+          row and every entry in that column turns into what it contributes (entry × flow), so each row
+          reads as a sum: <span className="mono">+2 − 1 − 1</span>. The last column is that sum, the
+          tile&rsquo;s net flow. A circuit is a top row that makes every net zero.
+        </p>
+        <div className="lattice-balance-grid">
+          <MatrixEditor model={model} x={x} onChange={setX} hover={hoverVar} onHover={setHoverVar} />
+          <FlowTileStrip model={model} x={x} hover={hoverVar} onHover={setHoverVar} />
+        </div>
+        <p className="muted">
+          Each tile shows its edges in their class colours with the class number outside. Strands run
+          in through one edge and out through another; a tile whose row doesn&rsquo;t sum to zero has
+          ends left over, drawn as dots (filled where flow leaves, hollow where it enters). Hover a
+          column or an edge to find its partners.
+        </p>
+        <p>
+          Dropped as directionless:{' '}
           <span className="mono">{model.dropped.join(', ') || 'nothing'}</span> (the Psi&rsquo;s
           class-0 edge meets another Psi&rsquo;s class-0 edge, so its flow would have to equal its own
           negative). The lattice has dimension {model.basis.length}.
         </p>
-        <MatrixTable model={model} />
         <p className="muted">
           The two choices of unknowns differ. Some classes (2, 3, 5, 8) split into groups of edges that
           never touch each other. The labels tie those groups&rsquo; flows together with their{' '}
@@ -263,35 +283,6 @@ function LatticePlot(props: {
         In this slice: {within.get(1) ?? 0} circuits with one line per edge,{' '}
         {within.get(2) ?? 0} with up to two, {within.get(3) ?? 0} with up to three.
       </p>
-    </div>
-  );
-}
-
-function FlowCounters(props: { model: FlowModel; x: readonly number[]; onChange: (x: number[]) => void }): JSX.Element {
-  const { model, x, onChange } = props;
-  const set = (k: number, v: number) => onChange(x.map((old, i) => (i === k ? Math.max(-MAX_COUNT, Math.min(MAX_COUNT, v)) : old)));
-  return (
-    <div className="lattice-counters" role="group" aria-label="Flow on each edge class">
-      <div className="lattice-counters-head">
-        <h3>Flow on each {model.mode === 'labels' ? 'class' : 'group'}</h3>
-        <button type="button" className="lattice-clear" onClick={() => onChange(x.map(() => 0))}>
-          Clear
-        </button>
-      </div>
-      <ul>
-        {model.vars.map((v, k) => (
-          <li key={v.label} className={x[k] === 0 ? 'is-zero' : x[k] > 0 ? 'is-pos' : 'is-neg'}>
-            <span className="lattice-counter-label">{v.label}</span>
-            <button type="button" aria-label={`Less flow on ${v.label}`} onClick={() => set(k, x[k] - 1)} disabled={x[k] <= -MAX_COUNT}>
-              −
-            </button>
-            <output data-testid={`lattice-count-${v.label}`}>{x[k] > 0 ? `+${x[k]}` : x[k] < 0 ? `−${-x[k]}` : '0'}</output>
-            <button type="button" aria-label={`More flow on ${v.label}`} onClick={() => set(k, x[k] + 1)} disabled={x[k] >= MAX_COUNT}>
-              +
-            </button>
-          </li>
-        ))}
-      </ul>
     </div>
   );
 }
@@ -426,33 +417,162 @@ function CircuitPatch(props: { model: FlowModel; x: readonly number[]; level: nu
   );
 }
 
-function MatrixTable({ model }: { model: FlowModel }): JSX.Element {
+function MatrixEditor(props: {
+  model: FlowModel;
+  x: readonly number[];
+  onChange: (x: number[]) => void;
+  hover: number | null;
+  onHover: (k: number | null) => void;
+}): JSX.Element {
+  const { model, x, onChange, hover, onHover } = props;
+  const set = (k: number, v: number) => onChange(x.map((old, i) => (i === k ? Math.max(-MAX_COUNT, Math.min(MAX_COUNT, v)) : old)));
+  const net = netFlow(model, x);
+  const hoverProps = (k: number) => ({
+    onPointerEnter: () => onHover(k),
+    onPointerLeave: () => onHover(null),
+  });
+  const colClass = (k: number) => [hover === k ? 'is-hovered' : '', x[k] !== 0 ? 'is-live' : ''].filter(Boolean).join(' ') || undefined;
   return (
     <div className="lattice-table-box">
-      <table className="lattice-table" data-testid="lattice-matrix">
+      <table className="lattice-table lattice-editor" data-testid="lattice-matrix">
         <thead>
           <tr>
             <th scope="col">Tile</th>
-            {model.vars.map((v) => (
-              <th key={v.label} scope="col">
+            {model.vars.map((v, k) => (
+              <th key={v.label} scope="col" className={colClass(k)} style={{ borderBottomColor: edgeClassColor(v.major) }} {...hoverProps(k)}>
                 {v.label}
               </th>
             ))}
+            <th scope="col">Net</th>
+          </tr>
+          <tr className="lattice-flow-row">
+            <th scope="row">Flow</th>
+            {model.vars.map((v, k) => (
+              <td key={v.label} className={[colClass(k), x[k] > 0 ? 'is-pos' : x[k] < 0 ? 'is-neg' : 'is-zero'].filter(Boolean).join(' ')} {...hoverProps(k)}>
+                <div className="lattice-stepper">
+                  <button type="button" aria-label={`More flow on ${v.label}`} onClick={() => set(k, x[k] + 1)} disabled={x[k] >= MAX_COUNT}>
+                    +
+                  </button>
+                  <output data-testid={`lattice-count-${v.label}`}>{signed(x[k])}</output>
+                  <button type="button" aria-label={`Less flow on ${v.label}`} onClick={() => set(k, x[k] - 1)} disabled={x[k] <= -MAX_COUNT}>
+                    −
+                  </button>
+                </div>
+              </td>
+            ))}
+            <td>
+              <button type="button" className="lattice-clear" onClick={() => onChange(x.map(() => 0))}>
+                Clear
+              </button>
+            </td>
           </tr>
         </thead>
         <tbody>
           {model.types.map((t, i) => (
-            <tr key={t}>
+            <tr key={t} className={net[i] === 0 ? undefined : 'is-unbalanced'}>
               <th scope="row">{t}</th>
-              {model.matrix[i].map((v, k) => (
-                <td key={k} className={v === 0 ? 'is-zero' : undefined}>
-                  {v > 0 ? `+${v}` : v < 0 ? `−${-v}` : '·'}
-                </td>
-              ))}
+              {model.matrix[i].map((v, k) => {
+                const live = x[k] !== 0 && v !== 0;
+                return (
+                  <td
+                    key={k}
+                    className={[colClass(k), v === 0 ? 'is-zero' : '', live ? 'is-term' : ''].filter(Boolean).join(' ')}
+                    title={live ? `${signed(v)} × ${signed(x[k])}` : undefined}
+                    data-testid={`lattice-cell-${t}-${model.vars[k].label}`}
+                    {...hoverProps(k)}
+                  >
+                    {v === 0 ? '·' : live ? signed(v * x[k]) : signed(v)}
+                  </td>
+                );
+              })}
+              <td className={`lattice-net ${net[i] === 0 ? 'is-good' : 'is-bad'}`} data-testid={`lattice-net-${t}`}>
+                {signed(net[i])}
+              </td>
             </tr>
           ))}
         </tbody>
       </table>
     </div>
+  );
+}
+
+function FlowTileStrip(props: {
+  model: FlowModel;
+  x: readonly number[];
+  hover: number | null;
+  onHover: (k: number | null) => void;
+}): JSX.Element {
+  const net = netFlow(props.model, props.x);
+  return (
+    <ul className="lattice-strip" aria-label="The tile types with their flow">
+      {props.model.types.map((t, i) => (
+        <li key={t}>
+          <FlowTile {...props} type={t} />
+          <span className={`lattice-strip-net ${net[i] === 0 ? 'is-good' : 'is-bad'}`} data-testid={`lattice-strip-${t}`}>
+            <strong>{t}</strong>{' '}
+            {net[i] === 0 ? 'balances' : `${Math.abs(net[i])} more ${net[i] > 0 ? 'out' : 'in'}`}
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function FlowTile(props: {
+  model: FlowModel;
+  type: TileTypeId;
+  x: readonly number[];
+  hover: number | null;
+  onHover: (k: number | null) => void;
+}): JSX.Element {
+  const { model, type, x, hover, onHover } = props;
+  const pts = HEX_PTS;
+  const centre = { x: pts.reduce((a, p) => a + p.x, 0) / pts.length, y: pts.reduce((a, p) => a + p.y, 0) / pts.length };
+  const points = tileStrandPoints(model, type, x, pts);
+  const strands = pairStrands(points);
+  const pad = 0.55;
+  const xs = pts.map((p) => p.x);
+  const ys = pts.map((p) => p.y);
+  const view = `${Math.min(...xs) - pad} ${Math.min(...ys) - pad} ${Math.max(...xs) - Math.min(...xs) + 2 * pad} ${Math.max(...ys) - Math.min(...ys) + 2 * pad}`;
+  return (
+    <svg className="lattice-flow-tile" viewBox={view} role="img" aria-label={`${type} tile`}>
+      <polygon className="lattice-flow-tile-body" points={pts.map((p) => `${p.x},${p.y}`).join(' ')} />
+      {pts.map((a, e) => {
+        const b = pts[(e + 1) % pts.length];
+        const ev = edgeVar(model, type, e);
+        const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+        const len = Math.hypot(mid.x - centre.x, mid.y - centre.y) || 1;
+        const lab = { x: mid.x + ((mid.x - centre.x) / len) * 0.3, y: mid.y + ((mid.y - centre.y) / len) * 0.3 };
+        const flow = ev ? ev.sign * x[ev.index] : 0;
+        const v = ev ? model.vars[ev.index] : null;
+        const colour = v ? edgeClassColor(v.major) : 'var(--muted)';
+        const cls = ['lattice-flow-edge', ev === null ? 'is-dropped' : '', flow !== 0 ? 'is-live' : '', ev && hover === ev.index ? 'is-hovered' : '']
+          .filter(Boolean)
+          .join(' ');
+        return (
+          <g
+            key={e}
+            className={cls}
+            onPointerEnter={ev ? () => onHover(ev.index) : undefined}
+            onPointerLeave={ev ? () => onHover(null) : undefined}
+          >
+            <title>{v ? `${v.label}: ${flow === 0 ? 'no flow' : `${Math.abs(flow)} ${flow > 0 ? 'out' : 'in'}`}` : 'class 0 (no direction)'}</title>
+            <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} style={{ stroke: colour }} />
+            <line className="lattice-flow-hit" x1={a.x} y1={a.y} x2={b.x} y2={b.y} />
+            <text x={lab.x} y={lab.y + 0.09} textAnchor="middle" style={{ fill: colour }}>
+              {v ? v.label : '0'}
+            </text>
+          </g>
+        );
+      })}
+      {(strands ?? []).map((s, i) => (
+        <g key={i} className="lattice-strand">
+          <path d={strandPath(s, centre)} />
+          <path className="lattice-arrow" d={arrowHead(s, centre)} />
+        </g>
+      ))}
+      {strands === null &&
+        points.map((p, i) => <circle key={i} className={`lattice-loose is-${p.dir}`} cx={p.pos.x} cy={p.pos.y} r={0.09} />)}
+    </svg>
   );
 }
