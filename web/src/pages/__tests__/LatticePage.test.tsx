@@ -100,6 +100,21 @@ describe('LatticePage', () => {
     expect(screen.queryByTestId('lattice-combo-Delta')).toBeNull();
   });
 
+  it('colours closed loops by turn, and reversing the flow swaps the counts', () => {
+    const { container } = render(<LatticePage />);
+    const patch = container.querySelector('svg.lattice-patch')!;
+    const counts = () => ['cw', 'ccw', 'open'].map((k) => Number(patch.getAttribute(`data-${k}`)));
+    const [cw, ccw, open] = counts();
+    expect(cw + ccw).toBeGreaterThan(0);
+    // Every drawn strand belongs to exactly one classified path.
+    expect(patch.querySelectorAll('.lattice-strand.is-cw, .lattice-strand.is-ccw, .lattice-strand.is-open')).toHaveLength(
+      Number(patch.getAttribute('data-strands')),
+    );
+    expect(screen.getByTestId('lattice-turns').textContent).toContain(`${cw} clockwise`);
+    fireEvent.click(screen.getByTestId('lattice-pt--1_0'));
+    expect(counts()).toEqual([ccw, cw, open]);
+  });
+
   it('switches to meeting groups and its larger matrix', () => {
     render(<LatticePage />);
     fireEvent.change(screen.getByLabelText(/Unknowns/), { target: { value: 'groups' } });

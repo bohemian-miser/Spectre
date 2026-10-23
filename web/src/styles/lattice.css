@@ -526,3 +526,59 @@
 .lattice-gallery .lattice-flow-tile {
   max-width: 76px;
 }
+
+/* Closed loops by turning direction, open paths neutral. */
+.lattice-page {
+  --turn-cw: #4f8ff7;
+  --turn-ccw: #f0883e;
+  --turn-open: var(--muted);
+}
+.lattice-patch .lattice-strand.is-cw path {
+  stroke: var(--turn-cw);
+}
+.lattice-patch .lattice-strand.is-cw .lattice-arrow {
+  fill: var(--turn-cw);
+}
+.lattice-patch .lattice-strand.is-ccw path {
+  stroke: var(--turn-ccw);
+}
+.lattice-patch .lattice-strand.is-ccw .lattice-arrow {
+  fill: var(--turn-ccw);
+}
+.lattice-patch .lattice-strand.is-open path {
+  stroke: var(--turn-open);
+  opacity: 0.75;
+}
+.lattice-patch .lattice-strand.is-open .lattice-arrow {
+  fill: var(--turn-open);
+}
+.lattice-patch .lattice-strand .lattice-arrow {
+  stroke: none;
+}
+.lattice-turns {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  margin: 8px 0 4px;
+  font-size: 13px;
+}
+.lattice-swatch {
+  display: inline-block;
+  width: 18px;
+  height: 4px;
+  border-radius: 2px;
+  margin-left: 8px;
+}
+.lattice-swatch:first-child {
+  margin-left: 0;
+}
+.lattice-swatch.is-cw {
+  background: var(--turn-cw);
+}
+.lattice-swatch.is-ccw {
+  background: var(--turn-ccw);
+}
+.lattice-swatch.is-open {
+  background: var(--turn-open);
+}
