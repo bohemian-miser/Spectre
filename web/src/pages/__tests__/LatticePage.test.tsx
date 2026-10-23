@@ -56,6 +56,28 @@ describe('LatticePage', () => {
     expect(patch.getAttribute('data-unbalanced')).toBe('0');
   });
 
+  it('arrow keys pick a column and step its flow', () => {
+    const { container } = render(<LatticePage />);
+    const editor = screen.getByTestId('lattice-editor');
+    const selectedHead = () => container.querySelector('.lattice-editor thead th.is-selected')?.textContent;
+    expect(selectedHead()).toBe('1');
+    fireEvent.keyDown(editor, { key: 'ArrowLeft' }); // already at the first column
+    expect(selectedHead()).toBe('1');
+    fireEvent.keyDown(editor, { key: 'ArrowRight' });
+    fireEvent.keyDown(editor, { key: 'ArrowRight' });
+    expect(selectedHead()).toBe('3');
+    fireEvent.keyDown(editor, { key: 'ArrowDown' });
+    fireEvent.keyDown(editor, { key: 'ArrowDown' });
+    expect(screen.getByTestId('lattice-count-3').textContent).toBe('−2');
+    fireEvent.keyDown(editor, { key: 'ArrowUp' });
+    expect(screen.getByTestId('lattice-count-3').textContent).toBe('−1');
+    // Clicking a column selects it for the keys too.
+    fireEvent.click(screen.getByTestId('lattice-cell-Theta-8'));
+    expect(selectedHead()).toBe('8');
+    fireEvent.keyDown(editor, { key: 'ArrowRight' }); // already at the last column
+    expect(selectedHead()).toBe('8');
+  });
+
   it('switches to meeting groups and its larger matrix', () => {
     render(<LatticePage />);
     fireEvent.change(screen.getByLabelText(/Unknowns/), { target: { value: 'groups' } });

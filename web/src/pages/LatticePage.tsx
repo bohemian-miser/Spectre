@@ -6,7 +6,7 @@
  * lines per edge as its flow needs. The maths lives in core/flowLattice.ts.
  */
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type KeyboardEvent } from 'react';
 import {
   combine,
   defaultAxes,
@@ -69,12 +69,15 @@ export default function LatticePage(): JSX.Element {
   const [level, setLevel] = useState(2);
   const [x, setX] = useState<number[]>(() => firstFlow(flowModel('labels')));
   const [hoverVar, setHoverVar] = useState<number | null>(null);
+  /** The column the arrow keys edit. */
+  const [col, setCol] = useState(0);
 
   const pickMode = (m: FlowMode) => {
     setMode(m);
     setAxes(defaultAxes(flowModel(m)));
     setX(firstFlow(flowModel(m)));
     setHoverVar(null);
+    setCol(0);
   };
   const flat = model.basis.length < 2;
   const sel = slicePoint(model, axes, flat, x);
@@ -182,8 +185,16 @@ export default function LatticePage(): JSX.Element {
           tile&rsquo;s net flow. A circuit is a top row that makes every net zero.
         </p>
         <div className="lattice-balance-grid">
-          <MatrixEditor model={model} x={x} onChange={setX} hover={hoverVar} onHover={setHoverVar} />
-          <FlowTileStrip model={model} x={x} hover={hoverVar} onHover={setHoverVar} />
+          <MatrixEditor
+            model={model}
+            x={x}
+            onChange={setX}
+            hover={hoverVar}
+            onHover={setHoverVar}
+            selected={col}
+            onSelect={setCol}
+          />
+          <FlowTileStrip model={model} x={x} hover={hoverVar ?? col} onHover={setHoverVar} />
         </div>
         <p className="muted">
           Each tile shows its edges in their class colours with the class number outside. Strands run
@@ -423,17 +434,48 @@ function MatrixEditor(props: {
   onChange: (x: number[]) => void;
   hover: number | null;
   onHover: (k: number | null) => void;
+  selected: number;
+  onSelect: (k: number) => void;
 }): JSX.Element {
-  const { model, x, onChange, hover, onHover } = props;
+  const { model, x, onChange, hover, onHover, selected, onSelect } = props;
   const set = (k: number, v: number) => onChange(x.map((old, i) => (i === k ? Math.max(-MAX_COUNT, Math.min(MAX_COUNT, v)) : old)));
   const net = netFlow(model, x);
+  const last = model.vars.length - 1;
+  const cur = Math.min(selected, last);
   const hoverProps = (k: number) => ({
     onPointerEnter: () => onHover(k),
     onPointerLeave: () => onHover(null),
+    onClick: () => onSelect(k),
   });
-  const colClass = (k: number) => [hover === k ? 'is-hovered' : '', x[k] !== 0 ? 'is-live' : ''].filter(Boolean).join(' ') || undefined;
+  const colClass = (k: number) =>
+    [k === cur ? 'is-selected' : '', hover === k ? 'is-hovered' : '', x[k] !== 0 ? 'is-live' : ''].filter(Boolean).join(' ') ||
+    undefined;
+  // ← → pick a column, ↑ ↓ change its flow, anywhere inside the matrix.
+  const onKeyDown = (e: KeyboardEvent) => {
+    if (e.altKey || e.ctrlKey || e.metaKey) return;
+    const step: Record<string, () => void> = {
+      ArrowLeft: () => onSelect(Math.max(0, cur - 1)),
+      ArrowRight: () => onSelect(Math.min(last, cur + 1)),
+      ArrowUp: () => set(cur, x[cur] + 1),
+      ArrowDown: () => set(cur, x[cur] - 1),
+    };
+    const act = step[e.key];
+    if (!act) return;
+    e.preventDefault();
+    act();
+  };
   return (
-    <div className="lattice-table-box">
+    <div
+      className="lattice-table-box lattice-editor-box"
+      tabIndex={0}
+      role="group"
+      aria-label={`Flow editor: column ${model.vars[cur]?.label}. Left and right arrows pick a column, up and down change its flow.`}
+      data-testid="lattice-editor"
+      onKeyDown={onKeyDown}
+    >
+      <p className="lattice-keys muted">
+        Click here, then <kbd>←</kbd> <kbd>→</kbd> pick a column and <kbd>↑</kbd> <kbd>↓</kbd> change its flow.
+      </p>
       <table className="lattice-table lattice-editor" data-testid="lattice-matrix">
         <thead>
           <tr>
