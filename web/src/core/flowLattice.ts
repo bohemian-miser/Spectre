@@ -276,8 +276,13 @@ export function linesNeeded(x: readonly number[]): number {
   return x.reduce((m, v) => Math.max(m, Math.abs(v)), 0);
 }
 
+/** Per tile type, flow out minus flow in: all zero exactly when x is a circuit. */
+export function netFlow(model: FlowModel, x: readonly number[]): number[] {
+  return model.matrix.map((row) => row.reduce((a, v, k) => a + v * (x[k] ?? 0), 0));
+}
+
 export function isCircuit(model: FlowModel, x: readonly number[]): boolean {
-  return model.matrix.every((row) => row.reduce((a, v, k) => a + v * x[k], 0) === 0);
+  return netFlow(model, x).every((v) => v === 0);
 }
 
 /**
