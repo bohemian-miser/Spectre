@@ -30,7 +30,9 @@
 
 import {
   DEFAULT_CONTRACTS,
+  chordControl,
   curvedChordPieces,
+  leafCentre,
   HEX_RULE_SPECTRE_FAMILY,
   LEAF_ORDER,
   hexRuleSpectreDrawing,
@@ -38,6 +40,7 @@ import {
   leafPts,
   localChords,
   type EdgeContracts,
+  type Pt,
   type Segment,
   type TileFamilyId,
 } from '../../core';
@@ -79,6 +82,12 @@ export interface LeafChordTable {
    * `data` and `vertsPerInstance` are packed from these.
    */
   readonly drawSegments?: readonly (readonly Segment[])[];
+  /**
+   * With curved strands, each chord's Bézier control point (tile-local, one
+   * per entry of `segments`), so overlays built on the straight chords — the
+   * traced strand, found circuits, highlights — can bend the same way.
+   */
+  readonly controls?: readonly (readonly Pt[])[];
   /** Largest chord count over the leaf types (drives `vertsPerInstance`). */
   readonly maxChords: number;
   /** Total chords across all leaf types (HUD / tests). */
@@ -149,11 +158,25 @@ export function buildLeafChordTable(
 
   const order = leafOrder(family);
   const segments = order.map((type, i) => localChords(family, type, selected, matching[i] ?? 0, contracts));
-  return leafChordTableFromSegments(
-    family,
-    segments,
-    curved ? order.map((type, i) => curvedChordPieces(family, type, segments[i])) : undefined,
+  return withControls(
+    leafChordTableFromSegments(
+      family,
+      segments,
+      curved ? order.map((type, i) => curvedChordPieces(family, type, segments[i])) : undefined,
+    ),
+    curved,
   );
+}
+
+/** Attach each chord's control point when strands are curved. */
+function withControls(table: LeafChordTable, curved: boolean): LeafChordTable {
+  if (!curved || table.chordCount === 0) return table;
+  const order = leafOrder(table.family);
+  const controls = order.map((type, i) => {
+    const centre = leafCentre(table.family, type);
+    return (table.segments[i] ?? []).map(([a, b]) => chordControl(a, b, centre));
+  });
+  return { ...table, controls };
 }
 
 /**
@@ -181,7 +204,7 @@ export function buildHexRuleSpectreChordTable(
     segments,
     curved ? order.map((type, i) => curvedChordPieces(HEX_RULE_SPECTRE_FAMILY, type, segments[i])) : undefined,
   );
-  return { ...table, aux: new Set(Object.values(auxChords).flat()) };
+  return withControls({ ...table, aux: new Set(Object.values(auxChords).flat()) }, curved);
 }
 
 /**
