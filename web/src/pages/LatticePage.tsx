@@ -83,6 +83,8 @@ export default function LatticePage(): JSX.Element {
   /** Which in→out pairing each tile type uses, and the tile the strip keys edit. */
   const [comboIdx, setComboIdx] = useState<Readonly<Record<string, number>>>({});
   const [tileSel, setTileSel] = useState(0);
+  /** Last slice point picked; the plot's arrow keys move from here when the flow is off the slice. */
+  const [cursor, setCursor] = useState<[number, number]>([1, 0]);
 
   const pickMode = (m: FlowMode) => {
     setMode(m);
@@ -92,6 +94,7 @@ export default function LatticePage(): JSX.Element {
     setCol(0);
     setComboIdx({});
     setTileSel(0);
+    setCursor([1, 0]);
   };
   const flat = model.basis.length < 2;
   const sel = slicePoint(model, axes, flat, x);
@@ -193,7 +196,11 @@ export default function LatticePage(): JSX.Element {
             flat={flat}
             maxLines={maxLines}
             sel={sel}
-            onPick={(a, b) => setX(vecAt(model, axes, a, b))}
+            cursor={sel ?? cursor}
+            onPick={(a, b) => {
+              setCursor([a, b]);
+              setX(vecAt(model, axes, a, b));
+            }}
           />
           <Readout model={model} x={x} sel={sel} flat={flat} />
         </section>
@@ -263,9 +270,27 @@ function LatticePlot(props: {
   flat: boolean;
   maxLines: number;
   sel: readonly [number, number] | null;
+  cursor: readonly [number, number];
   onPick: (a: number, b: number) => void;
 }): JSX.Element {
-  const { model, axes, flat, maxLines, sel, onPick } = props;
+  const { model, axes, flat, maxLines, sel, cursor, onPick } = props;
+  const clamp = (v: number) => Math.max(-RANGE, Math.min(RANGE, v));
+  // ← → move along a, ↑ ↓ along b, picking each point as you go.
+  const onKeyDown = (e: KeyboardEvent) => {
+    if (e.altKey || e.ctrlKey || e.metaKey) return;
+    const [a, b] = cursor;
+    const move: Record<string, [number, number]> = {
+      ArrowLeft: [a - 1, b],
+      ArrowRight: [a + 1, b],
+      ArrowUp: [a, flat ? b : b + 1],
+      ArrowDown: [a, flat ? b : b - 1],
+    };
+    const next = move[e.key];
+    if (!next) return;
+    e.preventDefault();
+    const [na, nb] = [clamp(next[0]), clamp(next[1])];
+    if (na !== a || nb !== b || sel === null) onPick(na, nb);
+  };
   const span = 2 * RANGE + 1;
   const pad = 30;
   const size = span * CELL + 2 * pad;
@@ -283,7 +308,23 @@ function LatticePlot(props: {
     }),
   );
   return (
-    <div className="lattice-plot-box">
+    <div
+      className="lattice-plot-box"
+      tabIndex={0}
+      role="group"
+      aria-label={`Lattice slice at a = ${cursor[0]}${flat ? '' : `, b = ${cursor[1]}`}. Arrow keys move around it.`}
+      data-testid="lattice-plot"
+      onKeyDown={onKeyDown}
+    >
+      <p className="lattice-keys muted">
+        Click a dot, then <kbd>←</kbd> <kbd>→</kbd> move along <em>a</em>
+        {flat ? '' : (
+          <>
+            {' '}and <kbd>↑</kbd> <kbd>↓</kbd> along <em>b</em>
+          </>
+        )}
+        .
+      </p>
       <svg
         className="lattice-plot"
         viewBox={`0 0 ${size} ${height}`}
@@ -309,15 +350,9 @@ function LatticePlot(props: {
               className={`lattice-pt lattice-pt-${tier}${picked ? ' is-picked' : ''}`}
               data-testid={`lattice-pt-${a}_${b}`}
               role="button"
-              tabIndex={0}
+              tabIndex={-1}
               aria-label={`a = ${a}, b = ${b}: ${lines} line${lines === 1 ? '' : 's'}`}
               onClick={() => onPick(a, b)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault();
-                  onPick(a, b);
-                }
-              }}
             >
               <title>{describeFlow(model, vecAt(model, axes, a, b))}</title>
               <circle cx={cx(a)} cy={cy(b)} r={15} />

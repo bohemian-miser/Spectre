@@ -115,6 +115,27 @@ describe('LatticePage', () => {
     expect(counts()).toEqual([ccw, cw, open]);
   });
 
+  it('arrow keys move around the lattice slice, picking each point', () => {
+    render(<LatticePage />);
+    const plot = screen.getByTestId('lattice-plot');
+    const readout = () => screen.getByTestId('lattice-readout').textContent!;
+    expect(readout()).toContain('a = 1, b = 0');
+    fireEvent.keyDown(plot, { key: 'ArrowUp' });
+    expect(readout()).toContain('a = 1, b = 1');
+    expect(readout()).toContain('1: +2');
+    fireEvent.keyDown(plot, { key: 'ArrowLeft' });
+    fireEvent.keyDown(plot, { key: 'ArrowDown' });
+    expect(readout()).toContain('a = 0, b = 0');
+    // The slice ends at ±3.
+    for (let i = 0; i < 6; i++) fireEvent.keyDown(plot, { key: 'ArrowRight' });
+    expect(readout()).toContain('a = 3, b = 0');
+    // Off the slice (class 3 alone), the keys carry on from the last point.
+    fireEvent.click(screen.getByRole('button', { name: 'More flow on 3' }));
+    expect(readout()).toContain('off this slice');
+    fireEvent.keyDown(plot, { key: 'ArrowLeft' });
+    expect(readout()).toContain('a = 2, b = 0');
+  });
+
   it('switches to meeting groups and its larger matrix', () => {
     render(<LatticePage />);
     fireEvent.change(screen.getByLabelText(/Unknowns/), { target: { value: 'groups' } });

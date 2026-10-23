@@ -582,3 +582,23 @@
 .lattice-swatch.is-open {
   background: var(--turn-open);
 }
+
+.lattice-plot-box {
+  border-radius: var(--radius);
+  border: 1px solid transparent;
+}
+.lattice-plot-box:focus {
+  outline: none;
+}
+.lattice-plot-box:focus-visible,
+.lattice-plot-box:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+.lattice-plot-box .lattice-keys {
+  border-bottom: none;
+  padding: 4px 6px 0;
+}
+.lattice-plot-box .lattice-counts {
+  padding: 0 6px 4px;
+}
