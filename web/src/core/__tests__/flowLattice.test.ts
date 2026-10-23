@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   combine,
+  directedMatchings,
   defaultAxes,
   flowModel,
   hexMeetings,
@@ -68,5 +69,36 @@ describe('flowLattice', () => {
     const p = (dir: 'in' | 'out') => ({ edge: 0, pos: { x: 0, y: 0 }, dir });
     expect(pairStrands([p('in'), p('in'), p('out')])).toBeNull();
     expect(pairStrands([p('out'), p('out'), p('in'), p('in')])).toHaveLength(2);
+  });
+});
+
+describe('directedMatchings', () => {
+  const pts = (dirs: string) => [...dirs].map((d) => ({ edge: 0, pos: { x: 0, y: 0 }, dir: (d === 'o' ? 'out' : 'in') as 'in' | 'out' }));
+
+  it('counts the non-crossing ways to join each entry to an exit', () => {
+    expect(directedMatchings(pts('')).matchings).toEqual([[]]);
+    expect(directedMatchings(pts('ooii')).matchings).toHaveLength(1);
+    expect(directedMatchings(pts('oioi')).matchings).toHaveLength(2);
+    // Alternating ends: every non-crossing pairing joins opposite ends, so Catalan(3).
+    expect(directedMatchings(pts('ioioio')).matchings).toHaveLength(5);
+    expect(directedMatchings(pts('ooi')).matchings).toHaveLength(0);
+  });
+
+  it('always pairs an entry with an exit, and never crosses', () => {
+    const p = pts('iooiio');
+    for (const m of directedMatchings(p).matchings) {
+      for (const [a, b] of m) {
+        expect(p[a].dir).toBe('in');
+        expect(p[b].dir).toBe('out');
+      }
+      const chords = m.map(([a, b]) => [Math.min(a, b), Math.max(a, b)]);
+      for (const [a1, a2] of chords) for (const [b1, b2] of chords) expect(a1 < b1 && b1 < a2 && a2 < b2).toBe(false);
+    }
+  });
+
+  it('stops at the limit and says so', () => {
+    const r = directedMatchings(pts('io'.repeat(8)), 10);
+    expect(r.matchings).toHaveLength(10);
+    expect(r.truncated).toBe(true);
   });
 });
