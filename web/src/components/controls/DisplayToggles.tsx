@@ -17,6 +17,7 @@ const ITEMS: readonly { flag: number; label: string }[] = [
   { flag: FLAG.BACKGROUNDS, label: 'Backgrounds' },
   { flag: FLAG.OUTLINES, label: 'Outlines' },
   { flag: FLAG.LINES, label: 'Circuit lines' },
+  { flag: FLAG.CURVED_STRANDS, label: 'Curved strands' },
   { flag: FLAG.DOTS, label: 'Connection dots' },
   { flag: FLAG.RAINBOW_TAILS, label: 'Rainbow wanderers' },
   { flag: FLAG.EDGE_LABELS, label: 'Edge labels' },

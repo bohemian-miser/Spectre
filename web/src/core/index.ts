@@ -29,3 +29,4 @@ export * from './hexRule';
 export * from './morph';
 export * from './flowLattice';
 export * from './flowOverlay';
+export * from './strandCurves';

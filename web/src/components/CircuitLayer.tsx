@@ -8,7 +8,7 @@
  */
 
 import { useMemo } from 'react';
-import type { Path } from '../core';
+import type { Path, Pt } from '../core';
 import { buildOverlayPaths, tailEndpoints } from '../lib/overlayPaths';
 
 export interface CircuitLayerProps {
@@ -16,6 +16,8 @@ export interface CircuitLayerProps {
   readonly tails: readonly Path[];
   readonly circuitColorByLength?: ReadonlyMap<number, string> | readonly (readonly [number, string])[];
   readonly segmentColor?: ReadonlyMap<string, string> | readonly (readonly [string, string])[];
+  /** From a `curved` analysis: each step bows through its control point. */
+  readonly segmentControl?: ReadonlyMap<string, Pt> | readonly (readonly [string, Pt])[];
   readonly rainbowTails?: boolean;
   readonly showCircuits?: boolean;
   readonly showTails?: boolean;
@@ -39,6 +41,7 @@ export function CircuitLayer(props: CircuitLayerProps): JSX.Element {
     tails,
     circuitColorByLength,
     segmentColor,
+    segmentControl,
     rainbowTails = false,
     showCircuits = true,
     showTails = true,
@@ -52,7 +55,7 @@ export function CircuitLayer(props: CircuitLayerProps): JSX.Element {
   const records = useMemo(
     () =>
       buildOverlayPaths(
-        { circuits, tails, circuitColorByLength, segmentColor },
+        { circuits, tails, circuitColorByLength, segmentColor, segmentControl },
         { showCircuits, showTails, rainbowTails, maxRecords },
       ),
     [
@@ -60,6 +63,7 @@ export function CircuitLayer(props: CircuitLayerProps): JSX.Element {
       tails,
       circuitColorByLength,
       segmentColor,
+      segmentControl,
       showCircuits,
       showTails,
       rainbowTails,

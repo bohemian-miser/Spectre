@@ -30,6 +30,7 @@
 
 import {
   DEFAULT_CONTRACTS,
+  curvedChordPieces,
   HEX_RULE_SPECTRE_FAMILY,
   LEAF_ORDER,
   hexRuleSpectreDrawing,
@@ -71,6 +72,13 @@ export interface LeafChordTable {
   readonly data: Float32Array;
   /** Tile-local chord segments per leaf type, in `leafOrder(family)` order. */
   readonly segments: readonly (readonly Segment[])[];
+  /**
+   * What to DRAW per leaf type when strands are curved: each chord as short
+   * straight pieces of its curve. `segments` stay the straight chords, so the
+   * walk, the circuit finder and region fills see the same strands as ever.
+   * `data` and `vertsPerInstance` are packed from these.
+   */
+  readonly drawSegments?: readonly (readonly Segment[])[];
   /** Largest chord count over the leaf types (drives `vertsPerInstance`). */
   readonly maxChords: number;
   /** Total chords across all leaf types (HUD / tests). */
@@ -134,14 +142,17 @@ export function buildLeafChordTable(
   subset: readonly number[],
   matching: readonly number[],
   contracts: EdgeContracts = DEFAULT_CONTRACTS,
+  curved = false,
 ): LeafChordTable {
   const selected = new Set(subset);
   if (selected.size === 0) return emptyChordTable(family);
 
   const order = leafOrder(family);
+  const segments = order.map((type, i) => localChords(family, type, selected, matching[i] ?? 0, contracts));
   return leafChordTableFromSegments(
     family,
-    order.map((type, i) => localChords(family, type, selected, matching[i] ?? 0, contracts)),
+    segments,
+    curved ? order.map((type, i) => curvedChordPieces(family, type, segments[i])) : undefined,
   );
 }
 
@@ -154,6 +165,7 @@ export function buildHexRuleSpectreChordTable(
   subset: readonly number[],
   matching: readonly number[],
   contracts: EdgeContracts = DEFAULT_CONTRACTS,
+  curved = false,
 ): LeafChordTable {
   const selected = new Set(subset);
   if (selected.size === 0) return emptyChordTable(HEX_RULE_SPECTRE_FAMILY);
@@ -162,17 +174,24 @@ export function buildHexRuleSpectreChordTable(
     record[type] = matching[i] ?? 0;
   });
   const { chords, auxChords } = hexRuleSpectreDrawing(selected, record, contracts);
+  const order = leafOrder(HEX_RULE_SPECTRE_FAMILY);
+  const segments = order.map((type) => chords[type] ?? []);
   const table = leafChordTableFromSegments(
     HEX_RULE_SPECTRE_FAMILY,
-    leafOrder(HEX_RULE_SPECTRE_FAMILY).map((type) => chords[type] ?? []),
+    segments,
+    curved ? order.map((type, i) => curvedChordPieces(HEX_RULE_SPECTRE_FAMILY, type, segments[i])) : undefined,
   );
   return { ...table, aux: new Set(Object.values(auxChords).flat()) };
 }
 
-/** Pack per-leaf segments (in `leafOrder(family)` order) into a chord table. */
+/**
+ * Pack per-leaf segments (in `leafOrder(family)` order) into a chord table.
+ * With `drawSegments` (curved strands), the texture holds those instead.
+ */
 export function leafChordTableFromSegments(
   family: TileFamilyId,
   segments: readonly (readonly Segment[])[],
+  drawSegments?: readonly (readonly Segment[])[],
 ): LeafChordTable {
   const order = leafOrder(family);
   const rows = order.length;
@@ -187,10 +206,11 @@ export function leafChordTableFromSegments(
   }
   if (maxChords === 0) return emptyChordTable(family);
 
-  const vertsPerInstance = maxChords * 2;
+  const drawn = drawSegments ?? segments;
+  const vertsPerInstance = 2 * Math.max(...drawn.map((d) => d.length));
   const data = new Float32Array(rows * vertsPerInstance * CHORD_STRIDE);
   for (let row = 0; row < rows; row++) {
-    const local = segments[row] ?? [];
+    const local = drawn[row] ?? [];
     const base = row * vertsPerInstance * CHORD_STRIDE;
     for (let c = 0; c < local.length; c++) {
       const [a, b] = local[c];
@@ -212,6 +232,7 @@ export function leafChordTableFromSegments(
     reach: familyChordReach(family),
     data,
     segments,
+    drawSegments,
     maxChords,
     chordCount,
     emptyTypes,
@@ -228,6 +249,7 @@ export function chordTableKey(
   subset: readonly number[],
   matching: readonly number[],
   contracts?: EdgeContracts,
+  curved = false,
 ): string {
   const ct = contracts
     ? Object.entries(contracts)
@@ -235,5 +257,5 @@ export function chordTableKey(
         .sort()
         .join(';')
     : '';
-  return `${family}|${[...subset].sort((a, b) => a - b).join('')}|${matching.join('.')}|${ct}`;
+  return `${family}|${[...subset].sort((a, b) => a - b).join('')}|${matching.join('.')}|${ct}${curved ? '|curved' : ''}`;
 }

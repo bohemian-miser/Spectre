@@ -217,6 +217,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
   const selected = useMemo(() => new Set(state.subset), [state.subset]);
   const curvy = hasFlag(state, FLAG.CURVY) && family !== 'hex';
   const linesOn = hasFlag(state, FLAG.LINES);
+  const curvedStrands = hasFlag(state, FLAG.CURVED_STRANDS);
   const nonCrossingOnly = hasFlag(state, FLAG.NON_CROSSING_ONLY);
   const mode = explorerMode(state);
   const budget = explorerBudget(state);
@@ -334,6 +335,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
             dual: hasFlag(state, FLAG.DUAL) || hasFlag(state, FLAG.REGIONS),
             // Region colours need the piece polygons; the dual graph alone does not.
             dualPieces: hasFlag(state, FLAG.REGIONS) && state.level <= REGION_FILL_MAX_LEVEL,
+            curved: curvedStrands,
           }
         : null,
     [
@@ -396,10 +398,10 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
     () =>
       infinite && linesOn && state.subset.length
         ? asSpectres
-          ? buildHexRuleSpectreChordTable(state.subset, state.matching, state.contracts)
-          : buildLeafChordTable(family, state.subset, state.matching, state.contracts)
+          ? buildHexRuleSpectreChordTable(state.subset, state.matching, state.contracts, curvedStrands)
+          : buildLeafChordTable(family, state.subset, state.matching, state.contracts, curvedStrands)
         : null,
-    [infinite, linesOn, asSpectres, family, state.subset, state.matching, state.contracts],
+    [infinite, linesOn, asSpectres, family, state.subset, state.matching, state.contracts, curvedStrands],
   );
 
   const infiniteStyle = useMemo<MapRenderStyle>(() => {
@@ -961,6 +963,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
           colorScheme={state.colorScheme}
           customColors={state.customColors}
           curvy={curvy}
+          curvedStrands={curvedStrands}
           nonCrossingOnly={nonCrossingOnly}
           highlightMajors={highlightMajors}
           showEdgeLabels={hasFlag(state, FLAG.EDGE_LABELS)}
@@ -1006,6 +1009,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
           ) : (
             <TilePalette
               family={family}
+              curvedStrands={curvedStrands}
               selectedEdges={selected}
               highlightMajors={highlightMajors}
               overlaysByType={state.overlays}
@@ -1579,7 +1583,12 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
                 ) : null}
                 {flow ? (
                   <g transform={svgMatrixString(model.viewTransform)}>
-                    <FlowLayer overlay={flow} strokeWidth={BASE_CIRCUIT_STROKE * lineWidth} arrows={state.level <= 3} />
+                    <FlowLayer
+                      overlay={flow}
+                      strokeWidth={BASE_CIRCUIT_STROKE * lineWidth}
+                      arrows={state.level <= 3}
+                      curved={curvedStrands}
+                    />
                   </g>
                 ) : analysis.result && linesOn ? (
                   <g transform={svgMatrixString(model.viewTransform)}>
@@ -1588,6 +1597,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
                       tails={analysis.result.tails}
                       circuitColorByLength={analysis.result.circuitColors}
                       segmentColor={analysis.result.segmentColors}
+                      segmentControl={analysis.result.segmentControls}
                       rainbowTails={hasFlag(state, FLAG.RAINBOW_TAILS)}
                       highlightLengths={highlightLengths}
                       tailEndMarkers={state.level <= 3}
@@ -1635,6 +1645,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
                 circuits={linesOn ? analysis.result?.circuits : undefined}
                 tails={linesOn ? analysis.result?.tails : undefined}
                 circuitColorByLength={analysis.result?.circuitColors}
+                segmentControl={analysis.result?.segmentControls}
                 rainbowTails={hasFlag(state, FLAG.RAINBOW_TAILS)}
                 highlightLengths={highlightLengths}
                 strokeWidth={BASE_CIRCUIT_STROKE * lineWidth}

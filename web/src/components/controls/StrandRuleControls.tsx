@@ -32,6 +32,8 @@ export interface StrandRuleControlsProps {
   readonly colorScheme?: ColorSchemeId;
   readonly customColors?: Readonly<Record<string, string>>;
   readonly curvy?: boolean;
+  /** Bow the matching previews' chords toward each tile's centre. */
+  readonly curvedStrands?: boolean;
   /** Offer only matchings whose chords do not cross inside the tile. */
   readonly nonCrossingOnly?: boolean;
   /** Classes to pick out in the picker (hover feedback from the page). */
@@ -55,6 +57,7 @@ export function StrandRuleControls(props: StrandRuleControlsProps): JSX.Element 
     colorScheme = 'bright',
     customColors,
     curvy = false,
+    curvedStrands = false,
     nonCrossingOnly = false,
     highlightMajors,
     showEdgeLabels = false,
@@ -136,6 +139,7 @@ export function StrandRuleControls(props: StrandRuleControlsProps): JSX.Element 
               nonCrossingOnly={nonCrossingOnly}
               showEdgeLabels={showEdgeLabels}
               curvy={curvy}
+              curvedStrands={curvedStrands}
               colorScheme={colorScheme}
               customColors={customColors}
               tileSize={tileSize}

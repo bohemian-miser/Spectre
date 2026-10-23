@@ -44,6 +44,8 @@ export interface MatchingSliderProps {
   readonly showEdgeLabels?: boolean;
   readonly tileSize?: number;
   readonly curvy?: boolean;
+  /** Bow the chords toward the tile's centre. */
+  readonly curvedStrands?: boolean;
   readonly colorScheme?: ColorSchemeId;
   readonly customColors?: Readonly<Record<string, string>>;
   /** Allow drag-to-pair on the mini tile (default true). */
@@ -65,6 +67,7 @@ export function MatchingSlider(props: MatchingSliderProps): JSX.Element | null {
     showEdgeLabels = false,
     tileSize = 130,
     curvy,
+    curvedStrands,
     colorScheme,
     customColors,
     allowPairing = true,
@@ -112,6 +115,7 @@ export function MatchingSlider(props: MatchingSliderProps): JSX.Element | null {
         tileType={tileType}
         size={tileSize}
         curvy={curvy}
+        curvedStrands={curvedStrands}
         colorScheme={colorScheme}
         customColors={customColors}
         contracts={contracts}

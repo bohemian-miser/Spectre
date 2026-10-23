@@ -24,6 +24,7 @@ import { transPt, type Pt } from './geom';
 import { enumerateMatchings } from './matchings';
 import { pointKey, weldSegments, type Segment } from './circuits';
 import type { TileInstance } from './tiles';
+import { chordControl, leafCentre } from './strandCurves';
 
 export type ChordKind = 'through' | 'source' | 'sink' | 'neutral';
 
@@ -32,6 +33,8 @@ export interface FlowChord {
   readonly a: Pt;
   readonly b: Pt;
   readonly kind: ChordKind;
+  /** Where the chord bows to when drawn curved. */
+  readonly ctrl: Pt;
 }
 
 export interface FlowRun {
@@ -46,9 +49,14 @@ export interface FlowOverlay {
   readonly runs: readonly FlowRun[];
   /** Run index per chord, −1 for source, sink and neutral chords. */
   readonly runOf: readonly number[];
-  /** Where flow starts / ends: source and sink chords' midpoints, plus clashing seams. */
+  /**
+   * Where flow starts / ends: the source (sink) chords' midpoints first, in
+   * `sourceChords` (`sinkChords`) order, then any seams where ends clash.
+   */
   readonly sources: readonly Pt[];
   readonly sinks: readonly Pt[];
+  readonly sourceChords: readonly number[];
+  readonly sinkChords: readonly number[];
 }
 
 export interface FlowOverlayInput {
@@ -102,15 +110,18 @@ export function flowOverlay(input: FlowOverlayInput): FlowOverlay {
   const local = new Map<string, ReturnType<typeof signedLocalChords>>();
   const raw: Segment[] = [];
   const signs: [number, number][] = [];
+  const ctrls: Pt[] = [];
   for (const inst of input.instances) {
     let chords = local.get(inst.type);
     if (!chords) {
       chords = signedLocalChords(input.family, inst.type, input.selected, input.matchingIndexByType[inst.type] ?? 0, contracts);
       local.set(inst.type, chords);
     }
+    const centre = leafCentre(input.family, inst.type);
     for (const c of chords) {
       raw.push([transPt(inst.xform, c.a), transPt(inst.xform, c.b)]);
       signs.push([c.sa, c.sb]);
+      ctrls.push(transPt(inst.xform, chordControl(c.a, c.b, centre)));
     }
   }
   const welded = weldSegments(raw);
@@ -118,9 +129,10 @@ export function flowOverlay(input: FlowOverlayInput): FlowOverlay {
   // Orient each chord: out (+) end last for a through chord.
   const chords: FlowChord[] = welded.map(([p, q], i) => {
     const [sa, sb] = signs[i];
-    if (sa === 0 || sb === 0) return { a: p, b: q, kind: 'neutral' };
-    if (sa === sb) return { a: p, b: q, kind: sa > 0 ? 'source' : 'sink' };
-    return sa < 0 ? { a: p, b: q, kind: 'through' } : { a: q, b: p, kind: 'through' };
+    const ctrl = ctrls[i];
+    if (sa === 0 || sb === 0) return { a: p, b: q, kind: 'neutral', ctrl };
+    if (sa === sb) return { a: p, b: q, kind: sa > 0 ? 'source' : 'sink', ctrl };
+    return sa < 0 ? { a: p, b: q, kind: 'through', ctrl } : { a: q, b: p, kind: 'through', ctrl };
   });
 
   // Every end at each welded point, with whether flow arrives there (an out end) or leaves.
@@ -144,8 +156,10 @@ export function flowOverlay(input: FlowOverlayInput): FlowOverlay {
     }
   });
 
-  const sources: Pt[] = chords.filter((c) => c.kind === 'source').map((c) => mid(c.a, c.b));
-  const sinks: Pt[] = chords.filter((c) => c.kind === 'sink').map((c) => mid(c.a, c.b));
+  const sourceChords = chords.flatMap((c, i) => (c.kind === 'source' ? [i] : []));
+  const sinkChords = chords.flatMap((c, i) => (c.kind === 'sink' ? [i] : []));
+  const sources: Pt[] = sourceChords.map((i) => mid(chords[i].a, chords[i].b));
+  const sinks: Pt[] = sinkChords.map((i) => mid(chords[i].a, chords[i].b));
   // Seams where two ends meet the same way: flow piles up or splits on the edge itself.
   for (const [k, list] of ends) {
     if (list.length !== 2 || list[0].arrives !== list[1].arrives) continue;
@@ -185,5 +199,5 @@ export function flowOverlay(input: FlowOverlayInput): FlowOverlay {
   chords.forEach((c, i) => {
     if (c.kind === 'through' && runOf[i] === -1) walk(i);
   });
-  return { chords, runs, runOf, sources, sinks };
+  return { chords, runs, runOf, sources, sinks, sourceChords, sinkChords };
 }

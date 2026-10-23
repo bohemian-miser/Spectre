@@ -163,7 +163,7 @@ export function createCanvas2dRenderer(
 
   const setChords = (table: LeafChordTable | null): void => {
     const live = table && table.vertsPerInstance > 0 ? table : null;
-    chordPaths = live ? live.segments.map(chordPathOf) : null;
+    chordPaths = live ? (live.drawSegments ?? live.segments).map(chordPathOf) : null;
     chordCounts = live ? live.segments.map((s) => s.length) : [];
   };
 

@@ -418,4 +418,17 @@ describe('ExplorerPage — infinite mode', () => {
     const { container } = render(<ExplorerPage />);
     expect(container.querySelector('[data-testid="flow-summary"]')?.textContent).toContain('rooted patch');
   });
+
+  it('curved strands draw the circuits as quadratic curves', () => {
+    // fl = default 23 + CURVED_STRANDS 4096.
+    window.history.replaceState(null, '', '/#/explorer?v=1&f=hex&lv=2&e=15&fl=4119');
+    const { container } = render(<ExplorerPage />);
+    const d = container.querySelector('.circuit-path')?.getAttribute('d') ?? '';
+    expect(d).toContain(' Q ');
+    expect(container.querySelector('.matching-chords path.chord')).not.toBeNull();
+    cleanup();
+    window.history.replaceState(null, '', '/#/explorer?v=1&f=hex&lv=2&e=15');
+    const off = render(<ExplorerPage />);
+    expect(off.container.querySelector('.circuit-path')?.getAttribute('d')).not.toContain(' Q ');
+  });
 });
