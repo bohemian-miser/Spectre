@@ -40,6 +40,13 @@ describe('LatticePage', () => {
     expect(balance).toContain('Phi has 2 more in');
     expect(Number(patch.getAttribute('data-unbalanced'))).toBeGreaterThan(0);
     expect(screen.getByTestId('lattice-readout').textContent).toContain('off this slice');
+    // The matrix shows each term: Phi's class-3 entry is +1, times −2.
+    expect(screen.getByTestId('lattice-cell-Phi-3').textContent).toBe('−2');
+    expect(screen.getByTestId('lattice-cell-Phi-3').getAttribute('title')).toBe('+1 × −2');
+    expect(screen.getByTestId('lattice-net-Phi').textContent).toBe('−2');
+    expect(screen.getByTestId('lattice-strip-Phi').textContent).toContain('2 more in');
+    // Delta meets class 3 once each way, so it still balances.
+    expect(screen.getByTestId('lattice-net-Delta').textContent).toBe('0');
 
     // Clicking a lattice point puts the counters back on a circuit.
     fireEvent.click(screen.getByTestId('lattice-pt--1_0'));
@@ -52,8 +59,9 @@ describe('LatticePage', () => {
   it('switches to meeting groups and its larger matrix', () => {
     render(<LatticePage />);
     fireEvent.change(screen.getByLabelText(/Unknowns/), { target: { value: 'groups' } });
-    const head = screen.getByTestId('lattice-matrix').querySelectorAll('thead th');
-    expect(head).toHaveLength(13);
+    // Tile, twelve groups, Net.
+    const head = screen.getByTestId('lattice-matrix').querySelectorAll('thead tr:first-child th');
+    expect(head).toHaveLength(14);
     expect(screen.getByText(/The lattice has dimension 5/)).toBeTruthy();
   });
 });

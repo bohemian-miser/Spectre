@@ -276,6 +276,15 @@ export function linesNeeded(x: readonly number[]): number {
   return x.reduce((m, v) => Math.max(m, Math.abs(v)), 0);
 }
 
+/** Which unknown a tile's edge carries, and its sign there; null for a dropped edge. */
+export function edgeVar(model: FlowModel, type: TileTypeId, edge: number): { index: number; sign: 1 | -1 } | null {
+  for (let index = 0; index < model.vars.length; index++) {
+    const slot = model.vars[index].slots.find((s) => s.type === type && s.edge === edge);
+    if (slot) return { index, sign: slot.sign };
+  }
+  return null;
+}
+
 /** Per tile type, flow out minus flow in: all zero exactly when x is a circuit. */
 export function netFlow(model: FlowModel, x: readonly number[]): number[] {
   return model.matrix.map((row) => row.reduce((a, v, k) => a + v * (x[k] ?? 0), 0));
