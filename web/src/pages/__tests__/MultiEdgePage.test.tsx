@@ -92,4 +92,32 @@ describe('MultiEdgePage', () => {
     expect(container.querySelectorAll('svg.lattice-patch path.is-dim').length).toBeGreaterThan(0);
     expect(screen.getByTestId('multiedge-factor-0').className).toBe('is-selected');
   });
+
+  it('groups the patch loops by count vector, and names the tiles that join different classes', () => {
+    const { container } = render(<MultiEdgePage />);
+    const editor = screen.getByTestId('multiedge-editor');
+    fireEvent.keyDown(editor, { key: 'ArrowRight' });
+    fireEvent.keyDown(editor, { key: 'ArrowUp' });
+    for (let i = 0; i < 4; i++) fireEvent.keyDown(editor, { key: 'ArrowRight' });
+    fireEvent.keyDown(editor, { key: 'ArrowUp' });
+    // Combination 1: every tile turns its strands back on the same edge, so only lenses.
+    fireEvent.click([...screen.getByTestId('multiedge-splits').querySelectorAll('button')].find((b) => b.textContent!.startsWith('11 + 55'))!);
+    const groups = () => [...screen.getByTestId('multiedge-loop-groups').querySelectorAll('button .mono')].map((b) => b.textContent).sort();
+    expect(groups()).toEqual(['11', '55']);
+    expect(screen.getByTestId('multiedge-joins').textContent).toContain('Every tile joins strands of the same class');
+    // Delta joins 1 to 5: one factor now, but most loops stay pure lenses.
+    fireEvent.click(screen.getByRole('button', { name: 'Next pairing for Delta' }));
+    expect(screen.getByTestId('multiedge-split').textContent).toBe('1155 = 1155');
+    expect(screen.getByTestId('multiedge-joins').textContent).toMatch(/Joining different classes: Delta \(1–5 ×2\)/);
+    expect(groups()).toContain('11');
+    expect(groups()).toContain('55');
+    expect(groups().some((g) => g!.includes('1') && g!.includes('5'))).toBe(true);
+    // Picking a group fades every other strand.
+    const pure = [...screen.getByTestId('multiedge-loop-groups').querySelectorAll('button')].find((b) => b.querySelector('.mono')!.textContent === '11')!;
+    fireEvent.click(pure);
+    const strands = [...container.querySelectorAll('svg.lattice-patch path.multiedge-strand')];
+    const lit = strands.filter((p) => !p.classList.contains('is-dim'));
+    expect(lit.length).toBeGreaterThan(0);
+    expect(lit.every((p) => p.getAttribute('data-loop') === '11')).toBe(true);
+  });
 });
