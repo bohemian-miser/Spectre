@@ -399,3 +399,46 @@
 .lattice-loose.is-in {
   fill: var(--panel);
 }
+
+.lattice-editor-box:focus {
+  outline: none;
+}
+.lattice-editor-box:focus-visible,
+.lattice-editor-box:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+.lattice-page .lattice-keys {
+  max-width: none;
+  margin: 0;
+  padding: 6px 10px;
+  font-size: 12px;
+  border-bottom: 1px solid var(--line);
+}
+.lattice-keys kbd {
+  display: inline-block;
+  min-width: 1.6em;
+  padding: 0 4px;
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--panel-2);
+  color: var(--text);
+  font: inherit;
+  text-align: center;
+}
+.lattice-editor th.is-selected,
+.lattice-editor td.is-selected {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.lattice-editor thead th.is-selected {
+  color: var(--accent);
+  font-weight: 700;
+}
+.lattice-editor-box:focus-within th.is-selected,
+.lattice-editor-box:focus-within td.is-selected {
+  box-shadow: inset 1px 0 0 var(--accent), inset -1px 0 0 var(--accent);
+}
+.lattice-editor td.is-term.is-selected {
+  background: color-mix(in srgb, var(--accent) 24%, transparent);
+}
