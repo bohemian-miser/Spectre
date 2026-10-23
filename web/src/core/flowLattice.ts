@@ -378,6 +378,47 @@ export function pairStrands(points: readonly StrandPoint[]): Strand[] | null {
   return stack.length === 0 ? out : null;
 }
 
+/** One way to join a tile's strand ends: [entry index, exit index] pairs into its point list. */
+export type DirectedMatching = readonly (readonly [number, number])[];
+
+/**
+ * Every way to join a tile's entries to its exits with chords that don't cross,
+ * in a fixed order (so index k means the same pairing on every tile of a type).
+ * The first point joins some later point of the other direction with a balanced
+ * stretch between them, which must pair up among itself; the rest pairs after.
+ * Empty when the tile doesn't balance; `[[]]` when nothing crosses it.
+ */
+export function directedMatchings(points: readonly StrandPoint[], limit = 500): { matchings: DirectedMatching[]; truncated: boolean } {
+  function* gen(idx: readonly number[]): Generator<[number, number][]> {
+    if (idx.length === 0) {
+      yield [];
+      return;
+    }
+    const [first, ...rest] = idx;
+    let bal = 0;
+    for (let j = 0; j < rest.length; j++) {
+      const p = rest[j];
+      if (bal === 0 && points[p].dir !== points[first].dir) {
+        const pair: [number, number] = points[first].dir === 'in' ? [first, p] : [p, first];
+        for (const inner of gen(rest.slice(0, j))) {
+          for (const outer of gen(rest.slice(j + 1))) yield [pair, ...inner, ...outer];
+        }
+      }
+      bal += points[p].dir === 'out' ? 1 : -1;
+    }
+  }
+  const matchings: DirectedMatching[] = [];
+  for (const m of gen(points.map((_, i) => i))) {
+    if (matchings.length === limit) return { matchings, truncated: true };
+    matchings.push(m);
+  }
+  return { matchings, truncated: false };
+}
+
+export function applyMatching(points: readonly StrandPoint[], m: DirectedMatching): Strand[] {
+  return m.map(([i, j]) => ({ from: points[i], to: points[j] }));
+}
+
 export interface PatchTile {
   readonly inst: TileInstance;
   readonly pts: readonly Pt[];

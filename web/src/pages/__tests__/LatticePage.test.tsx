@@ -78,6 +78,28 @@ describe('LatticePage', () => {
     expect(selectedHead()).toBe('8');
   });
 
+  it('the tile strip steps through each tile\'s in→out pairings', () => {
+    const { container } = render(<LatticePage />);
+    const strip = screen.getByTestId('lattice-strip');
+    const patch = () => container.querySelector('svg.lattice-patch')!.innerHTML;
+    // The 15 loop crosses Pi twice each way, so Pi has two pairings.
+    for (let i = 0; i < 4; i++) fireEvent.keyDown(strip, { key: 'ArrowRight' });
+    expect(screen.getByTestId('lattice-gallery').textContent).toContain('Pi: 2 ways to join its entries to its exits');
+    expect(screen.getByTestId('lattice-combo-Pi').textContent).toContain('combo 1 of 2');
+    const before = patch();
+    fireEvent.keyDown(strip, { key: 'ArrowUp' });
+    expect(screen.getByTestId('lattice-combo-Pi').textContent).toContain('combo 2 of 2');
+    expect(patch()).not.toBe(before);
+    fireEvent.keyDown(strip, { key: 'ArrowUp' }); // wraps round
+    expect(screen.getByTestId('lattice-combo-Pi').textContent).toContain('combo 1 of 2');
+    expect(patch()).toBe(before);
+    // The gallery picks directly.
+    fireEvent.click(screen.getByRole('button', { name: 'Pi combination 2' }));
+    expect(screen.getByTestId('lattice-combo-Pi').textContent).toContain('combo 2 of 2');
+    // Delta has only one way, so no counter.
+    expect(screen.queryByTestId('lattice-combo-Delta')).toBeNull();
+  });
+
   it('switches to meeting groups and its larger matrix', () => {
     render(<LatticePage />);
     fireEvent.change(screen.getByLabelText(/Unknowns/), { target: { value: 'groups' } });

@@ -442,3 +442,87 @@
 .lattice-editor td.is-term.is-selected {
   background: color-mix(in srgb, var(--accent) 24%, transparent);
 }
+
+.lattice-strip-box {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  min-width: 0;
+}
+.lattice-strip-box:focus {
+  outline: none;
+}
+.lattice-strip-box:focus-visible,
+.lattice-strip-box:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+.lattice-strip-box .lattice-strip {
+  padding: 8px;
+}
+.lattice-strip li {
+  cursor: pointer;
+}
+.lattice-strip li.is-selected {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.lattice-combo {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.lattice-combo button {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border-radius: 5px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--text);
+  font: inherit;
+  line-height: 1;
+  cursor: pointer;
+}
+.lattice-gallery {
+  padding: 8px 10px 10px;
+  border-top: 1px solid var(--line);
+}
+.lattice-gallery h3 {
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+.lattice-gallery ul {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+  gap: 6px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.lattice-gallery button {
+  display: grid;
+  justify-items: center;
+  width: 100%;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel-2);
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.lattice-gallery li.is-selected button {
+  border-color: var(--accent);
+  color: var(--text);
+  font-weight: 700;
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.lattice-gallery .lattice-flow-tile {
+  max-width: 76px;
+}

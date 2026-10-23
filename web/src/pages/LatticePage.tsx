@@ -8,17 +8,19 @@
 
 import { useMemo, useState, type KeyboardEvent } from 'react';
 import {
+  applyMatching,
   combine,
   defaultAxes,
+  directedMatchings,
   describeFlow,
   edgeVar,
   flowModel,
   hexPatch,
   linesNeeded,
   netFlow,
-  pairStrands,
   tileStrandPoints,
   type FlowMode,
+  type DirectedMatching,
   type FlowModel,
   type Strand,
 } from '../core/flowLattice';
@@ -44,6 +46,11 @@ function vecAt(model: FlowModel, axes: readonly [number, number], a: number, b: 
 }
 
 const signed = (n: number) => (n > 0 ? `+${n}` : n < 0 ? `−${-n}` : '0');
+
+/** Shown in the gallery at most; the counter still steps through all of them. */
+const GALLERY_MAX = 60;
+
+type ComboTable = Readonly<Record<string, ReturnType<typeof directedMatchings>>>;
 
 const sameFlow = (p: readonly number[], q: readonly number[]) => p.length === q.length && p.every((v, k) => v === q[k]);
 
@@ -71,6 +78,9 @@ export default function LatticePage(): JSX.Element {
   const [hoverVar, setHoverVar] = useState<number | null>(null);
   /** The column the arrow keys edit. */
   const [col, setCol] = useState(0);
+  /** Which in→out pairing each tile type uses, and the tile the strip keys edit. */
+  const [comboIdx, setComboIdx] = useState<Readonly<Record<string, number>>>({});
+  const [tileSel, setTileSel] = useState(0);
 
   const pickMode = (m: FlowMode) => {
     setMode(m);
@@ -78,9 +88,25 @@ export default function LatticePage(): JSX.Element {
     setX(firstFlow(flowModel(m)));
     setHoverVar(null);
     setCol(0);
+    setComboIdx({});
+    setTileSel(0);
   };
   const flat = model.basis.length < 2;
   const sel = slicePoint(model, axes, flat, x);
+  const combos: ComboTable = useMemo(
+    () => Object.fromEntries(model.types.map((t) => [t, directedMatchings(tileStrandPoints(model, t, x, HEX_PTS))])),
+    [model, x],
+  );
+  const pick = (t: TileTypeId): number => {
+    const n = combos[t].matchings.length;
+    return n === 0 ? 0 : (((comboIdx[t] ?? 0) % n) + n) % n;
+  };
+  const chosen = useMemo(
+    () => Object.fromEntries(model.types.map((t) => [t, combos[t].matchings[pick(t)] ?? null])) as Readonly<Record<string, DirectedMatching | null>>,
+    // pick reads only combos and comboIdx.
+    [model, combos, comboIdx],
+  );
+  const setCombo = (t: TileTypeId, i: number) => setComboIdx((c) => ({ ...c, [t]: i }));
 
   return (
     <article className="lattice-page">
@@ -171,7 +197,7 @@ export default function LatticePage(): JSX.Element {
         </section>
         <section className="lattice-panel" aria-labelledby="lattice-patch-h">
           <h2 id="lattice-patch-h">The circuit</h2>
-          <CircuitPatch model={model} x={x} level={level} />
+          <CircuitPatch model={model} x={x} level={level} chosen={chosen} />
         </section>
       </div>
 
@@ -194,7 +220,17 @@ export default function LatticePage(): JSX.Element {
             selected={col}
             onSelect={setCol}
           />
-          <FlowTileStrip model={model} x={x} hover={hoverVar ?? col} onHover={setHoverVar} />
+          <FlowTileStrip
+            model={model}
+            x={x}
+            hover={hoverVar ?? col}
+            onHover={setHoverVar}
+            combos={combos}
+            pick={pick}
+            onCombo={setCombo}
+            selected={tileSel}
+            onSelect={setTileSel}
+          />
         </div>
         <p className="muted">
           Each tile shows its edges in their class colours with the class number outside. Strands run
@@ -350,8 +386,13 @@ function arrowHead(s: Strand, centre: Pt): string {
   return `M${tip.x},${tip.y} L${l.x},${l.y} L${r.x},${r.y} Z`;
 }
 
-function CircuitPatch(props: { model: FlowModel; x: readonly number[]; level: number }): JSX.Element {
-  const { model, x, level } = props;
+function CircuitPatch(props: {
+  model: FlowModel;
+  x: readonly number[];
+  level: number;
+  chosen: Readonly<Record<string, DirectedMatching | null>>;
+}): JSX.Element {
+  const { model, x, level, chosen } = props;
   const tiles = useMemo(() => hexPatch(level), [level]);
   const view = useMemo(() => {
     let minX = Infinity;
@@ -377,10 +418,10 @@ function CircuitPatch(props: { model: FlowModel; x: readonly number[]; level: nu
           y: t.pts.reduce((a, p) => a + p.y, 0) / t.pts.length,
         };
         const points = tileStrandPoints(model, t.inst.type, x, t.pts);
-        const paired = pairStrands(points);
-        return { t, centre, strands: paired ?? [], loose: paired ? [] : points };
+        const pairs = chosen[t.inst.type] ?? null;
+        return { t, centre, strands: pairs ? applyMatching(points, pairs) : [], loose: pairs ? [] : points };
       }),
-    [tiles, model, x],
+    [tiles, model, x, chosen],
   );
   const strandCount = drawn.reduce((a, d) => a + d.strands.length, 0);
   const unbalanced = drawn.filter((d) => d.loose.length > 0).length;
@@ -543,20 +584,97 @@ function FlowTileStrip(props: {
   x: readonly number[];
   hover: number | null;
   onHover: (k: number | null) => void;
+  combos: ComboTable;
+  pick: (t: TileTypeId) => number;
+  onCombo: (t: TileTypeId, i: number) => void;
+  selected: number;
+  onSelect: (i: number) => void;
 }): JSX.Element {
-  const net = netFlow(props.model, props.x);
+  const { model, x, hover, onHover, combos, pick, onCombo, selected, onSelect } = props;
+  const net = netFlow(model, x);
+  const types = model.types;
+  const cur = Math.min(selected, types.length - 1);
+  const curType = types[cur];
+  const step = (t: TileTypeId, d: number) => {
+    const n = combos[t].matchings.length;
+    if (n > 1) onCombo(t, (((pick(t) + d) % n) + n) % n);
+  };
+  // ← → pick a tile, ↑ ↓ step its combination.
+  const onKeyDown = (e: KeyboardEvent) => {
+    if (e.altKey || e.ctrlKey || e.metaKey) return;
+    const act: Record<string, () => void> = {
+      ArrowLeft: () => onSelect(Math.max(0, cur - 1)),
+      ArrowRight: () => onSelect(Math.min(types.length - 1, cur + 1)),
+      ArrowUp: () => step(curType, 1),
+      ArrowDown: () => step(curType, -1),
+    };
+    if (!act[e.key]) return;
+    e.preventDefault();
+    act[e.key]();
+  };
+  const cur$ = combos[curType];
   return (
-    <ul className="lattice-strip" aria-label="The tile types with their flow">
-      {props.model.types.map((t, i) => (
-        <li key={t}>
-          <FlowTile {...props} type={t} />
-          <span className={`lattice-strip-net ${net[i] === 0 ? 'is-good' : 'is-bad'}`} data-testid={`lattice-strip-${t}`}>
-            <strong>{t}</strong>{' '}
-            {net[i] === 0 ? 'balances' : `${Math.abs(net[i])} more ${net[i] > 0 ? 'out' : 'in'}`}
-          </span>
-        </li>
-      ))}
-    </ul>
+    <div
+      className="lattice-strip-box"
+      tabIndex={0}
+      role="group"
+      aria-label={`Tiles: ${curType} selected. Left and right arrows pick a tile, up and down step its combination.`}
+      data-testid="lattice-strip"
+      onKeyDown={onKeyDown}
+    >
+      <p className="lattice-keys muted">
+        Click here, then <kbd>←</kbd> <kbd>→</kbd> pick a tile and <kbd>↑</kbd> <kbd>↓</kbd> step through its in→out pairings.
+      </p>
+      <ul className="lattice-strip" aria-label="The tile types with their flow">
+        {types.map((t, i) => {
+          const n = combos[t].matchings.length;
+          return (
+            <li key={t} className={i === cur ? 'is-selected' : undefined} onClick={() => onSelect(i)}>
+              <FlowTile model={model} type={t} x={x} hover={hover} onHover={onHover} pairs={combos[t].matchings[pick(t)] ?? null} />
+              <span className={`lattice-strip-net ${net[i] === 0 ? 'is-good' : 'is-bad'}`} data-testid={`lattice-strip-${t}`}>
+                <strong>{t}</strong>{' '}
+                {net[i] === 0 ? 'balances' : `${Math.abs(net[i])} more ${net[i] > 0 ? 'out' : 'in'}`}
+              </span>
+              {n > 1 && (
+                <span className="lattice-combo" data-testid={`lattice-combo-${t}`}>
+                  <button type="button" aria-label={`Previous combination for ${t}`} onClick={() => step(t, -1)}>
+                    ‹
+                  </button>
+                  combo {pick(t) + 1} of {n}
+                  {combos[t].truncated ? '+' : ''}
+                  <button type="button" aria-label={`Next combination for ${t}`} onClick={() => step(t, 1)}>
+                    ›
+                  </button>
+                </span>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+      <div className="lattice-gallery" data-testid="lattice-gallery">
+        <h3>
+          {curType}:{' '}
+          {cur$.matchings.length === 0
+            ? 'doesn’t balance, so its ends can’t all pair up'
+            : cur$.matchings[0].length === 0
+              ? 'no strands cross it'
+              : `${cur$.matchings.length}${cur$.truncated ? '+' : ''} way${cur$.matchings.length === 1 ? '' : 's'} to join its entries to its exits`}
+        </h3>
+        {cur$.matchings.length > 0 && cur$.matchings[0].length > 0 && (
+          <ul>
+            {cur$.matchings.slice(0, GALLERY_MAX).map((m, i) => (
+              <li key={i} className={i === pick(curType) ? 'is-selected' : undefined}>
+                <button type="button" aria-label={`${curType} combination ${i + 1}`} aria-pressed={i === pick(curType)} onClick={() => onCombo(curType, i)}>
+                  <FlowTile model={model} type={curType} x={x} hover={hover} onHover={onHover} pairs={m} />
+                  <span>{i + 1}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        {cur$.matchings.length > GALLERY_MAX && <p className="muted">Showing the first {GALLERY_MAX}; the arrow keys reach the rest.</p>}
+      </div>
+    </div>
   );
 }
 
@@ -566,12 +684,13 @@ function FlowTile(props: {
   x: readonly number[];
   hover: number | null;
   onHover: (k: number | null) => void;
+  pairs: DirectedMatching | null;
 }): JSX.Element {
-  const { model, type, x, hover, onHover } = props;
+  const { model, type, x, hover, onHover, pairs } = props;
   const pts = HEX_PTS;
   const centre = { x: pts.reduce((a, p) => a + p.x, 0) / pts.length, y: pts.reduce((a, p) => a + p.y, 0) / pts.length };
   const points = tileStrandPoints(model, type, x, pts);
-  const strands = pairStrands(points);
+  const strands = pairs ? applyMatching(points, pairs) : null;
   const pad = 0.55;
   const xs = pts.map((p) => p.x);
   const ys = pts.map((p) => p.y);
