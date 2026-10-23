@@ -52,6 +52,7 @@ import {
   buildSystem,
   flatten,
   flowOverlay,
+  hasMultiStrands,
 } from '../core';
 import {
   CircuitLayer,
@@ -216,7 +217,12 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
   const drawFamily: TileFamilyId = asSpectres ? HEX_RULE_SPECTRE_FAMILY : family;
   const selected = useMemo(() => new Set(state.subset), [state.subset]);
   const curvy = hasFlag(state, FLAG.CURVY) && family !== 'hex';
-  const linesOn = hasFlag(state, FLAG.LINES);
+  /**
+   * Several strands per class are not drawn for hexagons-as-Spectres yet: the
+   * Mystic's strands are matched to the hexagon's by seam, one per seam.
+   */
+  const multiOnSpectres = asSpectres && hasMultiStrands(state.contracts);
+  const linesOn = hasFlag(state, FLAG.LINES) && !multiOnSpectres;
   const curvedStrands = hasFlag(state, FLAG.CURVED_STRANDS);
   const nonCrossingOnly = hasFlag(state, FLAG.NON_CROSSING_ONLY);
   const mode = explorerMode(state);
@@ -976,7 +982,14 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
           onToggleNonCrossing={() =>
             dispatch({ type: 'toggleFlag', flag: FLAG.NON_CROSSING_ONLY })
           }
+          onStrandCountChange={(major, count) => dispatch({ type: 'setStrandCount', major, count })}
         />
+        {multiOnSpectres ? (
+          <p className="warning-badge" role="status" data-testid="multi-on-spectres">
+            Several strands per edge aren&rsquo;t drawn with the hexagons as Spectres yet. Switch the
+            shape back to hexagons, or set every class to one strand.
+          </p>
+        ) : null}
 
         <fieldset className="explorer-overlays">
           <legend>Overlay tools</legend>

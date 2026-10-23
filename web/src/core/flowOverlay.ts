@@ -21,7 +21,7 @@
 import { connectionPoints, DEFAULT_CONTRACTS, parseEdgeLabel, type EdgeContracts } from './edges';
 import { edgeLabels, leafOrder, type TileFamilyId, type TileTypeId } from './families';
 import { transPt, type Pt } from './geom';
-import { enumerateMatchings } from './matchings';
+import { matchingAt } from './matchings';
 import { pointKey, weldSegments, type Segment } from './circuits';
 import type { TileInstance } from './tiles';
 import { chordControl, leafCentre } from './strandCurves';
@@ -96,7 +96,7 @@ export function signedLocalChords(
 ): readonly { a: Pt; b: Pt; sa: number; sb: number }[] {
   const cps = connectionPoints(family, type, selected, contracts);
   if (cps.length < 2 || cps.length % 2 !== 0) return [];
-  const matching = enumerateMatchings(cps.length)[matchingIndex];
+  const matching = matchingAt(cps.length, matchingIndex);
   if (!matching) return [];
   const directed = directedClasses(family);
   const sign = (i: number) => (directed.has(cps[i].edge.major) ? cps[i].edge.sign : 0);

@@ -19,6 +19,10 @@ import {
   clampFoundHold,
   maxMatchingIndex,
   normalizeMatchingVector,
+  DEFAULT_CONTRACTS,
+  MAX_STRANDS,
+  connectionCount,
+  strandCount,
   clampInstanceBudget,
   clampLineScale,
   clampFollowDamping,
@@ -65,6 +69,7 @@ export type ExplorerAction =
   | { readonly type: 'setCustomColor'; readonly tileType: string; readonly hex: string }
   | { readonly type: 'setContract'; readonly major: number; readonly contract: EdgeContract | null }
   | { readonly type: 'clearContracts' }
+  | { readonly type: 'setStrandCount'; readonly major: number; readonly count: number }
   | { readonly type: 'addChord'; readonly tileType: TileTypeId; readonly chord: Chord }
   | { readonly type: 'removeChord'; readonly tileType: TileTypeId; readonly at: number }
   | { readonly type: 'clearOverlays'; readonly tileType?: TileTypeId }
@@ -118,7 +123,7 @@ function withSubset(state: ExplorerState, subset: readonly number[]): ExplorerSt
   return {
     ...state,
     subset: next,
-    matching: normalizeMatchingVector(state.family, next, state.matching),
+    matching: normalizeMatchingVector(state.family, next, state.matching, state.contracts),
   };
 }
 
@@ -147,7 +152,7 @@ export function explorerReducer(state: ExplorerState, action: ExplorerAction): E
       const next: ExplorerState = {
         ...rest,
         family: action.family,
-        matching: normalizeMatchingVector(action.family, state.subset, state.matching),
+        matching: normalizeMatchingVector(action.family, state.subset, state.matching, state.contracts),
         overlays: {},
       };
       // The un-rooted engine only generates spectre; leaving `infinite` set
@@ -390,7 +395,7 @@ export function explorerReducer(state: ExplorerState, action: ExplorerAction): E
       const order = leafOrder(state.family);
       const at = order.indexOf(action.tileType);
       if (at < 0) return state;
-      const max = maxMatchingIndex(state.family, action.tileType, state.subset);
+      const max = maxMatchingIndex(state.family, action.tileType, state.subset, state.contracts);
       const next = [...state.matching];
       const value = clampInt(action.index, 0, max);
       if (next[at] === value) return state;
@@ -423,7 +428,7 @@ export function explorerReducer(state: ExplorerState, action: ExplorerAction): E
     case 'setMatchingVector':
       return {
         ...state,
-        matching: normalizeMatchingVector(state.family, state.subset, action.matching),
+        matching: normalizeMatchingVector(state.family, state.subset, action.matching, state.contracts),
       };
 
     case 'setFlags': {
@@ -454,14 +459,48 @@ export function explorerReducer(state: ExplorerState, action: ExplorerAction): E
         number,
         EdgeContract
       >;
-      if (action.contract === null) delete next[action.major];
-      else next[action.major] = action.contract;
-      const contracts: EdgeContracts | undefined = Object.keys(next).length ? next : undefined;
-      return contracts ? { ...state, contracts } : stripContracts(state);
+      // Moving a crossing keeps the class's strand count.
+      const count = action.contract?.count ?? state.contracts?.[action.major]?.count;
+      if (action.contract === null && !(count && count > 1)) delete next[action.major];
+      else {
+        const base = action.contract ?? DEFAULT_CONTRACTS[action.major] ?? { minor: 0, t: 0.5 };
+        next[action.major] = { minor: base.minor, t: base.t, ...(count && count > 1 ? { count } : {}) };
+      }
+      return withContracts(state, next);
     }
 
-    case 'clearContracts':
-      return stripContracts(state);
+    case 'clearContracts': {
+      // Positions go back to their defaults; strand counts stay.
+      const next: Record<number, EdgeContract> = {};
+      for (const [k, c] of Object.entries(state.contracts ?? {})) {
+        const major = Number(k);
+        if (c && (c.count ?? 1) > 1) next[major] = { ...(DEFAULT_CONTRACTS[major] ?? { minor: 0, t: 0.5 }), count: c.count };
+      }
+      return withContracts(state, next);
+    }
+
+    case 'setStrandCount': {
+      const count = Math.max(1, Math.min(MAX_STRANDS, Math.round(action.count) || 1));
+      if (strandCount(state.contracts, action.major) === count) return state;
+      const next: Record<number, EdgeContract> = { ...(state.contracts ?? {}) } as Record<number, EdgeContract>;
+      const base = next[action.major] ?? DEFAULT_CONTRACTS[action.major] ?? { minor: 0, t: 0.5 };
+      const def = DEFAULT_CONTRACTS[action.major];
+      const atDefault = !!def && base.minor === def.minor && base.t === def.t;
+      if (count > 1) next[action.major] = { minor: base.minor, t: base.t, count };
+      else if (atDefault) delete next[action.major];
+      else next[action.major] = { minor: base.minor, t: base.t };
+      const after = withContracts(state, next);
+      // A tile whose number of points changed has a new set of matchings: start
+      // it from the first (neighbours paired, never crossing).
+      const selected = new Set(state.subset);
+      const matching = leafOrder(state.family).map((type, i) =>
+        connectionCount(state.family, type, selected, state.contracts) ===
+        connectionCount(state.family, type, selected, after.contracts)
+          ? (after.matching[i] ?? 0)
+          : 0,
+      );
+      return { ...after, matching };
+    }
 
     case 'addChord': {
       const existing = state.overlays[action.tileType] ?? [];
@@ -499,6 +538,12 @@ export function explorerReducer(state: ExplorerState, action: ExplorerAction): E
     default:
       return state;
   }
+}
+
+/** Adopt new contracts (none left: drop the key) and re-clamp the matchings to them. */
+function withContracts(state: ExplorerState, next: Record<number, EdgeContract>): ExplorerState {
+  const base = Object.keys(next).length ? { ...state, contracts: next as EdgeContracts } : stripContracts(state);
+  return { ...base, matching: normalizeMatchingVector(base.family, base.subset, base.matching, base.contracts) };
 }
 
 function stripContracts(state: ExplorerState): ExplorerState {

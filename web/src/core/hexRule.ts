@@ -20,7 +20,7 @@
 import type { Segment } from './circuits';
 import { DEFAULT_CONTRACTS, connectionPoints, type EdgeContracts } from './edges';
 import { HEX_LEAF_ORDER, leafPts } from './families';
-import { enumerateMatchings } from './matchings';
+import { matchingAt } from './matchings';
 import { inv, lerpPt, dist, transPt, type Affine, type Pt } from './geom';
 import { buildBase, type MetaNode } from './tiles';
 
@@ -88,7 +88,7 @@ export function mysticChords(
   }
   const locate = (t: string) => where.get(`1:${t}`) ?? where.get(`2:${t}`);
 
-  const matching = hexTags.length % 2 === 0 ? enumerateMatchings(hexTags.length)[matchingIndex] : undefined;
+  const matching = hexTags.length % 2 === 0 ? matchingAt(hexTags.length, matchingIndex) : undefined;
   const crossing: { a: Pt; b: Pt; order: number }[] = [];
   for (const [i, j] of matching ?? []) {
     let a = locate(hexTags[i]);
@@ -146,7 +146,7 @@ export function hexRuleSpectreDrawing(
     if (type === 'Gamma') continue;
     const pts = connectionPoints(HEX_RULE_SPECTRE_FAMILY, type, subset, contracts).map((c) => c.pt);
     const m = pts.length >= 2 && pts.length % 2 === 0
-      ? enumerateMatchings(pts.length)[matchingIndexByType[type] ?? 0]
+      ? matchingAt(pts.length, matchingIndexByType[type] ?? 0)
       : undefined;
     chords[type] = m ? m.map(([a, b]) => [pts[a], pts[b]] as Segment) : [];
   }

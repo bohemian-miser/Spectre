@@ -30,7 +30,7 @@ import { connectionPoints, parseEdgeLabel, type EdgeLabel } from './edges';
 import { segmentsCross } from './matchings';
 import type { Pt } from './geom';
 import { edgeLabels, leafOrder, type TileFamilyId, type TileTypeId } from './families';
-import { enumerateMatchings } from './matchings';
+import { matchingAt } from './matchings';
 import {
   Z_ONE,
   zAdd,
@@ -133,7 +133,7 @@ export function chordPairing(
   const n = slotsOfType(family, type, subset).length;
   const out = new Array<number>(n).fill(-1);
   if (n < 2 || n % 2 !== 0) return out;
-  const matching = enumerateMatchings(n)[matchingIndex];
+  const matching = matchingAt(n, matchingIndex);
   if (!matching) return out;
   for (const [a, b] of matching) {
     out[a] = b;

@@ -12,6 +12,7 @@ import {
   DEFAULT_CONTRACTS,
   dist,
   enumerateMatchings,
+  matchingAt,
   metaEdges,
   physicalEdgeMidpoints,
   transPt,
@@ -41,6 +42,9 @@ import { tileConnectionPoints } from '../lib/tilingModel';
 export type TileInteraction = 'none' | 'hover' | 'edge-select' | 'chord-draw';
 
 /** Identifies one seam of one leaf part — the unit every callback speaks in. */
+/** Above this many points the ghost matchings would number in the thousands. */
+const GHOST_MAX_POINTS = 6;
+
 export interface EdgeRef {
   readonly tileType: TileTypeId;
   readonly metaEdgeId: string;
@@ -248,7 +252,8 @@ export function TileView(props: TileViewProps): JSX.Element {
       const world = points.map((p) => transPt(part.xform, p.pt));
 
       if (points.length >= 2 && points.length % 2 === 0) {
-        const all = enumerateMatchings(points.length);
+        // Ghosts show every other matching, so only while there are few of them.
+        const all = points.length <= GHOST_MAX_POINTS ? enumerateMatchings(points.length) : [];
         const idx =
           matchingIndexByType?.[part.type] ?? (parts.length === 1 ? matchingIndex ?? 0 : 0);
 
@@ -266,7 +271,7 @@ export function TileView(props: TileViewProps): JSX.Element {
             );
           });
         }
-        const active = all[idx];
+        const active = matchingAt(points.length, idx);
         if (active) {
           active.forEach(([a, b], k) =>
             chordsOut.push({ key: `m${part.type}.${k}`, from: world[a], to: world[b], ghost: false, centre: partCentre.get(part) }),

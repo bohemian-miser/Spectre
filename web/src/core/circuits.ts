@@ -11,7 +11,7 @@
 import { transPt, type Pt } from './geom';
 import { DEFAULT_CONTRACTS, connectionPoints, type EdgeContracts } from './edges';
 import type { TileFamilyId, TileTypeId } from './families';
-import { enumerateMatchings } from './matchings';
+import { matchingAt } from './matchings';
 import { circuitHueColor, rainbow, TAIL_COLOR } from './colors';
 import type { TileInstance } from './tiles';
 import { chordControl, leafCentre } from './strandCurves';
@@ -23,7 +23,7 @@ export interface CircuitInput {
   readonly instances: readonly TileInstance[];
   /** Selected major edge classes. */
   readonly selected: ReadonlySet<number>;
-  /** Matching index per leaf tile type (into `enumerateMatchings` order). */
+  /** Matching index per leaf tile type (into `enumerateMatchings` order, see `matchingAt`). */
   readonly matchingIndexByType: Readonly<Record<string, number>>;
   readonly contracts?: EdgeContracts;
   /**
@@ -66,8 +66,7 @@ export function localChords(
 ): readonly Segment[] {
   const pts = connectionPoints(family, type, selected, contracts).map((c) => c.pt);
   if (pts.length < 2 || pts.length % 2 !== 0) return [];
-  const matchings = enumerateMatchings(pts.length);
-  const matching = matchings[matchingIndex];
+  const matching = matchingAt(pts.length, matchingIndex);
   if (!matching) return [];
   return matching.map(([a, b]) => [pts[a], pts[b]] as Segment);
 }

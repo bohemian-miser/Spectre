@@ -276,7 +276,7 @@ export function chordTableKey(
 ): string {
   const ct = contracts
     ? Object.entries(contracts)
-        .map(([k, v]) => `${k}:${v?.minor}@${v?.t}`)
+        .map(([k, v]) => `${k}:${v?.minor}@${v?.t}x${v?.count ?? 1}`)
         .sort()
         .join(';')
     : '';
