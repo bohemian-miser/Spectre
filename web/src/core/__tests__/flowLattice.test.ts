@@ -10,6 +10,8 @@ import {
   isCircuit,
   linesNeeded,
   pairStrands,
+  signedArea,
+  traceStrandPaths,
   tileStrandPoints,
 } from '../flowLattice';
 
@@ -100,5 +102,29 @@ describe('directedMatchings', () => {
     const r = directedMatchings(pts('io'.repeat(8)), 10);
     expect(r.matchings).toHaveLength(10);
     expect(r.truncated).toBe(true);
+  });
+});
+
+describe('traceStrandPaths', () => {
+  const at = (x: number, y: number, dir: 'in' | 'out') => ({ edge: 0, pos: { x, y }, dir });
+  const strand = (a: [number, number], b: [number, number]) => ({ from: at(a[0], a[1], 'in'), to: at(b[0], b[1], 'out') });
+
+  it('joins strands exit to entry, closing loops and leaving open paths open', () => {
+    const loop = [strand([0, 0], [1, 0]), strand([1, 0], [1, 1]), strand([1, 1], [0, 1]), strand([0, 1], [0, 0])];
+    // An open path listed tail first, so tracing must find its head.
+    const open = [strand([6, 0], [7, 0]), strand([5, 0], [6, 0])];
+    const paths = traceStrandPaths([loop[2], ...open, loop[0], loop[3], loop[1]]);
+    const closed = paths.filter((p) => p.closed);
+    expect(closed).toHaveLength(1);
+    expect(closed[0].strands).toHaveLength(4);
+    const opens = paths.filter((p) => !p.closed);
+    expect(opens).toHaveLength(1);
+    expect(opens[0].strands).toEqual([2, 1]);
+  });
+
+  it('signedArea is positive for clockwise on screen (y down)', () => {
+    const square = [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 0, y: 1 }];
+    expect(signedArea(square)).toBe(1);
+    expect(signedArea([...square].reverse())).toBe(-1);
   });
 });

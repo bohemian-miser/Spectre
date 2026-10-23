@@ -419,6 +419,64 @@ export function applyMatching(points: readonly StrandPoint[], m: DirectedMatchin
   return m.map(([i, j]) => ({ from: points[i], to: points[j] }));
 }
 
+export interface StrandPath {
+  /** Indices into the strand list, in the order the flow runs. */
+  readonly strands: readonly number[];
+  /** True when the path comes back to where it started. */
+  readonly closed: boolean;
+}
+
+/**
+ * Join strands into paths: a strand's exit sits exactly where the next tile's
+ * strand enters (even spacing makes shared points coincide), so follow exit →
+ * entry until the path closes or runs off the patch. Open paths are traced from
+ * their first strand, the one nothing flows into.
+ */
+export function traceStrandPaths(strands: readonly Strand[]): StrandPath[] {
+  const key = (p: Pt) => `${Math.round(p.x * 1000)},${Math.round(p.y * 1000)}`;
+  const byEntry = new Map<string, number>();
+  strands.forEach((s, i) => byEntry.set(key(s.from.pos), i));
+  const fedInto = new Set<number>();
+  strands.forEach((s) => {
+    const next = byEntry.get(key(s.to.pos));
+    if (next !== undefined) fedInto.add(next);
+  });
+  const seen = new Set<number>();
+  const paths: StrandPath[] = [];
+  const walk = (start: number) => {
+    const out: number[] = [];
+    let i: number | undefined = start;
+    while (i !== undefined && !seen.has(i)) {
+      seen.add(i);
+      out.push(i);
+      i = byEntry.get(key(strands[i].to.pos));
+    }
+    paths.push({ strands: out, closed: i === start });
+  };
+  // Open paths first, from their heads, so none is entered half way along.
+  strands.forEach((_, i) => {
+    if (!fedInto.has(i) && !seen.has(i)) walk(i);
+  });
+  strands.forEach((_, i) => {
+    if (!seen.has(i)) walk(i);
+  });
+  return paths;
+}
+
+/**
+ * Shoelace area of a closed polyline. Positive means clockwise on screen, where
+ * y points down (SVG), and anticlockwise in maths axes.
+ */
+export function signedArea(pts: readonly Pt[]): number {
+  let a = 0;
+  for (let i = 0; i < pts.length; i++) {
+    const p = pts[i];
+    const q = pts[(i + 1) % pts.length];
+    a += p.x * q.y - q.x * p.y;
+  }
+  return a / 2;
+}
+
 export interface PatchTile {
   readonly inst: TileInstance;
   readonly pts: readonly Pt[];

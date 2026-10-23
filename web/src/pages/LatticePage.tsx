@@ -18,7 +18,9 @@ import {
   hexPatch,
   linesNeeded,
   netFlow,
+  signedArea,
   tileStrandPoints,
+  traceStrandPaths,
   type FlowMode,
   type DirectedMatching,
   type FlowModel,
@@ -369,6 +371,15 @@ function strandPath(s: Strand, centre: Pt): string {
   return `M${s.from.pos.x},${s.from.pos.y} Q${c.x},${c.y} ${s.to.pos.x},${s.to.pos.y}`;
 }
 
+/** The point halfway along a strand's curve. */
+function curveMid(s: Strand, centre: Pt): Pt {
+  const mid = { x: (s.from.pos.x + s.to.pos.x) / 2, y: (s.from.pos.y + s.to.pos.y) / 2 };
+  const c = { x: mid.x + (centre.x - mid.x) * 0.6, y: mid.y + (centre.y - mid.y) * 0.6 };
+  return { x: 0.25 * s.from.pos.x + 0.5 * c.x + 0.25 * s.to.pos.x, y: 0.25 * s.from.pos.y + 0.5 * c.y + 0.25 * s.to.pos.y };
+}
+
+type Turn = 'cw' | 'ccw' | 'open';
+
 /** Arrowhead at the curve's midpoint, pointing the way the strand flows. */
 function arrowHead(s: Strand, centre: Pt): string {
   const mid = { x: (s.from.pos.x + s.to.pos.x) / 2, y: (s.from.pos.y + s.to.pos.y) / 2 };
@@ -425,6 +436,23 @@ function CircuitPatch(props: {
   );
   const strandCount = drawn.reduce((a, d) => a + d.strands.length, 0);
   const unbalanced = drawn.filter((d) => d.loose.length > 0).length;
+  // Follow strands tile to tile into loops; a closed loop's turn is the sign
+  // of its area as drawn (y down, so positive is clockwise on screen).
+  const turns = useMemo(() => {
+    const flat = drawn.flatMap((d, ti) => d.strands.map((s, si) => ({ s, key: `${ti}:${si}`, centre: d.centre })));
+    const turnOf = new Map<string, Turn>();
+    const count = { cw: 0, ccw: 0, open: 0 };
+    for (const path of traceStrandPaths(flat.map((f) => f.s))) {
+      let turn: Turn = 'open';
+      if (path.closed) {
+        const ring = path.strands.flatMap((i) => [flat[i].s.from.pos, curveMid(flat[i].s, flat[i].centre)]);
+        turn = signedArea(ring) > 0 ? 'cw' : 'ccw';
+      }
+      count[turn]++;
+      for (const i of path.strands) turnOf.set(flat[i].key, turn);
+    }
+    return { turnOf, count };
+  }, [drawn]);
   return (
     <div className="lattice-patch-box">
       <svg
@@ -434,6 +462,9 @@ function CircuitPatch(props: {
         aria-label={`Level ${level} hexagon supertile with the selected circuit`}
         data-strands={strandCount}
         data-unbalanced={unbalanced}
+        data-cw={turns.count.cw}
+        data-ccw={turns.count.ccw}
+        data-open={turns.count.open}
       >
         {drawn.map(({ t, loose }) => (
           <polygon
@@ -444,9 +475,9 @@ function CircuitPatch(props: {
             <title>{t.inst.type}</title>
           </polygon>
         ))}
-        {drawn.map(({ t, centre, strands }) =>
+        {drawn.map(({ t, centre, strands }, ti) =>
           strands.map((s, i) => (
-            <g key={`${t.inst.id}:${i}`} className="lattice-strand">
+            <g key={`${t.inst.id}:${i}`} className={`lattice-strand is-${turns.turnOf.get(`${ti}:${i}`) ?? 'open'}`}>
               <path d={strandPath(s, centre)} />
               <path className="lattice-arrow" d={arrowHead(s, centre)} />
             </g>
@@ -458,6 +489,13 @@ function CircuitPatch(props: {
           )),
         )}
       </svg>
+      {strandCount > 0 && unbalanced === 0 && (
+        <p className="lattice-turns" data-testid="lattice-turns">
+          <span className="lattice-swatch is-cw" /> {turns.count.cw} clockwise loop{turns.count.cw === 1 ? '' : 's'}
+          <span className="lattice-swatch is-ccw" /> {turns.count.ccw} anticlockwise
+          <span className="lattice-swatch is-open" /> {turns.count.open} running off the edge
+        </p>
+      )}
       <p className="muted">
         {unbalanced > 0
           ? `${unbalanced} of ${tiles.length} tiles don't balance (tinted): their strand ends are shown as dots, filled where flow leaves and hollow where it enters.`
