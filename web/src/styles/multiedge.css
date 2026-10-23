@@ -1,0 +1,168 @@
+/* Multi-edge page. Builds on lattice.css; shell tokens come from widgets.css. */
+
+.multiedge-toggle {
+  display: inline-flex !important;
+  grid-auto-flow: column;
+  align-items: center;
+  gap: 8px !important;
+  font-size: 13px !important;
+  color: var(--text) !important;
+  cursor: pointer;
+}
+.multiedge-colkind {
+  display: block;
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--muted);
+}
+.multiedge-page .lattice-page p.multiedge-note,
+.multiedge-note {
+  font-size: 12px;
+  padding: 6px 10px;
+  margin: 0;
+}
+
+.multiedge-lattice {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  padding: 8px;
+}
+.multiedge-cube {
+  display: block;
+  width: 100%;
+  max-width: 360px;
+  height: auto;
+  margin: 0 auto;
+}
+.multiedge-cube-edge {
+  stroke-width: 2;
+  opacity: 0.6;
+}
+.multiedge-cube-edge.axis-0 {
+  stroke: #4f8ff7;
+}
+.multiedge-cube-edge.axis-1 {
+  stroke: #f0883e;
+}
+.multiedge-cube-edge.axis-2 {
+  stroke: #3fb68b;
+}
+.multiedge-cube-edge.axis-3 {
+  stroke: #c86bd8;
+}
+.multiedge-corner {
+  cursor: pointer;
+}
+.multiedge-corner circle {
+  fill: var(--panel-2);
+  stroke: var(--text);
+  stroke-width: 1.5;
+}
+.multiedge-corner text {
+  fill: var(--text);
+  font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.multiedge-corner:hover circle {
+  fill: color-mix(in srgb, var(--accent) 30%, var(--panel-2));
+}
+.multiedge-corner.is-here circle {
+  fill: var(--accent);
+  stroke: var(--accent);
+}
+.multiedge-corner.is-here text {
+  font-weight: 700;
+}
+.multiedge-where {
+  margin: 4px 0 10px;
+  font-size: 13px;
+  text-align: center;
+}
+
+.multiedge-stacks {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.multiedge-stack {
+  display: grid;
+  justify-items: center;
+  gap: 3px;
+}
+.multiedge-stack-pairs {
+  display: flex;
+  flex-direction: column-reverse;
+  justify-content: flex-start;
+  gap: 4px;
+}
+.multiedge-pair {
+  display: block;
+  width: 22px;
+  height: 10px;
+  border-radius: 3px;
+}
+.multiedge-bit {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 2px solid var(--line);
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+}
+.multiedge-bit.is-odd {
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+}
+.multiedge-stack-label {
+  font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.multiedge-chord {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 0.07;
+  stroke-linecap: round;
+}
+.multiedge-strand {
+  fill: none;
+  stroke-width: 0.08;
+  stroke-linecap: round;
+}
+.multiedge-strand.is-open {
+  stroke: var(--muted);
+  opacity: 0.7;
+}
+.multiedge-axes {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin: 0;
+  font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.multiedge-axis-swatch {
+  display: inline-block;
+  width: 16px;
+  height: 3px;
+  vertical-align: middle;
+  border-radius: 2px;
+}
+.multiedge-axis-swatch.axis-0 {
+  background: #4f8ff7;
+}
+.multiedge-axis-swatch.axis-1 {
+  background: #f0883e;
+}
+.multiedge-axis-swatch.axis-2 {
+  background: #3fb68b;
+}
+.multiedge-axis-swatch.axis-3 {
+  background: #c86bd8;
+}
