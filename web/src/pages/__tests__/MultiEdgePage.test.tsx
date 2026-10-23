@@ -55,4 +55,41 @@ describe('MultiEdgePage', () => {
     expect(Number(svg.getAttribute('data-closed')) + Number(svg.getAttribute('data-open'))).toBeGreaterThan(0);
     expect(svg.getAttribute('data-odd')).toBe('0');
   });
+
+  it('lists the factors, steps through the pairings and reaches every split of 1155', () => {
+    const { container } = render(<MultiEdgePage />);
+    const split = () => screen.getByTestId('multiedge-split').textContent!;
+    expect(split()).toBe('15 = 15');
+    expect(screen.getByTestId('multiedge-factor-0').textContent).toContain('no: an atom');
+    // 15 → 1155: one more strand on 1 and on 5.
+    const editor = screen.getByTestId('multiedge-editor');
+    fireEvent.keyDown(editor, { key: 'ArrowRight' });
+    fireEvent.keyDown(editor, { key: 'ArrowUp' });
+    for (let i = 0; i < 4; i++) fireEvent.keyDown(editor, { key: 'ArrowRight' });
+    fireEvent.keyDown(editor, { key: 'ArrowUp' });
+    const splits = screen.getByTestId('multiedge-splits');
+    const names = [...splits.querySelectorAll('button .mono')].map((b) => b.textContent).sort();
+    expect(names).toEqual(['11 + 55', '1155', '15 + 15']);
+    // Jump to 15 + 15: two factors, and the patch colours strands by them.
+    const target = [...splits.querySelectorAll('button')].find((b) => b.textContent!.startsWith('15 + 15'))!;
+    fireEvent.click(target);
+    expect(split()).toBe('1155 = 15 + 15');
+    expect(target.getAttribute('aria-pressed')).toBe('true');
+    const factorsSeen = () => new Set([...container.querySelectorAll('svg.lattice-patch path[data-factor]')].map((p) => p.getAttribute('data-factor')));
+    expect(factorsSeen()).toEqual(new Set(['0', '1']));
+    // Arrow keys step the combination; "next different split" always changes it.
+    const panel = screen.getByTestId('multiedge-factors');
+    const combo = () => screen.getByTestId('multiedge-combo-all').textContent!;
+    const before = combo();
+    fireEvent.keyDown(panel, { key: 'ArrowRight' });
+    expect(combo()).not.toBe(before);
+    const now = split();
+    fireEvent.click(screen.getByTestId('multiedge-next-split'));
+    expect(split()).not.toBe(now);
+    // Up/down picks out a factor; the rest fade.
+    fireEvent.click(target);
+    fireEvent.keyDown(panel, { key: 'ArrowDown' });
+    expect(container.querySelectorAll('svg.lattice-patch path.is-dim').length).toBeGreaterThan(0);
+    expect(screen.getByTestId('multiedge-factor-0').className).toBe('is-selected');
+  });
 });

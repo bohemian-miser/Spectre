@@ -134,6 +134,8 @@ export function cubeCoords(model: MultiEdgeModel, x: readonly number[]): number[
 
 export interface EndPoint {
   readonly edge: number;
+  /** Which of the edge's strands, counted along the edge. */
+  readonly slot: number;
   readonly pos: Pt;
 }
 
@@ -147,7 +149,7 @@ export function tileEndPoints(model: MultiEdgeModel, type: TileTypeId, x: readon
     const b = pts[(edge + 1) % pts.length];
     for (let i = 0; i < n; i++) {
       const t = (i + 1) / (n + 1);
-      out.push({ edge, pos: { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t } });
+      out.push({ edge, slot: i, pos: { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t } });
     }
   }
   return out;
@@ -231,6 +233,124 @@ export function traceLoops(segments: readonly Segment[]): Loop[] {
     if (!seen.has(i)) walk(i, key(s.a));
   });
   return loops;
+}
+
+/** True when count vector x leaves every tile an even number of ends. */
+export function isValid(model: MultiEdgeModel, x: readonly number[]): boolean {
+  return tileEnds(model, x).every((e) => e % 2 === 0);
+}
+
+/**
+ * A valid non-zero vector that is not the sum of two smaller valid non-zero
+ * ones: an atom of the monoid of drawings' count vectors.
+ */
+const atomCache = new Map<string, boolean>();
+
+export function isAtom(model: MultiEdgeModel, v: readonly number[]): boolean {
+  const key = v.join();
+  let hit = atomCache.get(key);
+  if (hit === undefined) {
+    hit = searchAtom(model, v);
+    atomCache.set(key, hit);
+  }
+  return hit;
+}
+
+function searchAtom(model: MultiEdgeModel, v: readonly number[]): boolean {
+  if (!v.some(Boolean) || !isValid(model, v)) return false;
+  const u = v.map(() => 0);
+  // Odometer over 0 ≤ u ≤ v, skipping 0 and v itself.
+  for (;;) {
+    let k = 0;
+    while (k < u.length && u[k] === v[k]) u[k++] = 0;
+    if (k === u.length) return true;
+    u[k]++;
+    if (u.every((n, i) => n === v[i])) return true;
+    if (isValid(model, u)) return false;
+  }
+}
+
+export interface Factor {
+  /** Strands per class this factor uses: itself a valid count vector. */
+  readonly vector: readonly number[];
+  /** Whether no drawing could split it further. */
+  readonly atom: boolean;
+}
+
+export interface Factorisation {
+  /** The factors, heaviest first; their vectors add up to x. */
+  readonly factors: readonly Factor[];
+  /** Factor index of each tile type's end points, in `tileEndPoints` order. */
+  readonly endFactor: Readonly<Record<string, readonly number[]>>;
+}
+
+/**
+ * The split of x that a choice of pairings draws. Strand slot i of n on an
+ * edge is slot n−1−i seen from the tile across it. A `+k` edge always meets a
+ * `−k` one, so counting from the `+` side names each strand position once;
+ * class 0 meets itself, so there {i, n−1−i} have to be one position. Join
+ * positions a tile pairs together; each group of positions, kept on every edge
+ * and dropped elsewhere, is a drawing in its own right, so its counts are a
+ * valid vector, and the groups' vectors sum to x. Null when some tile has ends
+ * but no pairing.
+ */
+export function pairingFactorisation(
+  model: MultiEdgeModel,
+  x: readonly number[],
+  chosen: Readonly<Record<string, Pairing | null>>,
+): Factorisation | null {
+  const id = (k: number, slot: number, sign: number) => {
+    const flip = x[k] - 1 - slot;
+    return `${k}:${model.classes[k] === 0 ? Math.min(slot, flip) : sign > 0 ? slot : flip}`;
+  };
+  const parent = new Map<string, string>();
+  const find = (a: string): string => {
+    let r = a;
+    while (parent.get(r) !== r) r = parent.get(r)!;
+    parent.set(a, r);
+    return r;
+  };
+  model.classes.forEach((_, k) => {
+    for (let s = 0; s < x[k]; s++) parent.set(id(k, s, 1), id(k, s, 1));
+  });
+  const endIds: Record<string, string[]> = {};
+  for (const t of model.types) {
+    const labels = edgeLabels('hex', t).map(parseEdgeLabel);
+    const ends = tileEndPoints(model, t, x, HEX_PTS).map((e) => id(model.classes.indexOf(labels[e.edge].major), e.slot, labels[e.edge].sign));
+    endIds[t] = ends;
+    if (ends.length === 0) continue;
+    const pairing = chosen[t];
+    if (!pairing) return null;
+    for (const [i, j] of pairing) parent.set(find(ends[i]), find(ends[j]));
+  }
+  const vectors = new Map<string, number[]>();
+  model.classes.forEach((_, k) => {
+    for (let s = 0; s < x[k]; s++) {
+      const r = find(id(k, s, 1));
+      const v = vectors.get(r) ?? model.classes.map(() => 0);
+      v[k]++;
+      vectors.set(r, v);
+    }
+  });
+  const weight = (v: readonly number[]) => v.reduce((a, b) => a + b, 0);
+  const roots = [...vectors.keys()].sort(
+    (a, b) => weight(vectors.get(b)!) - weight(vectors.get(a)!) || vectors.get(b)!.join().localeCompare(vectors.get(a)!.join()),
+  );
+  const index = new Map(roots.map((r, i) => [r, i]));
+  return {
+    factors: roots.map((r) => ({ vector: vectors.get(r)!, atom: isAtom(model, vectors.get(r)!) })),
+    endFactor: Object.fromEntries(model.types.map((t) => [t, endIds[t].map((e) => index.get(find(e))!)])),
+  };
+}
+
+/** A factorisation's factors as one comparable string, e.g. `15+15`. */
+export function factorSignature(model: MultiEdgeModel, f: Factorisation): string {
+  return f.factors.map((x) => formatVector(model, x.vector)).join(' + ');
+}
+
+/** A count vector by its classes, a digit repeated per strand: {1: 2, 5: 1} is `115`. */
+export function formatVector(model: MultiEdgeModel, v: readonly number[]): string {
+  return model.classes.map((c, k) => String(c).repeat(v[k])).join('') || '∅';
 }
 
 /** How many count vectors with every n ≤ m leave no tails, without listing them. */
