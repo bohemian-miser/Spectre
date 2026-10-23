@@ -14,6 +14,7 @@ import {
   flowModel,
   hexPatch,
   linesNeeded,
+  netFlow,
   pairStrands,
   tileStrandPoints,
   type FlowMode,
@@ -24,6 +25,8 @@ import type { Pt } from '../core/geom';
 import '../styles/lattice.css';
 
 const RANGE = 3;
+/** How far the per-class counters go each way. */
+const MAX_COUNT = 9;
 const CELL = 46;
 const LEVELS = [1, 2, 3] as const;
 
@@ -37,21 +40,37 @@ function vecAt(model: FlowModel, axes: readonly [number, number], a: number, b: 
   return combine(model.basis, coeffs, model.vars.length);
 }
 
+const sameFlow = (p: readonly number[], q: readonly number[]) => p.length === q.length && p.every((v, k) => v === q[k]);
+
+/** The slice point a flow sits on, or null when it's off the slice. */
+function slicePoint(model: FlowModel, axes: readonly [number, number], flat: boolean, x: readonly number[]): [number, number] | null {
+  for (let a = -RANGE; a <= RANGE; a++) {
+    for (const b of flat ? [0] : Array.from({ length: 2 * RANGE + 1 }, (_, i) => i - RANGE)) {
+      if (sameFlow(vecAt(model, axes, a, b), x)) return [a, b];
+    }
+  }
+  return null;
+}
+
+function firstFlow(m: FlowModel): number[] {
+  return vecAt(m, defaultAxes(m), 1, 0);
+}
+
 export default function LatticePage(): JSX.Element {
   const [mode, setMode] = useState<FlowMode>('labels');
   const model = useMemo(() => flowModel(mode), [mode]);
   const [axes, setAxes] = useState<[number, number]>(() => defaultAxes(flowModel('labels')));
   const [maxLines, setMaxLines] = useState(1);
   const [level, setLevel] = useState(2);
-  const [sel, setSel] = useState<[number, number]>([1, 0]);
+  const [x, setX] = useState<number[]>(() => firstFlow(flowModel('labels')));
 
   const pickMode = (m: FlowMode) => {
     setMode(m);
     setAxes(defaultAxes(flowModel(m)));
-    setSel([1, 0]);
+    setX(firstFlow(flowModel(m)));
   };
   const flat = model.basis.length < 2;
-  const x = useMemo(() => vecAt(model, axes, sel[0], flat ? 0 : sel[1]), [model, axes, sel, flat]);
+  const sel = slicePoint(model, axes, flat, x);
 
   return (
     <article className="lattice-page">
@@ -68,7 +87,8 @@ export default function LatticePage(): JSX.Element {
         <p className="muted">
           The plot shows a slice of that lattice: <em>a</em> copies of one basis loop plus{' '}
           <em>b</em> of another. Each dot shows how many lines its busiest edge needs. Click one to
-          draw it.
+          draw it, or set the flow on each class yourself with the counters: −2 on class 3 means two
+          strands running through class 3 the reverse way.
         </p>
       </header>
 
@@ -135,8 +155,9 @@ export default function LatticePage(): JSX.Element {
             flat={flat}
             maxLines={maxLines}
             sel={sel}
-            onPick={(a, b) => setSel([a, b])}
+            onPick={(a, b) => setX(vecAt(model, axes, a, b))}
           />
+          <FlowCounters model={model} x={x} onChange={setX} />
           <Readout model={model} x={x} sel={sel} flat={flat} />
         </section>
         <section className="lattice-panel" aria-labelledby="lattice-patch-h">
@@ -172,7 +193,7 @@ function LatticePlot(props: {
   axes: readonly [number, number];
   flat: boolean;
   maxLines: number;
-  sel: readonly [number, number];
+  sel: readonly [number, number] | null;
   onPick: (a: number, b: number) => void;
 }): JSX.Element {
   const { model, axes, flat, maxLines, sel, onPick } = props;
@@ -211,7 +232,7 @@ function LatticePlot(props: {
           </text>
         )}
         {dots.map(({ a, b, lines }) => {
-          const picked = a === sel[0] && b === sel[1];
+          const picked = sel !== null && a === sel[0] && b === sel[1];
           const tier = lines === 0 ? 'zero' : lines > maxLines ? 'out' : String(Math.min(lines, 3));
           return (
             <g
@@ -246,14 +267,51 @@ function LatticePlot(props: {
   );
 }
 
-function Readout(props: { model: FlowModel; x: readonly number[]; sel: readonly [number, number]; flat: boolean }): JSX.Element {
+function FlowCounters(props: { model: FlowModel; x: readonly number[]; onChange: (x: number[]) => void }): JSX.Element {
+  const { model, x, onChange } = props;
+  const set = (k: number, v: number) => onChange(x.map((old, i) => (i === k ? Math.max(-MAX_COUNT, Math.min(MAX_COUNT, v)) : old)));
+  return (
+    <div className="lattice-counters" role="group" aria-label="Flow on each edge class">
+      <div className="lattice-counters-head">
+        <h3>Flow on each {model.mode === 'labels' ? 'class' : 'group'}</h3>
+        <button type="button" className="lattice-clear" onClick={() => onChange(x.map(() => 0))}>
+          Clear
+        </button>
+      </div>
+      <ul>
+        {model.vars.map((v, k) => (
+          <li key={v.label} className={x[k] === 0 ? 'is-zero' : x[k] > 0 ? 'is-pos' : 'is-neg'}>
+            <span className="lattice-counter-label">{v.label}</span>
+            <button type="button" aria-label={`Less flow on ${v.label}`} onClick={() => set(k, x[k] - 1)} disabled={x[k] <= -MAX_COUNT}>
+              −
+            </button>
+            <output data-testid={`lattice-count-${v.label}`}>{x[k] > 0 ? `+${x[k]}` : x[k] < 0 ? `−${-x[k]}` : '0'}</output>
+            <button type="button" aria-label={`More flow on ${v.label}`} onClick={() => set(k, x[k] + 1)} disabled={x[k] >= MAX_COUNT}>
+              +
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function Readout(props: { model: FlowModel; x: readonly number[]; sel: readonly [number, number] | null; flat: boolean }): JSX.Element {
   const { model, x, sel, flat } = props;
   const odd = x.flatMap((v, k) => (v % 2 !== 0 ? [model.vars[k].label] : []));
   const lines = linesNeeded(x);
+  const net = netFlow(model, x);
+  const off = model.types.flatMap((t, i) =>
+    net[i] === 0 ? [] : [`${t} has ${Math.abs(net[i])} more ${net[i] > 0 ? 'out' : 'in'}`],
+  );
   return (
     <dl className="lattice-readout" data-testid="lattice-readout">
-      <dt>Point</dt>
-      <dd className="mono">{flat ? `a = ${sel[0]}` : `a = ${sel[0]}, b = ${sel[1]}`}</dd>
+      <dt>Balance</dt>
+      <dd className={off.length ? 'is-bad' : 'is-good'} data-testid="lattice-balance">
+        {off.length ? `Not a circuit: ${off.join('; ')}` : 'Every tile balances: a circuit'}
+      </dd>
+      <dt>On the slice</dt>
+      <dd className="mono">{sel === null ? 'off this slice' : flat ? `a = ${sel[0]}` : `a = ${sel[0]}, b = ${sel[1]}`}</dd>
       <dt>Flow</dt>
       <dd className="mono">{describeFlow(model, x)}</dd>
       <dt>Lines needed</dt>
@@ -316,12 +374,14 @@ function CircuitPatch(props: { model: FlowModel; x: readonly number[]; level: nu
           x: t.pts.reduce((a, p) => a + p.x, 0) / t.pts.length,
           y: t.pts.reduce((a, p) => a + p.y, 0) / t.pts.length,
         };
-        const strands = pairStrands(tileStrandPoints(model, t.inst.type, x, t.pts)) ?? [];
-        return { t, centre, strands };
+        const points = tileStrandPoints(model, t.inst.type, x, t.pts);
+        const paired = pairStrands(points);
+        return { t, centre, strands: paired ?? [], loose: paired ? [] : points };
       }),
     [tiles, model, x],
   );
   const strandCount = drawn.reduce((a, d) => a + d.strands.length, 0);
+  const unbalanced = drawn.filter((d) => d.loose.length > 0).length;
   return (
     <div className="lattice-patch-box">
       <svg
@@ -330,9 +390,14 @@ function CircuitPatch(props: { model: FlowModel; x: readonly number[]; level: nu
         role="img"
         aria-label={`Level ${level} hexagon supertile with the selected circuit`}
         data-strands={strandCount}
+        data-unbalanced={unbalanced}
       >
-        {drawn.map(({ t }) => (
-          <polygon key={t.inst.id} className="lattice-tile" points={t.pts.map((p) => `${p.x},${p.y}`).join(' ')}>
+        {drawn.map(({ t, loose }) => (
+          <polygon
+            key={t.inst.id}
+            className={`lattice-tile${loose.length ? ' is-unbalanced' : ''}`}
+            points={t.pts.map((p) => `${p.x},${p.y}`).join(' ')}
+          >
             <title>{t.inst.type}</title>
           </polygon>
         ))}
@@ -344,11 +409,18 @@ function CircuitPatch(props: { model: FlowModel; x: readonly number[]; level: nu
             </g>
           )),
         )}
+        {drawn.map(({ t, loose }) =>
+          loose.map((p, i) => (
+            <circle key={`${t.inst.id}:loose:${i}`} className={`lattice-loose is-${p.dir}`} cx={p.pos.x} cy={p.pos.y} r={0.09} />
+          )),
+        )}
       </svg>
       <p className="muted">
-        {strandCount === 0
-          ? 'The empty circuit: pick another point.'
-          : `${strandCount} strand pieces across ${tiles.length} tiles. Arrows point the way the flow runs; edges with flow 2 carry two parallel lines.`}
+        {unbalanced > 0
+          ? `${unbalanced} of ${tiles.length} tiles don't balance (tinted): their strand ends are shown as dots, filled where flow leaves and hollow where it enters.`
+          : strandCount === 0
+            ? 'The empty circuit: pick another point or raise a counter.'
+            : `${strandCount} strand pieces across ${tiles.length} tiles. Arrows point the way the flow runs; an edge with flow ±2 carries two parallel lines.`}
       </p>
     </div>
   );

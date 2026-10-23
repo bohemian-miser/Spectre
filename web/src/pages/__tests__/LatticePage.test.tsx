@@ -25,6 +25,30 @@ describe('LatticePage', () => {
     expect(Number(patch.getAttribute('data-strands'))).toBeGreaterThan(single);
   });
 
+  it('counters set any flow, and say which tiles stop balancing', () => {
+    const { container } = render(<LatticePage />);
+    const patch = container.querySelector('svg.lattice-patch')!;
+    // Start on 15: clear it, then push two strands backwards through class 3.
+    fireEvent.click(screen.getByRole('button', { name: 'Clear' }));
+    expect(screen.getByTestId('lattice-balance').textContent).toContain('Every tile balances');
+    fireEvent.click(screen.getByRole('button', { name: 'Less flow on 3' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Less flow on 3' }));
+    expect(screen.getByTestId('lattice-count-3').textContent).toBe('−2');
+    expect(screen.getByTestId('lattice-readout').textContent).toContain('3: −2');
+    const balance = screen.getByTestId('lattice-balance').textContent!;
+    expect(balance).toContain('Not a circuit');
+    expect(balance).toContain('Phi has 2 more in');
+    expect(Number(patch.getAttribute('data-unbalanced'))).toBeGreaterThan(0);
+    expect(screen.getByTestId('lattice-readout').textContent).toContain('off this slice');
+
+    // Clicking a lattice point puts the counters back on a circuit.
+    fireEvent.click(screen.getByTestId('lattice-pt--1_0'));
+    expect(screen.getByTestId('lattice-count-1').textContent).toBe('−1');
+    expect(screen.getByTestId('lattice-count-5').textContent).toBe('−1');
+    expect(screen.getByTestId('lattice-balance').textContent).toContain('Every tile balances');
+    expect(patch.getAttribute('data-unbalanced')).toBe('0');
+  });
+
   it('switches to meeting groups and its larger matrix', () => {
     render(<LatticePage />);
     fireEvent.change(screen.getByLabelText(/Unknowns/), { target: { value: 'groups' } });
