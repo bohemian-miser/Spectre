@@ -6,7 +6,10 @@
  * cube of the 8 parity patterns times a stack of pairs per class. The matrix
  * edits the counts (arrow keys too) and can show its mod-2 reduced form; the
  * tiles pick among their non-crossing pairings; the patch colours each loop.
- * The maths lives in core/multiEdge.ts.
+ * The pairings also split the strands into factors, each a valid count vector
+ * of its own; the factor panel lists them and steps through every combination
+ * of pairings to show which splits they reach. The maths lives in
+ * core/multiEdge.ts.
  */
 
 import { useMemo, useState, type KeyboardEvent } from 'react';
@@ -17,13 +20,17 @@ import {
   countWithin,
   cubeCoords,
   edgeClasses,
+  factorSignature,
+  formatVector,
   gf2Rref,
   multiEdgeModel,
   nonCrossingPairings,
+  pairingFactorisation,
   tileEndPoints,
   tileEnds,
   traceLoops,
   type EndPoint,
+  type Factorisation,
   type MultiEdgeModel,
   type Pairing,
 } from '../core/multiEdge';
@@ -36,6 +43,10 @@ const LEVELS = [1, 2, 3] as const;
 const GALLERY_MAX = 60;
 /** Loop colours, cycled; open paths are drawn grey. */
 const LOOP_COLOURS = ['#4f8ff7', '#f0883e', '#3fb68b', '#c86bd8', '#e5534b', '#d4a72c', '#2fb5c9', '#8b8ff0'];
+/** Enumerate every combination of pairings for the splits list only up to this many. */
+const SPLITS_MAX = 20000;
+/** How far "next new split" looks ahead. */
+const SEARCH_MAX = 50000;
 
 type PairTable = Readonly<Record<string, ReturnType<typeof nonCrossingPairings>>>;
 
@@ -59,6 +70,8 @@ export default function MultiEdgePage(): JSX.Element {
   const [pairIdx, setPairIdx] = useState<Readonly<Record<string, number>>>({});
   const [tileSel, setTileSel] = useState(0);
   const [hover, setHover] = useState<number | null>(null);
+  const [byFactor, setByFactor] = useState(true);
+  const [focusFactor, setFocusFactor] = useState<number | null>(null);
 
   const pairs: PairTable = useMemo(
     () =>
@@ -79,6 +92,7 @@ export default function MultiEdgePage(): JSX.Element {
     // pick reads only pairs and pairIdx.
     [model, pairs, pairIdx],
   );
+  const factors = useMemo(() => pairingFactorisation(model, x, chosen), [model, x, chosen]);
 
   return (
     <article className="lattice-page multiedge-page">
@@ -135,8 +149,31 @@ export default function MultiEdgePage(): JSX.Element {
             hover={hover}
             onHover={setHover}
           />
-          <Patch model={model} x={x} level={level} chosen={chosen} />
+          <Patch
+            model={model}
+            x={x}
+            level={level}
+            chosen={chosen}
+            factors={byFactor ? factors : null}
+            focus={focusFactor}
+          />
         </div>
+      </section>
+
+      <section aria-labelledby="multiedge-factors-h">
+        <h2 id="multiedge-factors-h">How the pairings split the strands</h2>
+        <FactorPanel
+          model={model}
+          x={x}
+          pairs={pairs}
+          pick={pick}
+          setPicks={(p) => setPairIdx(p)}
+          factors={factors}
+          byFactor={byFactor}
+          onByFactor={setByFactor}
+          focus={focusFactor}
+          onFocus={setFocusFactor}
+        />
       </section>
     </article>
   );
@@ -501,8 +538,17 @@ function TileStrip(props: {
   );
 }
 
-function Patch(props: { model: MultiEdgeModel; x: readonly number[]; level: number; chosen: Readonly<Record<string, Pairing | null>> }): JSX.Element {
-  const { model, x, level, chosen } = props;
+function Patch(props: {
+  model: MultiEdgeModel;
+  x: readonly number[];
+  level: number;
+  chosen: Readonly<Record<string, Pairing | null>>;
+  /** Colour strands by factor instead of by loop. */
+  factors: Factorisation | null;
+  /** Factor to pick out; the others fade. */
+  focus: number | null;
+}): JSX.Element {
+  const { model, x, level, chosen, factors, focus } = props;
   const tiles = useMemo(() => hexPatch(level), [level]);
   const view = useMemo(() => {
     const all = tiles.flatMap((t) => t.pts);
@@ -516,9 +562,16 @@ function Patch(props: { model: MultiEdgeModel; x: readonly number[]; level: numb
       tiles.map((t) => {
         const ends: EndPoint[] = tileEndPoints(model, t.inst.type, x, t.pts);
         const pairing = chosen[t.inst.type] ?? null;
-        return { t, centre: centreOf(t.pts), ends, segments: pairing ? pairing.map(([i, j]) => ({ a: ends[i].pos, b: ends[j].pos })) : [], odd: pairing === null };
+        const factorOf = factors?.endFactor[t.inst.type];
+        return {
+          t,
+          centre: centreOf(t.pts),
+          ends,
+          segments: pairing ? pairing.map(([i, j]) => ({ a: ends[i].pos, b: ends[j].pos, factor: factorOf?.[i] ?? null })) : [],
+          odd: pairing === null,
+        };
       }),
-    [tiles, model, x, chosen],
+    [tiles, model, x, chosen, factors],
   );
   const loops = useMemo(() => {
     const flat = drawn.flatMap((d, ti) => d.segments.map((s, si) => ({ s, key: `${ti}:${si}` })));
@@ -544,11 +597,14 @@ function Patch(props: { model: MultiEdgeModel; x: readonly number[]; level: numb
         ))}
         {drawn.map(({ t, centre, segments }, ti) =>
           segments.map((s, i) => {
-            const colour = loops.colourOf.get(`${ti}:${i}`) ?? null;
+            const loopColour = loops.colourOf.get(`${ti}:${i}`) ?? null;
+            const colour = s.factor !== null ? LOOP_COLOURS[s.factor % LOOP_COLOURS.length] : loopColour;
+            const dim = focus !== null && s.factor !== null && s.factor !== focus;
             return (
               <path
                 key={`${t.inst.id}:${i}`}
-                className={`multiedge-strand${colour ? '' : ' is-open'}`}
+                data-factor={s.factor ?? undefined}
+                className={['multiedge-strand', colour ? '' : 'is-open', dim ? 'is-dim' : ''].filter(Boolean).join(' ')}
                 style={colour ? { stroke: colour } : undefined}
                 d={chordPath(s.a, s.b, centre)}
               />
@@ -564,7 +620,203 @@ function Patch(props: { model: MultiEdgeModel; x: readonly number[]; level: numb
           ? `${odd} of ${tiles.length} tiles have an odd number of ends (tinted), so they can't pair up.`
           : segCount === 0
             ? 'No strands: raise a count or click a cube corner.'
-            : `${loops.closed} closed loop${loops.closed === 1 ? '' : 's'}, each in its own colour, and ${loops.open} path${loops.open === 1 ? '' : 's'} running off the edge (grey).`}
+            : `${loops.closed} closed loop${loops.closed === 1 ? '' : 's'} and ${loops.open} path${loops.open === 1 ? '' : 's'} running off the edge, ${
+                factors ? 'coloured by the factor they belong to' : 'each closed loop in its own colour, open paths grey'
+              }.`}
+      </p>
+    </div>
+  );
+}
+
+/** Combination n of the tiles' pairings, the first tile type turning fastest. */
+function comboPicks(types: readonly TileTypeId[], sizes: readonly number[], n: number): Record<string, number> {
+  const out: Record<string, number> = {};
+  let r = n;
+  types.forEach((t, i) => {
+    const size = Math.max(1, sizes[i]);
+    out[t] = r % size;
+    r = Math.floor(r / size);
+  });
+  return out;
+}
+
+function FactorPanel(props: {
+  model: MultiEdgeModel;
+  x: readonly number[];
+  pairs: PairTable;
+  pick: (t: TileTypeId) => number;
+  setPicks: (p: Record<string, number>) => void;
+  factors: Factorisation | null;
+  byFactor: boolean;
+  onByFactor: (on: boolean) => void;
+  focus: number | null;
+  onFocus: (k: number | null) => void;
+}): JSX.Element {
+  const { model, x, pairs, pick, setPicks, factors, byFactor, onByFactor, focus, onFocus } = props;
+  const types = model.types;
+  const sizes = types.map((t) => pairs[t].pairings.length);
+  const odd = sizes.some((n, i) => n === 0 && tileEnds(model, x)[i] > 0);
+  const total = odd ? 0 : sizes.reduce((a, n) => a * Math.max(1, n), 1);
+  const truncated = types.some((t) => pairs[t].truncated);
+  const current = types.reduceRight((a, t, i) => a * Math.max(1, sizes[i]) + pick(t), 0);
+  const signatureAt = (n: number): string | null => {
+    const picks = comboPicks(types, sizes, n);
+    const chosen = Object.fromEntries(types.map((t) => [t, pairs[t].pairings[picks[t]] ?? null]));
+    const f = pairingFactorisation(model, x, chosen);
+    return f && factorSignature(model, f);
+  };
+  const go = (n: number) => {
+    if (total > 0) setPicks(comboPicks(types, sizes, ((n % total) + total) % total));
+  };
+  const splits = useMemo(() => {
+    if (total === 0 || total > SPLITS_MAX) return null;
+    const out = new Map<string, { count: number; first: number }>();
+    for (let n = 0; n < total; n++) {
+      const sig = signatureAt(n);
+      if (sig === null) continue;
+      const hit = out.get(sig);
+      if (hit) hit.count++;
+      else out.set(sig, { count: 1, first: n });
+    }
+    return [...out.entries()].sort((a, b) => a[1].first - b[1].first);
+    // signatureAt reads only model, x and pairs.
+  }, [model, x, pairs, total]);
+  const here = factors ? factorSignature(model, factors) : null;
+  const nextNew = () => {
+    if (here === null) return;
+    for (let d = 1; d < Math.min(total, SEARCH_MAX); d++) {
+      const n = (current + d) % total;
+      if (signatureAt(n) !== here) return go(n);
+    }
+  };
+  const onKeyDown = (e: KeyboardEvent) => {
+    if (e.altKey || e.ctrlKey || e.metaKey) return;
+    const k = factors?.factors.length ?? 0;
+    const act: Record<string, () => void> = {
+      ArrowLeft: () => go(current - 1),
+      ArrowRight: () => go(current + 1),
+      ArrowUp: () => k && onFocus(focus === null ? k - 1 : focus === 0 ? null : focus - 1),
+      ArrowDown: () => k && onFocus(focus === null ? 0 : focus === k - 1 ? null : focus + 1),
+    };
+    if (!act[e.key]) return;
+    e.preventDefault();
+    act[e.key]();
+  };
+  return (
+    <div
+      className="lattice-table-box multiedge-factors"
+      tabIndex={0}
+      role="group"
+      aria-label="Factors. Left and right arrows step through the combinations of pairings, up and down pick out a factor."
+      data-testid="multiedge-factors"
+      onKeyDown={onKeyDown}
+    >
+      <p className="lattice-keys muted">
+        Click here, then <kbd>←</kbd> <kbd>→</kbd> step through every combination of pairings and <kbd>↑</kbd> <kbd>↓</kbd> pick out a factor in the patch.
+      </p>
+      <div className="multiedge-factor-controls">
+        <span className="lattice-combo" data-testid="multiedge-combo-all">
+          <button type="button" aria-label="Previous combination" onClick={() => go(current - 1)} disabled={total < 2}>
+            ‹
+          </button>
+          Combination {total ? (current + 1).toLocaleString('en-US') : 0} of {total.toLocaleString('en-US')}
+          {truncated ? '+' : ''}
+          <button type="button" aria-label="Next combination" onClick={() => go(current + 1)} disabled={total < 2}>
+            ›
+          </button>
+        </span>
+        <button type="button" className="lattice-clear" onClick={nextNew} disabled={total < 2 || here === null} data-testid="multiedge-next-split">
+          Next different split
+        </button>
+        <label className="multiedge-toggle">
+          <input type="checkbox" checked={byFactor} onChange={(e) => onByFactor(e.target.checked)} data-testid="multiedge-by-factor" />
+          Colour the patch by factor
+        </label>
+      </div>
+      {factors === null ? (
+        <p className="muted multiedge-note">Some tile has an odd number of ends, so there is no drawing to split.</p>
+      ) : !x.some(Boolean) ? (
+        <p className="muted multiedge-note">No strands, so nothing to split.</p>
+      ) : (
+        <>
+          <p className="multiedge-split" data-testid="multiedge-split">
+            <span className="mono">{formatVector(model, x)}</span> ={' '}
+            {factors.factors.map((f, i) => (
+              <span key={i}>
+                {i > 0 && ' + '}
+                <span className="mono multiedge-factor-name" style={{ color: LOOP_COLOURS[i % LOOP_COLOURS.length] }}>
+                  {formatVector(model, f.vector)}
+                </span>
+              </span>
+            ))}
+          </p>
+          <table className="lattice-table" data-testid="multiedge-factor-table">
+            <thead>
+              <tr>
+                <th scope="col">Factor</th>
+                {model.classes.map((c) => (
+                  <th key={c} scope="col" style={{ borderBottomColor: edgeClassColor(c) }}>
+                    {c}
+                  </th>
+                ))}
+                <th scope="col">Splits further?</th>
+              </tr>
+            </thead>
+            <tbody>
+              {factors.factors.map((f, i) => (
+                <tr
+                  key={i}
+                  className={focus === i ? 'is-selected' : undefined}
+                  onPointerEnter={() => onFocus(i)}
+                  onPointerLeave={() => onFocus(null)}
+                  data-testid={`multiedge-factor-${i}`}
+                >
+                  <th scope="row">
+                    <span className="multiedge-factor-swatch" style={{ background: LOOP_COLOURS[i % LOOP_COLOURS.length] }} />
+                    {formatVector(model, f.vector)}
+                  </th>
+                  {f.vector.map((v, k) => (
+                    <td key={k} className={v === 0 ? 'is-zero' : undefined}>
+                      {v === 0 ? '·' : v}
+                    </td>
+                  ))}
+                  <td>{f.atom ? 'no: an atom' : 'yes, with other pairings'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
+      {splits && splits.length > 0 && (
+        <div className="multiedge-splits" data-testid="multiedge-splits">
+          <h3>
+            Every split these pairings reach ({splits.length} from {total.toLocaleString('en-US')} combination{total === 1 ? '' : 's'})
+          </h3>
+          <ul>
+            {splits.map(([sig, { count, first }]) => (
+              <li key={sig}>
+                <button type="button" aria-pressed={sig === here} onClick={() => go(first)}>
+                  <span className="mono">{sig}</span>
+                  <span className="muted">
+                    {' '}
+                    {count.toLocaleString('en-US')} combination{count === 1 ? '' : 's'}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {total > SPLITS_MAX && (
+        <p className="muted multiedge-note">
+          {total.toLocaleString('en-US')} combinations is too many to list every split; step through them, or use &ldquo;Next different split&rdquo;.
+        </p>
+      )}
+      <p className="muted multiedge-note">
+        A strand position on an edge (counted from the edge&rsquo;s + side; class 0 glues to itself, so a position and its mirror are one) is
+        joined to whatever its tile pairs it with. Each group of joined positions is a drawing on its own, so its counts are a valid choice:
+        a factor. Different pairings group the strands differently, so one count vector can split in several ways. A factor marked
+        &ldquo;an atom&rdquo; can&rsquo;t split however you pair it.
       </p>
     </div>
   );

@@ -98,6 +98,9 @@ import {
   chordReachOf,
   chordTypes,
   buildChordIndex,
+  chordControlAt,
+  curveRun,
+  packRun,
   recentTiles,
   transitionCounts,
   TRANSITION_TYPES,
@@ -948,26 +951,19 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
    * One run of strand as drawable ink, anchored at its own first point so f32
    * offsets stay exact however far from the origin the walk has gone.
    */
-  const polylineGeometry = useCallback((pts: Polyline, rgb: Rgb): TrailGeometry | null => {
+  const polylineGeometry = useCallback((pts: Polyline, rgb: Rgb, index: ChordIndex | null): TrailGeometry | null => {
     const n = pts.length;
     if (n < 2) return null;
     const origin = pts[0];
-    const xy = new Float32Array(n * 2);
-    const arc = new Float32Array(n);
-    let total = 0;
-    for (let i = 0; i < n; i++) {
-      xy[i * 2] = pts[i].x - origin.x;
-      xy[i * 2 + 1] = pts[i].y - origin.y;
-      if (i > 0) total += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
-      arc[i] = total;
-    }
+    const arcs = [0];
+    for (let i = 1; i < n; i++) arcs.push(arcs[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y));
+    // Curved strands: bend each chord the way the strand under it is drawn.
+    const run = curveRun(pts, (k) => (index ? chordControlAt(index, pts[k], pts[k + 1]) : null), (i) => arcs[i]);
     return {
       color: [rgb[0] / 255, rgb[1] / 255, rgb[2] / 255],
       origin,
-      xy,
-      arc,
-      pointCount: n,
-      totalLength: total,
+      ...packRun(run, origin),
+      totalLength: arcs[n - 1],
       version: 1,
     };
   }, []);
@@ -1039,8 +1035,9 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
     }
 
     const out: TrailGeometry[] = [];
+    const curveIndex = chordsRef.current?.controls ? ensureIndex() : null;
     for (const run of runs) {
-      const geom = polylineGeometry(run, HIGHLIGHT_INK);
+      const geom = polylineGeometry(run, HIGHLIGHT_INK, curveIndex);
       if (geom) out.push(geom);
     }
 
@@ -1141,6 +1138,8 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
     }
     const segs: Segment[] = [];
     const auxAt: number[] = [];
+    // Curved strands: each chord's world control point, by segment index.
+    const ctrls: Pt[] = [];
     for (let i = 0; i < cut.count; i++) {
       const tb = cut.type[i];
       if (isAggregateType(tb)) continue;
@@ -1153,9 +1152,13 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
       const si = SIN30[rot];
       const px = cut.pos[i * 2] + cut.origin.x;
       const py = cut.pos[i * 2 + 1] + cut.origin.y;
-      for (const seg of local) {
+      const localCtrls = table.controls?.[tb];
+      for (let s = 0; s < local.length; s++) {
+        const seg = local[s];
         const [a, b] = seg;
         if (table.aux?.has(seg)) auxAt.push(segs.length);
+        const c = localCtrls?.[s];
+        if (c) ctrls[segs.length] = { x: co * mir * c.x - si * c.y + px, y: si * mir * c.x + co * c.y + py };
         segs.push([
           { x: co * mir * a.x - si * a.y + px, y: si * mir * a.x + co * a.y + py },
           { x: co * mir * b.x - si * b.y + px, y: si * mir * b.x + co * b.y + py },
@@ -1164,6 +1167,8 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
     }
     const welded = weldSegments(segs);
     const { circuits } = tracePaths(welded);
+    const ctrlByKey = new Map<string, Pt>();
+    ctrls.forEach((c, k) => ctrlByKey.set(segmentKey(welded[k]), c));
     // Links that do not count towards length (a hexagon rule drawn on
     // Spectres), so a circuit keeps its hexagon colour.
     const auxKeys = new Set(auxAt.map((k) => segmentKey(welded[k])));
@@ -1176,26 +1181,20 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
       const pts = path.points;
       const n = pts.length;
       if (n < 3) continue;
-      const xy = new Float32Array((n + 1) * 2);
-      const arc = new Float32Array(n + 1);
-      let total = 0;
-      for (let i = 0; i <= n; i++) {
-        const q = pts[i % n];
-        xy[i * 2] = q.x - cut.origin.x;
-        xy[i * 2 + 1] = q.y - cut.origin.y;
-        if (i > 0) {
-          const r = pts[i - 1];
-          total += Math.hypot(q.x - r.x, q.y - r.y);
-        }
-        arc[i] = total;
-      }
+      const ring = [...pts, pts[0]];
+      const arcs = [0];
+      for (let i = 1; i <= n; i++) arcs.push(arcs[i - 1] + Math.hypot(ring[i].x - ring[i - 1].x, ring[i].y - ring[i - 1].y));
+      const total = arcs[n];
+      const run = curveRun(
+        ring,
+        (k) => (ctrlByKey.size ? (ctrlByKey.get(segmentKey([ring[k], ring[k + 1]])) ?? null) : null),
+        (i) => arcs[i],
+      );
       const rgb = circuitLengthRgb(lengthOf(path));
       geoms.push({
         color: [rgb[0] / 255, rgb[1] / 255, rgb[2] / 255],
         origin: cut.origin,
-        xy,
-        arc,
-        pointCount: n + 1,
+        ...packRun(run, cut.origin),
         totalLength: total,
         version: 1,
       });

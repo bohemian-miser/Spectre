@@ -20,6 +20,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+  CURVE_PIECES,
   LEAF_ORDER,
   comboToMatchingIndices,
   createUnrootedEngine,
@@ -42,6 +43,7 @@ import {
   WELD_EPSILON,
   advanceWalk,
   buildChordIndex,
+  chordControlAt,
   continuationAt,
   describeWalk,
   hitTestChord,
@@ -846,5 +848,48 @@ describe('the tiles a walk crossed', () => {
       const trail = startTrail(hitTestChord(index, { x: 0, y: 0 }, 6)!);
       expect(transitionCounts(trail).every((c) => c === 0)).toBe(true);
     });
+  });
+});
+
+describe('curved strands', () => {
+  const curvedTable = (subset: readonly number[], combo: string): LeafChordTable =>
+    buildLeafChordTable('spectre', subset, comboToMatchingIndices('spectre', subset, combo), undefined, true);
+
+  it('walks the same points, and draws each chord bent', () => {
+    const view = rect(20);
+    const straight = walkFromCentre(view, tableFor(LOOP_SUBSET, LOOP_COMBO))!.trail;
+    const curved = walkFromCentre(view, curvedTable(LOOP_SUBSET, LOOP_COMBO))!.trail;
+    expect(curved.status).toBe('closed');
+    expect(trailPoints(curved)).toEqual(trailPoints(straight));
+    expect(trailLength(curved)).toBe(trailLength(straight));
+
+    const g = trailGeometry(curved)!;
+    const chords = curved.count - 1;
+    expect(g.pointCount).toBe(curved.count + chords * (CURVE_PIECES - 1));
+    expect(g.totalLength).toBe(trailGeometry(straight)!.totalLength);
+    // The chord ends are still on the line, every CURVE_PIECES points.
+    for (let k = 0; k < curved.count; k++) {
+      const at = k * CURVE_PIECES;
+      expect(g.xy[at * 2] + g.origin.x).toBeCloseTo(curved.xy[k * 2], 4);
+      expect(g.xy[at * 2 + 1] + g.origin.y).toBeCloseTo(curved.xy[k * 2 + 1], 4);
+    }
+    // Arc only grows, so the rainbow runs the same way round.
+    for (let i = 1; i < g.pointCount; i++) expect(g.arc[i]).toBeGreaterThanOrEqual(g.arc[i - 1]);
+    // And the middle of a chord sits off the straight line.
+    const mid = CURVE_PIECES / 2;
+    const a = { x: g.xy[0], y: g.xy[1] };
+    const b = { x: g.xy[CURVE_PIECES * 2], y: g.xy[CURVE_PIECES * 2 + 1] };
+    const m = { x: g.xy[mid * 2], y: g.xy[mid * 2 + 1] };
+    expect(Math.hypot(m.x - (a.x + b.x) / 2, m.y - (a.y + b.y) / 2)).toBeGreaterThan(0.05);
+  });
+
+  it('finds a chord\'s control point from its two ends, and none on a straight table', () => {
+    const cut = cutFor(rect(20));
+    const index = buildChordIndex(cut, curvedTable(LOOP_SUBSET, LOOP_COMBO))!;
+    const hit = hitTestChord(index, { x: 0, y: 0 }, 5)!;
+    expect(hit.ctrl).toBeDefined();
+    expect(chordControlAt(index, hit.at, hit.to)).toEqual(hit.ctrl);
+    expect(chordControlAt(index, hit.to, hit.at)).toEqual(hit.ctrl);
+    expect(chordControlAt(buildChordIndex(cut, tableFor(LOOP_SUBSET, LOOP_COMBO))!, hit.at, hit.to)).toBeNull();
   });
 });
