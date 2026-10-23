@@ -13,7 +13,7 @@
  */
 
 import { useMemo, useState, type KeyboardEvent } from 'react';
-import { hexPatch } from '../core/flowLattice';
+import { hexPatch, type PatchTile } from '../core/flowLattice';
 import { HEX_PTS, type TileTypeId } from '../core/families';
 import type { Pt } from '../core/geom';
 import {
@@ -50,6 +50,9 @@ const SEARCH_MAX = 50000;
 
 type PairTable = Readonly<Record<string, ReturnType<typeof nonCrossingPairings>>>;
 
+/** What the patch picks out: one factor, or every closed loop with one count vector. */
+type Focus = { readonly kind: 'factor'; readonly i: number } | { readonly kind: 'loops'; readonly key: string } | null;
+
 const centreOf = (pts: readonly Pt[]): Pt => ({
   x: pts.reduce((a, p) => a + p.x, 0) / pts.length,
   y: pts.reduce((a, p) => a + p.y, 0) / pts.length,
@@ -71,7 +74,7 @@ export default function MultiEdgePage(): JSX.Element {
   const [tileSel, setTileSel] = useState(0);
   const [hover, setHover] = useState<number | null>(null);
   const [byFactor, setByFactor] = useState(true);
-  const [focusFactor, setFocusFactor] = useState<number | null>(null);
+  const [focus, setFocus] = useState<Focus>(null);
 
   const pairs: PairTable = useMemo(
     () =>
@@ -93,6 +96,7 @@ export default function MultiEdgePage(): JSX.Element {
     [model, pairs, pairIdx],
   );
   const factors = useMemo(() => pairingFactorisation(model, x, chosen), [model, x, chosen]);
+  const drawing = usePatchDrawing(model, x, level, chosen, factors);
 
   return (
     <article className="lattice-page multiedge-page">
@@ -149,14 +153,7 @@ export default function MultiEdgePage(): JSX.Element {
             hover={hover}
             onHover={setHover}
           />
-          <Patch
-            model={model}
-            x={x}
-            level={level}
-            chosen={chosen}
-            factors={byFactor ? factors : null}
-            focus={focusFactor}
-          />
+          <Patch level={level} drawing={drawing} byFactor={byFactor && factors !== null} focus={focus} />
         </div>
       </section>
 
@@ -169,10 +166,13 @@ export default function MultiEdgePage(): JSX.Element {
           pick={pick}
           setPicks={(p) => setPairIdx(p)}
           factors={factors}
+          chosen={chosen}
+          drawing={drawing}
+          level={level}
           byFactor={byFactor}
           onByFactor={setByFactor}
-          focus={focusFactor}
-          onFocus={setFocusFactor}
+          focus={focus}
+          onFocus={setFocus}
         />
       </section>
     </article>
@@ -538,17 +538,41 @@ function TileStrip(props: {
   );
 }
 
-function Patch(props: {
-  model: MultiEdgeModel;
-  x: readonly number[];
-  level: number;
-  chosen: Readonly<Record<string, Pairing | null>>;
-  /** Colour strands by factor instead of by loop. */
-  factors: Factorisation | null;
-  /** Factor to pick out; the others fade. */
-  focus: number | null;
-}): JSX.Element {
-  const { model, x, level, chosen, factors, focus } = props;
+interface DrawnSegment {
+  readonly a: Pt;
+  readonly b: Pt;
+  readonly factor: number | null;
+  /** Class index (into model.classes) of each end's edge. */
+  readonly ka: number;
+  readonly kb: number;
+}
+
+interface PatchLoop {
+  readonly closed: boolean;
+  /** How many times the loop crosses an edge of each class. */
+  readonly vector: readonly number[];
+  /** `formatVector` of it: the group the loop list puts it in. */
+  readonly key: string;
+  readonly factor: number | null;
+}
+
+interface PatchDrawing {
+  readonly tiles: readonly PatchTile[];
+  readonly view: string;
+  readonly drawn: readonly { t: PatchTile; centre: Pt; ends: EndPoint[]; segments: DrawnSegment[]; odd: boolean }[];
+  readonly loops: readonly PatchLoop[];
+  /** Loop index of each segment, keyed `tile:segment`. */
+  readonly loopOf: ReadonlyMap<string, number>;
+}
+
+/** The patch's strands and the loops they trace, each with its count vector. */
+function usePatchDrawing(
+  model: MultiEdgeModel,
+  x: readonly number[],
+  level: number,
+  chosen: Readonly<Record<string, Pairing | null>>,
+  factors: Factorisation | null,
+): PatchDrawing {
   const tiles = useMemo(() => hexPatch(level), [level]);
   const view = useMemo(() => {
     const all = tiles.flatMap((t) => t.pts);
@@ -557,39 +581,62 @@ function Patch(props: {
     const m = 0.4;
     return `${Math.min(...xs) - m} ${Math.min(...ys) - m} ${Math.max(...xs) - Math.min(...xs) + 2 * m} ${Math.max(...ys) - Math.min(...ys) + 2 * m}`;
   }, [tiles]);
-  const drawn = useMemo(
-    () =>
-      tiles.map((t) => {
-        const ends: EndPoint[] = tileEndPoints(model, t.inst.type, x, t.pts);
-        const pairing = chosen[t.inst.type] ?? null;
-        const factorOf = factors?.endFactor[t.inst.type];
-        return {
-          t,
-          centre: centreOf(t.pts),
-          ends,
-          segments: pairing ? pairing.map(([i, j]) => ({ a: ends[i].pos, b: ends[j].pos, factor: factorOf?.[i] ?? null })) : [],
-          odd: pairing === null,
-        };
-      }),
-    [tiles, model, x, chosen, factors],
-  );
-  const loops = useMemo(() => {
+  return useMemo(() => {
+    const drawn = tiles.map((t) => {
+      const ends: EndPoint[] = tileEndPoints(model, t.inst.type, x, t.pts);
+      const cs = edgeClasses(t.inst.type);
+      const k = (e: EndPoint) => model.classes.indexOf(cs[e.edge]);
+      const pairing = chosen[t.inst.type] ?? null;
+      const factorOf = factors?.endFactor[t.inst.type];
+      return {
+        t,
+        centre: centreOf(t.pts),
+        ends,
+        segments: pairing
+          ? pairing.map(([i, j]) => ({ a: ends[i].pos, b: ends[j].pos, factor: factorOf?.[i] ?? null, ka: k(ends[i]), kb: k(ends[j]) }))
+          : [],
+        odd: pairing === null,
+      };
+    });
     const flat = drawn.flatMap((d, ti) => d.segments.map((s, si) => ({ s, key: `${ti}:${si}` })));
-    const colourOf = new Map<string, string | null>();
-    let closed = 0;
-    let open = 0;
-    for (const loop of traceLoops(flat.map((f) => f.s))) {
-      const colour = loop.closed ? LOOP_COLOURS[closed++ % LOOP_COLOURS.length] : null;
-      if (!loop.closed) open++;
-      for (const i of loop.segments) colourOf.set(flat[i].key, colour);
-    }
-    return { colourOf, closed, open };
-  }, [drawn]);
+    const loopOf = new Map<string, number>();
+    const loops: PatchLoop[] = traceLoops(flat.map((f) => f.s)).map((loop, li) => {
+      // Each crossing is the end of two of the loop's segments (one, at the
+      // patch's edge, for an open path's last ends).
+      const twice = model.classes.map(() => 0);
+      for (const i of loop.segments) {
+        loopOf.set(flat[i].key, li);
+        twice[flat[i].s.ka]++;
+        twice[flat[i].s.kb]++;
+      }
+      const vector = twice.map((n) => Math.ceil(n / 2));
+      return { closed: loop.closed, vector, key: formatVector(model, vector), factor: flat[loop.segments[0]]?.s.factor ?? null };
+    });
+    return { tiles, view, drawn, loops, loopOf };
+  }, [tiles, view, model, x, chosen, factors]);
+}
+
+function Patch(props: {
+  level: number;
+  drawing: PatchDrawing;
+  /** Colour strands by factor instead of by loop. */
+  byFactor: boolean;
+  /** What to pick out; the rest fade. */
+  focus: Focus;
+}): JSX.Element {
+  const { level, drawing, byFactor, focus } = props;
+  const { tiles, view, drawn, loops, loopOf } = drawing;
+  const loopColour = useMemo(() => {
+    let n = 0;
+    return loops.map((l) => (l.closed ? LOOP_COLOURS[n++ % LOOP_COLOURS.length] : null));
+  }, [loops]);
+  const closed = loops.filter((l) => l.closed).length;
+  const open = loops.length - closed;
   const segCount = drawn.reduce((a, d) => a + d.segments.length, 0);
   const odd = drawn.filter((d) => d.odd && d.ends.length > 0).length;
   return (
     <div className="lattice-patch-box">
-      <svg className="lattice-patch" viewBox={view} role="img" aria-label={`Level ${level} hexagon supertile`} data-closed={loops.closed} data-open={loops.open} data-odd={odd}>
+      <svg className="lattice-patch" viewBox={view} role="img" aria-label={`Level ${level} hexagon supertile`} data-closed={closed} data-open={open} data-odd={odd}>
         {drawn.map(({ t, odd: o, ends }) => (
           <polygon key={t.inst.id} className={`lattice-tile${o && ends.length ? ' is-unbalanced' : ''}`} points={t.pts.map((p) => `${p.x},${p.y}`).join(' ')}>
             <title>{t.inst.type}</title>
@@ -597,13 +644,20 @@ function Patch(props: {
         ))}
         {drawn.map(({ t, centre, segments }, ti) =>
           segments.map((s, i) => {
-            const loopColour = loops.colourOf.get(`${ti}:${i}`) ?? null;
-            const colour = s.factor !== null ? LOOP_COLOURS[s.factor % LOOP_COLOURS.length] : loopColour;
-            const dim = focus !== null && s.factor !== null && s.factor !== focus;
+            const li = loopOf.get(`${ti}:${i}`) ?? -1;
+            const loop = loops[li];
+            const colour = byFactor && s.factor !== null ? LOOP_COLOURS[s.factor % LOOP_COLOURS.length] : (loopColour[li] ?? null);
+            const dim =
+              focus?.kind === 'factor'
+                ? s.factor !== null && s.factor !== focus.i
+                : focus?.kind === 'loops'
+                  ? !loop || !loop.closed || loop.key !== focus.key
+                  : false;
             return (
               <path
                 key={`${t.inst.id}:${i}`}
                 data-factor={s.factor ?? undefined}
+                data-loop={loop?.closed ? loop.key : undefined}
                 className={['multiedge-strand', colour ? '' : 'is-open', dim ? 'is-dim' : ''].filter(Boolean).join(' ')}
                 style={colour ? { stroke: colour } : undefined}
                 d={chordPath(s.a, s.b, centre)}
@@ -620,8 +674,8 @@ function Patch(props: {
           ? `${odd} of ${tiles.length} tiles have an odd number of ends (tinted), so they can't pair up.`
           : segCount === 0
             ? 'No strands: raise a count or click a cube corner.'
-            : `${loops.closed} closed loop${loops.closed === 1 ? '' : 's'} and ${loops.open} path${loops.open === 1 ? '' : 's'} running off the edge, ${
-                factors ? 'coloured by the factor they belong to' : 'each closed loop in its own colour, open paths grey'
+            : `${closed} closed loop${closed === 1 ? '' : 's'} and ${open} path${open === 1 ? '' : 's'} running off the edge, ${
+                byFactor ? 'coloured by the factor they belong to' : 'each closed loop in its own colour, open paths grey'
               }.`}
       </p>
     </div>
@@ -647,12 +701,17 @@ function FactorPanel(props: {
   pick: (t: TileTypeId) => number;
   setPicks: (p: Record<string, number>) => void;
   factors: Factorisation | null;
+  chosen: Readonly<Record<string, Pairing | null>>;
+  drawing: PatchDrawing;
+  level: number;
   byFactor: boolean;
   onByFactor: (on: boolean) => void;
-  focus: number | null;
-  onFocus: (k: number | null) => void;
+  focus: Focus;
+  onFocus: (f: Focus) => void;
 }): JSX.Element {
-  const { model, x, pairs, pick, setPicks, factors, byFactor, onByFactor, focus, onFocus } = props;
+  const { model, x, pairs, pick, setPicks, factors, chosen, drawing, level, byFactor, onByFactor, focus, onFocus } = props;
+  const focusFactor = focus?.kind === 'factor' ? focus.i : null;
+  const setFactor = (i: number | null) => onFocus(i === null ? null : { kind: 'factor', i });
   const types = model.types;
   const sizes = types.map((t) => pairs[t].pairings.length);
   const odd = sizes.some((n, i) => n === 0 && tileEnds(model, x)[i] > 0);
@@ -695,8 +754,8 @@ function FactorPanel(props: {
     const act: Record<string, () => void> = {
       ArrowLeft: () => go(current - 1),
       ArrowRight: () => go(current + 1),
-      ArrowUp: () => k && onFocus(focus === null ? k - 1 : focus === 0 ? null : focus - 1),
-      ArrowDown: () => k && onFocus(focus === null ? 0 : focus === k - 1 ? null : focus + 1),
+      ArrowUp: () => k && setFactor(focusFactor === null ? k - 1 : focusFactor === 0 ? null : focusFactor - 1),
+      ArrowDown: () => k && setFactor(focusFactor === null ? 0 : focusFactor === k - 1 ? null : focusFactor + 1),
     };
     if (!act[e.key]) return;
     e.preventDefault();
@@ -750,6 +809,9 @@ function FactorPanel(props: {
               </span>
             ))}
           </p>
+          <LoopGroups model={model} drawing={drawing} level={level} focus={focus} onFocus={onFocus} />
+          <TileJoins model={model} x={x} chosen={chosen} />
+          <h3 className="multiedge-subhead">The factors the pairings force</h3>
           <table className="lattice-table" data-testid="multiedge-factor-table">
             <thead>
               <tr>
@@ -766,9 +828,9 @@ function FactorPanel(props: {
               {factors.factors.map((f, i) => (
                 <tr
                   key={i}
-                  className={focus === i ? 'is-selected' : undefined}
-                  onPointerEnter={() => onFocus(i)}
-                  onPointerLeave={() => onFocus(null)}
+                  className={focusFactor === i ? 'is-selected' : undefined}
+                  onPointerEnter={() => setFactor(i)}
+                  onPointerLeave={() => setFactor(null)}
                   data-testid={`multiedge-factor-${i}`}
                 >
                   <th scope="row">
@@ -813,11 +875,100 @@ function FactorPanel(props: {
         </p>
       )}
       <p className="muted multiedge-note">
-        A strand position on an edge (counted from the edge&rsquo;s + side; class 0 glues to itself, so a position and its mirror are one) is
+        Each loop you can see lies inside one factor, and a factor is usually several kinds of loop. A strand position on an edge (counted from the edge&rsquo;s + side; class 0 glues to itself, so a position and its mirror are one) is
         joined to whatever its tile pairs it with. Each group of joined positions is a drawing on its own, so its counts are a valid choice:
         a factor. Different pairings group the strands differently, so one count vector can split in several ways. A factor marked
         &ldquo;an atom&rdquo; can&rsquo;t split however you pair it.
       </p>
+    </div>
+  );
+}
+
+/** The patch's closed loops grouped by count vector; click a group to pick its loops out. */
+function LoopGroups(props: { model: MultiEdgeModel; drawing: PatchDrawing; level: number; focus: Focus; onFocus: (f: Focus) => void }): JSX.Element {
+  const { model, drawing, level, focus, onFocus } = props;
+  const groups = useMemo(() => {
+    const out = new Map<string, { count: number; vector: readonly number[]; factors: Set<number> }>();
+    for (const l of drawing.loops) {
+      if (!l.closed) continue;
+      const g = out.get(l.key) ?? { count: 0, vector: l.vector, factors: new Set<number>() };
+      g.count++;
+      if (l.factor !== null) g.factors.add(l.factor);
+      out.set(l.key, g);
+    }
+    return [...out.entries()].sort((a, b) => b[1].count - a[1].count || a[0].localeCompare(b[0]));
+  }, [drawing]);
+  const open = drawing.loops.filter((l) => !l.closed).length;
+  const picked = focus?.kind === 'loops' ? focus.key : null;
+  return (
+    <div className="multiedge-loop-groups" data-testid="multiedge-loop-groups">
+      <h3 className="multiedge-subhead">The loops in the level {level} patch</h3>
+      {groups.length === 0 ? (
+        <p className="muted multiedge-note">No closed loops in this patch.</p>
+      ) : (
+        <ul>
+          {groups.map(([key, g]) => (
+            <li key={key}>
+              <button
+                type="button"
+                aria-pressed={picked === key}
+                onClick={() => onFocus(picked === key ? null : { kind: 'loops', key })}
+                title={`${g.count} loop${g.count === 1 ? '' : 's'} crossing ${model.classes
+                  .flatMap((c, k) => (g.vector[k] ? [`${g.vector[k]} × class ${c}`] : []))
+                  .join(', ')}`}
+              >
+                {[...g.factors].map((f) => (
+                  <span key={f} className="multiedge-factor-swatch" style={{ background: LOOP_COLOURS[f % LOOP_COLOURS.length] }} />
+                ))}
+                <span className="mono">{key}</span>
+                <span className="muted"> × {g.count}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="muted multiedge-note">
+        Each loop&rsquo;s count vector is how many times it crosses an edge of each class: a lens across one class-1 edge is{' '}
+        <span className="mono">11</span>. Click a group to pick its loops out in the patch.
+        {open > 0 && ` ${open} more path${open === 1 ? '' : 's'} run${open === 1 ? 's' : ''} off the patch's edge and aren't counted.`}
+      </p>
+    </div>
+  );
+}
+
+/** Which classes each tile type's pairing joins; joins across classes are what merge factors. */
+function TileJoins(props: { model: MultiEdgeModel; x: readonly number[]; chosen: Readonly<Record<string, Pairing | null>> }): JSX.Element | null {
+  const { model, x, chosen } = props;
+  const rows = model.types.flatMap((t) => {
+    const pairing = chosen[t];
+    if (!pairing || pairing.length === 0) return [];
+    const cs = edgeClasses(t);
+    const ends = tileEndPoints(model, t, x, HEX_PTS);
+    const joins = new Map<string, number>();
+    let mixed = false;
+    for (const [i, j] of pairing) {
+      const [a, b] = [cs[ends[i].edge], cs[ends[j].edge]].sort((p, q) => p - q);
+      if (a !== b) mixed = true;
+      joins.set(`${a}–${b}`, (joins.get(`${a}–${b}`) ?? 0) + 1);
+    }
+    return [{ t, mixed, text: [...joins].map(([j, n]) => (n > 1 ? `${j} ×${n}` : j)).join(', ') }];
+  });
+  if (rows.length === 0) return null;
+  const mixed = rows.filter((r) => r.mixed);
+  return (
+    <div className="multiedge-joins" data-testid="multiedge-joins">
+      <p className="multiedge-note">
+        {mixed.length === 0
+          ? 'Every tile joins strands of the same class to each other.'
+          : `Joining different classes: ${mixed.map((r) => `${r.t} (${r.text})`).join('; ')}.`}
+      </p>
+      <ul>
+        {rows.map((r) => (
+          <li key={r.t} className={r.mixed ? 'is-mixed' : undefined}>
+            <strong>{r.t}</strong> {r.text}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
