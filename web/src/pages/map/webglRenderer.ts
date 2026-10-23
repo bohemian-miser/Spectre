@@ -703,6 +703,8 @@ export function createWebGLRenderer(
     chordVerts = table.vertsPerInstance;
     chordsPerTile = table.maxChords;
   };
+  // Straight lines drawn per tile: the chords, or their curve pieces when curved.
+  const linesPerTile = (): number => chordVerts / 2;
 
   // --- uniforms ---------------------------------------------------------------
   const leafTypes = leafOrder(family);
@@ -972,7 +974,7 @@ export function createWebGLRenderer(
           // instanced call for every chord of every visible tile.
           if (chordVerts > 0 && chordTex) {
             const halfPx = (BASE_LINE_PX * lineScale * dpr) / 2;
-            const chordVertCount = chordsPerTile * 6;
+            const chordVertCount = linesPerTile() * 6;
 
             G.useProgram(progChord);
             G.uniform4f(uChordView, vx, vy, kx, ky);

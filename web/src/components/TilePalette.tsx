@@ -38,6 +38,8 @@ export interface TilePaletteProps {
   readonly showEdgeLabels?: boolean;
   readonly showMajorNumbers?: boolean;
   readonly showTileName?: boolean;
+  /** Bow each strand toward its tile's centre. */
+  readonly curvedStrands?: boolean;
   readonly ghostMatchings?: boolean;
   readonly hangTails?: boolean;
   readonly markOdd?: boolean;
@@ -72,6 +74,7 @@ export function TilePalette(props: TilePaletteProps): JSX.Element {
     showEdgeLabels,
     showMajorNumbers,
     showTileName,
+    curvedStrands,
     ghostMatchings,
     hangTails,
     markOdd,
@@ -115,6 +118,7 @@ export function TilePalette(props: TilePaletteProps): JSX.Element {
             showEdgeLabels={showEdgeLabels}
             showMajorNumbers={showMajorNumbers}
             showTileName={showTileName}
+            curvedStrands={curvedStrands}
             ghostMatchings={ghostMatchings}
             hangTails={hangTails}
             markOdd={markOdd}

@@ -19,6 +19,7 @@ import {
   type ColorSchemeId,
   type EdgeContracts,
   type Path,
+  type Pt,
   type TileFamilyId,
   type TileTypeId,
 } from '../core';
@@ -48,6 +49,8 @@ export interface TilingCanvasProps {
   readonly circuits?: readonly Path[];
   readonly tails?: readonly Path[];
   readonly circuitColorByLength?: ReadonlyMap<number, string> | readonly (readonly [number, string])[];
+  /** From a `curved` analysis: each step bows through its control point. */
+  readonly segmentControl?: readonly (readonly [string, Pt])[];
   readonly rainbowTails?: boolean;
   /**
    * Dim every strand whose length is not in this set, so picking lengths in
@@ -108,6 +111,7 @@ export function TilingCanvas(props: TilingCanvasProps): JSX.Element {
     circuits,
     tails,
     circuitColorByLength,
+    segmentControl,
     rainbowTails = false,
     highlightLengths = null,
     strokeWidth = 0.12,
@@ -129,11 +133,11 @@ export function TilingCanvas(props: TilingCanvasProps): JSX.Element {
     () =>
       circuits || tails
         ? buildOverlayPaths(
-            { circuits: circuits ?? [], tails: tails ?? [], circuitColorByLength },
+            { circuits: circuits ?? [], tails: tails ?? [], circuitColorByLength, segmentControl },
             { rainbowTails },
           )
         : [],
-    [circuits, tails, circuitColorByLength, rainbowTails],
+    [circuits, tails, circuitColorByLength, segmentControl, rainbowTails],
   );
 
   /**

@@ -41,13 +41,24 @@ export interface OverlayPath {
   readonly index: number;
 }
 
-/** `Path` -> SVG path data. Closed paths get a trailing `Z`. */
-export function pathToD(p: Path): string {
+/** One step a → b: a quadratic through its control point when there is one, else a line. */
+function stepD(a: Pt, b: Pt, controls?: ReadonlyMap<string, Pt>): string {
+  const c = controls?.get(segmentKey([a, b]));
+  return c ? ` Q ${c.x} ${c.y} ${b.x} ${b.y}` : ` L ${b.x} ${b.y}`;
+}
+
+/**
+ * `Path` -> SVG path data. Closed paths get a trailing `Z`. With `controls`
+ * (segmentKey -> control point, from a `curved` analysis) each step that has
+ * one bows as a quadratic, and a closed path closes with its own curve.
+ */
+export function pathToD(p: Path, controls?: ReadonlyMap<string, Pt>): string {
   const pts = p.points;
   if (pts.length === 0) return '';
   let d = `M ${pts[0].x} ${pts[0].y}`;
-  for (let i = 1; i < pts.length; i++) d += ` L ${pts[i].x} ${pts[i].y}`;
-  return p.closed ? `${d} Z` : d;
+  for (let i = 1; i < pts.length; i++) d += stepD(pts[i - 1], pts[i], controls);
+  if (!p.closed) return d;
+  return controls && pts.length > 1 ? `${d}${stepD(pts[pts.length - 1], pts[0], controls)} Z` : `${d} Z`;
 }
 
 /** `points="x,y x,y …"` form, for `<polyline>`/`<polygon>` consumers. */
@@ -94,6 +105,8 @@ export interface OverlayInput {
   readonly circuitColorByLength?: PairList<number, string>;
   /** From `CircuitAnalysis.segmentColor` / `AnalysisResponse.segmentColors`. */
   readonly segmentColor?: PairList<string, string>;
+  /** From a `curved` analysis: draw each step as a curve through its control point. */
+  readonly segmentControl?: PairList<string, Pt>;
 }
 
 export interface OverlayOptions {
@@ -133,6 +146,7 @@ export function buildOverlayPaths(
   const max = opts.maxRecords ?? Number.POSITIVE_INFINITY;
   const colorByLength = asMap(input.circuitColorByLength) ?? deriveCircuitColors(input.circuits);
   const segColor = asMap(input.segmentColor);
+  const controls = asMap(input.segmentControl);
 
   const out: OverlayPath[] = [];
 
@@ -144,7 +158,7 @@ export function buildOverlayPaths(
       out.push({
         key: `c${i}`,
         kind: 'circuit',
-        d: pathToD(p),
+        d: pathToD(p, controls),
         color: colorByLength.get(len) ?? circuitHueColor(0),
         length: len,
         closed: true,
@@ -162,7 +176,7 @@ export function buildOverlayPaths(
         out.push({
           key: `t${i}`,
           kind: 'tail',
-          d: pathToD(p),
+          d: pathToD(p, controls),
           color: TAIL_COLOR,
           length: len,
           closed: false,
@@ -179,7 +193,7 @@ export function buildOverlayPaths(
         out.push({
           key: `t${i}.${s}`,
           kind: 'tail',
-          d: `M ${a.x} ${a.y} L ${b.x} ${b.y}`,
+          d: `M ${a.x} ${a.y}${stepD(a, b, controls)}`,
           color: fromMap ?? rainbow(segs > 1 ? s / (segs - 1) : 0),
           length: len,
           closed: false,

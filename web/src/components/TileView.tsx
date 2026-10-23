@@ -23,6 +23,8 @@ import {
   type Pt,
   type TileFamilyId,
   type TileTypeId,
+  chordControl,
+  leafCentre,
 } from '../core';
 import { edgeClassColor, tileColor } from '../lib/palette';
 import { expandBox, boxSize, type Box } from '../lib/viewport';
@@ -94,6 +96,8 @@ export interface TileViewProps {
    * all of them rather than a bare handful.
    */
   readonly showMajorNumbers?: boolean;
+  /** Bow each strand toward its tile's centre instead of drawing it straight. */
+  readonly curvedStrands?: boolean;
   /** The tile's own name, faintly, over each part. */
   readonly showTileName?: boolean;
 
@@ -155,6 +159,7 @@ export function TileView(props: TileViewProps): JSX.Element {
     showEdgeLabels = false,
     showMajorNumbers = false,
     showTileName = false,
+    curvedStrands = false,
     matchingIndex,
     matchingIndexByType,
     ghostMatchings = false,
@@ -234,7 +239,8 @@ export function TileView(props: TileViewProps): JSX.Element {
    * dangling stub of a part whose crossings cannot all pair up.
    */
   const { chords, tails } = useMemo(() => {
-    const chordsOut: { key: string; from: Pt; to: Pt; ghost: boolean }[] = [];
+    const chordsOut: { key: string; from: Pt; to: Pt; ghost: boolean; centre?: Pt }[] = [];
+    const partCentre = new Map(parts.map((p) => [p, transPt(p.xform, leafCentre(family, p.type))]));
     const tailsOut: { key: string; d: string; end: Pt }[] = [];
     for (const part of parts) {
       if (!selectedEdges) continue;
@@ -255,6 +261,7 @@ export function TileView(props: TileViewProps): JSX.Element {
                 from: world[a],
                 to: world[b],
                 ghost: true,
+                centre: partCentre.get(part),
               }),
             );
           });
@@ -262,7 +269,7 @@ export function TileView(props: TileViewProps): JSX.Element {
         const active = all[idx];
         if (active) {
           active.forEach(([a, b], k) =>
-            chordsOut.push({ key: `m${part.type}.${k}`, from: world[a], to: world[b], ghost: false }),
+            chordsOut.push({ key: `m${part.type}.${k}`, from: world[a], to: world[b], ghost: false, centre: partCentre.get(part) }),
           );
         }
       } else if (hangTails && points.length % 2 === 1) {
@@ -274,6 +281,7 @@ export function TileView(props: TileViewProps): JSX.Element {
             from: world[i],
             to: world[i + 1],
             ghost: false,
+            centre: partCentre.get(part),
           });
         }
         tailsOut.push({ key: `t${part.type}`, ...tailStub(world[world.length - 1], part) });
@@ -612,21 +620,38 @@ export function TileView(props: TileViewProps): JSX.Element {
 
       <g className="matching-chords">
         {chords.map((c) => (
-          <line
-            key={c.key}
-            className={c.ghost ? 'chord is-ghost' : 'chord'}
-            x1={c.from.x}
-            y1={c.from.y}
-            x2={c.to.x}
-            y2={c.to.y}
-            stroke="#111"
-            strokeOpacity={c.ghost ? 0.1 : 0.9}
-            strokeWidth={c.ghost ? strokeUnit : strokeUnit * 1.8}
-            strokeLinecap="round"
-            // Decorative: a chord drawn between two dots sits exactly where the
-            // user must press to start a chord-draw gesture (stage-3 bugfix).
-            pointerEvents="none"
-          />
+          curvedStrands && c.centre ? (
+            <path
+              key={c.key}
+              className={c.ghost ? 'chord is-ghost' : 'chord'}
+              d={(() => {
+                const k = chordControl(c.from, c.to, c.centre);
+                return `M ${c.from.x} ${c.from.y} Q ${k.x} ${k.y} ${c.to.x} ${c.to.y}`;
+              })()}
+              fill="none"
+              stroke="#111"
+              strokeOpacity={c.ghost ? 0.1 : 0.9}
+              strokeWidth={c.ghost ? strokeUnit : strokeUnit * 1.8}
+              strokeLinecap="round"
+              pointerEvents="none"
+            />
+          ) : (
+            <line
+              key={c.key}
+              className={c.ghost ? 'chord is-ghost' : 'chord'}
+              x1={c.from.x}
+              y1={c.from.y}
+              x2={c.to.x}
+              y2={c.to.y}
+              stroke="#111"
+              strokeOpacity={c.ghost ? 0.1 : 0.9}
+              strokeWidth={c.ghost ? strokeUnit : strokeUnit * 1.8}
+              strokeLinecap="round"
+              // Decorative: a chord drawn between two dots sits exactly where the
+              // user must press to start a chord-draw gesture (stage-3 bugfix).
+              pointerEvents="none"
+            />
+          )
         ))}
         {tails.map((t) => (
           <g key={t.key} className="chord-tail" pointerEvents="none">

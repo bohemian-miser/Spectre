@@ -41,6 +41,7 @@ function signature(input: AnalysisInput): string {
     input.hexRule ?? false,
     input.dual ?? false,
     input.dualPieces ?? false,
+    input.curved ?? false,
   ]);
 }
 

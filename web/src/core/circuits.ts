@@ -14,6 +14,7 @@ import type { TileFamilyId, TileTypeId } from './families';
 import { enumerateMatchings } from './matchings';
 import { circuitHueColor, rainbow, TAIL_COLOR } from './colors';
 import type { TileInstance } from './tiles';
+import { chordControl, leafCentre } from './strandCurves';
 
 export type Segment = readonly [Pt, Pt];
 
@@ -76,14 +77,21 @@ export function collectSegments(input: CircuitInput): readonly Segment[] {
   return collectTaggedSegments(input).segments;
 }
 
-/** {@link collectSegments}, plus which of them are `auxChords`. */
-function collectTaggedSegments(input: CircuitInput): { segments: Segment[]; aux: boolean[] } {
+/**
+ * {@link collectSegments}, plus which of them are `auxChords`, and (with
+ * `withControls`) each chord's curve control point in world coordinates.
+ */
+function collectTaggedSegments(
+  input: CircuitInput,
+  withControls = false,
+): { segments: Segment[]; aux: boolean[]; controls: Pt[] } {
   const contracts = input.contracts ?? DEFAULT_CONTRACTS;
   const cache = new Map<string, readonly Segment[]>();
   const auxOf = new Set<Segment>();
   for (const list of Object.values(input.auxChords ?? {})) for (const seg of list) auxOf.add(seg);
   const out: Segment[] = [];
   const aux: boolean[] = [];
+  const controls: Pt[] = [];
   for (const inst of input.instances) {
     let local = input.chords ? input.chords[inst.type] ?? [] : cache.get(inst.type);
     if (!local) {
@@ -96,12 +104,14 @@ function collectTaggedSegments(input: CircuitInput): { segments: Segment[]; aux:
       );
       cache.set(inst.type, local);
     }
+    const centre = withControls ? leafCentre(input.family, inst.type) : null;
     for (const seg of local) {
       out.push([transPt(inst.xform, seg[0]), transPt(inst.xform, seg[1])]);
       aux.push(auxOf.has(seg));
+      if (centre) controls.push(transPt(inst.xform, chordControl(seg[0], seg[1], centre)));
     }
   }
-  return { segments: out, aux };
+  return { segments: out, aux, controls };
 }
 
 /**
@@ -271,17 +281,23 @@ export interface CircuitAnalysis {
   readonly circuitColorByLength: ReadonlyMap<number, string>;
   /** The welded segments the analysis ran on (handy for renderers). */
   readonly segments: readonly Segment[];
+  /** segmentKey -> curve control point, when asked for with `curved`. */
+  readonly segmentControl?: ReadonlyMap<string, Pt>;
 }
 
 export interface AnalyzeOptions {
   readonly rainbowTails?: boolean;
   readonly epsilon?: number;
+  /** Also return each segment's curve control point (`segmentControl`). */
+  readonly curved?: boolean;
 }
 
 /** Ports `analyzeAndColor` (collect -> weld -> trace -> color), p5-free. */
 export function analyze(input: CircuitInput, opts: AnalyzeOptions = {}): CircuitAnalysis {
-  const tagged = collectTaggedSegments(input);
+  const tagged = collectTaggedSegments(input, opts.curved ?? false);
   const segments = weldSegments(tagged.segments, opts.epsilon ?? 0.05);
+  const segmentControl = opts.curved ? new Map<string, Pt>() : undefined;
+  if (segmentControl) segments.forEach((seg, i) => segmentControl.set(segmentKey(seg), tagged.controls[i]));
   const traced = tracePaths(segments);
   const { junctionCount } = traced;
   let { circuits, tails } = traced;
@@ -332,6 +348,7 @@ export function analyze(input: CircuitInput, opts: AnalyzeOptions = {}): Circuit
     segmentColor,
     circuitColorByLength,
     segments,
+    segmentControl,
   };
 }
 
