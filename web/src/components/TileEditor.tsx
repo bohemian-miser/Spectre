@@ -12,7 +12,9 @@
 
 import { useEffect, useMemo, useRef, useState, type PointerEvent } from 'react';
 import {
+  MAX_STRANDS,
   edgeLabels,
+  strandCount,
   leafPts,
   matchingAt,
   orientCurve,
@@ -25,6 +27,7 @@ import {
   type TileTypeId,
 } from '../core';
 import { matchingOptions, tileMatchingInfo } from '../lib/matchingModel';
+import { EdgeClassLegend } from './controls/EdgeClassLegend';
 import { edgeClassColor } from '../lib/palette';
 
 export interface TileEditorProps {
@@ -43,7 +46,12 @@ export interface TileEditorProps {
   /** Move to the previous (-1) or next (+1) tile type. */
   onStepTile(d: -1 | 1): void;
   onClose(): void;
+  /** Set how many strands cross each seam of a class; shows steppers on the tile's class chips. */
+  onStrands?(major: number, count: number): void;
 }
+
+/** Pairings shown at once in the gallery; the arrows reach the rest. */
+const GALLERY_MAX = 48;
 
 const dist = (a: Pt, b: Pt): number => Math.hypot(a.x - b.x, a.y - b.y);
 
@@ -59,7 +67,8 @@ const has = (m: Matching, i: number, j: number): boolean => m.some(([x, y]) => (
 
 export function TileEditor(props: TileEditorProps): JSX.Element {
   const { family, type, selected, contracts, index, nonCrossingOnly = false, curvedStrands = false } = props;
-  const { onSetIndex, onToggleClass, onStepTile, onClose } = props;
+  const { onSetIndex, onToggleClass, onStepTile, onClose, onStrands } = props;
+  const [gallery, setGallery] = useState(false);
 
   const outline = leafPts(family, type);
   const classes = useMemo(() => edgeLabels(family, type).map((l) => parseEdgeLabel(l).major), [family, type]);
@@ -203,7 +212,8 @@ export function TileEditor(props: TileEditorProps): JSX.Element {
   keys.current = { step, onStepTile };
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.altKey || e.ctrlKey || e.metaKey) return;
+      // A focused chip's own arrow keys (strand counts) come first.
+      if (e.altKey || e.ctrlKey || e.metaKey || e.defaultPrevented) return;
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
       const act: Record<string, () => void> = {
@@ -226,6 +236,8 @@ export function TileEditor(props: TileEditorProps): JSX.Element {
     const [h1, h2] = orientCurve(strandCurve(family, type, p, q), p);
     return `M ${p.x} ${p.y} C ${h1.x} ${h1.y} ${h2.x} ${h2.y} ${q.x} ${q.y}`;
   };
+  const tileClasses = useMemo(() => [...new Set(classes)], [classes]);
+  const strands = useMemo(() => Object.fromEntries(tileClasses.map((m) => [m, strandCount(contracts, m)])), [tileClasses, contracts]);
   const centre = {
     x: outline.reduce((s, p) => s + p.x, 0) / outline.length,
     y: outline.reduce((s, p) => s + p.y, 0) / outline.length,
@@ -298,6 +310,43 @@ export function TileEditor(props: TileEditorProps): JSX.Element {
         {a && <circle cx={a.x} cy={a.y} r={sw * 3} fill="none" stroke="var(--accent)" strokeWidth={sw * 0.9} />}
         {snap !== null && <circle cx={points[snap].x} cy={points[snap].y} r={sw * 3} fill="var(--accent)" fillOpacity={0.25} stroke="var(--accent)" strokeWidth={sw * 0.9} />}
       </svg>
+      <EdgeClassLegend
+        family={family}
+        selected={selected}
+        only={tileClasses}
+        onToggle={toggle}
+        strands={strands}
+        onStrands={onStrands}
+        maxStrands={MAX_STRANDS}
+        className="tile-editor-classes"
+      />
+      {options.length > 1 && (
+        <div className="tile-editor-gallery">
+          <button type="button" className="link-button" aria-expanded={gallery} onClick={() => setGallery((g) => !g)} data-testid="tile-editor-gallery-toggle">
+            {gallery ? 'Hide' : 'Show'} all {options.length > GALLERY_MAX ? `(first ${GALLERY_MAX} of ${options.length})` : options.length} pairings
+          </button>
+          {gallery && (
+            <ul data-testid="tile-editor-gallery">
+              {options.slice(0, GALLERY_MAX).map((k, i) => {
+                const m = matchingAt(points.length, k) ?? [];
+                return (
+                  <li key={k}>
+                    <button type="button" aria-pressed={k === index} aria-label={`${type} pairing ${i + 1}`} onClick={() => onSetIndex(k)}>
+                      <svg viewBox={`${box.x} ${box.y} ${box.w} ${box.h}`}>
+                        <polygon points={outline.map((p) => `${p.x},${p.y}`).join(' ')} className="tile-editor-body" />
+                        {m.map((pair, j) => (
+                          <path key={j} d={chordD(pair)} className="tile-editor-chord" fill="none" strokeWidth={sw * 2.4} strokeLinecap="round" />
+                        ))}
+                      </svg>
+                      <span>{i + 1}</span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      )}
       <p className="tile-editor-hint" data-testid="tile-editor-hint">
         {message ??
           (from !== null

@@ -100,4 +100,39 @@ describe('TileEditor', () => {
     // From the first of three pairings, down wraps to the last.
     expect(props.onSetIndex).toHaveBeenLastCalledWith(2);
   });
+
+  it('shows only the tile\'s own classes as chips, with strand steppers on the selected ones', () => {
+    const onStrands = vi.fn();
+    render(
+      <TileEditor
+        family="hex"
+        type="Pi"
+        selected={new Set([1, 5])}
+        index={0}
+        onSetIndex={vi.fn()}
+        onToggleClass={vi.fn()}
+        onStepTile={vi.fn()}
+        onClose={vi.fn()}
+        onStrands={onStrands}
+      />,
+    );
+    // Pi's edges are 1, 5, 5, 1, 8, 2.
+    const chips = [...document.querySelectorAll('.tile-editor-classes .edge-chip')].map((c) => c.getAttribute('data-major'));
+    expect(chips).toEqual(['1', '2', '5', '8']);
+    fireEvent.click(screen.getByLabelText('More strands on class 5'));
+    expect(onStrands).toHaveBeenCalledWith(5, 2);
+    // The chip's own up arrow is a strand count, not the next pairing.
+    fireEvent.keyDown(document.querySelector('.tile-editor-classes .edge-chip[data-major="1"]')!, { key: 'ArrowUp' });
+    expect(onStrands).toHaveBeenLastCalledWith(1, 2);
+  });
+
+  it('lists every pairing in a gallery, and picking one sets it', () => {
+    const { props } = setup([1, 5]);
+    fireEvent.click(screen.getByTestId('tile-editor-gallery-toggle'));
+    const items = screen.getByTestId('tile-editor-gallery').querySelectorAll('button');
+    expect(items).toHaveLength(3);
+    expect(items[0].getAttribute('aria-pressed')).toBe('true');
+    fireEvent.click(items[2]);
+    expect(props.onSetIndex).toHaveBeenLastCalledWith(2);
+  });
 });

@@ -290,6 +290,11 @@ export interface CircuitAnalysis {
   readonly segments: readonly Segment[];
   /** segmentKey -> curve handles, when asked for with `curved`. */
   readonly segmentControl?: ReadonlyMap<string, StrandCurve>;
+  /**
+   * With `loopVectors`: each circuit's count vector, aligned with `circuits`:
+   * how many times it crosses an edge of each class.
+   */
+  readonly circuitVectors?: readonly Readonly<Record<number, number>>[];
 }
 
 export interface AnalyzeOptions {
@@ -297,6 +302,8 @@ export interface AnalyzeOptions {
   readonly epsilon?: number;
   /** Also return each segment's curve handles (`segmentControl`). */
   readonly curved?: boolean;
+  /** Also return each circuit's count vector (`circuitVectors`). */
+  readonly loopVectors?: boolean;
 }
 
 /** Ports `analyzeAndColor` (collect -> weld -> trace -> color), p5-free. */
@@ -356,7 +363,31 @@ export function analyze(input: CircuitInput, opts: AnalyzeOptions = {}): Circuit
     circuitColorByLength,
     segments,
     segmentControl,
+    ...(opts.loopVectors && !input.chords ? { circuitVectors: loopVectors(input, circuits) } : {}),
   };
+}
+
+/** Each closed circuit's crossings per edge class (its points are its crossings, once each). */
+function loopVectors(input: CircuitInput, circuits: readonly Path[]): Readonly<Record<number, number>>[] {
+  const contracts = input.contracts ?? DEFAULT_CONTRACTS;
+  const local = new Map<string, readonly { pt: Pt; major: number }[]>();
+  const classAt = new Map<string, number>();
+  for (const inst of input.instances) {
+    let cps = local.get(inst.type);
+    if (!cps) {
+      cps = connectionPoints(input.family, inst.type, input.selected, contracts).map((c) => ({ pt: c.pt, major: c.edge.major }));
+      local.set(inst.type, cps);
+    }
+    for (const c of cps) classAt.set(pointKey(transPt(inst.xform, c.pt)), c.major);
+  }
+  return circuits.map((p) => {
+    const v: Record<number, number> = {};
+    for (const q of p.points) {
+      const k = classAt.get(pointKey(q));
+      if (k !== undefined) v[k] = (v[k] ?? 0) + 1;
+    }
+    return v;
+  });
 }
 
 function groupByLength(paths: readonly Path[]): ReadonlyMap<number, readonly Path[]> {
