@@ -1033,6 +1033,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
               setEditingTile(order[(order.indexOf(editingTile) + d + order.length) % order.length]);
             }}
             onClose={() => setEditingTile(null)}
+            onStrands={(major, count) => dispatch({ type: 'setStrandCount', major, count })}
           />
         ) : null}
         {multiOnSpectres ? (
