@@ -1,0 +1,83 @@
+/* Dimension page. Shell tokens come from widgets.css. */
+
+.dimension-page header p {
+  max-width: 80ch;
+}
+.dimension-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 18px;
+  margin: 12px 0 4px;
+}
+.dimension-controls label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.dimension-controls .primary {
+  border: 1px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 20%, var(--panel-2));
+  color: var(--text);
+  border-radius: 6px;
+  padding: 5px 12px;
+  cursor: pointer;
+}
+.dimension-note {
+  font-size: 12px;
+  margin: 4px 0 10px;
+}
+.dimension-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+.dimension-table th,
+.dimension-table td {
+  border-bottom: 1px solid var(--line);
+  padding: 4px 8px;
+  text-align: left;
+  font-variant-numeric: tabular-nums;
+}
+.dimension-table thead th button {
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  padding: 0;
+  cursor: pointer;
+}
+.dimension-table thead th button.is-sorted {
+  color: var(--accent);
+}
+.dimension-table tbody tr {
+  cursor: default;
+}
+.dimension-table [data-testid='dimension-rules'] tbody tr,
+[data-testid='dimension-rules'] tbody tr {
+  cursor: pointer;
+}
+.dimension-table tr.is-selected th,
+.dimension-table tr.is-selected td {
+  background: var(--panel-2);
+}
+.dimension-table td.is-zero {
+  color: var(--muted);
+}
+.dimension-levels {
+  white-space: nowrap;
+}
+.dimension-table tr[data-band='space-filling'] td:nth-child(5) b {
+  color: #e5534b;
+}
+.dimension-table tr[data-band='fractal'] td:nth-child(5) b {
+  color: #d4a72c;
+}
+.dimension-table tr[data-band='curves'] td:nth-child(5) b {
+  color: #4f8ff7;
+}
+.dimension-table tr[data-band='bounded circuits'] td:nth-child(5) b {
+  color: #3fb68b;
+}

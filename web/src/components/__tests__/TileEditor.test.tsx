@@ -87,4 +87,17 @@ describe('TileEditor', () => {
     setup([8]);
     expect(screen.getByTestId('tile-editor-hint').textContent).toContain('odd number of points');
   });
+
+  it('arrow keys: left and right change the tile, up and down step the pairings', () => {
+    const { props } = setup([1, 5]);
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    expect(props.onStepTile).toHaveBeenLastCalledWith(1);
+    fireEvent.keyDown(window, { key: 'ArrowLeft' });
+    expect(props.onStepTile).toHaveBeenLastCalledWith(-1);
+    fireEvent.keyDown(window, { key: 'ArrowUp' });
+    expect(props.onSetIndex).toHaveBeenLastCalledWith(1);
+    fireEvent.keyDown(window, { key: 'ArrowDown' });
+    // From the first of three pairings, down wraps to the last.
+    expect(props.onSetIndex).toHaveBeenLastCalledWith(2);
+  });
 });

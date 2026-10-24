@@ -20,6 +20,7 @@ import {
   type TileFamilyId,
   type TileTypeId,
 } from '../../core';
+import { matchingOptions, tileMatchingInfo } from '../../lib/matchingModel';
 import { EdgeSubsetPicker } from './EdgeSubsetPicker';
 import { MatchingSlider } from './MatchingSlider';
 
@@ -51,6 +52,8 @@ export interface StrandRuleControlsProps {
   onStrandCountChange?(major: number, count: number): void;
   /** Open a tile's pairing in the big editor; omit to hide the Edit buttons. */
   onOpenTile?(tileType: TileTypeId): void;
+  /** Set every tile's matching at once (the whole-rule combination stepper); omit to hide it. */
+  onMatchingVectorChange?(matching: readonly number[]): void;
 }
 
 export function StrandRuleControls(props: StrandRuleControlsProps): JSX.Element {
@@ -74,6 +77,7 @@ export function StrandRuleControls(props: StrandRuleControlsProps): JSX.Element 
     onToggleNonCrossing,
     onStrandCountChange,
     onOpenTile,
+    onMatchingVectorChange,
   } = props;
   const multi = hasMultiStrands(contracts);
 
@@ -99,6 +103,34 @@ export function StrandRuleControls(props: StrandRuleControlsProps): JSX.Element 
       return nc.length === 0 ? want !== 0 : !nc.includes(want);
     });
   }, [combo, multi, family, order, subset, matching, contracts]);
+
+  /**
+   * Every tile's options at once, as one odometer: the first tile type with a
+   * choice turns fastest, as in aperiodic-circuits' "next combination".
+   */
+  const combos = useMemo(() => {
+    const options = order.map((type) => {
+      const info = tileMatchingInfo(family, type, selected, contracts);
+      return info.odd ? [] : matchingOptions(info, nonCrossingOnly);
+    });
+    const sizes = options.map((o) => Math.max(1, o.length));
+    const total = sizes.reduce((a, b) => a * b, 1);
+    const digits = order.map((_, i) => Math.max(0, options[i].indexOf(matching[i] ?? 0)));
+    const position = digits.reduceRight((acc, d, i) => acc * sizes[i] + d, 0);
+    const vectorOf = (ds: readonly number[]) => order.map((_, i) => options[i][ds[i]] ?? 0);
+    const step = (delta: 1 | -1): readonly number[] => {
+      const ds = [...digits];
+      for (let i = 0; i < ds.length; i++) {
+        if (sizes[i] <= 1) continue;
+        ds[i] += delta;
+        if (ds[i] >= 0 && ds[i] < sizes[i]) break;
+        ds[i] = delta > 0 ? 0 : sizes[i] - 1; // carry on to the next tile
+      }
+      return vectorOf(ds);
+    };
+    const random = (): readonly number[] => vectorOf(sizes.map((n) => Math.floor(Math.random() * n)));
+    return { total, position, step, random, exact: Number.isSafeInteger(total) };
+  }, [order, family, selected, contracts, nonCrossingOnly, matching]);
 
   return (
     <>
@@ -133,6 +165,22 @@ export function StrandRuleControls(props: StrandRuleControlsProps): JSX.Element 
             </span>
           )}
         </p>
+        {onMatchingVectorChange && combos.total > 1 ? (
+          <div className="combo-stepper" role="group" aria-label="Every tile's matching at once" data-testid="combo-stepper">
+            <button type="button" aria-label="Previous combination" onClick={() => onMatchingVectorChange(combos.step(-1))}>
+              ‹
+            </button>
+            <span className="combo-stepper-count" data-testid="combo-position">
+              Combination {combos.exact ? `${(combos.position + 1).toLocaleString('en-US')} of ${combos.total.toLocaleString('en-US')}` : ''}
+            </span>
+            <button type="button" aria-label="Next combination" onClick={() => onMatchingVectorChange(combos.step(1))}>
+              ›
+            </button>
+            <button type="button" onClick={() => onMatchingVectorChange(combos.random())}>
+              Random
+            </button>
+          </div>
+        ) : null}
         {onToggleNonCrossing ? (
           <label className="control-row">
             <input type="checkbox" checked={nonCrossingOnly} onChange={onToggleNonCrossing} />
