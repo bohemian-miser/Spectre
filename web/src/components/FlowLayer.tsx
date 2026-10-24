@@ -6,7 +6,7 @@
  */
 
 import { useMemo } from 'react';
-import type { FlowOverlay, Pt } from '../core';
+import { orientCurve, type FlowOverlay, type Pt, type StrandCurve } from '../core';
 
 export interface FlowLayerProps {
   readonly overlay: FlowOverlay;
@@ -14,7 +14,7 @@ export interface FlowLayerProps {
   readonly strokeWidth?: number;
   /** Arrowheads on through strands; off for big patches. */
   readonly arrows?: boolean;
-  /** Bow each strand toward its tile's centre. */
+  /** Bend each strand, leaving every edge square to it. */
   readonly curved?: boolean;
 }
 
@@ -23,10 +23,8 @@ const SOURCE = '#2ea043';
 const SINK = '#e5534b';
 
 /** Arrowhead at the strand's midpoint (on the curve, when there is one), pointing a → b. */
-function arrow(a: Pt, b: Pt, size: number, c?: Pt): string {
-  const m = c
-    ? { x: 0.25 * a.x + 0.5 * c.x + 0.25 * b.x, y: 0.25 * a.y + 0.5 * c.y + 0.25 * b.y }
-    : { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+function arrow(a: Pt, b: Pt, size: number, c?: StrandCurve): string {
+  const m = c ? curveMid(a, b, c) : { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
   const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
   const ux = (b.x - a.x) / len;
   const uy = (b.y - a.y) / len;
@@ -36,15 +34,23 @@ function arrow(a: Pt, b: Pt, size: number, c?: Pt): string {
   return `M${tip.x},${tip.y}L${l.x},${l.y}L${r.x},${r.y}Z`;
 }
 
+/** The cubic's point at t = ½ (the same whichever way round its handles are). */
+function curveMid(a: Pt, b: Pt, c: StrandCurve): Pt {
+  return { x: (a.x + 3 * c.c1.x + 3 * c.c2.x + b.x) / 8, y: (a.y + 3 * c.c1.y + 3 * c.c2.y + b.y) / 8 };
+}
+
 export function FlowLayer(props: FlowLayerProps): JSX.Element {
   const { overlay, strokeWidth = 0.12, arrows = true, curved = false } = props;
   // One path per colour keeps the DOM small at level 4.
   const byColour = useMemo(() => {
     const groups = new Map<string, { d: string[]; heads: string[]; dashed: boolean }>();
-    const push = (colour: string, dashed: boolean, a: Pt, b: Pt, ctrl: Pt, head: boolean) => {
+    const push = (colour: string, dashed: boolean, a: Pt, b: Pt, ctrl: StrandCurve, head: boolean) => {
       const key = `${colour}|${dashed}`;
       const g = groups.get(key) ?? { d: [], heads: [], dashed };
-      g.d.push(curved ? `M${a.x},${a.y}Q${ctrl.x},${ctrl.y} ${b.x},${b.y}` : `M${a.x},${a.y}L${b.x},${b.y}`);
+      if (curved) {
+        const [h1, h2] = orientCurve(ctrl, a);
+        g.d.push(`M${a.x},${a.y}C${h1.x},${h1.y} ${h2.x},${h2.y} ${b.x},${b.y}`);
+      } else g.d.push(`M${a.x},${a.y}L${b.x},${b.y}`);
       if (head) g.heads.push(arrow(a, b, strokeWidth * 2.2, curved ? ctrl : undefined));
       groups.set(key, g);
     };
@@ -61,9 +67,7 @@ export function FlowLayer(props: FlowLayerProps): JSX.Element {
   // the rest of the list are seams where two ends clash.
   const onChord = (i: number): Pt => {
     const c = overlay.chords[i];
-    return curved
-      ? { x: 0.25 * c.a.x + 0.5 * c.ctrl.x + 0.25 * c.b.x, y: 0.25 * c.a.y + 0.5 * c.ctrl.y + 0.25 * c.b.y }
-      : { x: (c.a.x + c.b.x) / 2, y: (c.a.y + c.b.y) / 2 };
+    return curved ? curveMid(c.a, c.b, c.ctrl) : { x: (c.a.x + c.b.x) / 2, y: (c.a.y + c.b.y) / 2 };
   };
   const sourceDots = [...overlay.sourceChords.map(onChord), ...overlay.sources.slice(overlay.sourceChords.length)];
   const sinkDots = [...overlay.sinkChords.map(onChord), ...overlay.sinks.slice(overlay.sinkChords.length)];

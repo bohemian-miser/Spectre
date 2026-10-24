@@ -49,6 +49,7 @@ import {
   tracePaths,
   weldSegments,
   type Pt,
+  type StrandCurve,
   type Segment,
   type TileFamilyId,
   type UnrootedQueryRequest,
@@ -1138,8 +1139,8 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
     }
     const segs: Segment[] = [];
     const auxAt: number[] = [];
-    // Curved strands: each chord's world control point, by segment index.
-    const ctrls: Pt[] = [];
+    // Curved strands: each chord's world curve handles, by segment index.
+    const ctrls: StrandCurve[] = [];
     for (let i = 0; i < cut.count; i++) {
       const tb = cut.type[i];
       if (isAggregateType(tb)) continue;
@@ -1158,7 +1159,12 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
         const [a, b] = seg;
         if (table.aux?.has(seg)) auxAt.push(segs.length);
         const c = localCtrls?.[s];
-        if (c) ctrls[segs.length] = { x: co * mir * c.x - si * c.y + px, y: si * mir * c.x + co * c.y + py };
+        if (c) {
+          ctrls[segs.length] = {
+            c1: { x: co * mir * c.c1.x - si * c.c1.y + px, y: si * mir * c.c1.x + co * c.c1.y + py },
+            c2: { x: co * mir * c.c2.x - si * c.c2.y + px, y: si * mir * c.c2.x + co * c.c2.y + py },
+          };
+        }
         segs.push([
           { x: co * mir * a.x - si * a.y + px, y: si * mir * a.x + co * a.y + py },
           { x: co * mir * b.x - si * b.y + px, y: si * mir * b.x + co * b.y + py },
@@ -1167,7 +1173,7 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
     }
     const welded = weldSegments(segs);
     const { circuits } = tracePaths(welded);
-    const ctrlByKey = new Map<string, Pt>();
+    const ctrlByKey = new Map<string, StrandCurve>();
     ctrls.forEach((c, k) => ctrlByKey.set(segmentKey(welded[k]), c));
     // Links that do not count towards length (a hexagon rule drawn on
     // Spectres), so a circuit keeps its hexagon colour.

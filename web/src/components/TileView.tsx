@@ -24,8 +24,9 @@ import {
   type Pt,
   type TileFamilyId,
   type TileTypeId,
-  chordControl,
-  leafCentre,
+  orientCurve,
+  strandCurve,
+  type StrandCurve,
 } from '../core';
 import { edgeClassColor, tileColor } from '../lib/palette';
 import { expandBox, boxSize, type Box } from '../lib/viewport';
@@ -100,7 +101,7 @@ export interface TileViewProps {
    * all of them rather than a bare handful.
    */
   readonly showMajorNumbers?: boolean;
-  /** Bow each strand toward its tile's centre instead of drawing it straight. */
+  /** Bend each strand, leaving every edge square to it, instead of drawing it straight. */
   readonly curvedStrands?: boolean;
   /** The tile's own name, faintly, over each part. */
   readonly showTileName?: boolean;
@@ -243,9 +244,12 @@ export function TileView(props: TileViewProps): JSX.Element {
    * dangling stub of a part whose crossings cannot all pair up.
    */
   const { chords, tails } = useMemo(() => {
-    const chordsOut: { key: string; from: Pt; to: Pt; ghost: boolean; centre?: Pt }[] = [];
-    const partCentre = new Map(parts.map((p) => [p, transPt(p.xform, leafCentre(family, p.type))]));
+    const chordsOut: { key: string; from: Pt; to: Pt; ghost: boolean; ctrl?: StrandCurve }[] = [];
     const tailsOut: { key: string; d: string; end: Pt }[] = [];
+    const ctrlOf = (part: (typeof parts)[number], a: Pt, b: Pt): StrandCurve => {
+      const h = strandCurve(family, part.type, a, b);
+      return { c1: transPt(part.xform, h.c1), c2: transPt(part.xform, h.c2) };
+    };
     for (const part of parts) {
       if (!selectedEdges) continue;
       const points = tileConnectionPoints(family, part.type, selectedEdges, contracts);
@@ -266,7 +270,7 @@ export function TileView(props: TileViewProps): JSX.Element {
                 from: world[a],
                 to: world[b],
                 ghost: true,
-                centre: partCentre.get(part),
+                ctrl: ctrlOf(part, points[a].pt, points[b].pt),
               }),
             );
           });
@@ -274,7 +278,7 @@ export function TileView(props: TileViewProps): JSX.Element {
         const active = matchingAt(points.length, idx);
         if (active) {
           active.forEach(([a, b], k) =>
-            chordsOut.push({ key: `m${part.type}.${k}`, from: world[a], to: world[b], ghost: false, centre: partCentre.get(part) }),
+            chordsOut.push({ key: `m${part.type}.${k}`, from: world[a], to: world[b], ghost: false, ctrl: ctrlOf(part, points[a].pt, points[b].pt) }),
           );
         }
       } else if (hangTails && points.length % 2 === 1) {
@@ -286,7 +290,7 @@ export function TileView(props: TileViewProps): JSX.Element {
             from: world[i],
             to: world[i + 1],
             ghost: false,
-            centre: partCentre.get(part),
+            ctrl: ctrlOf(part, points[i].pt, points[i + 1].pt),
           });
         }
         tailsOut.push({ key: `t${part.type}`, ...tailStub(world[world.length - 1], part) });
@@ -625,13 +629,13 @@ export function TileView(props: TileViewProps): JSX.Element {
 
       <g className="matching-chords">
         {chords.map((c) => (
-          curvedStrands && c.centre ? (
+          curvedStrands && c.ctrl ? (
             <path
               key={c.key}
               className={c.ghost ? 'chord is-ghost' : 'chord'}
               d={(() => {
-                const k = chordControl(c.from, c.to, c.centre);
-                return `M ${c.from.x} ${c.from.y} Q ${k.x} ${k.y} ${c.to.x} ${c.to.y}`;
+                const [h1, h2] = orientCurve(c.ctrl, c.from);
+                return `M ${c.from.x} ${c.from.y} C ${h1.x} ${h1.y} ${h2.x} ${h2.y} ${c.to.x} ${c.to.y}`;
               })()}
               fill="none"
               stroke="#111"

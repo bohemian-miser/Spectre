@@ -11,7 +11,7 @@ import { analyze, localChords, pathLength, type CircuitAnalysis, type Path, type
 import { buildDualGraph, type DualGraph } from './dual';
 import type { EdgeContracts } from './edges';
 import { leafOrder, type TileFamilyId, type TileTypeId } from './families';
-import type { Pt } from './geom';
+import type { StrandCurve } from './strandCurves';
 import { hexRuleSpectreDrawing } from './hexRule';
 import { buildSystem, flatten } from './tiles';
 
@@ -37,7 +37,7 @@ export interface AnalysisRequest {
   readonly dual?: boolean;
   /** With `dual`: include the piece polygons, for filling regions. */
   readonly dualPieces?: boolean;
-  /** Return a curve control point per segment (`segmentControls`). */
+  /** Return the curve handles of each segment (`segmentControls`). */
   readonly curved?: boolean;
 }
 
@@ -57,8 +57,8 @@ export interface AnalysisResponse {
   /** Entries of the segmentKey -> color map (Maps clone fine, arrays are cheaper). */
   readonly segmentColors: readonly (readonly [string, string])[];
   readonly circuitColors: readonly (readonly [number, string])[];
-  /** segmentKey -> curve control point, when the request asked for `curved`. */
-  readonly segmentControls?: readonly (readonly [string, Pt])[];
+  /** segmentKey -> curve handles, when the request asked for `curved`. */
+  readonly segmentControls?: readonly (readonly [string, StrandCurve])[];
   /** Present when the request asked for `dual`. */
   readonly dual?: DualGraph;
   readonly elapsedMs: number;
