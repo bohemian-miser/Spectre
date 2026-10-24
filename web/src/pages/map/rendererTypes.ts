@@ -43,6 +43,8 @@ export interface TrailGeometry {
   readonly pointCount: number;
   readonly totalLength: number;
   readonly version: number;
+  /** A found circuit's length in tiles crossed, for the page's stats. */
+  readonly tileLength?: number;
 }
 
 /**

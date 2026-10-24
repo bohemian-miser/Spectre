@@ -28,6 +28,8 @@ export interface CircuitLayerProps {
    * Empty or absent means "no highlight" — everything draws at full strength.
    */
   readonly highlightLengths?: ReadonlySet<number> | null;
+  /** Dim every path but these circuits (indices into `circuits`), when given. */
+  readonly highlightCircuits?: ReadonlySet<number> | null;
   /** Draw a marker at every open-path endpoint (the "fraying" beat). */
   readonly tailEndMarkers?: boolean;
   /** Truncation guard for very large levels. */
@@ -47,6 +49,7 @@ export function CircuitLayer(props: CircuitLayerProps): JSX.Element {
     showTails = true,
     strokeWidth = 0.12,
     highlightLengths = null,
+    highlightCircuits = null,
     tailEndMarkers = false,
     maxRecords,
     className,
@@ -89,7 +92,12 @@ export function CircuitLayer(props: CircuitLayerProps): JSX.Element {
           strokeWidth={strokeWidth}
           strokeLinecap="round"
           strokeLinejoin="round"
-          opacity={highlightLengths?.size && !highlightLengths.has(r.length) ? 0.12 : 1}
+          opacity={
+            (highlightLengths?.size && !highlightLengths.has(r.length)) ||
+            (highlightCircuits && !(r.kind === 'circuit' && highlightCircuits.has(r.index)))
+              ? 0.12
+              : 1
+          }
         />
       ))}
       {ends.length ? (

@@ -58,6 +58,8 @@ export interface TilingCanvasProps {
    * `CircuitLayer` at the lighter levels. Empty or absent = no highlight.
    */
   readonly highlightLengths?: ReadonlySet<number> | null;
+  /** Dim every path but these circuits (indices into `circuits`), when given. */
+  readonly highlightCircuits?: ReadonlySet<number> | null;
   /** Strand stroke width, world units (matches `CircuitLayer`). */
   readonly strokeWidth?: number;
   /**
@@ -114,6 +116,7 @@ export function TilingCanvas(props: TilingCanvasProps): JSX.Element {
     segmentControl,
     rainbowTails = false,
     highlightLengths = null,
+    highlightCircuits = null,
     strokeWidth = 0.12,
     regionFill = null,
     className,
@@ -245,11 +248,14 @@ export function TilingCanvas(props: TilingCanvasProps): JSX.Element {
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
         // Dimmed strands first, so the highlighted length draws over them.
-        const dimmed = !!highlightLengths?.size;
+        const dimmed = !!highlightLengths?.size || !!highlightCircuits;
+        const lit = (rec: (typeof overlay)[number]) =>
+          (!highlightLengths?.size || highlightLengths.has(rec.length)) &&
+          (!highlightCircuits || (rec.kind === 'circuit' && highlightCircuits.has(rec.index)));
         for (const pass of dimmed ? [false, true] : [true]) {
           ctx.globalAlpha = pass ? 1 : 0.12;
           for (const rec of overlay) {
-            if (dimmed && highlightLengths!.has(rec.length) !== pass) continue;
+            if (dimmed && lit(rec) !== pass) continue;
             ctx.strokeStyle = rec.color;
             ctx.stroke(new Path2D(rec.d));
           }
@@ -278,6 +284,7 @@ export function TilingCanvas(props: TilingCanvasProps): JSX.Element {
     overlay,
     regionOrder,
     highlightLengths,
+    highlightCircuits,
     strokeWidth,
   ]);
 

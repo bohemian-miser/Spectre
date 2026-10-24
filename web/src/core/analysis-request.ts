@@ -39,6 +39,8 @@ export interface AnalysisRequest {
   readonly dualPieces?: boolean;
   /** Return the curve handles of each segment (`segmentControls`). */
   readonly curved?: boolean;
+  /** Return each circuit's count vector (`circuitVectors`). */
+  readonly loopVectors?: boolean;
 }
 
 export interface PathSummary {
@@ -61,6 +63,8 @@ export interface AnalysisResponse {
   readonly segmentControls?: readonly (readonly [string, StrandCurve])[];
   /** Present when the request asked for `dual`. */
   readonly dual?: DualGraph;
+  /** Each circuit's crossings per class, aligned with `circuits` (`loopVectors`). */
+  readonly circuitVectors?: readonly Readonly<Record<number, number>>[];
   readonly elapsedMs: number;
 }
 
@@ -105,7 +109,7 @@ export function runAnalysis(req: AnalysisRequest): AnalysisResponse {
       chords: drawing?.chords,
       auxChords: drawing?.auxChords,
     },
-    { rainbowTails: req.rainbowTails, curved: req.curved },
+    { rainbowTails: req.rainbowTails, curved: req.curved, loopVectors: req.loopVectors },
   );
   return {
     id: req.id,
@@ -119,6 +123,7 @@ export function runAnalysis(req: AnalysisRequest): AnalysisResponse {
     circuitColors: [...result.circuitColorByLength.entries()],
     segmentControls: result.segmentControl ? [...result.segmentControl.entries()] : undefined,
     dual,
+    circuitVectors: result.circuitVectors,
     elapsedMs: Date.now() - started,
   };
 }
