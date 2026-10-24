@@ -419,16 +419,39 @@ describe('ExplorerPage — infinite mode', () => {
     expect(container.querySelector('[data-testid="flow-summary"]')?.textContent).toContain('rooted patch');
   });
 
-  it('curved strands draw the circuits as quadratic curves', () => {
+  it('curved strands draw the circuits as curves', () => {
     // fl = default 23 + CURVED_STRANDS 4096.
     window.history.replaceState(null, '', '/#/explorer?v=1&f=hex&lv=2&e=15&fl=4119');
     const { container } = render(<ExplorerPage />);
     const d = container.querySelector('.circuit-path')?.getAttribute('d') ?? '';
-    expect(d).toContain(' Q ');
+    expect(d).toContain(' C ');
     expect(container.querySelector('.matching-chords path.chord')).not.toBeNull();
     cleanup();
     window.history.replaceState(null, '', '/#/explorer?v=1&f=hex&lv=2&e=15');
     const off = render(<ExplorerPage />);
-    expect(off.container.querySelector('.circuit-path')?.getAttribute('d')).not.toContain(' Q ');
+    expect(off.container.querySelector('.circuit-path')?.getAttribute('d')).not.toContain(' C ');
+  });
+
+  it('several strands per class: steppers add crossing points, and the rule stays valid', () => {
+    window.history.replaceState(null, '', '/#/explorer?v=1&f=hex&lv=2&e=15');
+    const { container, getByLabelText, getByTestId } = render(<ExplorerPage />);
+    const circuits = () => container.querySelectorAll('.circuit-path').length;
+    const before = circuits();
+    expect(before).toBeGreaterThan(0);
+    expect(getByTestId('strand-count-1').textContent).toBe('1');
+    fireEvent.click(getByLabelText('More strands on class 1'));
+    expect(getByTestId('strand-count-1').textContent).toBe('2');
+    fireEvent.click(getByLabelText('More strands on class 5'));
+    expect(getByTestId('strand-count-5').textContent).toBe('2');
+    // Each count went up by one pair, so every tile still pairs up.
+    expect(container.textContent).toContain('Every tile pairs up');
+    expect(circuits()).toBeGreaterThan(before);
+    // No combination string can say how many strands there are.
+    expect(getByTestId('combo-crossing').textContent).toContain('Several strands');
+    // Pi now has 8 points, so 105 ways to pair them.
+    const pi = container.querySelector('.matching-slider[data-tile-type="Pi"] .matching-badge')!;
+    expect(pi.textContent).toBe('1/105');
+    fireEvent.click(getByLabelText('Fewer strands on class 1'));
+    expect(container.textContent).toContain('odd number of connection points');
   });
 });

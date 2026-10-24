@@ -12,8 +12,9 @@
 import {
   DEFAULT_CONTRACTS,
   connectionCount,
-  enumerateMatchings,
   leafOrder,
+  matchingAt,
+  matchingRank,
   matchingCount,
   nonCrossingForTile,
   type ConnectionPoint,
@@ -53,23 +54,34 @@ export function tileMatchingInfo(
   if (hit) return hit;
 
   const points = tileConnectionPoints(family, type, selected, contracts);
-  const n = connectionCount(family, type, selected);
+  const n = connectionCount(family, type, selected, contracts);
   const info: TileMatchingInfo = {
     family,
     type,
     points,
     pointCount: n,
     total: matchingCount(n),
-    nonCrossing: nonCrossingForTile(family, type, selected),
+    nonCrossing: nonCrossingForTile(family, type, selected, contracts),
     odd: n % 2 !== 0,
   };
   infoCache.set(key, info);
   return info;
 }
 
+/**
+ * Past this many matchings a tile only offers its non-crossing ones: with
+ * several strands per seam the full list runs to tens of millions.
+ */
+export const FULL_OPTIONS_MAX = 100_000;
+
+/** True when the tile has too many matchings to offer them all. */
+export function crossingOptionsHidden(info: TileMatchingInfo): boolean {
+  return info.total > FULL_OPTIONS_MAX;
+}
+
 /** The indices a slider may cycle through, honouring the non-crossing filter. */
 export function matchingOptions(info: TileMatchingInfo, nonCrossingOnly: boolean): readonly number[] {
-  if (nonCrossingOnly) return info.nonCrossing;
+  if (nonCrossingOnly || crossingOptionsHidden(info)) return info.nonCrossing;
   return Array.from({ length: info.total }, (_, i) => i);
 }
 
@@ -125,8 +137,7 @@ export interface Chord {
 
 /** The chords a matching draws between a tile's connection points. */
 export function matchingChords(info: TileMatchingInfo, index: number): readonly Chord[] {
-  const all = enumerateMatchings(info.pointCount);
-  const m = all[index];
+  const m = matchingAt(info.pointCount, index);
   if (!m) return [];
   return m.map(([a, b]) => ({
     a,
@@ -143,23 +154,9 @@ export function canonicalMatching(m: Matching): Matching {
     .sort((p, q) => p[0] - q[0] || p[1] - q[1]);
 }
 
-function matchingSignature(m: Matching): string {
-  return canonicalMatching(m)
-    .map((p) => p.join('-'))
-    .join(',');
-}
-
-const indexCache = new Map<number, Map<string, number>>();
-
 /** Full-enumeration index of an arbitrary matching (-1 when it is not one). */
 export function matchingIndexOf(n: number, m: Matching): number {
-  let table = indexCache.get(n);
-  if (!table) {
-    table = new Map<string, number>();
-    enumerateMatchings(n).forEach((cand, i) => table!.set(matchingSignature(cand), i));
-    indexCache.set(n, table);
-  }
-  return table.get(matchingSignature(m)) ?? -1;
+  return matchingRank(n, m);
 }
 
 /**
@@ -174,7 +171,7 @@ export function pairPoints(
   j: number,
 ): number {
   if (i === j || info.total === 0) return currentIndex;
-  const base = enumerateMatchings(info.pointCount)[currentIndex];
+  const base = matchingAt(info.pointCount, currentIndex);
   if (!base) return currentIndex;
   if (base.some(([a, b]) => (a === i && b === j) || (a === j && b === i))) return currentIndex;
 
@@ -198,7 +195,7 @@ export function pairPoints(
 
 /** The point currently paired with `i`, or -1. */
 export function partnerOf(info: TileMatchingInfo, index: number, i: number): number {
-  const m = enumerateMatchings(info.pointCount)[index];
+  const m = matchingAt(info.pointCount, index);
   if (!m) return -1;
   for (const [a, b] of m) {
     if (a === i) return b;

@@ -30,9 +30,9 @@
 
 import {
   DEFAULT_CONTRACTS,
-  chordControl,
   curvedChordPieces,
-  leafCentre,
+  strandCurve,
+  type StrandCurve,
   HEX_RULE_SPECTRE_FAMILY,
   LEAF_ORDER,
   hexRuleSpectreDrawing,
@@ -40,7 +40,6 @@ import {
   leafPts,
   localChords,
   type EdgeContracts,
-  type Pt,
   type Segment,
   type TileFamilyId,
 } from '../../core';
@@ -83,11 +82,11 @@ export interface LeafChordTable {
    */
   readonly drawSegments?: readonly (readonly Segment[])[];
   /**
-   * With curved strands, each chord's Bézier control point (tile-local, one
+   * With curved strands, each chord's Bézier handles (tile-local, one pair
    * per entry of `segments`), so overlays built on the straight chords — the
    * traced strand, found circuits, highlights — can bend the same way.
    */
-  readonly controls?: readonly (readonly Pt[])[];
+  readonly controls?: readonly (readonly StrandCurve[])[];
   /** Largest chord count over the leaf types (drives `vertsPerInstance`). */
   readonly maxChords: number;
   /** Total chords across all leaf types (HUD / tests). */
@@ -173,8 +172,7 @@ function withControls(table: LeafChordTable, curved: boolean): LeafChordTable {
   if (!curved || table.chordCount === 0) return table;
   const order = leafOrder(table.family);
   const controls = order.map((type, i) => {
-    const centre = leafCentre(table.family, type);
-    return (table.segments[i] ?? []).map(([a, b]) => chordControl(a, b, centre));
+    return (table.segments[i] ?? []).map(([a, b]) => strandCurve(table.family, type, a, b));
   });
   return { ...table, controls };
 }
@@ -276,7 +274,7 @@ export function chordTableKey(
 ): string {
   const ct = contracts
     ? Object.entries(contracts)
-        .map(([k, v]) => `${k}:${v?.minor}@${v?.t}`)
+        .map(([k, v]) => `${k}:${v?.minor}@${v?.t}x${v?.count ?? 1}`)
         .sort()
         .join(';')
     : '';

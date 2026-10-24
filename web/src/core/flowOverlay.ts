@@ -21,10 +21,10 @@
 import { connectionPoints, DEFAULT_CONTRACTS, parseEdgeLabel, type EdgeContracts } from './edges';
 import { edgeLabels, leafOrder, type TileFamilyId, type TileTypeId } from './families';
 import { transPt, type Pt } from './geom';
-import { enumerateMatchings } from './matchings';
+import { matchingAt } from './matchings';
 import { pointKey, weldSegments, type Segment } from './circuits';
 import type { TileInstance } from './tiles';
-import { chordControl, leafCentre } from './strandCurves';
+import { strandCurve, type StrandCurve } from './strandCurves';
 
 export type ChordKind = 'through' | 'source' | 'sink' | 'neutral';
 
@@ -33,8 +33,8 @@ export interface FlowChord {
   readonly a: Pt;
   readonly b: Pt;
   readonly kind: ChordKind;
-  /** Where the chord bows to when drawn curved. */
-  readonly ctrl: Pt;
+  /** The chord's curve handles, for drawing it curved. */
+  readonly ctrl: StrandCurve;
 }
 
 export interface FlowRun {
@@ -96,7 +96,7 @@ export function signedLocalChords(
 ): readonly { a: Pt; b: Pt; sa: number; sb: number }[] {
   const cps = connectionPoints(family, type, selected, contracts);
   if (cps.length < 2 || cps.length % 2 !== 0) return [];
-  const matching = enumerateMatchings(cps.length)[matchingIndex];
+  const matching = matchingAt(cps.length, matchingIndex);
   if (!matching) return [];
   const directed = directedClasses(family);
   const sign = (i: number) => (directed.has(cps[i].edge.major) ? cps[i].edge.sign : 0);
@@ -110,18 +110,18 @@ export function flowOverlay(input: FlowOverlayInput): FlowOverlay {
   const local = new Map<string, ReturnType<typeof signedLocalChords>>();
   const raw: Segment[] = [];
   const signs: [number, number][] = [];
-  const ctrls: Pt[] = [];
+  const ctrls: StrandCurve[] = [];
   for (const inst of input.instances) {
     let chords = local.get(inst.type);
     if (!chords) {
       chords = signedLocalChords(input.family, inst.type, input.selected, input.matchingIndexByType[inst.type] ?? 0, contracts);
       local.set(inst.type, chords);
     }
-    const centre = leafCentre(input.family, inst.type);
     for (const c of chords) {
       raw.push([transPt(inst.xform, c.a), transPt(inst.xform, c.b)]);
       signs.push([c.sa, c.sb]);
-      ctrls.push(transPt(inst.xform, chordControl(c.a, c.b, centre)));
+      const h = strandCurve(input.family, inst.type, c.a, c.b);
+      ctrls.push({ c1: transPt(inst.xform, h.c1), c2: transPt(inst.xform, h.c2) });
     }
   }
   const welded = weldSegments(raw);

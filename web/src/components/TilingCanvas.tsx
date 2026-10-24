@@ -19,9 +19,9 @@ import {
   type ColorSchemeId,
   type EdgeContracts,
   type Path,
-  type Pt,
   type TileFamilyId,
   type TileTypeId,
+  type StrandCurve,
 } from '../core';
 import { buildOverlayPaths } from '../lib/overlayPaths';
 import { edgeClassColor, tileColor } from '../lib/palette';
@@ -50,7 +50,7 @@ export interface TilingCanvasProps {
   readonly tails?: readonly Path[];
   readonly circuitColorByLength?: ReadonlyMap<number, string> | readonly (readonly [number, string])[];
   /** From a `curved` analysis: each step bows through its control point. */
-  readonly segmentControl?: readonly (readonly [string, Pt])[];
+  readonly segmentControl?: readonly (readonly [string, StrandCurve])[];
   readonly rainbowTails?: boolean;
   /**
    * Dim every strand whose length is not in this set, so picking lengths in

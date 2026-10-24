@@ -31,6 +31,9 @@
 import {
   COS30,
   CURVE_PIECES,
+  cubicAt,
+  orientCurve,
+  type StrandCurve,
   LEAF_ORDER,
   MIN_TRAIL_HOLD,
   SIN30,
@@ -224,8 +227,8 @@ export interface ChordEnd {
    * exactly one, the very first one.
    */
   readonly leafType: number;
-  /** The chord's Bézier control point in world coordinates, when strands are curved. */
-  readonly ctrl?: Pt;
+  /** The chord's curve handles in world coordinates, when strands are curved. */
+  readonly ctrl?: StrandCurve;
 }
 
 /**
@@ -242,7 +245,7 @@ function forEachNearbyChord(
   localX: number,
   localY: number,
   reach: number,
-  visit: (ax: number, ay: number, bx: number, by: number, leafType: number, cx: number, cy: number) => void,
+  visit: (ax: number, ay: number, bx: number, by: number, leafType: number, ctrl: StrandCurve | undefined) => void,
 ): void {
   const { cut, chords, cols, rows, starts, items, minX, minY, origin } = index;
   const probe = Math.ceil((reach + chordReachOf(chords)) / CELL);
@@ -281,8 +284,12 @@ function forEachNearbyChord(
             co * mir * b.x - si * b.y + px,
             si * mir * b.x + co * b.y + py,
             typeByte,
-            c ? co * mir * c.x - si * c.y + px : NaN,
-            c ? si * mir * c.x + co * c.y + py : NaN,
+            c
+              ? {
+                  c1: { x: co * mir * c.c1.x - si * c.c1.y + px, y: si * mir * c.c1.x + co * c.c1.y + py },
+                  c2: { x: co * mir * c.c2.x - si * c.c2.y + px, y: si * mir * c.c2.x + co * c.c2.y + py },
+                }
+              : undefined,
           );
         }
       }
@@ -306,10 +313,9 @@ export function hitTestChord(index: ChordIndex, world: Pt, maxDist: number): Cho
   let hitToX = 0;
   let hitToY = 0;
   let hitType = 0;
-  let hitCx = NaN;
-  let hitCy = NaN;
+  let hitCtrl: StrandCurve | undefined;
   let found = false;
-  forEachNearbyChord(index, lx, ly, maxDist, (ax, ay, bx, by, leafType, cx, cy) => {
+  forEachNearbyChord(index, lx, ly, maxDist, (ax, ay, bx, by, leafType, ctrl) => {
     const dx = bx - ax;
     const dy = by - ay;
     const len2 = dx * dx + dy * dy;
@@ -322,8 +328,7 @@ export function hitTestChord(index: ChordIndex, world: Pt, maxDist: number): Cho
     best = d2;
     found = true;
     hitType = leafType;
-    hitCx = cx;
-    hitCy = cy;
+    hitCtrl = ctrl;
     // Head for whichever end the tap was closest to.
     if (t <= 0.5) {
       hitAtX = ax;
@@ -342,7 +347,7 @@ export function hitTestChord(index: ChordIndex, world: Pt, maxDist: number): Cho
         at: { x: hitAtX, y: hitAtY },
         to: { x: hitToX, y: hitToY },
         leafType: hitType,
-        ...(Number.isNaN(hitCx) ? {} : { ctrl: { x: hitCx, y: hitCy } }),
+        ...(hitCtrl ? { ctrl: hitCtrl } : {}),
       }
     : null;
 }
@@ -380,7 +385,7 @@ export function continuationAt(
   point: Pt,
   from: Pt,
   searchRadius = WELD_EPSILON,
-): { kind: 'step'; next: Pt; leafType: number; ctrl?: Pt } | { kind: 'none' } | { kind: 'junction' } {
+): { kind: 'step'; next: Pt; leafType: number; ctrl?: StrandCurve } | { kind: 'none' } | { kind: 'junction' } {
   const sr2 = searchRadius * searchRadius;
   const lx = point.x - index.origin.x;
   const ly = point.y - index.origin.y;
@@ -393,10 +398,9 @@ export function continuationAt(
   // The tile each candidate chord belongs to, so a step can say which tile it
   // crossed (the trace ticker) without a second spatial lookup.
   const memT: number[] = [];
-  // Each candidate chord's control point (NaN when straight).
-  const memCx: number[] = [];
-  const memCy: number[] = [];
-  forEachNearbyChord(index, lx, ly, searchRadius, (ax, ay, bx, by, leafType, cx, cy) => {
+  // Each candidate chord's curve handles (undefined when straight).
+  const memC: (StrandCurve | undefined)[] = [];
+  forEachNearbyChord(index, lx, ly, searchRadius, (ax, ay, bx, by, leafType, ctrl) => {
     const da = (ax - point.x) * (ax - point.x) + (ay - point.y) * (ay - point.y);
     const db = (bx - point.x) * (bx - point.x) + (by - point.y) * (by - point.y);
     // A degenerate (near-zero-length) chord can enrol both of its ends.
@@ -405,16 +409,14 @@ export function continuationAt(
       memX.push(bx);
       memY.push(by);
       memT.push(leafType);
-      memCx.push(cx);
-      memCy.push(cy);
+      memC.push(ctrl);
     }
     if (db < sr2) {
       memD.push(db);
       memX.push(ax);
       memY.push(ay);
       memT.push(leafType);
-      memCx.push(cx);
-      memCy.push(cy);
+      memC.push(ctrl);
     }
   });
   if (memD.length === 0) return { kind: 'none' };
@@ -453,7 +455,7 @@ export function continuationAt(
     kind: 'step',
     next: { x: memX[best], y: memY[best] },
     leafType: memT[best],
-    ...(Number.isNaN(memCx[best]) ? {} : { ctrl: { x: memCx[best], y: memCy[best] } }),
+    ...(memC[best] ? { ctrl: memC[best] } : {}),
   };
 }
 
@@ -589,8 +591,8 @@ export interface StrandTrail {
    */
   types: Uint8Array;
   /**
-   * Each chord's Bézier control point, 2 doubles per chord, indexed like
-   * {@link types}; NaN for a straight chord. Only the DRAWN line bends
+   * Each chord's curve handles, 4 doubles per chord (in either order, see
+   * `orientCurve`), indexed like {@link types}; NaN for a straight chord. Only the DRAWN line bends
    * ({@link trailGeometry}); points, arc and transitions stay on the chords.
    */
   ctrl: Float64Array;
@@ -628,8 +630,8 @@ function grow(trail: StrandTrail, need: number): void {
   arc.set(trail.arc.subarray(0, trail.count));
   const types = new Uint8Array(cap);
   types.set(trail.types.subarray(0, trail.count));
-  const ctrl = new Float64Array(cap * 2).fill(NaN);
-  ctrl.set(trail.ctrl.subarray(0, trail.count * 2));
+  const ctrl = new Float64Array(cap * 4).fill(NaN);
+  ctrl.set(trail.ctrl.subarray(0, trail.count * 4));
   trail.xy = xy;
   trail.arc = arc;
   trail.types = types;
@@ -649,9 +651,11 @@ function push(trail: StrandTrail, p: Pt): void {
   trail.geom = null;
 }
 
-function setCtrl(trail: StrandTrail, chord: number, c: Pt | undefined): void {
-  trail.ctrl[chord * 2] = c ? c.x : NaN;
-  trail.ctrl[chord * 2 + 1] = c ? c.y : NaN;
+function setCtrl(trail: StrandTrail, chord: number, c: StrandCurve | undefined): void {
+  trail.ctrl[chord * 4] = c ? c.c1.x : NaN;
+  trail.ctrl[chord * 4 + 1] = c ? c.c1.y : NaN;
+  trail.ctrl[chord * 4 + 2] = c ? c.c2.x : NaN;
+  trail.ctrl[chord * 4 + 3] = c ? c.c2.y : NaN;
 }
 
 /**
@@ -673,7 +677,7 @@ export function startTrail(seed: ChordEnd, typeCount: number = TRANSITION_TYPES)
     anchor: seed.to,
     geom: null,
     types: new Uint8Array(1024),
-    ctrl: new Float64Array(2048).fill(NaN),
+    ctrl: new Float64Array(4096).fill(NaN),
     typeCount,
     transitions: new Uint32Array(typeCount * typeCount),
     lastType: -1,
@@ -738,7 +742,7 @@ export function trimTrail(trail: StrandTrail, maxPoints: number): StrandTrail {
   // Chord k spans points k and k+1, so dropping `drop` leading points drops
   // the same number of leading chords.
   trail.types.copyWithin(0, drop, trail.count);
-  trail.ctrl.copyWithin(0, drop * 2, trail.count * 2);
+  trail.ctrl.copyWithin(0, drop * 4, trail.count * 4);
   trail.count = max;
   trail.version++;
   trail.geom = null;
@@ -864,7 +868,7 @@ export function trailGeometry(trail: StrandTrail): TrailGeometry | null {
   const n = trail.count;
   const C = trail.ctrl;
   let curved = 0;
-  for (let k = 0; k < n - 1; k++) if (!Number.isNaN(C[k * 2])) curved++;
+  for (let k = 0; k < n - 1; k++) if (!Number.isNaN(C[k * 4])) curved++;
   // Each curved chord gains CURVE_PIECES - 1 points between its ends.
   const m = n + curved * (CURVE_PIECES - 1);
   const xy = new Float32Array(m * 2);
@@ -878,20 +882,18 @@ export function trailGeometry(trail: StrandTrail): TrailGeometry | null {
   const P = trail.xy;
   let o = 0;
   for (let i = 0; i < n; i++) {
-    if (i > 0 && !Number.isNaN(C[(i - 1) * 2])) {
-      const ax = P[(i - 1) * 2];
-      const ay = P[(i - 1) * 2 + 1];
-      const bx = P[i * 2];
-      const by = P[i * 2 + 1];
-      const cx = C[(i - 1) * 2];
-      const cy = C[(i - 1) * 2 + 1];
+    if (i > 0 && !Number.isNaN(C[(i - 1) * 4])) {
+      const k = (i - 1) * 4;
+      const a = { x: P[(i - 1) * 2], y: P[(i - 1) * 2 + 1] };
+      const b = { x: P[i * 2], y: P[i * 2 + 1] };
+      const [h1, h2] = orientCurve({ c1: { x: C[k], y: C[k + 1] }, c2: { x: C[k + 2], y: C[k + 3] } }, a);
       const a0 = trail.arc[i - 1] - arcBase;
       const a1 = trail.arc[i] - arcBase;
       for (let j = 1; j < CURVE_PIECES; j++) {
         const t = j / CURVE_PIECES;
-        const u = 1 - t;
-        xy[o * 2] = u * u * ax + 2 * u * t * cx + t * t * bx - anchor.x;
-        xy[o * 2 + 1] = u * u * ay + 2 * u * t * cy + t * t * by - anchor.y;
+        const q = cubicAt(a, h1, h2, b, t);
+        xy[o * 2] = q.x - anchor.x;
+        xy[o * 2 + 1] = q.y - anchor.y;
         arc[o] = a0 + (a1 - a0) * t;
         o++;
       }
@@ -914,21 +916,21 @@ export function trailGeometry(trail: StrandTrail): TrailGeometry | null {
   return geom;
 }
 
-/** A polyline with each chord bent along its control point, and the arc at every point drawn. */
+/** A polyline with each chord bent along its handles, and the arc at every point drawn. */
 export interface CurvedRun {
   readonly pts: readonly Pt[];
   readonly arc: readonly number[];
 }
 
 /**
- * Bend each chord `pts[k] → pts[k + 1]` that has a control point into
+ * Bend each chord `pts[k] → pts[k + 1]` that has curve handles into
  * {@link CURVE_PIECES} straight pieces. `arcAt(i)` is the arc at original
  * point i; points inside a curve get theirs by interpolating along the chord,
  * so the rainbow and every arc-indexed reading stay exactly as before.
  */
 export function curveRun(
   pts: readonly Pt[],
-  ctrlOf: (chord: number) => Pt | null,
+  ctrlOf: (chord: number) => StrandCurve | null,
   arcAt: (i: number) => number,
 ): CurvedRun {
   const out: Pt[] = [];
@@ -941,10 +943,10 @@ export function curveRun(
         const b = pts[i];
         const a0 = arcAt(i - 1);
         const a1 = arcAt(i);
+        const [h1, h2] = orientCurve(c, a);
         for (let j = 1; j < CURVE_PIECES; j++) {
           const t = j / CURVE_PIECES;
-          const u = 1 - t;
-          out.push({ x: u * u * a.x + 2 * u * t * c.x + t * t * b.x, y: u * u * a.y + 2 * u * t * c.y + t * t * b.y });
+          out.push(cubicAt(a, h1, h2, b, t));
           arc.push(a0 + (a1 - a0) * t);
         }
       }
@@ -969,20 +971,20 @@ export function packRun(run: CurvedRun, origin: Pt): Pick<TrailGeometry, 'xy' | 
 }
 
 /**
- * The control point of the chord running from world point `a` to `b`, if
+ * The curve handles of the chord running from world point `a` to `b`, if
  * the index's table is curved and holds that chord; null otherwise. For
  * overlays drawn from straight chord ends (found circuits, highlights).
  */
-export function chordControlAt(index: ChordIndex, a: Pt, b: Pt): Pt | null {
+export function chordControlAt(index: ChordIndex, a: Pt, b: Pt): StrandCurve | null {
   if (!index.chords.controls) return null;
   const eps = snapEpsilonAt(a);
   const e2 = eps * eps;
-  let hit: Pt | null = null;
-  forEachNearbyChord(index, a.x - index.origin.x, a.y - index.origin.y, eps, (ax, ay, bx, by, _t, cx, cy) => {
-    if (hit || Number.isNaN(cx)) return;
+  let hit: StrandCurve | null = null;
+  forEachNearbyChord(index, a.x - index.origin.x, a.y - index.origin.y, eps, (ax, ay, bx, by, _t, ctrl) => {
+    if (hit || !ctrl) return;
     const fwd = (ax - a.x) ** 2 + (ay - a.y) ** 2 < e2 && (bx - b.x) ** 2 + (by - b.y) ** 2 < e2;
     const back = (bx - a.x) ** 2 + (by - a.y) ** 2 < e2 && (ax - b.x) ** 2 + (ay - b.y) ** 2 < e2;
-    if (fwd || back) hit = { x: cx, y: cy };
+    if (fwd || back) hit = ctrl;
   });
   return hit;
 }

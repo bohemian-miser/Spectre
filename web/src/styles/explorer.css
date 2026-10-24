@@ -264,3 +264,35 @@
 .flow-key.is-sink {
   background: #e5534b;
 }
+
+.strand-counts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin-top: 8px;
+  font-size: 13px;
+}
+.strand-counts-label {
+  color: var(--muted);
+}
+.strand-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.strand-count-class {
+  font-weight: 600;
+  margin-right: 2px;
+}
+.strand-count button {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  line-height: 1;
+}
+.strand-count output {
+  min-width: 1.2em;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}

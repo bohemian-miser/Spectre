@@ -7,7 +7,7 @@
  */
 
 import type { Pt } from './geom';
-import { connectionCount, connectionPoints, DEFAULT_CONTRACTS, type EdgeContracts } from './edges';
+import { connectionCount, connectionPoints, DEFAULT_CONTRACTS, hasMultiStrands, type EdgeContracts } from './edges';
 import { leafOrder, type TileFamilyId, type TileTypeId } from './families';
 
 /** Pairs of indices into `connectionPoints()` order. */
@@ -42,6 +42,51 @@ export function enumerateMatchings(n: number): readonly Matching[] {
   const out = enumerateOn(Array.from({ length: n }, (_, i) => i));
   matchingCache.set(n, out);
   return out;
+}
+
+/** Above this many points, matchings are unranked one at a time instead of listed. */
+const LIST_MAX_POINTS = 12;
+
+/**
+ * Matching `index` of `n` points, in {@link enumerateMatchings} order, without
+ * listing the others: the first point's partner picks a block of
+ * `(n − 3)!!` matchings, and so on down. Undefined when out of range.
+ */
+export function matchingAt(n: number, index: number): Matching | undefined {
+  if (n <= LIST_MAX_POINTS) return enumerateMatchings(n)[index];
+  if (n % 2 !== 0 || index < 0 || index >= matchingCount(n) || !Number.isInteger(index)) return undefined;
+  const left = Array.from({ length: n }, (_, i) => i);
+  const out: [number, number][] = [];
+  let r = index;
+  while (left.length) {
+    const block = matchingCount(left.length - 2);
+    const pick = Math.floor(r / block);
+    r -= pick * block;
+    const first = left.shift()!;
+    const [partner] = left.splice(pick, 1);
+    out.push([first, partner]);
+  }
+  return out;
+}
+
+/** Inverse of {@link matchingAt}: the index of a perfect matching of `n` points, or -1. */
+export function matchingRank(n: number, m: Matching): number {
+  const partner = new Array<number>(n).fill(-1);
+  for (const [a, b] of m) {
+    if (a < 0 || b < 0 || a >= n || b >= n || a === b || partner[a] !== -1 || partner[b] !== -1) return -1;
+    partner[a] = b;
+    partner[b] = a;
+  }
+  if (partner.some((p) => p === -1)) return -1;
+  const left = Array.from({ length: n }, (_, i) => i);
+  let index = 0;
+  while (left.length) {
+    const first = left.shift()!;
+    const pos = left.indexOf(partner[first]);
+    index += pos * matchingCount(left.length - 1);
+    left.splice(pos, 1);
+  }
+  return index;
 }
 
 /** (n-1)!! — the number of perfect matchings of n points (0 for odd n). */
@@ -108,6 +153,7 @@ export function geometricNonCrossingMatchingIndices(points: readonly Pt[]): read
  * definition the CSV combination strings are built on.
  */
 export function nonCrossingMatchingIndicesCyclic(n: number): readonly number[] {
+  if (n > LIST_MAX_POINTS) return nonCrossingByRank(n);
   const all = enumerateMatchings(n);
   const out: number[] = [];
   for (let mi = 0; mi < all.length; mi++) {
@@ -125,6 +171,29 @@ export function nonCrossingMatchingIndicesCyclic(n: number): readonly number[] {
   return out;
 }
 
+const nonCrossingCache = new Map<number, readonly number[]>();
+
+/** The same list built directly (Catalan(n/2) of them) and ranked, for big n. */
+function nonCrossingByRank(n: number): readonly number[] {
+  if (n % 2 !== 0) return [];
+  const hit = nonCrossingCache.get(n);
+  if (hit) return hit;
+  const out: number[] = [];
+  const pairs: [number, number][] = [];
+  const gen = (lo: number, hi: number, then: () => void): void => {
+    if (lo >= hi) return then();
+    for (let j = lo + 1; j < hi; j += 2) {
+      pairs.push([lo, j]);
+      gen(lo + 1, j, () => gen(j + 1, hi, then));
+      pairs.pop();
+    }
+  };
+  gen(0, n, () => out.push(matchingRank(n, pairs)));
+  out.sort((a, b) => a - b);
+  nonCrossingCache.set(n, out);
+  return out;
+}
+
 /**
  * Non-crossing matching indices for one leaf tile under a subset of classes,
  * using the canonical topological rule. This is what combination-string digits
@@ -137,8 +206,10 @@ export function nonCrossingForTile(
   family: TileFamilyId,
   type: TileTypeId,
   selected: ReadonlySet<number>,
+  /** Only the strand counts matter: they decide how many points there are. */
+  contracts?: EdgeContracts,
 ): readonly number[] {
-  return nonCrossingMatchingIndicesCyclic(connectionCount(family, type, selected));
+  return nonCrossingMatchingIndicesCyclic(connectionCount(family, type, selected, contracts));
 }
 
 /** Geometric variant of {@link nonCrossingForTile} (chords that truly miss). */
@@ -180,13 +251,13 @@ export function comboToMatchingIndices(
   family: TileFamilyId,
   subset: readonly number[],
   combo: string,
-  /** Accepted for API symmetry; contracts never reorder connection points. */
-  _contracts?: EdgeContracts,
+  /** Positions never reorder points; only the strand counts matter here. */
+  contracts?: EdgeContracts,
 ): readonly number[] {
   const selected = toSet(subset);
   const order = leafOrder(family);
   return order.map((type, i) => {
-    const nc = nonCrossingForTile(family, type, selected);
+    const nc = nonCrossingForTile(family, type, selected, contracts);
     if (nc.length === 0) return 0;
     const d = i < combo.length ? comboDigitValue(combo[i]) : 0;
     return nc[Math.min(d, nc.length - 1)];
@@ -196,20 +267,22 @@ export function comboToMatchingIndices(
 /**
  * Inverse of {@link comboToMatchingIndices}; returns null when some selected
  * matching is crossing (not representable as a combo digit) or its
- * non-crossing index is >= 36.
+ * non-crossing index is >= 36, or when some class carries several strands.
  */
 export function matchingIndicesToCombo(
   family: TileFamilyId,
   subset: readonly number[],
   indices: readonly number[],
-  /** Accepted for API symmetry; contracts never reorder connection points. */
-  _contracts?: EdgeContracts,
+  /** Positions never reorder points; only the strand counts matter here. */
+  contracts?: EdgeContracts,
 ): string | null {
+  // A digit per tile can't say how many strands each class carries.
+  if (hasMultiStrands(contracts)) return null;
   const selected = toSet(subset);
   const order = leafOrder(family);
   let out = '';
   for (let i = 0; i < order.length; i++) {
-    const nc = nonCrossingForTile(family, order[i], selected);
+    const nc = nonCrossingForTile(family, order[i], selected, contracts);
     const want = indices[i] ?? 0;
     if (nc.length === 0) {
       // No choice to make for this tile; canonical digit is 0.
@@ -254,8 +327,9 @@ export function maxMatchingIndex(
   family: TileFamilyId,
   type: TileTypeId,
   subset: readonly number[],
+  contracts?: EdgeContracts,
 ): number {
-  return Math.max(0, matchingCount(connectionCount(family, type, new Set(subset))) - 1);
+  return Math.max(0, matchingCount(connectionCount(family, type, new Set(subset), contracts)) - 1);
 }
 
 /**
@@ -273,9 +347,10 @@ export function normalizeMatchingVector(
   family: TileFamilyId,
   subset: readonly number[],
   matching: readonly number[],
+  contracts?: EdgeContracts,
 ): readonly number[] {
   return leafOrder(family).map((type, i) => {
-    const max = maxMatchingIndex(family, type, subset);
+    const max = maxMatchingIndex(family, type, subset, contracts);
     const want = Math.round(matching[i] ?? 0);
     if (!Number.isFinite(want)) return 0;
     return Math.min(max, Math.max(0, want));

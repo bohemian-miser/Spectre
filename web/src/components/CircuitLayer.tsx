@@ -8,7 +8,7 @@
  */
 
 import { useMemo } from 'react';
-import type { Path, Pt } from '../core';
+import type { Path, StrandCurve } from '../core';
 import { buildOverlayPaths, tailEndpoints } from '../lib/overlayPaths';
 
 export interface CircuitLayerProps {
@@ -17,7 +17,7 @@ export interface CircuitLayerProps {
   readonly circuitColorByLength?: ReadonlyMap<number, string> | readonly (readonly [number, string])[];
   readonly segmentColor?: ReadonlyMap<string, string> | readonly (readonly [string, string])[];
   /** From a `curved` analysis: each step bows through its control point. */
-  readonly segmentControl?: ReadonlyMap<string, Pt> | readonly (readonly [string, Pt])[];
+  readonly segmentControl?: ReadonlyMap<string, StrandCurve> | readonly (readonly [string, StrandCurve])[];
   readonly rainbowTails?: boolean;
   readonly showCircuits?: boolean;
   readonly showTails?: boolean;

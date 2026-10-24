@@ -12,6 +12,7 @@ import { useMemo } from 'react';
 import {
   connectionCount,
   edgesToSubset,
+  type EdgeContracts,
   leafOrder,
   subsetToString,
   validEdgeSubsets,
@@ -22,6 +23,8 @@ import { EdgeClassLegend } from './EdgeClassLegend';
 export interface EdgeSubsetPickerProps {
   readonly family: TileFamilyId;
   readonly subset: readonly number[];
+  /** Carries each class's strand count, which can change a tile's parity. */
+  readonly contracts?: EdgeContracts;
   onSubsetChange(subset: readonly number[]): void;
   onToggleMajor?(major: number): void;
   onHoverMajor?(major: number | null): void;
@@ -35,6 +38,7 @@ export function EdgeSubsetPicker(props: EdgeSubsetPickerProps): JSX.Element {
   const {
     family,
     subset,
+    contracts,
     onSubsetChange,
     onToggleMajor,
     onHoverMajor,
@@ -50,8 +54,8 @@ export function EdgeSubsetPicker(props: EdgeSubsetPickerProps): JSX.Element {
 
   /** Leaf types that cannot be fully paired under this selection. */
   const oddTypes = useMemo(
-    () => leafOrder(family).filter((t) => connectionCount(family, t, selectedSet) % 2 !== 0),
-    [family, selectedSet],
+    () => leafOrder(family).filter((t) => connectionCount(family, t, selectedSet, contracts) % 2 !== 0),
+    [family, selectedSet, contracts],
   );
 
   const counts = useMemo(() => {

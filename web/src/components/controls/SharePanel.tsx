@@ -57,7 +57,7 @@ export function SharePanel(props: SharePanelProps): JSX.Element {
   const url = useMemo(() => shareUrl(state, base, route), [state, base, route]);
 
   const combo = useMemo(() => {
-    const digits = matchingIndicesToCombo(state.family, state.subset, state.matching);
+    const digits = matchingIndicesToCombo(state.family, state.subset, state.matching, state.contracts);
     return digits === null ? null : formatComboShareString(state.subset, digits);
   }, [state]);
 

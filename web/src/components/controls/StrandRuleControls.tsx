@@ -10,8 +10,11 @@
 
 import { useMemo } from 'react';
 import {
+  MAX_STRANDS,
   formatComboShareString,
+  hasMultiStrands,
   leafOrder,
+  strandCount,
   nonCrossingForTile,
   matchingIndicesToCombo,
   type ColorSchemeId,
@@ -46,6 +49,8 @@ export interface StrandRuleControlsProps {
   onHoverMajor?(major: number | null): void;
   onMatchingChange(tileType: TileTypeId, index: number): void;
   onToggleNonCrossing?(): void;
+  /** Set how many strands cross each seam of a class; omit to hide the control. */
+  onStrandCountChange?(major: number, count: number): void;
 }
 
 export function StrandRuleControls(props: StrandRuleControlsProps): JSX.Element {
@@ -67,14 +72,16 @@ export function StrandRuleControls(props: StrandRuleControlsProps): JSX.Element 
     onHoverMajor,
     onMatchingChange,
     onToggleNonCrossing,
+    onStrandCountChange,
   } = props;
+  const multi = hasMultiStrands(contracts);
 
   const order = useMemo(() => leafOrder(family), [family]);
   const selected = useMemo(() => new Set(subset), [subset]);
   const combo = useMemo(() => {
-    const digits = matchingIndicesToCombo(family, subset, matching);
+    const digits = matchingIndicesToCombo(family, subset, matching, contracts);
     return digits === null ? null : formatComboShareString(subset, digits);
-  }, [family, subset, matching]);
+  }, [family, subset, matching, contracts]);
 
   /**
    * Which tiles are the reason there is no combination string. The encoder
@@ -83,14 +90,14 @@ export function StrandRuleControls(props: StrandRuleControlsProps): JSX.Element 
    * over from a wider subset.
    */
   const crossing = useMemo(() => {
-    if (combo !== null) return [];
+    if (combo !== null || multi) return [];
     const selected = new Set(subset);
     return order.filter((type, i) => {
-      const nc = nonCrossingForTile(family, type, selected);
+      const nc = nonCrossingForTile(family, type, selected, contracts);
       const want = matching[i] ?? 0;
       return nc.length === 0 ? want !== 0 : !nc.includes(want);
     });
-  }, [combo, family, order, subset, matching]);
+  }, [combo, multi, family, order, subset, matching, contracts]);
 
   return (
     <>
@@ -99,11 +106,42 @@ export function StrandRuleControls(props: StrandRuleControlsProps): JSX.Element 
         <EdgeSubsetPicker
           family={family}
           subset={subset}
+          contracts={contracts}
           highlightMajors={highlightMajors}
           onSubsetChange={onSubsetChange}
           onToggleMajor={onToggleMajor}
           onHoverMajor={onHoverMajor}
         />
+        {onStrandCountChange && subset.length > 0 ? (
+          <div className="strand-counts" role="group" aria-label="Strands per class" data-testid="strand-counts">
+            <span className="strand-counts-label">Strands per edge</span>
+            {subset.map((major) => {
+              const n = strandCount(contracts, major);
+              return (
+                <span key={major} className="strand-count" data-major={major}>
+                  <span className="strand-count-class">{major}</span>
+                  <button
+                    type="button"
+                    aria-label={`Fewer strands on class ${major}`}
+                    disabled={n <= 1}
+                    onClick={() => onStrandCountChange(major, n - 1)}
+                  >
+                    −
+                  </button>
+                  <output data-testid={`strand-count-${major}`}>{n}</output>
+                  <button
+                    type="button"
+                    aria-label={`More strands on class ${major}`}
+                    disabled={n >= MAX_STRANDS}
+                    onClick={() => onStrandCountChange(major, n + 1)}
+                  >
+                    +
+                  </button>
+                </span>
+              );
+            })}
+          </div>
+        ) : null}
       </fieldset>
 
       <fieldset className="explorer-matchings">
@@ -115,9 +153,11 @@ export function StrandRuleControls(props: StrandRuleControlsProps): JSX.Element 
             </>
           ) : (
             <span className="muted" data-testid="combo-crossing">
-              {crossing.length === 1
-                ? `${crossing[0]}’s matching crosses itself, so there is no combination string.`
-                : `These matchings cross themselves, so there is no combination string: ${crossing.join(', ')}.`}
+              {multi
+                ? 'Several strands on a class: a combination string has no room for that, so the link spells the matchings out.'
+                : crossing.length === 1
+                  ? `${crossing[0]}’s matching crosses itself, so there is no combination string.`
+                  : `These matchings cross themselves, so there is no combination string: ${crossing.join(', ')}.`}
             </span>
           )}
         </p>

@@ -376,8 +376,9 @@ function maxMatchingIndex(
   family: TileFamilyId,
   type: TileTypeId,
   subset: readonly number[],
+  contracts?: EdgeContracts,
 ): number {
-  const n = connectionCount(family, type, new Set(subset));
+  const n = connectionCount(family, type, new Set(subset), contracts);
   return Math.max(0, matchingCount(n) - 1);
 }
 
@@ -386,18 +387,22 @@ export function normalizeMatching(
   family: TileFamilyId,
   subset: readonly number[],
   matching: readonly number[],
+  contracts?: EdgeContracts,
 ): readonly number[] {
   return leafOrder(family).map((type, i) =>
-    clampInt(matching[i] ?? 0, 0, maxMatchingIndex(family, type, subset)),
+    clampInt(matching[i] ?? 0, 0, maxMatchingIndex(family, type, subset, contracts)),
   );
 }
 
-/** `ct=` payload: `major.minor.t` per contract, exported for other pages' codecs. */
+/**
+ * `ct=` payload: `major:minor@t` per contract, plus `xN` when the class
+ * carries N > 1 strands; exported for other pages' codecs.
+ */
 export function encodeContracts(c: EdgeContracts): string {
   return Object.entries(c)
     .map(([major, v]) => [Number(major), v as EdgeContract] as const)
     .sort((a, b) => a[0] - b[0])
-    .map(([major, v]) => `${major}:${v.minor}@${v.t.toFixed(2)}`)
+    .map(([major, v]) => `${major}:${v.minor}@${v.t.toFixed(2)}${(v.count ?? 1) > 1 ? `x${v.count}` : ''}`)
     .join(';');
 }
 
@@ -409,11 +414,12 @@ export function decodeContracts(
   const out: Record<number, EdgeContract> = {};
   let any = false;
   for (const part of raw.split(';')) {
-    const m = /^(\d+):(\d+)@([0-9.]+)$/.exec(part.trim());
+    const m = /^(\d+):(\d+)@([0-9.]+)(?:x(\d+))?$/.exec(part.trim());
     if (!m) continue;
     const t = Number.parseFloat(m[3]);
     if (!Number.isFinite(t)) continue;
-    out[Number.parseInt(m[1], 10)] = { minor: Number.parseInt(m[2], 10), t };
+    const count = m[4] ? Number.parseInt(m[4], 10) : 1;
+    out[Number.parseInt(m[1], 10)] = { minor: Number.parseInt(m[2], 10), t, ...(count > 1 ? { count } : {}) };
     any = true;
   }
   if (!any) return undefined;
@@ -473,7 +479,7 @@ export function encodeExplorerState(s: ExplorerState): URLSearchParams {
   const subset = [...s.subset].sort((a, b) => a - b);
   if (subset.length) q.set('e', subset.join(''));
 
-  const matching = normalizeMatching(s.family, subset, s.matching);
+  const matching = normalizeMatching(s.family, subset, s.matching, s.contracts);
   if (matching.some((v) => v !== 0)) {
     const combo = matchingIndicesToCombo(s.family, subset, matching, s.contracts);
     if (combo !== null) {
@@ -580,7 +586,7 @@ export function decodeExplorerState(q: URLSearchParams): ExplorerState {
     const parts = mRaw.split('.').map((p) => Number.parseInt(p, 10));
     matching = order.map((_, i) => (Number.isFinite(parts[i]) ? parts[i] : 0));
   }
-  matching = normalizeMatching(family, subset, matching);
+  matching = normalizeMatching(family, subset, matching, contracts);
 
   const flNum = Number.parseInt(q.get('fl') ?? '', 10);
   const flags = Number.isFinite(flNum) ? clampInt(flNum, 0, ALL_FLAGS) : d.flags;

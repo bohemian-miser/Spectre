@@ -20,6 +20,8 @@ import {
   type EdgeContracts,
   type Path,
   type Pt,
+  type StrandCurve,
+  orientCurve,
   type TileFamilyId,
   type TileTypeId,
 } from '../core';
@@ -41,18 +43,20 @@ export interface OverlayPath {
   readonly index: number;
 }
 
-/** One step a → b: a quadratic through its control point when there is one, else a line. */
-function stepD(a: Pt, b: Pt, controls?: ReadonlyMap<string, Pt>): string {
+/** One step a → b: a cubic along its handles when it has them, else a line. */
+function stepD(a: Pt, b: Pt, controls?: ReadonlyMap<string, StrandCurve>): string {
   const c = controls?.get(segmentKey([a, b]));
-  return c ? ` Q ${c.x} ${c.y} ${b.x} ${b.y}` : ` L ${b.x} ${b.y}`;
+  if (!c) return ` L ${b.x} ${b.y}`;
+  const [h1, h2] = orientCurve(c, a);
+  return ` C ${h1.x} ${h1.y} ${h2.x} ${h2.y} ${b.x} ${b.y}`;
 }
 
 /**
  * `Path` -> SVG path data. Closed paths get a trailing `Z`. With `controls`
- * (segmentKey -> control point, from a `curved` analysis) each step that has
- * one bows as a quadratic, and a closed path closes with its own curve.
+ * (segmentKey -> handles, from a `curved` analysis) each step that has them
+ * bends as a cubic, and a closed path closes with its own curve.
  */
-export function pathToD(p: Path, controls?: ReadonlyMap<string, Pt>): string {
+export function pathToD(p: Path, controls?: ReadonlyMap<string, StrandCurve>): string {
   const pts = p.points;
   if (pts.length === 0) return '';
   let d = `M ${pts[0].x} ${pts[0].y}`;
@@ -105,8 +109,8 @@ export interface OverlayInput {
   readonly circuitColorByLength?: PairList<number, string>;
   /** From `CircuitAnalysis.segmentColor` / `AnalysisResponse.segmentColors`. */
   readonly segmentColor?: PairList<string, string>;
-  /** From a `curved` analysis: draw each step as a curve through its control point. */
-  readonly segmentControl?: PairList<string, Pt>;
+  /** From a `curved` analysis: draw each step as a curve along its handles. */
+  readonly segmentControl?: PairList<string, StrandCurve>;
 }
 
 export interface OverlayOptions {

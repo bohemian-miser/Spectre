@@ -466,3 +466,37 @@ describe('keep-tails and find-all toggles', () => {
     expect(run(base, { type: 'setPersistFound', persistFound: true })).toBe(base);
   });
 });
+
+describe('strands per class', () => {
+  const hex15 = run(base, { type: 'setFamily', family: 'hex' }, { type: 'setSubset', subset: [1, 5] });
+  const pi = leafOrder('hex').indexOf('Pi');
+
+  it('sets a count on the class contract, resets the tiles it reshapes, and drops it at 1', () => {
+    const before = run(hex15, { type: 'setMatching', tileType: 'Pi', index: 2 });
+    const two = run(before, { type: 'setStrandCount', major: 1, count: 2 });
+    expect(two.contracts?.[1]).toEqual({ minor: 0, t: 0.5, count: 2 });
+    // Pi has two class-1 edges, so its points (and matchings) changed.
+    expect(two.matching[pi]).toBe(0);
+    expect(connectionCount('hex', 'Pi', new Set([1, 5]), two.contracts)).toBe(6);
+    // Past the cap it clamps; back to 1 the default contract disappears.
+    expect(run(two, { type: 'setStrandCount', major: 1, count: 9 }).contracts?.[1]?.count).toBe(3);
+    expect(run(two, { type: 'setStrandCount', major: 1, count: 1 }).contracts).toBeUndefined();
+  });
+
+  it('moving a crossing keeps the count, and resetting positions keeps it too', () => {
+    const two = run(hex15, { type: 'setStrandCount', major: 5, count: 2 });
+    const moved = run(two, { type: 'setContract', major: 5, contract: { minor: 0, t: 0.3 } });
+    expect(moved.contracts?.[5]).toEqual({ minor: 0, t: 0.3, count: 2 });
+    const reset = run(moved, { type: 'clearContracts' });
+    expect(reset.contracts?.[5]).toEqual({ minor: 0, t: 0.5, count: 2 });
+  });
+
+  it('allows the matching indices of the bigger point sets', () => {
+    const three = run(hex15, { type: 'setStrandCount', major: 1, count: 3 }, { type: 'setStrandCount', major: 5, count: 3 });
+    // Pi: four edges of classes 1 and 5, three strands each.
+    const n = connectionCount('hex', 'Pi', new Set([1, 5]), three.contracts);
+    expect(n).toBe(12);
+    const last = matchingCount(n) - 1;
+    expect(run(three, { type: 'setMatching', tileType: 'Pi', index: last }).matching[pi]).toBe(last);
+  });
+});

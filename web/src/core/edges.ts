@@ -167,6 +167,27 @@ export interface EdgeContract {
   readonly minor: number;
   /** in [0, 1] */
   readonly t: number;
+  /**
+   * Strands crossing each seam of this class (default 1, at most
+   * {@link MAX_STRANDS}). With more than one they are spread evenly along the
+   * contract's edge (class 0: symmetrically about the seam centre), and `t`
+   * no longer applies.
+   */
+  readonly count?: number;
+}
+
+/** Most strands one seam class can carry. */
+export const MAX_STRANDS = 3;
+
+/** How many strands cross each seam of class `major`. */
+export function strandCount(contracts: EdgeContracts | undefined, major: number): number {
+  const n = Math.round(contracts?.[major]?.count ?? 1);
+  return Number.isFinite(n) ? Math.max(1, Math.min(MAX_STRANDS, n)) : 1;
+}
+
+/** True when some class carries more than one strand. */
+export function hasMultiStrands(contracts: EdgeContracts | undefined): boolean {
+  return !!contracts && Object.values(contracts).some((c) => (c?.count ?? 1) > 1);
 }
 
 export type EdgeContracts = Readonly<Partial<Record<number, EdgeContract>>>;
@@ -241,7 +262,8 @@ export function validateContracts(
     let t = Number.isFinite(value.t) ? value.t : 0.5;
     t = Math.max(0, Math.min(1, t));
 
-    let candidate: EdgeContract = { minor, t };
+    const count = value.count === undefined ? undefined : Math.max(1, Math.min(MAX_STRANDS, Math.round(value.count) || 1));
+    let candidate: EdgeContract = { minor, t, ...(count && count > 1 ? { count } : {}) };
 
     if (major === 0) {
       for (const seam of seams) {
@@ -251,7 +273,7 @@ export function validateContracts(
               `Class-0 contract must be symmetric about the seam center (u = ${seamCenterU(seam)}), got u = ${contractU(candidate)}`,
             );
           }
-          candidate = centerContract(seam);
+          candidate = { ...centerContract(seam), ...(candidate.count ? { count: candidate.count } : {}) };
           break;
         }
       }
@@ -368,8 +390,51 @@ export function connectionPoints(
     if (parsed.minor !== 0 || !selected.has(parsed.major)) continue;
     const seam = seams.find((s) => s.edgeIndices.includes(i));
     if (!seam) continue;
-    out.push({ edge: seam, pt: connectionPoint(family, type, seam, contracts) });
+    const k = strandCount(contracts, seam.major);
+    if (k === 1) out.push({ edge: seam, pt: connectionPoint(family, type, seam, contracts) });
+    else for (const pt of strandPoints(family, type, seam, k, contracts)) out.push({ edge: seam, pt });
   }
+  return out;
+}
+
+/**
+ * `k` strand crossings on one seam, in this tile's boundary order. In seam
+ * units u (see {@link contractU}) they sit at `base + (i + 1) / (k + 1)`: on
+ * the contract's edge for a signed class, centred on the seam for class 0.
+ * That set is its own mirror image under the gluing `u → M − u` (for class 0)
+ * or `t → 1 − t` (the neighbour measuring the same edge from its other end),
+ * so abutting tiles' points coincide one for one.
+ */
+function strandPoints(family: TileFamilyId, type: TileTypeId, seam: MetaEdge, k: number, contracts: EdgeContracts): Pt[] {
+  const pts = leafPts(family, type);
+  const n = pts.length;
+  const M = seam.edgeIndices.length;
+  const c = resolveContract(seam, contracts);
+  const base = seam.major === 0 ? M / 2 - 0.5 : Math.min(c.minor, M - 1);
+  const out: Pt[] = [];
+  for (let i = 0; i < k; i++) {
+    const u = base + (i + 1) / (k + 1);
+    // Which of the seam's edges u lands on; a signed class keeps to the
+    // contract's own edge (the nearest minor present, as connectionPoint does).
+    let best = 0;
+    if (seam.major === 0) best = Math.max(0, Math.min(M - 1, Math.floor(u)));
+    else {
+      let bestDelta = Infinity;
+      for (let j = 0; j < seam.minors.length; j++) {
+        const d = Math.abs(seam.minors[j] - c.minor);
+        if (d < bestDelta) {
+          bestDelta = d;
+          best = j;
+        }
+      }
+    }
+    const idx = seam.edgeIndices[best];
+    const local = seam.major === 0 ? u - best : u - base;
+    const t = seam.sign > 0 || seam.major === 0 ? local : 1 - local;
+    out.push(lerpPt(pts[idx], pts[(idx + 1) % n], t));
+  }
+  // Boundary order: along each edge in label direction, the edges in seam order.
+  if (seam.sign < 0 && seam.major !== 0) out.reverse();
   return out;
 }
 
@@ -378,11 +443,12 @@ export function connectionCount(
   family: TileFamilyId,
   type: TileTypeId,
   selected: ReadonlySet<number>,
+  contracts?: EdgeContracts,
 ): number {
   let count = 0;
   for (const raw of edgeLabels(family, type)) {
     const { major, minor } = parseEdgeLabel(raw);
-    if (minor === 0 && selected.has(major)) count++;
+    if (minor === 0 && selected.has(major)) count += strandCount(contracts, major);
   }
   return count;
 }
