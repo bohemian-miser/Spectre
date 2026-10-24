@@ -6,10 +6,11 @@
  * point you pass; letting go (or tapping again) pairs it with the last one,
  * keeping as much of the old pairing as still fits. Tapping an edge away from
  * its points turns its class on or off. ‹ › step through the pairings, and
- * the arrows at the sides move to the neighbouring tile types.
+ * the arrows at the sides move to the neighbouring tile types. On the
+ * keyboard, ← → change the tile type and ↑ ↓ step through its pairings.
  */
 
-import { useMemo, useRef, useState, type PointerEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type PointerEvent } from 'react';
 import {
   edgeLabels,
   leafPts,
@@ -197,6 +198,27 @@ export function TileEditor(props: TileEditorProps): JSX.Element {
   const step = (d: 1 | -1) => {
     if (options.length > 1) onSetIndex(options[(position + d + options.length) % options.length]);
   };
+  // Arrow keys work while the editor is open, unless a form field has focus.
+  const keys = useRef({ step, onStepTile });
+  keys.current = { step, onStepTile };
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.altKey || e.ctrlKey || e.metaKey) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
+      const act: Record<string, () => void> = {
+        ArrowLeft: () => keys.current.onStepTile(-1),
+        ArrowRight: () => keys.current.onStepTile(1),
+        ArrowUp: () => keys.current.step(1),
+        ArrowDown: () => keys.current.step(-1),
+      };
+      if (!act[e.key]) return;
+      e.preventDefault();
+      act[e.key]();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
   const chordD = ([i, j]: readonly [number, number]): string => {
     const p = points[i];
     const q = points[j];
@@ -284,7 +306,7 @@ export function TileEditor(props: TileEditorProps): JSX.Element {
               ? 'An odd number of points: tap an edge to turn its class on or off and even them up.'
               : points.length < 3
                 ? 'Tap an edge to turn its class on or off.'
-                : 'Tap a point to draw from it, or an edge to turn its class on or off.')}
+                : 'Tap a point to draw from it, or an edge to turn its class on or off. ← → change tile, ↑ ↓ change pairing.')}
       </p>
     </div>
   );

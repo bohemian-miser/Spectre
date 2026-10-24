@@ -96,6 +96,13 @@ export const SITE_NAV: readonly NavItem[] = Object.freeze([
     blurb: 'No directions, any number of strands per edge: a parity cube times stacks of pairs.',
   },
   {
+    id: 'dimension',
+    label: 'Dimension',
+    entry: 'dimension.html',
+    status: 'ready',
+    blurb: 'How each rule grows with the supertile level: bounded, curves, fractal or space-filling.',
+  },
+  {
     id: 'legacy',
     label: 'Legacy p5 app',
     entry: 'legacy.html',

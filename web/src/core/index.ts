@@ -30,3 +30,4 @@ export * from './morph';
 export * from './flowLattice';
 export * from './flowOverlay';
 export * from './strandCurves';
+export * from './scaling';

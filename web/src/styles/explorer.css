@@ -265,3 +265,20 @@
   background: #e5534b;
 }
 
+
+/* Every tile's matching at once: aperiodic-circuits' "next combination". */
+.combo-stepper {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 0;
+  font-size: 13px;
+}
+.combo-stepper button {
+  padding: 1px 9px;
+}
+.combo-stepper-count {
+  font-variant-numeric: tabular-nums;
+  min-width: 11em;
+  text-align: center;
+}

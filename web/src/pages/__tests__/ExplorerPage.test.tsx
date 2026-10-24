@@ -486,4 +486,18 @@ describe('ExplorerPage — infinite mode', () => {
     fireEvent.keyDown(window, { key: 'Escape' });
     expect(queryByTestId('tile-editor')).toBeNull();
   });
+
+  it('steps every tile through the combinations at once, like aperiodic-circuits', () => {
+    window.history.replaceState(null, '', '/#/explorer?v=1&f=hex&lv=2&e=15');
+    const { getByLabelText, getByTestId } = render(<ExplorerPage />);
+    // Hexagons with {1, 5}: Pi and Psi have three pairings each, nothing else has a choice.
+    const pos = () => getByTestId('combo-position').textContent;
+    expect(pos()).toBe('Combination 1 of 9');
+    fireEvent.click(getByLabelText('Next combination'));
+    expect(pos()).toBe('Combination 2 of 9');
+    fireEvent.click(getByLabelText('Previous combination'));
+    fireEvent.click(getByLabelText('Previous combination'));
+    // Back past the first wraps to the last.
+    expect(pos()).toBe('Combination 9 of 9');
+  });
 });

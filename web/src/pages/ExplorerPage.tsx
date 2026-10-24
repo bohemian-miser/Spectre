@@ -1014,6 +1014,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
           }
           onStrandCountChange={(major, count) => dispatch({ type: 'setStrandCount', major, count })}
           onOpenTile={setEditingTile}
+          onMatchingVectorChange={(matching) => dispatch({ type: 'setMatchingVector', matching })}
         />
         {editingTile ? (
           <TileEditor
