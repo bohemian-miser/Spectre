@@ -331,8 +331,13 @@ export const FLAG = {
   REGIONS: 1024,
   /** Give strands their labels' directions: colour by run, mark sources and sinks. */
   FLOW: 2048,
-  /** Bow each strand toward its tile's centre instead of drawing it straight. */
+  /** Bend each strand, leaving every edge square to it, instead of drawing it straight. */
   CURVED_STRANDS: 4096,
+  /**
+   * Colour circuits by their length on one gradient (the infinite view's old
+   * look) rather than giving the lengths present clearly different hues.
+   */
+  LENGTH_COLOURS: 8192,
 } as const;
 
 /**

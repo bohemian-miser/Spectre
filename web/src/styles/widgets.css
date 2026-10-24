@@ -567,3 +567,45 @@ button {
   height: 10px;
   border-radius: 2px;
 }
+
+/* A selected chip with its strand-count stepper attached on the right. */
+.edge-chip-group {
+  display: inline-flex;
+  align-items: stretch;
+}
+.edge-chip-group > .edge-chip {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  border-right: none;
+}
+.edge-chip-count {
+  font-weight: 700;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.edge-chip-steps {
+  display: inline-flex;
+  flex-direction: column;
+  border: 1px solid var(--accent);
+  border-left: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  border-radius: 0 999px 999px 0;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--accent) 18%, var(--panel-2));
+}
+.edge-chip-steps button {
+  flex: 1;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 8px;
+  line-height: 1;
+  padding: 0 7px 0 5px;
+  cursor: pointer;
+}
+.edge-chip-steps button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 35%, transparent);
+}
+.edge-chip-steps button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}

@@ -53,6 +53,7 @@ import {
   flatten,
   flowOverlay,
   hasMultiStrands,
+  circuitLengthRgb,
 } from '../core';
 import {
   CircuitLayer,
@@ -358,6 +359,23 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
     ],
   );
   const analysis = useCircuitAnalysis(analysisInput, { workerMinLevel: 3 });
+
+  /**
+   * Circuit colours, the same scheme in both views: by default each length
+   * present gets a clearly different hue (the analysis's ranked palette); with
+   * LENGTH_COLOURS, a length's place on one gradient, as the infinite view
+   * colours circuits it finds.
+   */
+  const lengthColours = hasFlag(state, FLAG.LENGTH_COLOURS);
+  const circuitColors = useMemo(() => {
+    const ranked = analysis.result?.circuitColors;
+    if (!ranked || !lengthColours) return ranked;
+    return ranked.map(([len]) => [len, rgbToCss(circuitLengthRgb(len))] as const);
+  }, [analysis.result, lengthColours]);
+  const statsResult = useMemo(
+    () => (analysis.result && circuitColors ? { ...analysis.result, circuitColors } : analysis.result),
+    [analysis.result, circuitColors],
+  );
 
   // Flow overlay: the same chords with their labels' directions. Drawn on the
   // SVG path only (a rooted patch up to SVG_MAX_LEVEL), and not for the
@@ -1452,7 +1470,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
                 <p className="muted">Turn “Circuit lines” on to analyse this patch.</p>
               ) : null}
               <StatsSummary
-                result={analysis.result}
+                result={statsResult}
                 running={analysis.running}
                 error={analysis.error}
                 highlightLengths={highlightLengths}
@@ -1506,6 +1524,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
             findCircuits={findOn && !!infiniteChords}
             regionFill={regionsOn && !!infiniteChords}
             persistFound={persistFoundOn}
+            circuitColours={lengthColours ? 'length' : 'distinct'}
             findCeiling={findCeiling}
             foundHold={foundHold}
             highlight={graphPick}
@@ -1608,7 +1627,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
                     <CircuitLayer
                       circuits={analysis.result.circuits}
                       tails={analysis.result.tails}
-                      circuitColorByLength={analysis.result.circuitColors}
+                      circuitColorByLength={circuitColors}
                       segmentColor={analysis.result.segmentColors}
                       segmentControl={analysis.result.segmentControls}
                       rainbowTails={hasFlag(state, FLAG.RAINBOW_TAILS)}
@@ -1657,7 +1676,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
                 alignToHex={asSpectres}
                 circuits={linesOn ? analysis.result?.circuits : undefined}
                 tails={linesOn ? analysis.result?.tails : undefined}
-                circuitColorByLength={analysis.result?.circuitColors}
+                circuitColorByLength={circuitColors}
                 segmentControl={analysis.result?.segmentControls}
                 rainbowTails={hasFlag(state, FLAG.RAINBOW_TAILS)}
                 highlightLengths={highlightLengths}

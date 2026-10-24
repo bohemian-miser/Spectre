@@ -42,6 +42,7 @@ import {
   clampFoundHold,
   SIN30,
   circuitLengthRgb,
+  circuitHueRgb,
   isAggregateType,
   pathLength,
   pathSegments,
@@ -476,6 +477,13 @@ export interface InfiniteCanvasProps {
    */
   readonly persistFound?: boolean;
   /**
+   * How closed circuits are coloured. 'length' (the default): a length's
+   * place on one gradient, the same colour wherever it turns up. 'distinct':
+   * each length gets the next of the rooted view's clearly different hues the
+   * first time it is seen, and keeps it until the rule changes.
+   */
+  readonly circuitColours?: 'length' | 'distinct';
+  /**
    * Ceiling on the tiles find-all will analyse in one pass, and so the widest
    * view `zoomToCircuitView` will park at. Higher shows more circuits at once
    * and costs more time per cut. Defaults to {@link DEFAULT_FIND_CEILING}.
@@ -566,6 +574,7 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
     keepTails = false,
     findCircuits = false,
     persistFound = false,
+    circuitColours = 'length',
     findCeiling = DEFAULT_FIND_CEILING,
     foundHold = DEFAULT_FOUND_HOLD,
     highlight = null,
@@ -661,6 +670,20 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
   findOnRef.current = findCircuits;
   const persistFoundRef = useRef(persistFound);
   persistFoundRef.current = persistFound;
+  const circuitColoursRef = useRef(circuitColours);
+  circuitColoursRef.current = circuitColours;
+  /** 'distinct' colouring: the rank each circuit length was first seen at. */
+  const lengthRankRef = useRef(new Map<number, number>());
+  const circuitRgb = useCallback((length: number): Rgb => {
+    if (circuitColoursRef.current === 'length') return circuitLengthRgb(length);
+    const ranks = lengthRankRef.current;
+    let r = ranks.get(length);
+    if (r === undefined) {
+      r = ranks.size;
+      ranks.set(length, r);
+    }
+    return circuitHueRgb(r);
+  }, []);
   const findCeilingRef = useRef(clampFindCeiling(findCeiling));
   findCeilingRef.current = clampFindCeiling(findCeiling);
   const foundHoldRef = useRef(clampFoundHold(foundHold));
@@ -1196,7 +1219,7 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
         (k) => (ctrlByKey.size ? (ctrlByKey.get(segmentKey([ring[k], ring[k + 1]])) ?? null) : null),
         (i) => arcs[i],
       );
-      const rgb = circuitLengthRgb(lengthOf(path));
+      const rgb = circuitRgb(lengthOf(path));
       geoms.push({
         color: [rgb[0] / 255, rgb[1] / 255, rgb[2] / 255],
         origin: cut.origin,
@@ -1381,7 +1404,7 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
         // this is the circuit's length outright — no off-by-one to undo. Get
         // it wrong and the live circuit wears a different colour from the one
         // find-all gives the very same loop.
-        const rgb = circuitLengthRgb(trail.steps);
+        const rgb = circuitRgb(trail.steps);
         trail.color = [rgb[0] / 255, rgb[1] / 255, rgb[2] / 255];
         trail.version++;
         trail.geom = null;
@@ -1741,6 +1764,7 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
   useEffect(() => {
     chordsRef.current = chords ?? null;
     indexCutRef.current = null; // the cached index was built for the old rule
+    lengthRankRef.current.clear(); // a new rule's lengths start the palette afresh
     rendererRef.current?.setChords(chords ?? null);
     // The traced line is the OLD rule's geometry; under a new one it would be
     // a rainbow over nothing. Drop it rather than let it lie.
@@ -1798,6 +1822,18 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
   useEffect(() => {
     recomputeFound();
   }, [findCircuits, recomputeFound]);
+
+  // A new colour scheme repaints what was found: the kept set would otherwise
+  // hold on to the old colours.
+  const coloursRef = useRef(circuitColours);
+  useEffect(() => {
+    if (coloursRef.current === circuitColours) return;
+    coloursRef.current = circuitColours;
+    lengthRankRef.current.clear();
+    foundRef.current = [];
+    foundKeysRef.current.clear();
+    recomputeFound();
+  }, [circuitColours, recomputeFound]);
 
   useEffect(() => {
     if (keepTails) return;

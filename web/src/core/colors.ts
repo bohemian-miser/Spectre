@@ -157,6 +157,25 @@ export function circuitHueColor(step: number): string {
   return `hsl(${h.toFixed(1)}, 100%, ${l.toFixed(1)}%)`;
 }
 
+/** {@link circuitHueColor} as 0..255 RGB, for renderers that take numbers. */
+export function circuitHueRgb(step: number): Rgb {
+  const i = Math.max(0, Math.floor(step));
+  // The same rounding as the CSS string, so both say the same colour.
+  const h = Number(((i * 137.50776405003785) % 360).toFixed(1)) / 360;
+  const l = Number((46 + 14 * ((i * GOLDEN) % 1)).toFixed(1)) / 100;
+  return hslToRgb(h, 1, l);
+}
+
+/** h, s, l in [0, 1] → 0..255 RGB. */
+function hslToRgb(h: number, s: number, l: number): Rgb {
+  const a = s * Math.min(l, 1 - l);
+  const f = (ch: number): number => {
+    const k = (ch + h * 12) % 12;
+    return l - a * Math.max(-1, Math.min(Math.min(k - 3, 9 - k), 1));
+  };
+  return [Math.round(f(0) * 255), Math.round(f(8) * 255), Math.round(f(4) * 255)];
+}
+
 /**
  * Octaves of length the hue ramp spreads across: 1 tile at one end, 2^18 —
  * a quarter of a million — at the other.
@@ -215,11 +234,5 @@ export function circuitLengthRgb(length: number): Rgb {
   // 8,511 exact RGB collisions over 1…30000; with both there are none.
   const l = 0.46 + 0.22 * ((n * GOLDEN) % 1);
   const s = 0.8 + 0.2 * ((n * ROOT2) % 1);
-  // hsl → rgb.
-  const a = s * Math.min(l, 1 - l);
-  const f = (ch: number): number => {
-    const k = (ch + h * 12) % 12;
-    return l - a * Math.max(-1, Math.min(Math.min(k - 3, 9 - k), 1));
-  };
-  return [Math.round(f(0) * 255), Math.round(f(8) * 255), Math.round(f(4) * 255)];
+  return hslToRgb(h, s, l);
 }
