@@ -9,6 +9,8 @@ export { AppShell } from './AppShell';
 export type { AppShellProps } from './AppShell';
 
 export { TileView, default as TileViewDefault } from './TileView';
+export { TileEditor } from './TileEditor';
+export type { TileEditorProps } from './TileEditor';
 export type {
   TileViewProps,
   EdgeRef,

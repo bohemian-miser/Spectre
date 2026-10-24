@@ -471,4 +471,19 @@ describe('ExplorerPage — infinite mode', () => {
     const byLength = strokes();
     expect(byLength.every((c) => c?.startsWith('rgb'))).toBe(true);
   });
+
+  it('opens a tile in the big pairing editor, steps tiles, and closes on Escape', () => {
+    window.history.replaceState(null, '', '/#/explorer?v=1&f=hex&lv=2&e=15');
+    const { getByLabelText, getByTestId, queryByTestId } = render(<ExplorerPage />);
+    fireEvent.click(getByLabelText("Edit Pi's pairing"));
+    expect(getByTestId('tile-editor').getAttribute('aria-label')).toBe('Pairing for Pi');
+    // Pi with {1, 5}: four points, three ways to pair them.
+    expect(getByTestId('tile-editor-position').textContent).toBe('1/3');
+    fireEvent.click(getByLabelText('Next pairing'));
+    expect(getByTestId('tile-editor-position').textContent).toBe('2/3');
+    fireEvent.click(getByLabelText('Next tile'));
+    expect(getByTestId('tile-editor').getAttribute('aria-label')).toBe('Pairing for Sigma');
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(queryByTestId('tile-editor')).toBeNull();
+  });
 });

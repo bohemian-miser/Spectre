@@ -67,6 +67,7 @@ import {
   StrandRuleControls,
   StatsSummary,
   TilePalette,
+  TileEditor,
   TilingCanvas,
   TilingView,
   type EdgeRef,
@@ -278,6 +279,17 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
     });
   }, [state]);
 
+  /** The tile type open in the big pairing editor, if any. */
+  const [editingTile, setEditingTile] = useState<TileTypeId | null>(null);
+  useEffect(() => setEditingTile(null), [family]);
+  useEffect(() => {
+    if (!editingTile) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setEditingTile(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [editingTile]);
   const [hoverEdge, setHoverEdge] = useState<EdgeRef | null>(null);
   const [hoverMajor, setHoverMajor] = useState<number | null>(null);
   const [highlightLengths, setHighlightLengths] = useState<ReadonlySet<number>>(
@@ -1001,7 +1013,27 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
             dispatch({ type: 'toggleFlag', flag: FLAG.NON_CROSSING_ONLY })
           }
           onStrandCountChange={(major, count) => dispatch({ type: 'setStrandCount', major, count })}
+          onOpenTile={setEditingTile}
         />
+        {editingTile ? (
+          <TileEditor
+            key={editingTile}
+            family={family}
+            type={editingTile}
+            selected={selected}
+            contracts={state.contracts}
+            index={state.matching[leafOrder(family).indexOf(editingTile)] ?? 0}
+            nonCrossingOnly={nonCrossingOnly}
+            curvedStrands={curvedStrands}
+            onSetIndex={(index) => dispatch({ type: 'setMatching', tileType: editingTile, index })}
+            onToggleClass={(major) => dispatch({ type: 'toggleMajor', major })}
+            onStepTile={(d) => {
+              const order = leafOrder(family);
+              setEditingTile(order[(order.indexOf(editingTile) + d + order.length) % order.length]);
+            }}
+            onClose={() => setEditingTile(null)}
+          />
+        ) : null}
         {multiOnSpectres ? (
           <p className="warning-badge" role="status" data-testid="multi-on-spectres">
             Several strands per edge aren&rsquo;t drawn with the hexagons as Spectres yet. Switch the

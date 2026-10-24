@@ -49,6 +49,8 @@ export interface StrandRuleControlsProps {
   onToggleNonCrossing?(): void;
   /** Set how many strands cross each seam of a class; omit to hide the control. */
   onStrandCountChange?(major: number, count: number): void;
+  /** Open a tile's pairing in the big editor; omit to hide the Edit buttons. */
+  onOpenTile?(tileType: TileTypeId): void;
 }
 
 export function StrandRuleControls(props: StrandRuleControlsProps): JSX.Element {
@@ -71,6 +73,7 @@ export function StrandRuleControls(props: StrandRuleControlsProps): JSX.Element 
     onMatchingChange,
     onToggleNonCrossing,
     onStrandCountChange,
+    onOpenTile,
   } = props;
   const multi = hasMultiStrands(contracts);
 
@@ -153,6 +156,7 @@ export function StrandRuleControls(props: StrandRuleControlsProps): JSX.Element 
               customColors={customColors}
               tileSize={tileSize}
               onChange={(index) => onMatchingChange(type, index)}
+              onOpen={onOpenTile ? () => onOpenTile(type) : undefined}
             />
           ))}
         </div>

@@ -48,6 +48,8 @@ export interface MatchingSliderProps {
   readonly curvedStrands?: boolean;
   readonly colorScheme?: ColorSchemeId;
   readonly customColors?: Readonly<Record<string, string>>;
+  /** Open this tile in the big pairing editor; omit to hide the button. */
+  onOpen?(): void;
   /** Allow drag-to-pair on the mini tile (default true). */
   readonly allowPairing?: boolean;
   readonly className?: string;
@@ -72,6 +74,7 @@ export function MatchingSlider(props: MatchingSliderProps): JSX.Element | null {
     customColors,
     allowPairing = true,
     className,
+    onOpen,
   } = props;
 
   const info = useMemo(
@@ -178,6 +181,11 @@ export function MatchingSlider(props: MatchingSliderProps): JSX.Element | null {
           ) : null}
         </>
       )}
+      {onOpen ? (
+        <button type="button" className="matching-open" onClick={onOpen} aria-label={`Edit ${tileType}'s pairing`}>
+          Edit
+        </button>
+      ) : null}
     </div>
   );
 }
