@@ -53,6 +53,7 @@ import {
   flatten,
   flowOverlay,
   hasMultiStrands,
+  circuitLengthRgb,
 } from '../core';
 import {
   CircuitLayer,
@@ -66,6 +67,7 @@ import {
   StrandRuleControls,
   StatsSummary,
   TilePalette,
+  TileEditor,
   TilingCanvas,
   TilingView,
   type EdgeRef,
@@ -277,6 +279,17 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
     });
   }, [state]);
 
+  /** The tile type open in the big pairing editor, if any. */
+  const [editingTile, setEditingTile] = useState<TileTypeId | null>(null);
+  useEffect(() => setEditingTile(null), [family]);
+  useEffect(() => {
+    if (!editingTile) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setEditingTile(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [editingTile]);
   const [hoverEdge, setHoverEdge] = useState<EdgeRef | null>(null);
   const [hoverMajor, setHoverMajor] = useState<number | null>(null);
   const [highlightLengths, setHighlightLengths] = useState<ReadonlySet<number>>(
@@ -358,6 +371,23 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
     ],
   );
   const analysis = useCircuitAnalysis(analysisInput, { workerMinLevel: 3 });
+
+  /**
+   * Circuit colours, the same scheme in both views: by default each length
+   * present gets a clearly different hue (the analysis's ranked palette); with
+   * LENGTH_COLOURS, a length's place on one gradient, as the infinite view
+   * colours circuits it finds.
+   */
+  const lengthColours = hasFlag(state, FLAG.LENGTH_COLOURS);
+  const circuitColors = useMemo(() => {
+    const ranked = analysis.result?.circuitColors;
+    if (!ranked || !lengthColours) return ranked;
+    return ranked.map(([len]) => [len, rgbToCss(circuitLengthRgb(len))] as const);
+  }, [analysis.result, lengthColours]);
+  const statsResult = useMemo(
+    () => (analysis.result && circuitColors ? { ...analysis.result, circuitColors } : analysis.result),
+    [analysis.result, circuitColors],
+  );
 
   // Flow overlay: the same chords with their labels' directions. Drawn on the
   // SVG path only (a rooted patch up to SVG_MAX_LEVEL), and not for the
@@ -983,7 +1013,27 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
             dispatch({ type: 'toggleFlag', flag: FLAG.NON_CROSSING_ONLY })
           }
           onStrandCountChange={(major, count) => dispatch({ type: 'setStrandCount', major, count })}
+          onOpenTile={setEditingTile}
         />
+        {editingTile ? (
+          <TileEditor
+            key={editingTile}
+            family={family}
+            type={editingTile}
+            selected={selected}
+            contracts={state.contracts}
+            index={state.matching[leafOrder(family).indexOf(editingTile)] ?? 0}
+            nonCrossingOnly={nonCrossingOnly}
+            curvedStrands={curvedStrands}
+            onSetIndex={(index) => dispatch({ type: 'setMatching', tileType: editingTile, index })}
+            onToggleClass={(major) => dispatch({ type: 'toggleMajor', major })}
+            onStepTile={(d) => {
+              const order = leafOrder(family);
+              setEditingTile(order[(order.indexOf(editingTile) + d + order.length) % order.length]);
+            }}
+            onClose={() => setEditingTile(null)}
+          />
+        ) : null}
         {multiOnSpectres ? (
           <p className="warning-badge" role="status" data-testid="multi-on-spectres">
             Several strands per edge aren&rsquo;t drawn with the hexagons as Spectres yet. Switch the
@@ -1452,7 +1502,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
                 <p className="muted">Turn “Circuit lines” on to analyse this patch.</p>
               ) : null}
               <StatsSummary
-                result={analysis.result}
+                result={statsResult}
                 running={analysis.running}
                 error={analysis.error}
                 highlightLengths={highlightLengths}
@@ -1506,6 +1556,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
             findCircuits={findOn && !!infiniteChords}
             regionFill={regionsOn && !!infiniteChords}
             persistFound={persistFoundOn}
+            circuitColours={lengthColours ? 'length' : 'distinct'}
             findCeiling={findCeiling}
             foundHold={foundHold}
             highlight={graphPick}
@@ -1608,7 +1659,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
                     <CircuitLayer
                       circuits={analysis.result.circuits}
                       tails={analysis.result.tails}
-                      circuitColorByLength={analysis.result.circuitColors}
+                      circuitColorByLength={circuitColors}
                       segmentColor={analysis.result.segmentColors}
                       segmentControl={analysis.result.segmentControls}
                       rainbowTails={hasFlag(state, FLAG.RAINBOW_TAILS)}
@@ -1657,7 +1708,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
                 alignToHex={asSpectres}
                 circuits={linesOn ? analysis.result?.circuits : undefined}
                 tails={linesOn ? analysis.result?.tails : undefined}
-                circuitColorByLength={analysis.result?.circuitColors}
+                circuitColorByLength={circuitColors}
                 segmentControl={analysis.result?.segmentControls}
                 rainbowTails={hasFlag(state, FLAG.RAINBOW_TAILS)}
                 highlightLengths={highlightLengths}

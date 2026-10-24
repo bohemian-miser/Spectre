@@ -10,11 +10,9 @@
 
 import { useMemo } from 'react';
 import {
-  MAX_STRANDS,
   formatComboShareString,
   hasMultiStrands,
   leafOrder,
-  strandCount,
   nonCrossingForTile,
   matchingIndicesToCombo,
   type ColorSchemeId,
@@ -51,6 +49,8 @@ export interface StrandRuleControlsProps {
   onToggleNonCrossing?(): void;
   /** Set how many strands cross each seam of a class; omit to hide the control. */
   onStrandCountChange?(major: number, count: number): void;
+  /** Open a tile's pairing in the big editor; omit to hide the Edit buttons. */
+  onOpenTile?(tileType: TileTypeId): void;
 }
 
 export function StrandRuleControls(props: StrandRuleControlsProps): JSX.Element {
@@ -73,6 +73,7 @@ export function StrandRuleControls(props: StrandRuleControlsProps): JSX.Element 
     onMatchingChange,
     onToggleNonCrossing,
     onStrandCountChange,
+    onOpenTile,
   } = props;
   const multi = hasMultiStrands(contracts);
 
@@ -107,41 +108,12 @@ export function StrandRuleControls(props: StrandRuleControlsProps): JSX.Element 
           family={family}
           subset={subset}
           contracts={contracts}
+          onStrandCountChange={onStrandCountChange}
           highlightMajors={highlightMajors}
           onSubsetChange={onSubsetChange}
           onToggleMajor={onToggleMajor}
           onHoverMajor={onHoverMajor}
         />
-        {onStrandCountChange && subset.length > 0 ? (
-          <div className="strand-counts" role="group" aria-label="Strands per class" data-testid="strand-counts">
-            <span className="strand-counts-label">Strands per edge</span>
-            {subset.map((major) => {
-              const n = strandCount(contracts, major);
-              return (
-                <span key={major} className="strand-count" data-major={major}>
-                  <span className="strand-count-class">{major}</span>
-                  <button
-                    type="button"
-                    aria-label={`Fewer strands on class ${major}`}
-                    disabled={n <= 1}
-                    onClick={() => onStrandCountChange(major, n - 1)}
-                  >
-                    −
-                  </button>
-                  <output data-testid={`strand-count-${major}`}>{n}</output>
-                  <button
-                    type="button"
-                    aria-label={`More strands on class ${major}`}
-                    disabled={n >= MAX_STRANDS}
-                    onClick={() => onStrandCountChange(major, n + 1)}
-                  >
-                    +
-                  </button>
-                </span>
-              );
-            })}
-          </div>
-        ) : null}
       </fieldset>
 
       <fieldset className="explorer-matchings">
@@ -184,6 +156,7 @@ export function StrandRuleControls(props: StrandRuleControlsProps): JSX.Element 
               customColors={customColors}
               tileSize={tileSize}
               onChange={(index) => onMatchingChange(type, index)}
+              onOpen={onOpenTile ? () => onOpenTile(type) : undefined}
             />
           ))}
         </div>

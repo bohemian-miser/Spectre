@@ -432,17 +432,19 @@ describe('ExplorerPage — infinite mode', () => {
     expect(off.container.querySelector('.circuit-path')?.getAttribute('d')).not.toContain(' C ');
   });
 
-  it('several strands per class: steppers add crossing points, and the rule stays valid', () => {
+  it('several strands per class: the class chips step their counts, and the rule stays valid', () => {
     window.history.replaceState(null, '', '/#/explorer?v=1&f=hex&lv=2&e=15');
-    const { container, getByLabelText, getByTestId } = render(<ExplorerPage />);
+    const { container, getByLabelText, getByTestId, queryByTestId } = render(<ExplorerPage />);
     const circuits = () => container.querySelectorAll('.circuit-path').length;
     const before = circuits();
     expect(before).toBeGreaterThan(0);
-    expect(getByTestId('strand-count-1').textContent).toBe('1');
+    // One strand: no badge, just the stepper beside the selected chip.
+    expect(queryByTestId('strand-count-1')).toBeNull();
     fireEvent.click(getByLabelText('More strands on class 1'));
-    expect(getByTestId('strand-count-1').textContent).toBe('2');
-    fireEvent.click(getByLabelText('More strands on class 5'));
-    expect(getByTestId('strand-count-5').textContent).toBe('2');
+    expect(getByTestId('strand-count-1').textContent).toBe('×2');
+    // The arrow keys on the chip itself do the same.
+    fireEvent.keyDown(container.querySelector('.edge-chip[data-major="5"]')!, { key: 'ArrowUp' });
+    expect(getByTestId('strand-count-5').textContent).toBe('×2');
     // Each count went up by one pair, so every tile still pairs up.
     expect(container.textContent).toContain('Every tile pairs up');
     expect(circuits()).toBeGreaterThan(before);
@@ -452,6 +454,36 @@ describe('ExplorerPage — infinite mode', () => {
     const pi = container.querySelector('.matching-slider[data-tile-type="Pi"] .matching-badge')!;
     expect(pi.textContent).toBe('1/105');
     fireEvent.click(getByLabelText('Fewer strands on class 1'));
+    expect(queryByTestId('strand-count-1')).toBeNull();
     expect(container.textContent).toContain('odd number of connection points');
+    // ▼ at one strand turns the class off.
+    fireEvent.click(getByLabelText('Turn class 1 off'));
+    expect(container.querySelector('.edge-chip[data-major="1"]')!.getAttribute('aria-pressed')).toBe('false');
+  });
+
+  it('colours circuits the same way in both views, by rank or by length', () => {
+    window.history.replaceState(null, '', '/#/explorer?v=1&f=hex&lv=2&e=15');
+    const { container, getByLabelText } = render(<ExplorerPage />);
+    const strokes = () => [...container.querySelectorAll('.circuit-path.is-circuit')].map((p) => p.getAttribute('stroke'));
+    const ranked = strokes();
+    expect(ranked.some((c) => c?.startsWith('hsl'))).toBe(true);
+    fireEvent.click(getByLabelText('Colour circuits by length (gradient)'));
+    const byLength = strokes();
+    expect(byLength.every((c) => c?.startsWith('rgb'))).toBe(true);
+  });
+
+  it('opens a tile in the big pairing editor, steps tiles, and closes on Escape', () => {
+    window.history.replaceState(null, '', '/#/explorer?v=1&f=hex&lv=2&e=15');
+    const { getByLabelText, getByTestId, queryByTestId } = render(<ExplorerPage />);
+    fireEvent.click(getByLabelText("Edit Pi's pairing"));
+    expect(getByTestId('tile-editor').getAttribute('aria-label')).toBe('Pairing for Pi');
+    // Pi with {1, 5}: four points, three ways to pair them.
+    expect(getByTestId('tile-editor-position').textContent).toBe('1/3');
+    fireEvent.click(getByLabelText('Next pairing'));
+    expect(getByTestId('tile-editor-position').textContent).toBe('2/3');
+    fireEvent.click(getByLabelText('Next tile'));
+    expect(getByTestId('tile-editor').getAttribute('aria-label')).toBe('Pairing for Sigma');
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(queryByTestId('tile-editor')).toBeNull();
   });
 });

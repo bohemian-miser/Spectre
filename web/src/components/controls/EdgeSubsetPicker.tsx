@@ -10,8 +10,10 @@
 
 import { useMemo } from 'react';
 import {
+  MAX_STRANDS,
   connectionCount,
   edgesToSubset,
+  strandCount,
   type EdgeContracts,
   leafOrder,
   subsetToString,
@@ -25,6 +27,8 @@ export interface EdgeSubsetPickerProps {
   readonly subset: readonly number[];
   /** Carries each class's strand count, which can change a tile's parity. */
   readonly contracts?: EdgeContracts;
+  /** Set a class's strand count; shows ▲ / ▼ on the selected chips. */
+  onStrandCountChange?(major: number, count: number): void;
   onSubsetChange(subset: readonly number[]): void;
   onToggleMajor?(major: number): void;
   onHoverMajor?(major: number | null): void;
@@ -39,6 +43,7 @@ export function EdgeSubsetPicker(props: EdgeSubsetPickerProps): JSX.Element {
     family,
     subset,
     contracts,
+    onStrandCountChange,
     onSubsetChange,
     onToggleMajor,
     onHoverMajor,
@@ -56,6 +61,11 @@ export function EdgeSubsetPicker(props: EdgeSubsetPickerProps): JSX.Element {
   const oddTypes = useMemo(
     () => leafOrder(family).filter((t) => connectionCount(family, t, selectedSet, contracts) % 2 !== 0),
     [family, selectedSet, contracts],
+  );
+
+  const strands = useMemo(
+    () => Object.fromEntries(subset.map((m) => [m, strandCount(contracts, m)])),
+    [subset, contracts],
   );
 
   const counts = useMemo(() => {
@@ -96,6 +106,9 @@ export function EdgeSubsetPicker(props: EdgeSubsetPickerProps): JSX.Element {
           selected={selectedSet}
           highlight={highlightMajors}
           counts={counts}
+          strands={strands}
+          onStrands={onStrandCountChange}
+          maxStrands={MAX_STRANDS}
           legend="Classes"
           onToggle={(major) =>
             onToggleMajor
