@@ -107,8 +107,13 @@ describe('CentreMapPage', () => {
     // The patch shows everything overlaid, or one pairing at a time; arrows flick through, round again.
     const shown = () => screen.getByTestId('centremap-overlay-label').textContent;
     expect(shown()).toBe('all 270');
+    const chords = () => [...screen.getByTestId('centremap-tiles').querySelectorAll('line')].map((l) => l.textContent);
+    const allChords = chords().length;
     fireEvent.keyDown(window, { key: 'ArrowRight' });
     expect(shown()).toMatch(/^1 \/ 270 · \d+ · [0-9a-z]{10}$/);
+    // The tiles follow: only that pairing's chords, each drawn by 1 of 1.
+    expect(chords().length).toBeLessThan(allChords);
+    expect(chords().every((t) => t === '1 of 1')).toBe(true);
     fireEvent.keyDown(window, { key: 'ArrowLeft' });
     fireEvent.keyDown(window, { key: 'ArrowLeft' });
     expect(shown()).toMatch(/^270 \/ 270 · /);
