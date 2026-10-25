@@ -60,6 +60,21 @@ python3 export-site.py
 npx --yes tsx render-cli.ts spectre 2578 6 900 out 0100101100
 ```
 
+## Placements
+
+Which combinations put their circuits in the same places, and why. Write-up in
+[`docs/PLACEMENTS.md`](../../docs/PLACEMENTS.md).
+
+- `placement-maps.ts` draws every combination of a family on one level-L
+  patch and writes, per tile, the longest circuit through it, so combinations
+  can be compared tile by tile.
+- `circuit-sites.ts` tallies each big circuit by the smallest supertile that
+  contains it and the children it passes through.
+- `routing-orbit.ts` runs the FASS routing operator
+  (`../fass-theorem/03-strands.ts`) for any combination, carrying arc lengths,
+  and lists every circuit born at each level (exact; hexagons only for now).
+- `placements.py` makes the tables and figures from the outputs of the three.
+
 ## Decomposition
 
 A crossing's position depends only on its seam, not on the rule. So when a
