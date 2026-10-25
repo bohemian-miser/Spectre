@@ -26,6 +26,7 @@ import {
   type TileFamilyId,
 } from '../core';
 import { JoinPicker } from '../components/JoinPicker';
+import { PanZoom } from '../components/PanZoom';
 import { usePrefersDark } from '../hooks/usePrefersDark';
 import { createCentreMapClient } from '../workers/centreMapClient';
 import type { CentreMapPhase, CentreMapResult } from '../workers/centreMapJobs';
@@ -40,6 +41,7 @@ const LEVELS = [4, 5] as const;
 /** The all-edges rule has hundreds of thousands of pairings; everything else is enumerated. */
 const MAX_PER_RULE = 2000;
 const PLOT = 520;
+const PLOT_BOX = { min: { x: 0, y: 0 }, max: { x: PLOT, y: PLOT } };
 const THUMB = 160;
 const NEAREST = 8;
 
@@ -492,28 +494,39 @@ function Scatter(props: {
   }, [matches, n]);
   return (
     <div className="centremap-scatter">
-      <svg viewBox={`0 0 ${PLOT} ${PLOT}`} data-testid="centremap-umap" onMouseLeave={() => onHover(null)}>
-        {order.map((i) => {
-          const on = !matches || matches[i];
+      <PanZoom className="centremap-zoom" fitBounds={PLOT_BOX} padding={0} maxScale={60} showControls ariaLabel="UMAP: wheel or pinch to zoom, drag to pan">
+        {(api) => {
+          const k = api.camera.scale || 1;
           return (
-            <circle
-              key={i}
-              cx={pts[i].x}
-              cy={pts[i].y}
-              r={i === selected ? 7 : on && matches ? 5.5 : 4.5}
-              fill={colourOf(i)}
-              opacity={on ? 0.9 : 0.12}
-              stroke={i === selected || i === hover ? 'var(--text)' : 'none'}
-              strokeWidth={1.5}
-              data-index={i}
-              onMouseEnter={() => onHover(i)}
-              onClick={() => onPick(i)}
-            >
-              <title>{label(i)}</title>
-            </circle>
+            <svg data-testid="centremap-umap" onMouseLeave={() => onHover(null)}>
+              <g transform={`translate(${api.camera.x} ${api.camera.y}) scale(${k})`}>
+                {order.map((i) => {
+                  const on = !matches || matches[i];
+                  // Radii and strokes in screen pixels, whatever the zoom.
+                  return (
+                    <circle
+                      key={i}
+                      cx={pts[i].x}
+                      cy={pts[i].y}
+                      r={(i === selected ? 7 : on && matches ? 5.5 : 4.5) / k}
+                      fill={colourOf(i)}
+                      opacity={on ? 0.9 : 0.12}
+                      stroke={i === selected || i === hover ? 'var(--text)' : 'none'}
+                      strokeWidth={1.5 / k}
+                      data-index={i}
+                      data-panzoom-ignore=""
+                      onMouseEnter={() => onHover(i)}
+                      onClick={() => onPick(i)}
+                    >
+                      <title>{label(i)}</title>
+                    </circle>
+                  );
+                })}
+              </g>
+            </svg>
           );
-        })}
-      </svg>
+        }}
+      </PanZoom>
       <p className="mono centremap-hover" data-testid="centremap-hover">
         {hover !== null ? label(hover) : ' '}
       </p>
@@ -564,31 +577,50 @@ function Heatmap(props: {
     }
     ctx.putImageData(img, 0, 0);
   }, [matrix, n, rows, cols, matches]);
-  const cell = (e: React.MouseEvent<HTMLCanvasElement>): [number, number] | null => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    if (!rect.width) return null;
-    const c = Math.floor(((e.clientX - rect.left) / rect.width) * n);
-    const r = Math.floor(((e.clientY - rect.top) / rect.height) * n);
+  // The canvas is scaled and moved by the camera, so its on-screen box is
+  // where the cells are.
+  const cell = (clientX: number, clientY: number): [number, number] | null => {
+    const rect = canvas.current?.getBoundingClientRect();
+    if (!rect?.width) return null;
+    const c = Math.floor(((clientX - rect.left) / rect.width) * n);
+    const r = Math.floor(((clientY - rect.top) / rect.height) * n);
     return r >= 0 && c >= 0 && r < n && c < n ? [rows[r], cols[c]] : null;
   };
+  const box = useMemo(() => ({ min: { x: 0, y: 0 }, max: { x: n, y: n } }), [n]);
+  // A press that moved is a pan, not a pick.
+  const pressed = useRef<{ x: number; y: number } | null>(null);
   return (
-    <div className="centremap-heat">
-      <canvas
-        ref={canvas}
-        width={n}
-        height={n}
-        data-testid="centremap-heatmap"
-        onMouseMove={(e) => setHover(cell(e))}
-        onMouseLeave={() => setHover(null)}
-        onClick={(e) => {
-          const hit = cell(e);
-          if (hit) onPick(hit[0]);
-        }}
-      />
+    <div
+      className="centremap-heat"
+      onPointerDownCapture={(e) => (pressed.current = { x: e.clientX, y: e.clientY })}
+      onMouseMove={(e) => setHover(cell(e.clientX, e.clientY))}
+      onMouseLeave={() => setHover(null)}
+      onClick={(e) => {
+        const p = pressed.current;
+        if (p && Math.hypot(e.clientX - p.x, e.clientY - p.y) > 4) return;
+        const hit = cell(e.clientX, e.clientY);
+        if (hit) onPick(hit[0]);
+      }}
+    >
+      <PanZoom className="centremap-zoom" fitBounds={box} fitKey={String(n)} padding={0} maxScale={400} showControls ariaLabel="Heatmap: wheel or pinch to zoom, drag to pan">
+        {(api) => (
+          <canvas
+            ref={canvas}
+            width={n}
+            height={n}
+            data-testid="centremap-heatmap"
+            style={{
+              width: n,
+              height: n,
+              transform: `translate(${api.camera.x}px, ${api.camera.y}px) scale(${api.camera.scale})`,
+            }}
+          />
+        )}
+      </PanZoom>
       <p className="muted centremap-note">
         {hover
           ? `${label(hover[0])} → ${label(hover[1])}: ${matrix[hover[0] * n + hover[1]].toFixed(2)} tiles`
-          : 'Row A, column B: how far A’s centres are from B’s, bright = near. Rows and columns each in the order chosen above; click a row to pick it.'}
+          : 'Row A, column B: how far A’s centres are from B’s, bright = near. Rows and columns each in the order chosen above. Wheel or pinch to zoom, drag to pan; click a row to pick it.'}
       </p>
     </div>
   );
