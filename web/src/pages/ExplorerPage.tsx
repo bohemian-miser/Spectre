@@ -64,6 +64,7 @@ import {
   DisplayToggles,
   InfoTip,
   PanZoom,
+  QuickBar,
   SeamContractControls,
   SharePanel,
   StrandRuleControls,
@@ -1643,7 +1644,10 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
         ) : null}
       </aside>
 
-      <div className="explorer-viewport" ref={viewportRef}>
+      <div className="explorer-viewport">
+        {/* The field holds the canvas and everything drawn over it; the quick
+            bar sits under it, so the bar never covers the tiling. */}
+        <div className="explorer-field" ref={viewportRef}>
         {infinite ? (
           <InfiniteCanvas
             key={drawFamily}
@@ -1872,6 +1876,24 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
             : `${state.rootTile} · level ${state.level} · ${tileCount.toLocaleString()} tiles`}
           {state.subset.length ? ` · rule ${state.subset.join('')}` : ' · no edge rule'}
         </div>
+        </div>
+
+        <QuickBar
+          family={family}
+          subset={state.subset}
+          matching={state.matching}
+          contracts={state.contracts}
+          nonCrossingOnly={nonCrossingOnly}
+          curvedStrands={curvedStrands}
+          onToggleMajor={(major) => dispatch({ type: 'toggleMajor', major })}
+          onSubsetChange={(subset) => dispatch({ type: 'setSubset', subset })}
+          onStrands={(major, count) => dispatch({ type: 'setStrandCount', major, count })}
+          onMatchingVectorChange={(matching) => dispatch({ type: 'setMatchingVector', matching })}
+          onCycleTile={(tileType, delta) =>
+            dispatch({ type: 'cycleMatching', tileType, delta, nonCrossingOnly })
+          }
+          onOpenTile={setEditingTile}
+        />
       </div>
     </div>
   );

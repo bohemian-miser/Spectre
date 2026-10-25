@@ -570,9 +570,12 @@ export function TransitionGraph(props: TransitionGraphProps): JSX.Element | null
         ) : null}
       </div>
 
+      {/* Over the ranked list the picked run's line keeps its room even with
+          nothing picked: if hovering a row made it appear, the rows would
+          shift under the pointer and the hover would flicker on and off. */}
       {active ? (
         <div
-          className="tg-pinned"
+          className={ranked ? 'tg-pinned is-reserved' : 'tg-pinned'}
           data-testid="transition-picked"
           data-pinned={pinned ? '1' : '0'}
         >
@@ -606,6 +609,8 @@ export function TransitionGraph(props: TransitionGraphProps): JSX.Element | null
             </div>
           ) : null}
         </div>
+      ) : ranked ? (
+        <div className="tg-pinned is-reserved" aria-hidden="true" />
       ) : null}
 
       {ranked ? (

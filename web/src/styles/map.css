@@ -456,6 +456,9 @@
   font-size: 10px;
   color: #e7ecf6;
 }
+.tg-pinned.is-reserved {
+  min-height: 36px;
+}
 .tg-pinned-top {
   display: flex;
   align-items: baseline;

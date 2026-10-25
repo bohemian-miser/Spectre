@@ -21,7 +21,8 @@
 }
 
 .explorer-viewport {
-  position: relative;
+  display: flex;
+  flex-direction: column;
   /* Deterministic height (mirrors the sidebar): the viewport must never
      size itself from its own canvas, or resize feedback loops the layout. */
   height: calc(100dvh - var(--site-header-h));
@@ -33,6 +34,14 @@
 }
 .explorer-viewport .panzoom {
   height: 100%;
+}
+/* The canvas and everything drawn over it; the quick bar sits underneath. Its
+   height comes from the viewport (minus the bar), never from the canvas. */
+.explorer-field {
+  position: relative;
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: hidden;
 }
 
 /* Infinite mode: the map's viewport, re-fitted into the explorer's own
@@ -103,7 +112,8 @@
   }
   .explorer-viewport {
     order: 1;
-    height: 60vh;
+    height: calc(100dvh - var(--site-header-h));
+    min-height: 480px;
   }
 }
 
@@ -350,4 +360,257 @@
   width: 10px;
   height: 10px;
   border-radius: 50%;
+}
+
+/* --- Quick bar (ported from aperiodic-circuits) -------------------------- */
+
+.quick {
+  flex-shrink: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  padding: 6px 8px;
+  border-top: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.quick-combo {
+  flex: 1 1 100%;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.quick-combo button {
+  flex: 0 1 160px;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  font-size: 15px;
+}
+.quick-combo button[aria-label] {
+  flex: 0 0 auto;
+  padding-left: 14px;
+  padding-right: 14px;
+}
+.quick-count {
+  min-width: 48px;
+  white-space: nowrap;
+  text-align: center;
+  font-size: 10.5px;
+  line-height: 1.15;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.quick-count b {
+  font-size: 13px;
+  color: var(--text);
+}
+
+.quick-edges,
+.quick-basis {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+}
+.quick-label {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.quick-dot {
+  flex-shrink: 0;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+.quick-dot.good {
+  background: var(--ok);
+}
+.quick-dot.bad {
+  background: var(--danger);
+}
+.quick-toggle,
+.quick-size {
+  flex-shrink: 0;
+  padding: 1px 7px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.quick-toggle.on {
+  border-color: var(--text);
+  background: var(--text);
+  color: var(--panel);
+}
+.quick-size .short {
+  display: none;
+}
+
+/* Class chips: ringed in the class colour, filled when on. */
+.quick {
+  --chip: var(--muted);
+}
+.quick .chip {
+  min-width: 28px;
+  padding: 1px 7px;
+  border: 2px solid var(--chip);
+  border-radius: 999px;
+  background: transparent;
+  font-family: var(--mono);
+  font-weight: 600;
+}
+.quick .chip.on {
+  background: var(--chip);
+  /* The class colours are pastel: dark ink reads on all of them. */
+  color: #1d2430;
+}
+.quick .chip small {
+  margin-left: 2px;
+  font-size: 10px;
+  opacity: 0.7;
+}
+.quick .chip.plain {
+  border-width: 1px;
+  border-color: var(--line);
+  font-size: 12px;
+}
+.quick .chip.plain.on {
+  border-color: var(--text);
+  background: var(--text);
+  color: var(--panel);
+}
+.quick-basis-count {
+  font-size: 11px;
+}
+
+/* A selected class wears its strands-per-edge button on its right. */
+.quick-class {
+  display: inline-flex;
+  align-items: center;
+}
+.quick-class.is-on .chip {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.quick-strands {
+  padding: 1px 5px;
+  border: 2px solid var(--chip);
+  border-left: none;
+  border-radius: 0 999px 999px 0;
+  background: var(--panel);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+}
+.quick-strands.is-multi {
+  color: var(--text);
+  background: color-mix(in srgb, var(--chip) 22%, var(--panel));
+}
+
+.quick-tiles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  max-width: 100%;
+}
+.quick-tile {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  width: 58px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+  font: inherit;
+  color: inherit;
+}
+.quick-tiles.small .quick-tile {
+  width: 37px;
+}
+/* A small tile with only one pairing has nothing to step: not a fault. */
+.quick-tile:disabled {
+  opacity: 1;
+  cursor: default;
+}
+.quick-tile.lines,
+.quick-tile.varies,
+.quick-tile.odd {
+  border-width: 1.5px;
+}
+.quick-tile.lines {
+  border-color: var(--muted);
+}
+.quick-tile.varies {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 9%, var(--bg));
+}
+.quick-tile.odd {
+  border-color: var(--danger);
+}
+.quick-tile-name {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--text);
+  opacity: 0.45;
+  pointer-events: none;
+}
+.quick-tile-ctl {
+  position: absolute;
+  bottom: 0;
+  right: 2px;
+  font-size: 9.5px;
+  line-height: 12px;
+  font-weight: 700;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+.quick-tile.odd .quick-tile-ctl {
+  color: var(--danger);
+}
+.quick-tiles.small .quick-tile-name {
+  font-size: 7px;
+}
+.quick-tiles.small .quick-tile-ctl {
+  font-size: 8.5px;
+  line-height: 10px;
+  right: 1px;
+}
+
+.tile-glyph-body {
+  fill: var(--panel);
+  stroke: var(--muted);
+}
+.tile-glyph-chord {
+  stroke: var(--text);
+}
+.tile-glyph-dot {
+  fill: var(--text);
+}
+.tile-glyph-dot.is-odd {
+  fill: var(--danger);
+}
+
+@media (max-width: 900px) {
+  .quick-label,
+  .quick-size .long {
+    display: none;
+  }
+  .quick-size .short {
+    display: inline;
+  }
+  .quick-combo button {
+    flex: 1;
+  }
 }
