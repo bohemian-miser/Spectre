@@ -17,6 +17,10 @@ on:
         description: Supertile level
         default: '5'
         type: string
+      reuse_run:
+        description: Lay out the shards of an earlier run (its run id) instead of sweeping again
+        default: ''
+        type: string
 
 permissions:
   contents: read
@@ -24,6 +28,7 @@ permissions:
 jobs:
   sweep:
     name: Sweep ${{ matrix.job }}
+    if: inputs.reuse_run == ''
     runs-on: ubuntu-latest
     timeout-minutes: 120
     strategy:
@@ -73,10 +78,13 @@ jobs:
   embed:
     name: Lay out and commit
     needs: sweep
+    # Runs after a sweep, or alone on an earlier run's shards.
+    if: always() && (needs.sweep.result == 'success' || (needs.sweep.result == 'skipped' && inputs.reuse_run != ''))
     runs-on: ubuntu-latest
     timeout-minutes: 340
     permissions:
       contents: write
+      actions: read
     steps:
       - uses: actions/checkout@v4
 
@@ -85,6 +93,8 @@ jobs:
           pattern: centremap-shards-*
           path: shards
           merge-multiple: true
+          run-id: ${{ inputs.reuse_run || github.run_id }}
+          github-token: ${{ github.token }}
 
       - uses: actions/setup-python@v5
         with:

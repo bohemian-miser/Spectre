@@ -8,7 +8,9 @@ order), then:
   1. drops duplicate rows (pairings whose distances to every landmark are the
      same lay out on one spot anyway),
   2. reduces the distinct rows to 50 dimensions (incremental PCA, in batches),
-  3. runs UMAP on them (2-D),
+  3. runs UMAP on them (2-D): fitted on a seeded sample of CENTREMAP_FIT rows
+     (default 200000) and the rest placed with transform, which a hosted
+     runner's memory can take,
 and writes to outDir:
   meta.json     the plan, how many distinct rows, the layout's bounds
   xy.i16        per pairing, x and y scaled to int16 over the bounds
@@ -56,8 +58,23 @@ reduced = np.concatenate([pca.transform(unique[i:i + 50000].astype(np.float32)) 
 del unique
 print(f'PCA to {dims} dims ({pca.explained_variance_ratio_.sum():.1%} of the variance) after {time.time() - t0:.0f}s', flush=True)
 
+# UMAP on every distinct row runs a hosted runner out of memory (1.5M rows for
+# hexagons at level 5), so it is fitted on a seeded sample and the rest are
+# placed into that layout with transform, in batches.
+fit_n = min(U, int(os.environ.get('CENTREMAP_FIT', '200000')))
 if U > 3:
-    xy_u = umap.UMAP(n_components=2, n_neighbors=min(15, U - 1), min_dist=0.1, low_memory=True, verbose=True).fit_transform(reduced)
+    rng = np.random.default_rng(20261025)
+    fit_idx = np.sort(rng.choice(U, fit_n, replace=False)) if fit_n < U else np.arange(U)
+    model = umap.UMAP(n_components=2, n_neighbors=min(15, fit_n - 1), min_dist=0.1, init='pca', low_memory=True, verbose=True)
+    xy_u = np.empty((U, 2), dtype=np.float32)
+    xy_u[fit_idx] = model.fit_transform(reduced[fit_idx])
+    print(f'UMAP fitted on {fit_n} rows after {time.time() - t0:.0f}s', flush=True)
+    rest = np.setdiff1d(np.arange(U), fit_idx)
+    batch = 100000
+    for i in range(0, rest.size, batch):
+        ids = rest[i:i + batch]
+        xy_u[ids] = model.transform(reduced[ids])
+        print(f'placed {min(i + batch, rest.size)} / {rest.size} more after {time.time() - t0:.0f}s', flush=True)
 else:
     xy_u = np.zeros((U, 2), dtype=np.float32)
 print(f'UMAP done after {time.time() - t0:.0f}s', flush=True)
@@ -78,6 +95,7 @@ meta.update(
     bounds=dict(min=[float(lo[0]), float(lo[1])], max=[float(hi[0]), float(hi[1])]),
     files=dict(xy='xy.i16', longest='longest.u16'),
     pca=dict(dims=int(dims), variance=float(pca.explained_variance_ratio_.sum())),
+    umap=dict(fitted=int(fit_n), placed=int(U - fit_n)),
     generated=time.strftime('%Y-%m-%d', time.gmtime()),
 )
 json.dump(meta, open(os.path.join(out_dir, 'meta.json'), 'w'), indent=1)
