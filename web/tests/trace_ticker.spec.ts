@@ -25,8 +25,9 @@ async function chase(page: import('@playwright/test').Page, hash: string): Promi
 test('names the tiles a chase crosses, in their own colours', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
-  // fp=8 paces the walk so the ticker is watchable rather than a blur.
-  await chase(page, `#/explorer?v=1&md=infinite&${RULE}&fp=8`);
+  // fp=8 paces the walk so the ticker is watchable rather than a blur; tk=1
+  // switches the ticker on, which a bare link leaves off.
+  await chase(page, `#/explorer?v=1&md=infinite&${RULE}&fp=8&tk=1`);
 
   const ticker = page.getByTestId('trace-ticker');
   await expect(ticker).toBeVisible();
@@ -48,7 +49,7 @@ test('names the tiles a chase crosses, in their own colours', async ({ page }) =
 });
 
 test('grows as the chase runs, and goes away when the strand is cleared', async ({ page }) => {
-  await chase(page, `#/explorer?v=1&md=infinite&${RULE}&fp=6`);
+  await chase(page, `#/explorer?v=1&md=infinite&${RULE}&fp=6&tk=1`);
   const chips = page.getByTestId('trace-ticker').locator('.trace-tile');
   const first = await chips.count();
   await page.waitForTimeout(2500);

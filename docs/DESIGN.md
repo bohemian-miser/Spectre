@@ -1008,7 +1008,7 @@ export type Chord = readonly [metaEdgeIdxA: number, metaEdgeIdxB: number];
 | `e` | edge subset | concatenated sorted majors, e.g. `2578`; empty = none | none |
 | `c` | **combination string** (preferred) | one base-36 digit per leaf in `leafOrder(family)` order (10 chars spectre/hat/turtle, 9 hex), digit = index into that tile's *non-crossing* matchings — byte-compatible with the blog/notebook/CSV combo format (`e=2578&c=0100101100` ≡ canonical `2578-0100101100`) | all `0` |
 | `m` | matching indices (fallback) | dot-separated non-negative ints in `leafOrder(family)` order, indexing the *full* matching enumeration; trailing zeros trimmed. Emitted only when the state is not `c`-representable (a selected matching is crossing, or its non-crossing index ≥ 36) | all `0` |
-| `fl` | display flags | decimal bitmask: 1 backgrounds, 2 outlines, 4 circuit lines, 8 dots, 16 rainbow tails, 32 edge labels, 64 curvy, 128 non-crossing-only | `23` (bg+outline+lines+rainbow) |
+| `fl` | display flags | decimal bitmask: 1 backgrounds, 2 outlines, 4 circuit lines, 8 dots, 16 rainbow tails, 32 edge labels, 64 curvy, 128 non-crossing-only | `135` (bg+outline+lines+non-crossing-only) on page load; links from other pages write `134` (the same without backgrounds) |
 | `cs` | color scheme | `bright\|fig53\|mystics\|pride\|custom` | `bright` |
 | `cc` | custom colors | only with `cs=custom`: `Tile:rrggbb` comma list, e.g. `cc=Delta:dcdcdc,Xi:fff200` | — |
 | `ct` | edge contracts | `;`-separated `major:minor@t` overrides of DEFAULT_CONTRACTS, t 2-decimal, e.g. `ct=2:2@0.60;5:1@0.40`; class 0 entries must be symmetric (§3.3) else dropped | none |

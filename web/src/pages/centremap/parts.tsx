@@ -7,7 +7,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  DEFAULT_EXPLORER_STATE,
+  DEFAULT_LINK_STATE,
   comboToMatchingIndices,
   encodeExplorerState,
   leafOrder,
@@ -37,7 +37,7 @@ export interface Item {
 
 export function explorerHref(family: TileFamilyId, subset: readonly number[], combo: string, level: number): string {
   const q = encodeExplorerState({
-    ...DEFAULT_EXPLORER_STATE,
+    ...DEFAULT_LINK_STATE,
     family,
     rootTile: 'Delta',
     level,

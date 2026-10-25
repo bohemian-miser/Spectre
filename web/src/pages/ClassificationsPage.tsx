@@ -14,7 +14,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  DEFAULT_EXPLORER_STATE,
+  DEFAULT_LINK_STATE,
   comboDigitChar,
   comboToMatchingIndices,
   decomposeCombo,
@@ -115,7 +115,7 @@ function explorerHref(base: string, family: TileFamilyId, rule: string, combo: s
   const subset = ruleSubset(rule);
   return `${normalizeBase(base)}${stateToHash(
     {
-      ...DEFAULT_EXPLORER_STATE,
+      ...DEFAULT_LINK_STATE,
       family,
       level,
       subset,

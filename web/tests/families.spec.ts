@@ -65,7 +65,7 @@ test("the Explorer's infinite mode accepts every family", async ({ page }) => {
 test('a hex chase names hexagon tiles in the ticker', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   // {2,5,8} pairs every hex leaf (no empty types), so any tap lands near ink.
-  await page.goto('#/explorer?v=1&f=hex&md=infinite&e=258&fp=8');
+  await page.goto('#/explorer?v=1&f=hex&md=infinite&e=258&fp=8&tk=1');
   await expect(page.getByTestId('inf-instances')).not.toHaveText('0 instances', {
     timeout: 30000,
   });

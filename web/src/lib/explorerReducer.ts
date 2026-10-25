@@ -294,15 +294,14 @@ export function explorerReducer(state: ExplorerState, action: ExplorerAction): E
       return { ...state, persistFound: false };
     }
 
-    // Default-ON, like the keep toggles: the ticker predates its own switch,
-    // so an omitted param has to keep meaning "showing".
+    // Default-OFF: a link says `tk=1` to show the ticker and nothing to hide it.
     case 'setShowTicker': {
       if (action.showTicker === explorerShowTicker(state)) return state;
-      if (action.showTicker) {
+      if (!action.showTicker) {
         const { showTicker: _t, ...rest } = state;
         return rest as ExplorerState;
       }
-      return { ...state, showTicker: false };
+      return { ...state, showTicker: true };
     }
 
     // Default-OFF: a hundred edges over the tiling is opt-in.
@@ -608,9 +607,9 @@ export function explorerPersistFound(state: ExplorerState): boolean {
   return state.persistFound !== false;
 }
 
-/** Ticker naming the tiles a chase crosses — ON unless `tk=0` says otherwise. */
+/** Ticker naming the tiles a chase crosses — OFF unless `tk=1` says otherwise. */
 export function explorerShowTicker(state: ExplorerState): boolean {
-  return state.showTicker !== false;
+  return state.showTicker === true;
 }
 
 /** Tiles find-all may analyse in one pass, and where circuit zoom parks. */
