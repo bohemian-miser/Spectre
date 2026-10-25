@@ -214,3 +214,15 @@ period) gives a dimension D = ln(growth) / ln(4 + sqrt 15): for hexagon rule
 023468 most classes give D = 1.45 (fractal curves), and 111000100's family
 and 020001001 give D = 2.0 (space-filling circuits, born at even levels from
 level 6, straddling child slots 0 and 7).
+
+## Circuit shapes
+
+`circuit-shapes.ts` is the renormalisation with every arc's route through
+its children kept, so a single born circuit can be expanded on its own, to
+any level of detail, without building the patch around it:
+
+    npx tsx circuit-classes/circuit-shapes.ts hex 023468 111000100 10 Delta out.json 3
+
+writes the largest circuits born in a level-10 Delta (1.4 million tiles for
+this pairing) as closed polylines in the supertile's frame, each level-3 arc
+drawn as a chord. Drawn to level 0 a circuit has exactly one point per tile.
