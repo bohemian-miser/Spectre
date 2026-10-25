@@ -148,6 +148,7 @@ export function createCanvas2dRenderer(
   let lineCss = cssRgba(DEFAULT_LINE_COLOR);
   let lineScale = 1;
   let trailScale = DEFAULT_TRAIL_SCALE;
+  let hideStrands = false;
   let trail: TrailGeometry | null = null;
   let circuits: readonly TrailGeometry[] = [];
   let highlights: readonly TrailGeometry[] = [];
@@ -203,6 +204,7 @@ export function createCanvas2dRenderer(
     showOutlines = style?.showOutlines ?? true;
     lineCss = cssRgba(style?.lineColor ?? DEFAULT_LINE_COLOR);
     lineScale = style?.lineScale ?? 1;
+    hideStrands = style?.hideStrands ?? false;
     trailScale = style?.trailScale ?? DEFAULT_TRAIL_SCALE;
   };
 
@@ -301,7 +303,7 @@ export function createCanvas2dRenderer(
       }
 
       // Strand lines — leaf cuts only, same rule as the WebGL2 path.
-      if (!aggregate && chordPaths) {
+      if (!aggregate && chordPaths && !hideStrands) {
         // The instance transform carries the camera scale, so a constant width
         // here would be world units and would thin out on zoom-out. Dividing
         // by the scale pins it to CSS px, matching the WebGL2 path.
@@ -356,14 +358,14 @@ export function createCanvas2dRenderer(
     // back. Circuits first so the live trail stays on top.
     let trailPoints = 0;
     C.setTransform(1, 0, 0, 1, 0, 0);
-    for (const c of circuits) {
+    for (const c of hideStrands ? [] : circuits) {
       trailPoints += strokeTrail(C, c, cam, bw, bh, dpr, BASE_LINE_PX * lineScale * trailScale);
     }
-    if (trail) {
+    if (trail && !hideStrands) {
       trailPoints += strokeTrail(C, trail, cam, bw, bh, dpr, BASE_LINE_PX * lineScale * trailScale);
     }
     // Last, and wider: a highlight sits ON the line it points at.
-    for (const h of highlights) {
+    for (const h of hideStrands ? [] : highlights) {
       trailPoints += strokeTrail(
         C,
         h,

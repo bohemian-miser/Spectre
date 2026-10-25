@@ -494,6 +494,17 @@ describe('ExplorerPage — infinite mode', () => {
     for (const d of dots) expect(d.getAttribute('fill')).toBe(strokeOf.get(d.getAttribute('data-length')));
   });
 
+  it('keeps the circuit centres when the circuit lines are turned off', () => {
+    window.history.replaceState(null, '', '/#/explorer?v=1&f=hex&lv=2&e=15');
+    const { container, getByLabelText } = render(<ExplorerPage />);
+    fireEvent.click(getByLabelText('Circuit centres'));
+    const n = container.querySelectorAll('.circuit-centre').length;
+    expect(n).toBeGreaterThan(0);
+    fireEvent.click(getByLabelText('Circuit lines'));
+    expect(container.querySelectorAll('.circuit-path')).toHaveLength(0);
+    expect(container.querySelectorAll('.circuit-centre')).toHaveLength(n);
+  });
+
   it('opens a tile in the big pairing editor, steps tiles, and closes on Escape', () => {
     window.history.replaceState(null, '', '/#/explorer?v=1&f=hex&lv=2&e=15');
     const { getByLabelText, getByTestId, queryByTestId } = render(<ExplorerPage />);

@@ -717,6 +717,7 @@ export function createWebGLRenderer(
   let lineColor = DEFAULT_LINE_COLOR;
   let lineScale = 1;
   let trailScale = DEFAULT_TRAIL_SCALE;
+  let hideStrands = false;
   let highlights: readonly TrailGeometry[] = [];
   const loc = (p: WebGLProgram, name: string): WebGLUniformLocation | null =>
     G.getUniformLocation(p, name);
@@ -873,6 +874,7 @@ export function createWebGLRenderer(
     showOutlines = style?.showOutlines ?? true;
     lineColor = style?.lineColor ?? DEFAULT_LINE_COLOR;
     lineScale = style?.lineScale ?? 1;
+    hideStrands = style?.hideStrands ?? false;
     trailScale = style?.trailScale ?? DEFAULT_TRAIL_SCALE;
   };
 
@@ -972,7 +974,7 @@ export function createWebGLRenderer(
 
           // Strand lines: leaf cuts only (see the module note). One extra
           // instanced call for every chord of every visible tile.
-          if (chordVerts > 0 && chordTex) {
+          if (chordVerts > 0 && chordTex && !hideStrands) {
             const halfPx = (BASE_LINE_PX * lineScale * dpr) / 2;
             const chordVertCount = linesPerTile() * 6;
 
@@ -1032,14 +1034,14 @@ export function createWebGLRenderer(
         drawCalls++;
         trailPoints += geom.pointCount;
       };
-      for (const geom of circuits) {
+      for (const geom of hideStrands ? [] : circuits) {
         const bufs = circuitBufs.get(geom);
         if (bufs) drawTrailPass(geom, bufs.vao);
       }
-      if (trail && trail.pointCount >= 2) drawTrailPass(trail, vaoTrail);
+      if (trail && trail.pointCount >= 2 && !hideStrands) drawTrailPass(trail, vaoTrail);
       // Highlights last and wider — they lie ON the line they point at, so
       // underneath at the same width they would be drawn over exactly.
-      for (const geom of highlights) {
+      for (const geom of hideStrands ? [] : highlights) {
         const bufs = circuitBufs.get(geom);
         if (bufs) drawTrailPass(geom, bufs.vao, HIGHLIGHT_WIDTH);
       }

@@ -45,6 +45,8 @@ export interface TrailGeometry {
   readonly version: number;
   /** A found circuit's length in tiles crossed, for the page's stats. */
   readonly tileLength?: number;
+  /** A kept circuit's centre (the average of its crossing points), when known. */
+  readonly centre?: Pt;
 }
 
 /**
@@ -107,6 +109,12 @@ export interface MapRenderStyle {
    * enough to cover the ink underneath without hiding its neighbours).
    */
   readonly trailScale?: number;
+  /**
+   * Draw no strands at all — no chord lines, traced strand, kept or found
+   * circuits — while still walking and finding them (the Explorer's circuit
+   * centres with circuit lines off).
+   */
+  readonly hideStrands?: boolean;
 }
 
 export interface MapRenderStats {

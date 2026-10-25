@@ -60,8 +60,8 @@ export interface TilingCanvasProps {
   readonly highlightLengths?: ReadonlySet<number> | null;
   /** Dim every path but these circuits (indices into `circuits`), when given. */
   readonly highlightCircuits?: ReadonlySet<number> | null;
-  /** Draw a dot at each circuit's centre (see `CentreLayer`). */
-  readonly showCentres?: boolean;
+  /** Draw a dot at each of these circuits' centres (see `CentreLayer`), whether or not `circuits` are drawn. */
+  readonly centreCircuits?: readonly Path[];
   /** Multiplies every centre dot's radius. */
   readonly centreScale?: number;
   /** Strand stroke width, world units (matches `CircuitLayer`). */
@@ -121,7 +121,7 @@ export function TilingCanvas(props: TilingCanvasProps): JSX.Element {
     rainbowTails = false,
     highlightLengths = null,
     highlightCircuits = null,
-    showCentres = false,
+    centreCircuits,
     centreScale = 1,
     strokeWidth = 0.12,
     regionFill = null,
@@ -150,8 +150,8 @@ export function TilingCanvas(props: TilingCanvasProps): JSX.Element {
   );
 
   const centres = useMemo(
-    () => (showCentres && circuits ? buildCentreDots(circuits, circuitColorByLength) : []),
-    [showCentres, circuits, circuitColorByLength],
+    () => (centreCircuits ? buildCentreDots(centreCircuits, circuitColorByLength) : []),
+    [centreCircuits, circuitColorByLength],
   );
 
   /**
