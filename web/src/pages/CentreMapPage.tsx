@@ -12,6 +12,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   DEFAULT_EXPLORER_STATE,
   clusterBySimilarity,
@@ -28,6 +29,7 @@ import {
 import { JoinPicker } from '../components/JoinPicker';
 import { PanZoom } from '../components/PanZoom';
 import { usePrefersDark } from '../hooks/usePrefersDark';
+import { CENTRE_MAP_TTL_MS, centreMapKey, loadCentreMap, saveCentreMap } from '../lib/centreMapCache';
 import { createCentreMapClient } from '../workers/centreMapClient';
 import type { CentreMapPhase, CentreMapResult } from '../workers/centreMapJobs';
 import { createFaultLinesClient, type FaultLinesClient } from '../workers/faultLinesClient';
@@ -42,7 +44,9 @@ const LEVELS = [4, 5] as const;
 const MAX_PER_RULE = 2000;
 const PLOT = 520;
 const PLOT_BOX = { min: { x: 0, y: 0 }, max: { x: PLOT, y: PLOT } };
-const THUMB = 160;
+const THUMB = 240;
+/** The magnified view's render size, in pixels. */
+const BIG = 900;
 const NEAREST = 8;
 
 const RULE_HUES = [210, 20, 130, 280, 45, 330, 170, 0, 90, 250];
@@ -132,6 +136,8 @@ export default function CentreMapPage(): JSX.Element {
   const [joins, setJoins] = useState<readonly EdgeJoin[]>([]);
   const [hover, setHover] = useState<number | null>(null);
   const [selected, setSelected] = useState<number | null>(null);
+  /** The magnifier: which of [selected, ...nearest] it shows, and how. */
+  const [magnified, setMagnified] = useState<{ at: number; view: 'strands' | 'centres' } | null>(null);
   const client = useMemo(() => createCentreMapClient(), []);
   const thumbs = useMemo(() => createFaultLinesClient(), []);
   const cancelRef = useRef<(() => void) | null>(null);
@@ -159,20 +165,50 @@ export default function CentreMapPage(): JSX.Element {
     return { items, rules: used };
   }, [family]);
 
-  const start = () => {
+  // Saved surveys (30 days in localStorage): the same settings show at once.
+  const cacheKey = useMemo(
+    () => centreMapKey({ family, level, matchSizes, weightBySize, rules: plan.rules }),
+    [family, level, matchSizes, weightBySize, plan],
+  );
+  /** When the result on show was saved, if it came from (or went into) storage. */
+  const [savedAt, setSavedAt] = useState<number | null>(null);
+  const [resultKey, setResultKey] = useState<string | null>(null);
+  const loadSaved = (): boolean => {
+    const saved = loadCentreMap(cacheKey);
+    if (!saved || saved.counts.length !== plan.items.length) return false;
     cancelRef.current?.();
+    setProgress(null);
     setError(null);
+    setResult({ result: saved, items: plan.items, family });
+    setSavedAt(saved.savedAt);
+    setResultKey(cacheKey);
+    return true;
+  };
+  useEffect(() => {
+    if (resultKey !== cacheKey) loadSaved();
+    // Only a change of settings should look for a saved survey.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cacheKey]);
+
+  const start = (recompute = false) => {
     setSelected(null);
     setJoins([]);
+    if (!recompute && loadSaved()) return;
+    cancelRef.current?.();
+    setError(null);
     setProgress({ phase: 'centres', done: 0, total: plan.items.length });
     const items = plan.items;
     const fam = family;
+    const key = cacheKey;
     cancelRef.current = client.run(
       { family, level, rules: plan.rules, matchSizes, weightBySize },
       {
         onProgress: (phase, done, total) => setProgress({ phase, done, total }),
         onDone: (r) => {
           setResult({ result: r, items, family: fam });
+          setResultKey(key);
+          const now = Date.now();
+          setSavedAt(saveCentreMap(key, r, now) ? now : null);
           setProgress(null);
         },
         onError: (e) => {
@@ -285,7 +321,7 @@ export default function CentreMapPage(): JSX.Element {
             Stop
           </button>
         ) : (
-          <button type="button" className="primary" onClick={start} data-testid="centremap-start">
+          <button type="button" className="primary" onClick={() => start()} data-testid="centremap-start">
             Compare {plan.items.length.toLocaleString('en-US')} pairings
           </button>
         )}
@@ -293,6 +329,15 @@ export default function CentreMapPage(): JSX.Element {
           {progress ? `${PHASE_LABEL[progress.phase]}… ${progress.phase === 'layout' ? '' : `${progress.done} of ${progress.total}`}` : ''}
           {error ? `Failed: ${error}` : ''}
         </span>
+        {!progress && result && resultKey === cacheKey && savedAt !== null && (
+          <span className="muted" data-testid="centremap-saved">
+            Saved {new Date(savedAt).toLocaleDateString()}, kept until{' '}
+            {new Date(savedAt + CENTRE_MAP_TTL_MS).toLocaleDateString()} ·{' '}
+            <button type="button" className="link-button" onClick={() => start(true)} data-testid="centremap-recompute">
+              recompute
+            </button>
+          </span>
+        )}
       </div>
       <p className="muted centremap-note">
         Rules: {rules.join(', ')} — {plan.items.length.toLocaleString('en-US')} pairings, all of them non-crossing.
@@ -433,12 +478,23 @@ export default function CentreMapPage(): JSX.Element {
                 {groupOf[selected] >= 0 ? ` · group ${groupOf[selected] + 1}` : ''}.
               </p>
               <div className="centremap-thumbs">
-                <Thumb client={thumbs} family={result.family} level={result.result.level} item={result.items[selected]} dark={dark} view="strands" caption="strands" />
-                <Thumb client={thumbs} family={result.family} level={result.result.level} item={result.items[selected]} dark={dark} view="centres" caption="centres" />
+                {(['strands', 'centres'] as const).map((view) => (
+                  <Thumb
+                    key={view}
+                    client={thumbs}
+                    family={result.family}
+                    level={result.result.level}
+                    item={result.items[selected]}
+                    dark={dark}
+                    view={view}
+                    caption={view}
+                    onPick={() => setMagnified({ at: 0, view })}
+                  />
+                ))}
               </div>
               <h3>Closest (average of both directions)</h3>
               <div className="centremap-thumbs">
-                {nearest.map((b) => (
+                {nearest.map((b, k) => (
                   <Thumb
                     key={b}
                     client={thumbs}
@@ -448,10 +504,35 @@ export default function CentreMapPage(): JSX.Element {
                     dark={dark}
                     view="centres"
                     caption={`${label(b)} · ${dist(selected, b).toFixed(2)} / ${dist(b, selected).toFixed(2)}`}
-                    onPick={() => setSelected(b)}
+                    onPick={() => setMagnified({ at: k + 1, view: 'centres' })}
                   />
                 ))}
               </div>
+              {magnified && (
+                <Magnifier
+                  client={thumbs}
+                  family={result.family}
+                  level={result.result.level}
+                  dark={dark}
+                  list={[selected, ...nearest]}
+                  at={magnified.at}
+                  view={magnified.view}
+                  item={(i) => result.items[i]}
+                  label={label}
+                  note={(i) =>
+                    i === selected
+                      ? 'the selected pairing'
+                      : `${dist(selected, i).toFixed(2)} tiles from it, ${dist(i, selected).toFixed(2)} back`
+                  }
+                  href={(i) => explorerHref(result.family, result.items[i].subset, result.items[i].combo, Math.min(result.result.level, 5))}
+                  onMove={(at, view) => setMagnified({ at, view })}
+                  onSelect={(i) => {
+                    setMagnified(null);
+                    setSelected(i);
+                  }}
+                  onClose={() => setMagnified(null)}
+                />
+              )}
             </section>
           )}
         </>
@@ -635,21 +716,22 @@ function Thumb(props: {
   view: 'strands' | 'centres';
   caption: string;
   onPick?: () => void;
+  size?: number;
 }): JSX.Element {
-  const { client, family, level, item, dark, view, caption, onPick } = props;
+  const { client, family, level, item, dark, view, caption, onPick, size = THUMB } = props;
   const canvas = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const abort = new AbortController();
     client
-      .thumb({ family, level, subset: item.subset, combo: item.combo, size: THUMB, dark, view }, abort.signal)
+      .thumb({ family, level, subset: item.subset, combo: item.combo, size, dark, view }, abort.signal)
       .then((rgba) => {
         const ctx = abort.signal.aborted ? null : canvas.current?.getContext('2d');
-        if (ctx) ctx.putImageData(new ImageData(new Uint8ClampedArray(rgba), THUMB, THUMB), 0, 0);
+        if (ctx) ctx.putImageData(new ImageData(new Uint8ClampedArray(rgba), size, size), 0, 0);
       })
       .catch(() => {});
     return () => abort.abort();
-  }, [client, family, level, item, dark, view]);
-  const img = <canvas ref={canvas} width={THUMB} height={THUMB} aria-label={caption} />;
+  }, [client, family, level, item, dark, view, size]);
+  const img = <canvas ref={canvas} width={size} height={size} aria-label={caption} />;
   return (
     <figure className="centremap-thumb">
       {onPick ? (
@@ -661,5 +743,90 @@ function Thumb(props: {
       )}
       <figcaption className="mono">{caption}</figcaption>
     </figure>
+  );
+}
+
+/**
+ * A pairing magnified in a modal, stepping through the selected pairing and
+ * its closest ones (‹ › or ← →), switching strands and centres (or V), and
+ * closing on Esc or a click outside.
+ */
+function Magnifier(props: {
+  client: FaultLinesClient;
+  family: TileFamilyId;
+  level: number;
+  dark: boolean;
+  list: readonly number[];
+  at: number;
+  view: 'strands' | 'centres';
+  item: (i: number) => Item;
+  label: (i: number) => string;
+  note: (i: number) => string;
+  href: (i: number) => string;
+  onMove: (at: number, view: 'strands' | 'centres') => void;
+  onSelect: (i: number) => void;
+  onClose: () => void;
+}): JSX.Element {
+  const { client, family, level, dark, list, at, view, item, label, note, href, onMove, onSelect, onClose } = props;
+  const i = list[at];
+  const step = (d: number) => onMove((at + d + list.length) % list.length, view);
+  const flip = () => onMove(at, view === 'strands' ? 'centres' : 'strands');
+  const keys = useRef({ step, flip, onClose });
+  keys.current = { step, flip, onClose };
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') keys.current.onClose();
+      else if (e.key === 'ArrowLeft') keys.current.step(-1);
+      else if (e.key === 'ArrowRight') keys.current.step(1);
+      else if (e.key === 'v' || e.key === 'V') keys.current.flip();
+      else return;
+      e.preventDefault();
+    };
+    globalThis.addEventListener('keydown', onKey);
+    return () => globalThis.removeEventListener('keydown', onKey);
+  }, []);
+  // Portalled to the body, so no ancestor's stacking (the sticky site header) sits over it.
+  return createPortal(
+    <div className="centremap-modal" role="dialog" aria-modal="true" aria-label={`${label(i)}, magnified`} data-testid="centremap-magnifier" onClick={onClose}>
+      <div className="centremap-modal-card" onClick={(e) => e.stopPropagation()}>
+        <div className="centremap-modal-head">
+          <button type="button" onClick={() => step(-1)} aria-label="Previous pairing">
+            ‹
+          </button>
+          <span className="mono" data-testid="centremap-magnifier-label">
+            {label(i)}
+          </span>
+          <button type="button" onClick={() => step(1)} aria-label="Next pairing">
+            ›
+          </button>
+          <span className="muted" data-testid="centremap-magnifier-position">
+            {at + 1} / {list.length} · {note(i)}
+          </span>
+          <span className="centremap-modal-views" role="group" aria-label="Show">
+            {(['strands', 'centres'] as const).map((v) => (
+              <button key={v} type="button" className={v === view ? 'is-on' : undefined} aria-pressed={v === view} onClick={() => onMove(at, v)}>
+                {v}
+              </button>
+            ))}
+          </span>
+          <button type="button" className="centremap-close" onClick={onClose} aria-label="Close magnifier">
+            ×
+          </button>
+        </div>
+        <div className="centremap-modal-stage">
+          <Thumb client={client} family={family} level={level} item={item(i)} dark={dark} view={view} caption={`${label(i)} · ${view}`} size={BIG} />
+        </div>
+        <div className="centremap-modal-foot">
+          <span className="muted">← → step · V switches strands and centres · Esc closes</span>
+          {at > 0 && (
+            <button type="button" onClick={() => onSelect(i)}>
+              Select this pairing
+            </button>
+          )}
+          <a href={href(i)}>Open in the Explorer ↗</a>
+        </div>
+      </div>
+    </div>,
+    document.body,
   );
 }
