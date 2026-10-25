@@ -611,3 +611,15 @@
 .lattice-plot-box .lattice-counts {
   padding: 0 6px 4px;
 }
+.lattice-reduce-toggle {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  margin: 4px 0 10px;
+  font-size: 13px;
+}
+.lattice-echelon-row {
+  white-space: nowrap;
+  font-size: 12px;
+}

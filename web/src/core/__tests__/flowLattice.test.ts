@@ -3,6 +3,7 @@ import {
   combine,
   directedMatchings,
   defaultAxes,
+  echelonRows,
   flowModel,
   hexMeetings,
   hexPatch,
@@ -107,6 +108,41 @@ describe('flowLattice', () => {
     const fewer = more(-2);
     expect(isCircuit(m, fewer)).toBe(false);
     expect(liftZero(m, fewer)).toEqual(x);
+  });
+
+  it('echelonRows: each row is its mix of tile rows, carrying ±1 per class-0 tile', () => {
+    for (const mode of ['labels', 'groups'] as const) {
+      for (const zero of [false, true]) {
+        const m = flowModel(mode, zero);
+        const rows = echelonRows(m);
+        // Without class 0 the rows are exactly the matrix's rank: unknowns minus the lattice's dimension.
+        if (!zero) expect(rows).toHaveLength(m.vars.length - m.basis.length);
+        let lastPivot = -1;
+        for (const r of rows) {
+          r.entries.forEach((v, k) => {
+            const want = k === m.zeroVar ? 0 : r.mix.reduce((a, c, i) => a + c * m.matrix[i][k], 0);
+            expect(v).toBe(want);
+          });
+          expect(r.zero).toBe(m.zeroTypes.reduce((a, t) => a + Math.abs(r.mix[m.types.indexOf(t)]), 0));
+          // Pivots step right, and nothing sits above or below a pivot.
+          const p = r.entries.findIndex((v) => v !== 0);
+          if (p >= 0) {
+            expect(p).toBeGreaterThan(lastPivot);
+            lastPivot = p;
+            for (const o of rows) if (o !== r) expect(o.entries[p]).toBe(0);
+          }
+        }
+        // Every circuit fits every reduced row: d within ±(zero·n), same parity.
+        for (const b of m.basis) {
+          const n = zeroLines(m, b);
+          for (const r of rows) {
+            const d = r.entries.reduce((a, v, k) => a + v * b[k], 0);
+            expect(Math.abs(d)).toBeLessThanOrEqual(r.zero * n);
+            expect((r.zero * n - Math.abs(d)) % 2).toBe(0);
+          }
+        }
+      }
+    }
   });
 
   it('pairStrands refuses an unbalanced boundary', () => {
