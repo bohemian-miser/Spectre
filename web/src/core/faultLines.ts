@@ -34,6 +34,7 @@ import {
   rasterizeComponents,
   strandComponents,
   strandWorkspace,
+  thumbFrame,
   type StrandComponents,
   type StrandGraph,
   type StrandPalette,
@@ -463,4 +464,61 @@ export function surveyFaults(
 /** A combination string's digits, padded with zeros. */
 export function comboDigits(combo: string, length: number): number[] {
   return Array.from({ length }, (_, i) => (i < combo.length ? Math.max(0, comboDigitValue(combo[i])) : 0));
+}
+
+/**
+ * Draw a pairing as its circuits' centres: a disc per closed circuit at the
+ * average of its points, coloured by band like {@link rasterizeFaultBands},
+ * biggest first. Sized by the square of the log of its length like the
+ * Explorer's dots, but in pixels: at thumbnail scale the world-sized dots
+ * would all be specks.
+ */
+/** Thumbnail dot radius per (log length)², as a share of the thumbnail: about 10px for 30,000 segments at 132px. */
+const THUMB_CENTRE = 0.00072;
+
+export function rasterizeFaultCentres(
+  g: StrandGraph,
+  addr: PatchAddresses,
+  digits: readonly number[],
+  size: number,
+  palette: StrandPalette,
+  ws?: StrandWorkspace,
+): Uint8ClampedArray {
+  const c = strandComponents(g, digits, ws);
+  const { band } = componentBands(c, addr);
+  const colours = [palette.smallCircuit, palette.bands[2], palette.bands[1], palette.bands[0]];
+  const sx = new Float64Array(c.n);
+  const sy = new Float64Array(c.n);
+  const nodes = new Int32Array(c.n);
+  for (let n = 0; n < g.nNodes; n++) {
+    const k = c.comp[n];
+    sx[k] += g.nodeX[n];
+    sy[k] += g.nodeY[n];
+    nodes[k]++;
+  }
+  const { minX, minY, sc, ox, oy } = thumbFrame(g, size);
+  const img = new Uint8ClampedArray(size * size * 4);
+  const order: number[] = [];
+  for (let k = 0; k < c.n; k++) if (c.ends[k] === 0 && c.junc[k] === 0 && c.segs[k] > 1) order.push(k);
+  order.sort((a, b) => c.segs[b] - c.segs[a]);
+  for (const k of order) {
+    const cx = ox + (sx[k] / nodes[k] - minX) * sc;
+    const cy = size - oy - (sy[k] / nodes[k] - minY) * sc;
+    const l = Math.log(1 + c.segs[k]);
+    const r = Math.max(0.6, THUMB_CENTRE * l * l * size);
+    const [cr, cg, cb] = colours[band[k]];
+    for (let y = Math.max(0, Math.floor(cy - r)); y <= Math.min(size - 1, Math.ceil(cy + r)); y++) {
+      for (let x = Math.max(0, Math.floor(cx - r)); x <= Math.min(size - 1, Math.ceil(cx + r)); x++) {
+        const dx = x + 0.5 - cx;
+        const dy = y + 0.5 - cy;
+        if (dx * dx + dy * dy > r * r && !(r < 1 && x === Math.floor(cx) && y === Math.floor(cy))) continue;
+        const p = (y * size + x) * 4;
+        img[p] = cr;
+        img[p + 1] = cg;
+        img[p + 2] = cb;
+        img[p + 3] = 255;
+      }
+    }
+  }
+  return img;
 }

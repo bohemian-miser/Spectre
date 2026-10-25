@@ -175,6 +175,31 @@ export interface Path {
   readonly length?: number;
 }
 
+/** The average of a path's points (a closed path's first point is not repeated, so each counts once). */
+export function pathCentre(p: Path): Pt {
+  let x = 0;
+  let y = 0;
+  for (const q of p.points) {
+    x += q.x;
+    y += q.y;
+  }
+  const n = Math.max(1, p.points.length);
+  return { x: x / n, y: y / n };
+}
+
+/**
+ * Radius, in world units (a tile edge is about 1), of the dot marking a
+ * circuit's centre: grows with the square of the log of its length, so a
+ * small loop gets a speck inside it and a circuit of tens of thousands of
+ * tiles a blob a few tiles across.
+ */
+export function centreRadius(length: number): number {
+  const l = Math.log(1 + Math.max(0, length));
+  return CENTRE_SCALE * l * l;
+}
+
+const CENTRE_SCALE = 0.1;
+
 /** Number of (counted) segments in a path. */
 export function pathLength(p: Path): number {
   return p.length ?? (p.closed ? p.points.length : p.points.length - 1);

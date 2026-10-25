@@ -10,6 +10,8 @@
 import {
   DEFAULT_CONTRACTS,
   TAIL_COLOR,
+  centreRadius,
+  pathCentre,
   circuitHueColor,
   connectionPoint,
   metaEdges,
@@ -297,4 +299,33 @@ export function summaryChips(
     count,
     color: colors?.get(length) ?? fallback,
   }));
+}
+
+export interface CentreDot {
+  /** Index of the circuit within `circuits`. */
+  readonly index: number;
+  readonly x: number;
+  readonly y: number;
+  /** World units, from {@link centreRadius}. */
+  readonly r: number;
+  readonly color: string;
+  readonly length: number;
+}
+
+/**
+ * One dot per closed circuit, at the average of its points, sized by its
+ * length and coloured like it. Biggest first, so nested circuits draw as a
+ * bullseye with the small ones on top.
+ */
+export function buildCentreDots(
+  circuits: readonly Path[],
+  circuitColorByLength?: PairList<number, string>,
+): readonly CentreDot[] {
+  const colorByLength = asMap(circuitColorByLength) ?? deriveCircuitColors(circuits);
+  const out = circuits.map((p, index) => {
+    const length = pathLength(p);
+    const c = pathCentre(p);
+    return { index, x: c.x, y: c.y, r: centreRadius(length), color: colorByLength.get(length) ?? TAIL_COLOR, length };
+  });
+  return out.sort((a, b) => b.length - a.length || a.index - b.index);
 }

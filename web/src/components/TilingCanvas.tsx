@@ -23,7 +23,7 @@ import {
   type TileTypeId,
   type StrandCurve,
 } from '../core';
-import { buildOverlayPaths } from '../lib/overlayPaths';
+import { buildCentreDots, buildOverlayPaths } from '../lib/overlayPaths';
 import { edgeClassColor, tileColor } from '../lib/palette';
 import { buildTilingModel, tileConnectionPoints, tileOutline } from '../lib/tilingModel';
 import { fitToBounds, type Camera } from '../lib/viewport';
@@ -60,6 +60,10 @@ export interface TilingCanvasProps {
   readonly highlightLengths?: ReadonlySet<number> | null;
   /** Dim every path but these circuits (indices into `circuits`), when given. */
   readonly highlightCircuits?: ReadonlySet<number> | null;
+  /** Draw a dot at each circuit's centre (see `CentreLayer`). */
+  readonly showCentres?: boolean;
+  /** Multiplies every centre dot's radius. */
+  readonly centreScale?: number;
   /** Strand stroke width, world units (matches `CircuitLayer`). */
   readonly strokeWidth?: number;
   /**
@@ -117,6 +121,8 @@ export function TilingCanvas(props: TilingCanvasProps): JSX.Element {
     rainbowTails = false,
     highlightLengths = null,
     highlightCircuits = null,
+    showCentres = false,
+    centreScale = 1,
     strokeWidth = 0.12,
     regionFill = null,
     className,
@@ -141,6 +147,11 @@ export function TilingCanvas(props: TilingCanvasProps): JSX.Element {
           )
         : [],
     [circuits, tails, circuitColorByLength, segmentControl, rainbowTails],
+  );
+
+  const centres = useMemo(
+    () => (showCentres && circuits ? buildCentreDots(circuits, circuitColorByLength) : []),
+    [showCentres, circuits, circuitColorByLength],
   );
 
   /**
@@ -263,6 +274,23 @@ export function TilingCanvas(props: TilingCanvasProps): JSX.Element {
         ctx.globalAlpha = 1;
       }
 
+      if (centres.length) {
+        applyTransform(ctx, dpr, effectiveCamera, model.viewTransform);
+        ctx.lineWidth = strokeWidth / 2;
+        ctx.strokeStyle = 'rgba(0,0,0,0.65)';
+        for (const c of centres) {
+          const lit =
+            (!highlightLengths?.size || highlightLengths.has(c.length)) && (!highlightCircuits || highlightCircuits.has(c.index));
+          ctx.globalAlpha = lit ? 0.9 : 0.15;
+          ctx.beginPath();
+          ctx.arc(c.x, c.y, c.r * centreScale, 0, Math.PI * 2);
+          ctx.fillStyle = c.color;
+          ctx.fill();
+          ctx.stroke();
+        }
+        ctx.globalAlpha = 1;
+      }
+
       ctx.setTransform(1, 0, 0, 1, 0, 0);
     };
 
@@ -282,6 +310,8 @@ export function TilingCanvas(props: TilingCanvasProps): JSX.Element {
     selectedEdges,
     contracts,
     overlay,
+    centres,
+    centreScale,
     regionOrder,
     highlightLengths,
     highlightCircuits,

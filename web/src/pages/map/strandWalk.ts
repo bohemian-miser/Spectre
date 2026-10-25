@@ -591,6 +591,13 @@ export interface StrandTrail {
    */
   types: Uint8Array;
   /**
+   * Sum of every point ever appended and how many, kept through trims, so the
+   * centre of the whole walk is known however long it runs ({@link trailCentre}).
+   */
+  sumX: number;
+  sumY: number;
+  pushed: number;
+  /**
    * Each chord's curve handles, 4 doubles per chord (in either order, see
    * `orientCurve`), indexed like {@link types}; NaN for a straight chord. Only the DRAWN line bends
    * ({@link trailGeometry}); points, arc and transitions stay on the chords.
@@ -647,6 +654,9 @@ function push(trail: StrandTrail, p: Pt): void {
   trail.xy[i * 2 + 1] = p.y;
   trail.arc[i] = (i === 0 ? 0 : trail.arc[i - 1]) + step;
   trail.count = i + 1;
+  trail.sumX += p.x;
+  trail.sumY += p.y;
+  trail.pushed++;
   trail.version++;
   trail.geom = null;
 }
@@ -681,6 +691,9 @@ export function startTrail(seed: ChordEnd, typeCount: number = TRANSITION_TYPES)
     typeCount,
     transitions: new Uint32Array(typeCount * typeCount),
     lastType: -1,
+    sumX: 0,
+    sumY: 0,
+    pushed: 0,
   };
   push(trail, seed.to);
   push(trail, seed.at);
@@ -717,6 +730,20 @@ export function transitionCounts(trail: StrandTrail): number[] {
 }
 
 /** Length of the coloured line so far, in world units (tile edge = 1). */
+/**
+ * The average of every point the walk has visited, including any trimmed
+ * away. A closed walk's last point is its first again, so it counts once.
+ */
+export function trailCentre(trail: StrandTrail): Pt | null {
+  const repeat = trail.status === 'closed' && trail.count > 0 ? 1 : 0;
+  const n = trail.pushed - repeat;
+  if (n <= 0) return null;
+  const last = (trail.count - 1) * 2;
+  const x = trail.sumX - (repeat ? trail.xy[last] : 0);
+  const y = trail.sumY - (repeat ? trail.xy[last + 1] : 0);
+  return { x: x / n, y: y / n };
+}
+
 export function trailLength(trail: StrandTrail): number {
   return trail.count === 0 ? 0 : trail.arc[trail.count - 1];
 }

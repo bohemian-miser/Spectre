@@ -10,6 +10,7 @@ import {
   comboDigits,
   patchAddresses,
   rasterizeFaultBands,
+  rasterizeFaultCentres,
   strandWorkspace,
   surveyFaults,
   type FaultSurvey,
@@ -33,6 +34,8 @@ export interface FaultThumbJob {
   readonly combo: string;
   readonly size: number;
   readonly dark: boolean;
+  /** Draw the strands, or a dot at each circuit's centre. */
+  readonly view?: 'strands' | 'centres';
 }
 
 /** Graphs of the rules surveyed last, so their thumbnails are quick. */
@@ -58,5 +61,6 @@ export function runFaultSurvey(job: FaultSurveyJob, onProgress?: (done: number, 
 export function renderFaultThumb(job: FaultThumbJob): Uint8ClampedArray {
   const { graph, ws } = graphFor(job.family, job.subset, job.level);
   const palette = job.dark ? DARK_STRAND_PALETTE : LIGHT_STRAND_PALETTE;
-  return rasterizeFaultBands(graph, patchAddresses(job.family, job.level), comboDigits(job.combo, graph.types.length), job.size, palette, ws);
+  const draw = job.view === 'centres' ? rasterizeFaultCentres : rasterizeFaultBands;
+  return draw(graph, patchAddresses(job.family, job.level), comboDigits(job.combo, graph.types.length), job.size, palette, ws);
 }

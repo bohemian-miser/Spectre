@@ -57,6 +57,7 @@ import {
   formatCounts,
 } from '../core';
 import {
+  CentreLayer,
   CircuitLayer,
   ColorSchemePicker,
   FlowLayer,
@@ -466,6 +467,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
     return out;
   }, [loopFocus, analysis.result]);
   const lengthColours = hasFlag(state, FLAG.LENGTH_COLOURS);
+  const centresOn = hasFlag(state, FLAG.CENTRES);
   const circuitColors = useMemo(() => {
     const ranked = analysis.result?.circuitColors;
     if (!ranked || !lengthColours) return ranked;
@@ -1657,6 +1659,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
             regionFill={regionsOn && !!infiniteChords}
             persistFound={persistFoundOn}
             circuitColours={lengthColours ? 'length' : 'distinct'}
+            showCentres={linesOn && centresOn}
             findCeiling={findCeiling}
             foundHold={foundHold}
             highlight={graphPick}
@@ -1771,6 +1774,18 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
                     />
                   </g>
                 ) : null}
+                {analysis.result && linesOn && centresOn ? (
+                  <g transform={svgMatrixString(model.viewTransform)}>
+                    <CentreLayer
+                      circuits={analysis.result.circuits}
+                      circuitColorByLength={circuitColors}
+                      highlightLengths={highlightLengths}
+                      highlightCircuits={focusedCircuits}
+                      strokeWidth={BASE_CIRCUIT_STROKE * lineWidth * 0.5}
+                      scale={lineWidth}
+                    />
+                  </g>
+                ) : null}
                 {analysis.result?.dual && linesOn && dualOn ? (
                   <g transform={svgMatrixString(model.viewTransform)}>
                     <DualLayer
@@ -1814,6 +1829,8 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
                 rainbowTails={hasFlag(state, FLAG.RAINBOW_TAILS)}
                 highlightLengths={highlightLengths}
                 highlightCircuits={focusedCircuits}
+                showCentres={linesOn && centresOn}
+                centreScale={lineWidth}
                 strokeWidth={BASE_CIRCUIT_STROKE * lineWidth}
                 regionFill={linesOn && regionsOn ? analysis.result?.dual : undefined}
               />

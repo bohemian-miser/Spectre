@@ -72,6 +72,7 @@ export default function FaultLinesPage(): JSX.Element {
   const [perRule, setPerRule] = useState<number>(40);
   const [grain, setGrain] = useState<number>(1);
   const [threshold, setThreshold] = useState(0.6);
+  const [view, setView] = useState<'strands' | 'centres'>('strands');
   const rules = useMemo(() => validEdgeSubsets(family).filter((s) => s.edges.length).map((s) => s.edges.join('')), [family]);
   const [chosen, setChosen] = useState<ReadonlySet<string>>(() => new Set(rules));
   useEffect(() => setChosen(new Set(rules)), [rules]);
@@ -134,7 +135,7 @@ export default function FaultLinesPage(): JSX.Element {
 
   const thumbJob = (i: number) => {
     const it = survey!.items[i];
-    return { family: survey!.family, level: survey!.level, subset: it.subset, combo: it.combo, size: THUMB, dark };
+    return { family: survey!.family, level: survey!.level, subset: it.subset, combo: it.combo, size: THUMB, dark, view };
   };
   const nearest = useMemo(() => {
     if (!survey || selected === null) return [];
@@ -259,6 +260,13 @@ export default function FaultLinesPage(): JSX.Element {
               />
               <b>{pct(threshold)}</b> alike
             </label>
+            <label>
+              Thumbnails show
+              <select value={view} onChange={(e) => setView(e.target.value as 'strands' | 'centres')} data-testid="faultlines-view">
+                <option value="strands">strands</option>
+                <option value="centres">circuit centres</option>
+              </select>
+            </label>
             <span className="muted" data-testid="faultlines-summary">
               {n} pairings at level {survey.level}: {groups.length} groups, {loners.length} unlike any other
             </span>
@@ -291,7 +299,8 @@ export default function FaultLinesPage(): JSX.Element {
             <h2 id="faultlines-groups-h">Groups</h2>
             <p className="muted faultlines-note">
               Thumbnails are coloured the way they are compared: red strands are at least half the longest, orange an eighth,
-              yellow a fortieth, the rest faint. Click one to list the pairings closest to it. In the digit patterns, · marks a
+              yellow a fortieth, the rest faint. Showing circuit centres instead puts a dot at the average of each closed
+              circuit's points, sized by the log of its length and coloured the same way. Click one to list the pairings closest to it. In the digit patterns, · marks a
               tile whose pairing varies inside the group, so it doesn't move the big strands there.
             </p>
             <div className="faultlines-groups" data-testid="faultlines-groups">
@@ -429,7 +438,7 @@ function Thumb(props: {
 }): JSX.Element {
   const { client, job, caption, onPick, href, selected } = props;
   const canvas = useRef<HTMLCanvasElement>(null);
-  const key = `${job.family}|${job.level}|${job.subset.join('')}|${job.combo}|${job.size}|${job.dark}`;
+  const key = `${job.family}|${job.level}|${job.subset.join('')}|${job.combo}|${job.size}|${job.dark}|${job.view ?? 'strands'}`;
   useEffect(() => {
     const abort = new AbortController();
     client

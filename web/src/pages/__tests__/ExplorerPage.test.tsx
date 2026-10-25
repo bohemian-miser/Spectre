@@ -478,6 +478,22 @@ describe('ExplorerPage — infinite mode', () => {
     expect(byLength.every((c) => c?.startsWith('rgb'))).toBe(true);
   });
 
+  it('marks each circuit\'s centre with a dot, biggest first, when asked', () => {
+    window.history.replaceState(null, '', '/#/explorer?v=1&f=hex&lv=2&e=15');
+    const { container, getByLabelText } = render(<ExplorerPage />);
+    expect(container.querySelectorAll('.circuit-centre')).toHaveLength(0);
+    fireEvent.click(getByLabelText('Circuit centres'));
+    const dots = [...container.querySelectorAll('.circuit-centre')];
+    expect(dots).toHaveLength(container.querySelectorAll('.circuit-path.is-circuit').length);
+    const lengths = dots.map((d) => Number(d.getAttribute('data-length')));
+    expect(lengths).toEqual([...lengths].sort((a, b) => b - a));
+    const radii = dots.map((d) => Number(d.getAttribute('r')));
+    expect(radii[0]).toBeGreaterThanOrEqual(radii[radii.length - 1]);
+    // Each dot is coloured like its circuit.
+    const strokeOf = new Map([...container.querySelectorAll('.circuit-path.is-circuit')].map((p) => [p.getAttribute('data-length'), p.getAttribute('stroke')]));
+    for (const d of dots) expect(d.getAttribute('fill')).toBe(strokeOf.get(d.getAttribute('data-length')));
+  });
+
   it('opens a tile in the big pairing editor, steps tiles, and closes on Escape', () => {
     window.history.replaceState(null, '', '/#/explorer?v=1&f=hex&lv=2&e=15');
     const { getByLabelText, getByTestId, queryByTestId } = render(<ExplorerPage />);
