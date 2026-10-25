@@ -150,3 +150,16 @@ for a pull request. A quick local run of the whole pipeline:
 
     CENTREMAP_LIMIT=6000 npx tsx circuit-classes/centremap-sweep.ts hex 3 0 1 /tmp/cm
     python3 circuit-classes/centremap-embed.py /tmp/cm /tmp/cm-out
+
+## Large-scale classes
+
+`boundary-classes.ts` groups a rule's pairings by what they do at large
+scales. Inside a level-n supertile, a pairing's strands join the crossings
+on its outline in pairs; two pairings with the same joins on every supertile
+type are identical above level n and differ only inside level-n supertiles
+(small closed loops). Classes only merge as n grows.
+
+    npx tsx circuit-classes/boundary-classes.ts hex 023468 6 111000100
+
+prints, per level, how many classes the rule falls into and the named
+pairing's class (here six pairings from level 1 on).
