@@ -46,8 +46,17 @@ describe('flowOverlay', () => {
     }
   });
 
-  it('class 0 strands have no direction', () => {
-    const f = run('hex', [0, 1, 3, 4, 6], 2);
-    expect(f.chords.some((c) => c.kind === 'neutral')).toBe(true);
+  it('a strand with one end on class 0 takes its direction from the other end', () => {
+    const f = run('hex', [0, 3, 4, 5, 6], 2);
+    expect(f.chords.some((c) => c.kind === 'half')).toBe(true);
+    // Every hex tile has at most one class-0 edge, so no chord is undirected at both ends.
+    expect(f.chords.some((c) => c.kind === 'neutral')).toBe(false);
+    f.chords.forEach((c, i) => {
+      if (c.kind !== 'half') return;
+      expect(f.runOf[i]).toBeGreaterThanOrEqual(0);
+      // A half chord only starts a run (flow out of its class-0 end) or ends one.
+      const r = f.runs[f.runOf[i]].chords;
+      expect(c.undirectedEnd === 'a' ? r[0] : r[r.length - 1]).toBe(i);
+    });
   });
 });
