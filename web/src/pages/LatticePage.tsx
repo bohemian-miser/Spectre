@@ -14,6 +14,7 @@ import {
   directedMatchings,
   describeFlow,
   directedNet,
+  echelonRows,
   edgeVar,
   flowLines,
   flowModel,
@@ -98,6 +99,8 @@ function zeroEdgeOf(model: FlowModel, type: TileTypeId): number {
 export default function LatticePage(): JSX.Element {
   const [mode, setMode] = useState<FlowMode>('labels');
   const [zeroEither, setZeroEither] = useState(false);
+  /** Show the balance matrix in reduced row echelon form. */
+  const [reduced, setReduced] = useState(false);
   const model = useMemo(() => flowModel(mode, zeroEither), [mode, zeroEither]);
   const [axes, setAxes] = useState<[number, number]>(() => startAxes(flowModel('labels')));
   const [maxLines, setMaxLines] = useState(1);
@@ -259,12 +262,21 @@ export default function LatticePage(): JSX.Element {
           reads as a sum: <span className="mono">+2 − 1 − 1</span>. The last column is that sum, the
           tile&rsquo;s net flow. A circuit is a top row that makes every net zero.
         </p>
+        <label className="lattice-check lattice-reduce-toggle">
+          <input type="checkbox" checked={reduced} onChange={(e) => setReduced(e.target.checked)} data-testid="lattice-echelon-toggle" />
+          Row echelon form
+          <span className="muted">
+            {' '}
+            (whole-number row operations; each row is a mix of tile rows, and every class-0 tile in the mix
+            brings its <span className="mono">±1</span> along)
+          </span>
+        </label>
         <div className="lattice-balance-grid">
           <MatrixEditor
             model={model}
+            reduced={reduced}
             x={x}
-            onChange={(next) => setX(liftZero(model, next))}
-            onRaw={setX}
+            onChange={setX}
             hover={hoverVar}
             onHover={setHoverVar}
             selected={col}
@@ -294,7 +306,8 @@ export default function LatticePage(): JSX.Element {
             tile any of them may go in or out. Its counter sets that number, and every tile with a
             class-0 edge (Theta, Xi, Phi, Psi) gains its <span className="mono">±</span>: the lines take
             up the tile&rsquo;s imbalance as long as there are enough of them and the parity matches.
-            Changing another flow raises them if it has to. Two extra lines that go in and straight back
+            Editing a flow by hand never changes them; picking a point on the slice gives the fewest
+            that work. Two extra lines that go in and straight back
             out are a circuit by themselves (<span className="mono">0: ±2</span>). Where two strands meet
             head-on across a class-0 edge the flow simply stops. The lattice has dimension{' '}
             {model.basis.length}.
@@ -598,26 +611,85 @@ function CircuitPatch(props: {
   );
 }
 
-function MatrixEditor(props: {
+/** `+2 Delta − Psi` style text for a mix of tile rows. */
+function mixText(model: FlowModel, mix: readonly number[]): string {
+  const terms = mix.flatMap((c, i) => (c === 0 ? [] : [{ neg: c < 0, text: `${Math.abs(c) === 1 ? '' : `${Math.abs(c)} `}${model.types[i]}` }]));
+  return terms.map((t, i) => (i === 0 ? `${t.neg ? '−' : ''}${t.text}` : ` ${t.neg ? '−' : '+'} ${t.text}`)).join('');
+}
+
+function EchelonBody(props: {
   model: FlowModel;
   x: readonly number[];
-  /** A flow edit: class-0 lines get lifted to fit. */
+  n0: number;
+  colClass: (k: number) => string | undefined;
+  hoverProps: (k: number) => Record<string, () => void>;
+}): JSX.Element {
+  const { model, x, n0, colClass, hoverProps } = props;
+  const zv = model.zeroVar;
+  return (
+    <tbody data-testid="lattice-echelon">
+      {echelonRows(model).map((row, i) => {
+        const d = row.entries.reduce((a, v, k) => a + v * (x[k] ?? 0), 0);
+        // The ± is k lots of ±1, each worth up to n lines, so this row can reach d ± k·n in steps of 2.
+        const reach = row.zero * n0;
+        const good = Math.abs(d) <= reach && (reach - Math.abs(d)) % 2 === 0;
+        const mix = mixText(model, row.mix);
+        const short = row.mix.filter((c) => c !== 0).length <= 2;
+        return (
+          <tr key={i} className={good ? undefined : 'is-unbalanced'}>
+            <th scope="row" title={mix} className="lattice-echelon-row">
+              {short ? mix : `R${i + 1}`}
+            </th>
+            {row.entries.map((v, k) => {
+              if (k === zv) {
+                return (
+                  <td
+                    key={k}
+                    className={[colClass(k), row.zero ? '' : 'is-zero', row.zero && n0 > 0 ? 'is-term' : ''].filter(Boolean).join(' ')}
+                    data-testid={`lattice-echelon-${i}-0`}
+                    {...hoverProps(k)}
+                  >
+                    {row.zero === 0 ? '·' : `±${n0 > 0 ? reach : row.zero}`}
+                  </td>
+                );
+              }
+              const live = x[k] !== 0 && v !== 0;
+              return (
+                <td
+                  key={k}
+                  className={[colClass(k), v === 0 ? 'is-zero' : '', live ? 'is-term' : ''].filter(Boolean).join(' ')}
+                  title={live ? `${signed(v)} × ${signed(x[k])}` : undefined}
+                  {...hoverProps(k)}
+                >
+                  {v === 0 ? '·' : live ? signed(v * x[k]) : signed(v)}
+                </td>
+              );
+            })}
+            <td className={`lattice-net ${good ? 'is-good' : 'is-bad'}`} data-testid={`lattice-echelon-net-${i}`}>
+              {reach > 0 ? `${signed(d)} ±${reach}` : signed(d)}
+            </td>
+          </tr>
+        );
+      })}
+    </tbody>
+  );
+}
+
+function MatrixEditor(props: {
+  model: FlowModel;
+  reduced: boolean;
+  x: readonly number[];
   onChange: (x: number[]) => void;
-  /** An edit of the class-0 lines themselves, kept as typed. */
-  onRaw: (x: number[]) => void;
   hover: number | null;
   onHover: (k: number | null) => void;
   selected: number;
   onSelect: (k: number) => void;
 }): JSX.Element {
-  const { model, x, onChange, onRaw, hover, onHover, selected, onSelect } = props;
-  // Class 0's counter is its line count, so it stops at 0; its own steps aren't lifted.
+  const { model, reduced, x, onChange, hover, onHover, selected, onSelect } = props;
+  // Class 0's counter is its line count, so it stops at 0. Edits are kept as typed: no column moves another.
   const zv = model.zeroVar;
-  const set = (k: number, v: number) => {
-    const next = x.map((old, i) => (i === k ? Math.max(k === zv ? 0 : -MAX_COUNT, Math.min(MAX_COUNT, v)) : old));
-    if (k === zv) onRaw(next);
-    else onChange(next);
-  };
+  const set = (k: number, v: number) =>
+    onChange(x.map((old, i) => (i === k ? Math.max(k === zv ? 0 : -MAX_COUNT, Math.min(MAX_COUNT, v)) : old)));
   const net = netFlow(model, x);
   const dnet = directedNet(model, x);
   const z = zeroFlow(model, x);
@@ -661,7 +733,7 @@ function MatrixEditor(props: {
       <table className="lattice-table lattice-editor" data-testid="lattice-matrix">
         <thead>
           <tr>
-            <th scope="col">Tile</th>
+            <th scope="col">{reduced ? 'Row' : 'Tile'}</th>
             {model.vars.map((v, k) => (
               <th key={v.label} scope="col" className={colClass(k)} style={{ borderBottomColor: edgeClassColor(v.major) }} {...hoverProps(k)}>
                 {v.label}
@@ -693,56 +765,60 @@ function MatrixEditor(props: {
             </td>
           </tr>
         </thead>
-        <tbody>
-          {model.types.map((t, i) => (
-            <tr key={t} className={net[i] === 0 ? undefined : 'is-unbalanced'}>
-              <th scope="row">{t}</th>
-              {model.matrix[i].map((v, k) => {
-                if (k === zv) {
-                  // Class 0 spreads its ± to every tile with a class-0 edge; the tooltip says what it takes up.
-                  const has = model.zeroTypes.includes(t);
+        {reduced ? (
+          <EchelonBody model={model} x={x} n0={n0} colClass={colClass} hoverProps={hoverProps} />
+        ) : (
+          <tbody>
+            {model.types.map((t, i) => (
+              <tr key={t} className={net[i] === 0 ? undefined : 'is-unbalanced'}>
+                <th scope="row">{t}</th>
+                {model.matrix[i].map((v, k) => {
+                  if (k === zv) {
+                    // Class 0 spreads its ± to every tile with a class-0 edge; the tooltip says what it takes up.
+                    const has = model.zeroTypes.includes(t);
+                    return (
+                      <td
+                        key={k}
+                        className={[colClass(k), has ? '' : 'is-zero', has && n0 > 0 ? 'is-term' : ''].filter(Boolean).join(' ')}
+                        title={has ? `±${n0}: takes up ${signed(z[i])} here` : undefined}
+                        data-testid={`lattice-cell-${t}-${model.vars[k].label}`}
+                        {...hoverProps(k)}
+                      >
+                        {has ? `±${n0}` : '·'}
+                      </td>
+                    );
+                  }
+                  const live = x[k] !== 0 && v !== 0;
                   return (
                     <td
                       key={k}
-                      className={[colClass(k), has ? '' : 'is-zero', has && n0 > 0 ? 'is-term' : ''].filter(Boolean).join(' ')}
-                      title={has ? `±${n0}: takes up ${signed(z[i])} here` : undefined}
+                      className={[colClass(k), v === 0 ? 'is-zero' : '', live ? 'is-term' : ''].filter(Boolean).join(' ')}
+                      title={live ? `${signed(v)} × ${signed(x[k])}` : undefined}
                       data-testid={`lattice-cell-${t}-${model.vars[k].label}`}
                       {...hoverProps(k)}
                     >
-                      {has ? `±${n0}` : '·'}
+                      {v === 0 ? '·' : live ? signed(v * x[k]) : signed(v)}
                     </td>
                   );
-                }
-                const live = x[k] !== 0 && v !== 0;
-                return (
+                })}
+                {zv >= 0 && model.zeroTypes.includes(t) && n0 > 0 ? (
+                  // The row's sum keeps class 0's ±: d ± n, which balances when it can reach 0.
                   <td
-                    key={k}
-                    className={[colClass(k), v === 0 ? 'is-zero' : '', live ? 'is-term' : ''].filter(Boolean).join(' ')}
-                    title={live ? `${signed(v)} × ${signed(x[k])}` : undefined}
-                    data-testid={`lattice-cell-${t}-${model.vars[k].label}`}
-                    {...hoverProps(k)}
+                    className={`lattice-net ${net[i] === 0 ? 'is-good' : 'is-bad'}`}
+                    title={net[i] === 0 ? `class 0 takes up ${signed(z[i])}: balances` : `class 0 can only take up ${signed(z[i])}: ${signed(net[i])} left over`}
+                    data-testid={`lattice-net-${t}`}
                   >
-                    {v === 0 ? '·' : live ? signed(v * x[k]) : signed(v)}
+                    {signed(dnet[i])} ±{n0}
                   </td>
-                );
-              })}
-              {zv >= 0 && model.zeroTypes.includes(t) && n0 > 0 ? (
-                // The row's sum keeps class 0's ±: d ± n, which balances when it can reach 0.
-                <td
-                  className={`lattice-net ${net[i] === 0 ? 'is-good' : 'is-bad'}`}
-                  title={net[i] === 0 ? `class 0 takes up ${signed(z[i])}: balances` : `class 0 can only take up ${signed(z[i])}: ${signed(net[i])} left over`}
-                  data-testid={`lattice-net-${t}`}
-                >
-                  {signed(dnet[i])} ±{n0}
-                </td>
-              ) : (
-                <td className={`lattice-net ${net[i] === 0 ? 'is-good' : 'is-bad'}`} data-testid={`lattice-net-${t}`}>
-                  {signed(net[i])}
-                </td>
-              )}
-            </tr>
-          ))}
-        </tbody>
+                ) : (
+                  <td className={`lattice-net ${net[i] === 0 ? 'is-good' : 'is-bad'}`} data-testid={`lattice-net-${t}`}>
+                    {signed(net[i])}
+                  </td>
+                )}
+              </tr>
+            ))}
+          </tbody>
+        )}
       </table>
     </div>
   );

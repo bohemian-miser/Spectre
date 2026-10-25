@@ -382,6 +382,78 @@ export function edgeVar(model: FlowModel, type: TileTypeId, edge: number): { ind
   return null;
 }
 
+/** One row of the balance matrix in reduced form: a whole-number mix of the tile rows. */
+export interface EchelonRow {
+  /** Directed entries per unknown (0 in the class-0 column). */
+  readonly entries: readonly number[];
+  /** How much of each tile type's row went in, by `types` index. */
+  readonly mix: readonly number[];
+  /**
+   * Class 0's ± carried along: each class-0 tile's row brings ±1, so the mix
+   * brings ±(sum of |mix| over those tiles). 0 when class 0 is out.
+   */
+  readonly zero: number;
+}
+
+const echelonCache = new Map<FlowModel, readonly EchelonRow[]>();
+
+const gcd = (a: number, b: number): number => (b === 0 ? Math.abs(a) : gcd(b, a % b));
+
+/**
+ * The balance matrix in reduced row echelon form, by whole-number row
+ * operations (no fractions: each step scales by the pivot and divides out
+ * common factors), pivoting on the directed columns only. Rows that end up
+ * with no directed entry and no ± are dropped.
+ */
+export function echelonRows(model: FlowModel): readonly EchelonRow[] {
+  const hit = echelonCache.get(model);
+  if (hit) return hit;
+  const nt = model.types.length;
+  const rows = model.matrix.map((r, i) => ({
+    e: r.map((v, k) => (k === model.zeroVar ? 0 : v)),
+    m: model.types.map((_, j): number => (j === i ? 1 : 0)),
+  }));
+  const tidy = (r: { e: number[]; m: number[] }) => {
+    const g = [...r.e, ...r.m].reduce((a, v) => gcd(a, v), 0);
+    if (g > 1) {
+      r.e = r.e.map((v) => v / g);
+      r.m = r.m.map((v) => v / g);
+    }
+  };
+  let top = 0;
+  for (let col = 0; col < model.vars.length && top < nt; col++) {
+    if (col === model.zeroVar) continue;
+    let best = -1;
+    for (let r = top; r < nt; r++) {
+      const v = rows[r].e[col];
+      if (v !== 0 && (best < 0 || Math.abs(v) < Math.abs(rows[best].e[col]))) best = r;
+    }
+    if (best < 0) continue;
+    [rows[top], rows[best]] = [rows[best], rows[top]];
+    const piv = rows[top];
+    if (piv.e[col] < 0) {
+      piv.e = piv.e.map((v) => -v || 0);
+      piv.m = piv.m.map((v) => -v || 0);
+    }
+    for (let r = 0; r < nt; r++) {
+      if (r === top || rows[r].e[col] === 0) continue;
+      const p = piv.e[col];
+      const v = rows[r].e[col];
+      const g = gcd(p, v);
+      rows[r].e = rows[r].e.map((w, k) => (p / g) * w - (v / g) * piv.e[k]);
+      rows[r].m = rows[r].m.map((w, k) => (p / g) * w - (v / g) * piv.m[k]);
+      tidy(rows[r]);
+    }
+    top++;
+  }
+  const zeroIdx = model.zeroTypes.map((t) => model.types.indexOf(t));
+  const out = rows
+    .map((r) => ({ entries: r.e, mix: r.m, zero: zeroIdx.reduce((a, i) => a + Math.abs(r.m[i]), 0) }))
+    .filter((r) => r.entries.some((v) => v !== 0) || r.zero > 0);
+  echelonCache.set(model, out);
+  return out;
+}
+
 /** Per tile type, flow out minus flow in (class 0's share included): all zero exactly when x is a circuit. */
 export function netFlow(model: FlowModel, x: readonly number[]): number[] {
   const z = zeroFlow(model, x);

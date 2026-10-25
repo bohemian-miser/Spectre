@@ -175,6 +175,30 @@ describe('LatticePage', () => {
     expect(screen.getByTestId('lattice-balance').textContent).toContain('Not a circuit');
     fireEvent.click(screen.getByLabelText('More flow on 0'));
     expect(screen.getByTestId('lattice-balance').textContent).toContain('Every tile balances');
+    // Editing another column never moves the class-0 count, even when a tile then needs more lines.
+    const before = screen.getByTestId('lattice-count-0').textContent;
+    for (let i = 0; i < 4; i++) fireEvent.click(screen.getByLabelText('More flow on 8a'));
+    expect(screen.getByTestId('lattice-count-0').textContent).toBe(before);
+  });
+
+  it('row echelon form: reduced rows, the ± carried along, and nets that follow the counters', () => {
+    render(<LatticePage />);
+    fireEvent.click(screen.getByTestId('lattice-zero-toggle'));
+    fireEvent.click(screen.getByTestId('lattice-echelon-toggle'));
+    const body = screen.getByTestId('lattice-echelon');
+    expect(body.querySelectorAll('tr').length).toBeGreaterThan(0);
+    // The default point is a circuit, so every reduced row balances.
+    expect(body.querySelectorAll('.lattice-net.is-bad')).toHaveLength(0);
+    // Set class 0 to one line by hand: rows carrying a ± now show it, and the ones with an odd ± can't reach 0.
+    fireEvent.click(screen.getByLabelText('More flow on 0'));
+    expect(screen.getByTestId('lattice-count-0').textContent).toBe('±1');
+    const nets = [...body.querySelectorAll('.lattice-net')].map((c) => c.textContent);
+    expect(nets.some((t) => t!.includes('±'))).toBe(true);
+    expect(body.querySelectorAll('.lattice-net.is-bad').length).toBeGreaterThan(0);
+    // Back to the tile rows.
+    fireEvent.click(screen.getByTestId('lattice-echelon-toggle'));
+    expect(screen.queryByTestId('lattice-echelon')).toBeNull();
+    expect(screen.getByTestId('lattice-net-Delta')).toBeTruthy();
   });
 
   it('labels mode with class 0 either way gains just the in-and-out pair', () => {
