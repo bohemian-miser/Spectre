@@ -930,6 +930,43 @@ describe('InfiniteCanvas — "keep them" means keep them', () => {
     expect(shortest).toBeLessThanOrEqual(soloShortest);
   });
 
+  /**
+   * Circuits found already are left out of the next pass before it welds, so
+   * a regrow over familiar ground only traces what is new. Leaving them out
+   * must not change what the view shows: a small pan, which keeps most of
+   * them on screen, has to end with exactly what a fresh trace of that view
+   * finds, with the toggle off as well as on.
+   */
+  it('skipping what is already found leaves the same circuits as a fresh trace', async () => {
+    const lengths = (gs: readonly { totalLength: number }[]) => gs.map((g) => g.totalLength.toFixed(3)).sort();
+    for (const persistFound of [false, true]) {
+      const m = await mount({ chords: loopTable(), findCircuits: true, persistFound });
+      await settleUntil(() => m.status().trace.found > 0, 'the first circuits');
+      const at = m.api.current!.getCamera();
+      act(() => m.api.current?.setCamera({ cx: at.cx + 3, cy: at.cy - 2 }));
+      await settle();
+      await settle();
+      const fresh = await mount({ chords: loopTable(), findCircuits: true, persistFound: false });
+      act(() => fresh.api.current?.setCamera({ cx: at.cx + 3, cy: at.cy - 2 }));
+      await settle();
+      await settle();
+      const want = fresh.renderer.circuitSets.at(-1)!;
+      expect(want.length).toBeGreaterThan(0);
+      const got = m.renderer.circuitSets.at(-1)!;
+      if (persistFound) {
+        // Everything on screen, plus whatever the pan left behind.
+        const have = new Map<string, number>();
+        for (const l of lengths(got)) have.set(l, (have.get(l) ?? 0) + 1);
+        for (const l of lengths(want)) {
+          expect(have.get(l) ?? 0, `a circuit ${l} long`).toBeGreaterThan(0);
+          have.set(l, have.get(l)! - 1);
+        }
+      } else {
+        expect(lengths(got)).toEqual(lengths(want));
+      }
+    }
+  });
+
   it('clearing lets go of the accumulated circuits', async () => {
     const m = await mount({ chords: loopTable(), findCircuits: true, persistFound: true });
     await settleUntil(() => m.status().trace.found > 0, 'the first circuits');

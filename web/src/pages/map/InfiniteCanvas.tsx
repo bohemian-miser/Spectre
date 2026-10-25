@@ -90,6 +90,7 @@ import {
   type TransitionIndex,
 } from './transitions';
 import { createQueryScheduler, type QueryScheduler } from './queryScheduler';
+import { FoundIndex } from './foundIndex';
 import {
   advanceFollowCamera,
   createFollowCamera,
@@ -716,6 +717,10 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
   const foundRef = useRef<readonly TrailGeometry[]>([]);
   /** Identities of everything in `foundRef`, so a re-find is not a duplicate. */
   const foundKeysRef = useRef<Set<string>>(new Set());
+  /** Each found circuit's chord midpoints (world x, y pairs), for {@link FoundIndex}. */
+  const foundMidsRef = useRef(new WeakMap<TrailGeometry, Float64Array>());
+  /** Where the circuits in `list` lie, so a cut can leave them out; rebuilt when `list` is not `foundRef`. */
+  const foundIndexRef = useRef<{ list: readonly TrailGeometry[]; index: FoundIndex<TrailGeometry> } | null>(null);
   const foundInfoRef = useRef({ found: 0, skipped: false, stale: false });
   const followRafRef = useRef(0);
   const followLastRef = useRef(0);
@@ -1297,6 +1302,22 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
       apply([], true);
       return;
     }
+    // Circuits found already are left out before welding: their chords are
+    // their own, so nothing else traces differently without them, and
+    // re-finding them was most of what a pass round familiar ground cost.
+    // Counting the chords seen says which of them this cut holds whole.
+    let held = foundIndexRef.current;
+    if (!held || held.list !== foundRef.current) {
+      const index = new FoundIndex<TrailGeometry>();
+      for (const g of foundRef.current) {
+        const mids = foundMidsRef.current.get(g);
+        if (mids) index.add(g, mids);
+      }
+      held = { list: foundRef.current, index };
+      foundIndexRef.current = held;
+    }
+    const known = held.index;
+    const knownSeen = new Int32Array(known.circuits);
     const segs: Segment[] = [];
     const auxAt: number[] = [];
     // Curved strands: each chord's world curve handles, by segment index.
@@ -1317,6 +1338,13 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
       for (let s = 0; s < local.length; s++) {
         const seg = local[s];
         const [a, b] = seg;
+        const wa = { x: co * mir * a.x - si * a.y + px, y: si * mir * a.x + co * a.y + py };
+        const wb = { x: co * mir * b.x - si * b.y + px, y: si * mir * b.x + co * b.y + py };
+        const slot = known.find((wa.x + wb.x) / 2, (wa.y + wb.y) / 2);
+        if (slot >= 0) {
+          knownSeen[slot]++;
+          continue;
+        }
         if (table.aux?.has(seg)) auxAt.push(segs.length);
         const c = localCtrls?.[s];
         if (c) {
@@ -1325,10 +1353,7 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
             c2: { x: co * mir * c.c2.x - si * c.c2.y + px, y: si * mir * c.c2.x + co * c.c2.y + py },
           };
         }
-        segs.push([
-          { x: co * mir * a.x - si * a.y + px, y: si * mir * a.x + co * a.y + py },
-          { x: co * mir * b.x - si * b.y + px, y: si * mir * b.x + co * b.y + py },
-        ]);
+        segs.push([wa, wb]);
       }
     }
     const welded = weldSegments(segs);
@@ -1358,15 +1383,28 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
       );
       const tileLength = lengthOf(path);
       const rgb = circuitRgb(tileLength);
-      geoms.push({
+      const geom: TrailGeometry = {
         tileLength,
         color: [rgb[0] / 255, rgb[1] / 255, rgb[2] / 255],
         origin: cut.origin,
         ...packRun(run, cut.origin),
         totalLength: total,
         version: 1,
-      });
+      };
+      const mids = new Float64Array(2 * n);
+      for (let i = 0; i < n; i++) {
+        mids[2 * i] = (ring[i].x + ring[i + 1].x) / 2;
+        mids[2 * i + 1] = (ring[i].y + ring[i + 1].y) / 2;
+      }
+      foundMidsRef.current.set(geom, mids);
+      geoms.push(geom);
     }
+    const fresh = geoms;
+    // Found before and whole in this cut: what tracing them again would have
+    // given, without the work.
+    const seenWhole: TrailGeometry[] = [];
+    for (let k = 0; k < known.circuits; k++) if (knownSeen[k] === known.sizes[k]) seenWhole.push(known.items[k]);
+    geoms = [...seenWhole, ...fresh];
     // What this cut can see, by identity — which is also the set that must
     // survive any trimming below.
     const here = new Set(geoms.map(circuitKey));
@@ -1384,13 +1422,19 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
         foundKeysRef.current = new Set(foundRef.current.map(circuitKey));
       }
       const keys = foundKeysRef.current;
-      for (const g of geoms) {
+      const added: TrailGeometry[] = [];
+      for (const g of fresh) {
         const key = circuitKey(g);
         if (keys.has(key)) continue;
         keys.add(key);
         merged.push(g);
+        added.push(g);
       }
       geoms = merged;
+      // The index already holds everything that was there: only the new
+      // finds need adding, not the whole set again.
+      for (const g of added) known.add(g, foundMidsRef.current.get(g)!);
+      held.list = merged;
     }
 
     const hold = foundHoldRef.current;
