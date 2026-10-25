@@ -115,14 +115,6 @@ export const SITE_NAV: readonly NavItem[] = Object.freeze([
     blurb: 'How each rule grows with the supertile level: bounded, curves, fractal or space-filling.',
   },
   {
-    id: 'faultlines',
-    label: 'Fault lines',
-    short: 'Faults',
-    entry: 'faultlines.html',
-    status: 'ready',
-    blurb: 'Which pairings put their big circuits in the same places, along the same supertile seams.',
-  },
-  {
     id: 'centremap',
     label: 'Centre map',
     short: 'Centres',
