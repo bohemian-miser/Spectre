@@ -252,8 +252,14 @@ export function SelectionPanel(props: {
   const patterns = whole?.patterns ?? sampled;
   const [hoverDigit, setHoverDigit] = useState<{ rule: string; position: number } | null>(null);
   /** What the patch shows: -1 for everything overlaid, else one selected pairing. */
-  const [at, setAt] = useState(-1);
-  useEffect(() => setAt(-1), [items]);
+  // Kept with the selection it indexes, so a new selection starts at -1 on its very first render.
+  const [pos, setPos] = useState<{ items: readonly Item[]; at: number }>({ items, at: -1 });
+  const at = pos.items === items && pos.at < items.length ? pos.at : -1;
+  const setAt = (next: number | ((a: number) => number)) =>
+    setPos((p) => {
+      const cur = p.items === items && p.at < items.length ? p.at : -1;
+      return { items, at: typeof next === 'function' ? next(cur) : next };
+    });
   const show = useRef(onShow);
   show.current = onShow;
   useEffect(() => show.current?.(at), [at]);

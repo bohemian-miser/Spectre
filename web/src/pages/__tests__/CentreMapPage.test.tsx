@@ -134,6 +134,12 @@ describe('CentreMapPage', () => {
     // Esc clears the selection.
     fireEvent.keyDown(window, { key: 'Escape' });
     expect(screen.queryByTestId('centremap-picked')).toBeNull();
+    // A smaller selection while the board shows a late pairing of the old one starts afresh, not past its end.
+    fireEvent.pointerDown(box, { clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(box, { clientX: 600, clientY: 600 });
+    fireEvent.pointerUp(box, { clientX: 600, clientY: 600 });
+    fireEvent.keyDown(window, { key: 'ArrowLeft' });
+    expect(shown()).toMatch(/^270 \/ 270 · /);
     // While a search is on, a box picks only its matches.
     fireEvent.change(screen.getByTestId('centremap-rule'), { target: { value: '0356' } });
     fireEvent.pointerDown(box, { clientX: 0, clientY: 0 });
