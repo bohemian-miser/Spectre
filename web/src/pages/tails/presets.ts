@@ -10,7 +10,7 @@
  */
 
 import {
-  DEFAULT_EXPLORER_STATE,
+  DEFAULT_LINK_STATE,
   comboToMatchingIndices,
   connectionCount,
   edgesToSubset,
@@ -330,9 +330,9 @@ export function explorerHref(
   const level = opts.level ?? 3;
   const matching = opts.combo
     ? comboToMatchingIndices(FAMILY, subset, opts.combo)
-    : DEFAULT_EXPLORER_STATE.matching;
+    : DEFAULT_LINK_STATE.matching;
   const hash = stateToHash({
-    ...DEFAULT_EXPLORER_STATE,
+    ...DEFAULT_LINK_STATE,
     level,
     subset: [...subset].sort((a, b) => a - b),
     matching,

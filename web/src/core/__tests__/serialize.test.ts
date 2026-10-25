@@ -5,6 +5,8 @@ import {
   CODEC_VERSION,
   DEFAULT_EXPLORER_STATE,
   DEFAULT_FLAGS,
+  DEFAULT_LINK_STATE,
+  LINK_FLAGS,
   FLAG,
   MAX_LEVEL,
   decodeExplorerQuery,
@@ -38,8 +40,21 @@ describe('explorer state codec', () => {
   it('emits only the version for the default state', () => {
     expect(encodeExplorerQuery(DEFAULT_EXPLORER_STATE)).toBe(`v=${CODEC_VERSION}`);
     expect(decodeExplorerQuery('')).toEqual(DEFAULT_EXPLORER_STATE);
-    expect(DEFAULT_FLAGS).toBe(151);
+    expect(DEFAULT_FLAGS).toBe(135);
     expect(DEFAULT_FLAGS & FLAG.NON_CROSSING_ONLY).toBe(FLAG.NON_CROSSING_ONLY);
+    expect(DEFAULT_FLAGS & FLAG.RAINBOW_TAILS).toBe(0);
+    expect(DEFAULT_FLAGS & FLAG.BACKGROUNDS).toBe(FLAG.BACKGROUNDS);
+  });
+
+  it('links from other pages drop the backgrounds and nothing else', () => {
+    expect(LINK_FLAGS).toBe(134);
+    expect(LINK_FLAGS & FLAG.BACKGROUNDS).toBe(0);
+    expect(LINK_FLAGS | FLAG.BACKGROUNDS).toBe(DEFAULT_FLAGS);
+    expect(DEFAULT_LINK_STATE).toEqual({ ...DEFAULT_EXPLORER_STATE, flags: LINK_FLAGS });
+    const q = encodeExplorerQuery(DEFAULT_LINK_STATE);
+    expect(q).toContain('fl=134');
+    expect(q).not.toContain('tk=');
+    expect(decodeExplorerQuery(q)).toEqual(DEFAULT_LINK_STATE);
   });
 
   it('round-trips a fully populated state', () => {
@@ -359,34 +374,35 @@ describe('tap-to-trace in the URL', () => {
 });
 
 describe('tk / tg / fx (ticker, transition graph, find ceiling)', () => {
-  it('says nothing while the ticker is on and the graph is off', () => {
+  it('says nothing while the ticker and the graph are both off', () => {
     const q = encodeExplorerQuery(DEFAULT_EXPLORER_STATE);
     expect(q).not.toContain('tk=');
     expect(q).not.toContain('tg=');
     expect(q).not.toContain('fx=');
   });
 
-  it('round-trips a hidden ticker and a shown graph, canonically', () => {
+  it('round-trips a shown ticker and a shown graph, canonically', () => {
     const q = encodeExplorerQuery({
       ...DEFAULT_EXPLORER_STATE,
-      showTicker: false,
+      showTicker: true,
       showTransitions: true,
     });
-    expect(q).toContain('tk=0');
+    expect(q).toContain('tk=1');
     expect(q).toContain('tg=1');
     const back = decodeExplorerQuery(q);
-    expect(back.showTicker).toBe(false);
+    expect(back.showTicker).toBe(true);
     expect(back.showTransitions).toBe(true);
     expect(encodeExplorerQuery(back)).toBe(q);
   });
 
-  it('omits a ticker that is on and a graph that is off, whichever way they got there', () => {
+  it('omits a ticker and a graph that are off, whichever way they got there', () => {
     const q = encodeExplorerQuery({
       ...DEFAULT_EXPLORER_STATE,
-      showTicker: true,
+      showTicker: false,
       showTransitions: false,
     });
     expect(q).toBe(`v=${CODEC_VERSION}`);
+    expect(decodeExplorerQuery('tk=0').showTicker).toBeUndefined();
   });
 
   it('round-trips a non-default find ceiling and clamps nonsense', () => {

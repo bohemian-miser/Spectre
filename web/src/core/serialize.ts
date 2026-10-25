@@ -133,9 +133,9 @@ export interface ExplorerState {
    */
   readonly persistFound?: boolean;
   /**
-   * Show the ticker naming the tiles a chase crosses (`tk=0` when OFF).
-   * Default ON, so every link written before the toggle existed still shows
-   * the ticker. Read it as `state.showTicker ?? true`.
+   * Show the ticker naming the tiles a chase crosses (`tk=1` when ON).
+   * Default OFF, so a link that says nothing opens without it. Read it as
+   * `state.showTicker ?? false`.
    */
   readonly showTicker?: boolean;
   /**
@@ -350,12 +350,20 @@ export const FLAG = {
 export const ALL_FLAGS: number = Object.values(FLAG).reduce((a, b) => a | b, 0);
 
 /**
- * 151. NON_CROSSING_ONLY joined the default later (it was 23); the filter only
- * narrows what the matching sliders offer, never the matchings a link draws,
- * so an old link that omits `fl=` still shows the same tiling.
+ * 135: what the Explorer shows when opened with no state in the URL.
+ * NON_CROSSING_ONLY only narrows what the matching sliders offer, never the
+ * matchings a link draws, so a link that omits `fl=` still shows the same
+ * tiling; wanderers on such a link are grey.
  */
-export const DEFAULT_FLAGS =
-  FLAG.BACKGROUNDS | FLAG.OUTLINES | FLAG.LINES | FLAG.RAINBOW_TAILS | FLAG.NON_CROSSING_ONLY;
+export const DEFAULT_FLAGS = FLAG.BACKGROUNDS | FLAG.OUTLINES | FLAG.LINES | FLAG.NON_CROSSING_ONLY;
+
+/**
+ * 134: the flags a link INTO the Explorer from another page carries — the
+ * page-load default without tile backgrounds, so the strands are what a
+ * reader arriving from the Tails, Classifications, Dimension or Centre map
+ * pages sees first.
+ */
+export const LINK_FLAGS = DEFAULT_FLAGS & ~FLAG.BACKGROUNDS;
 
 export const DEFAULT_EXPLORER_STATE: ExplorerState = Object.freeze({
   family: 'spectre' as TileFamilyId,
@@ -366,6 +374,16 @@ export const DEFAULT_EXPLORER_STATE: ExplorerState = Object.freeze({
   flags: DEFAULT_FLAGS,
   colorScheme: 'bright' as ColorSchemeId,
   overlays: Object.freeze({}) as Readonly<Record<string, readonly Chord[]>>,
+});
+
+/**
+ * Base state for a link into the Explorer built by another page: the
+ * page-load default with {@link LINK_FLAGS}. Spread this, not
+ * {@link DEFAULT_EXPLORER_STATE}, when building such a link.
+ */
+export const DEFAULT_LINK_STATE: ExplorerState = Object.freeze({
+  ...DEFAULT_EXPLORER_STATE,
+  flags: LINK_FLAGS,
 });
 
 /**
@@ -541,7 +559,7 @@ export function encodeExplorerState(s: ExplorerState): URLSearchParams {
   if (s.keepTails === false) q.set('kt', '0');
   if (s.findCircuits === false) q.set('fc', '0');
   if (s.persistFound === false) q.set('pf', '0');
-  if (s.showTicker === false) q.set('tk', '0');
+  if (s.showTicker === true) q.set('tk', '1');
   if (s.showTransitions) q.set('tg', '1');
   if (s.findCeiling !== undefined && clampFindCeiling(s.findCeiling) !== DEFAULT_FIND_CEILING) {
     q.set('fx', String(clampFindCeiling(s.findCeiling)));
@@ -657,7 +675,7 @@ export function decodeExplorerState(q: URLSearchParams): ExplorerState {
   const pfRaw = q.get('pf');
   const persistFound = pfRaw === '0' || pfRaw === 'false' ? false : undefined;
   const tkRaw = q.get('tk');
-  const showTicker = tkRaw === '0' || tkRaw === 'false' ? false : undefined;
+  const showTicker = tkRaw === '1' || tkRaw === 'true' ? true : undefined;
   const tgRaw = q.get('tg');
   const showTransitions = tgRaw === '1' || tgRaw === 'true' ? true : undefined;
   const fxRaw = Number.parseInt(q.get('fx') ?? '', 10);
@@ -699,7 +717,7 @@ export function decodeExplorerState(q: URLSearchParams): ExplorerState {
     ...(keepTails === false ? { keepTails } : {}),
     ...(findCircuits === false ? { findCircuits } : {}),
     ...(persistFound === false ? { persistFound } : {}),
-    ...(showTicker === false ? { showTicker } : {}),
+    ...(showTicker === true ? { showTicker } : {}),
     ...(showTransitions ? { showTransitions } : {}),
     ...(findCeiling !== undefined && findCeiling !== DEFAULT_FIND_CEILING ? { findCeiling } : {}),
     ...(foundHold !== undefined && foundHold !== DEFAULT_FOUND_HOLD ? { foundHold } : {}),

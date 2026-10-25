@@ -10,7 +10,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  DEFAULT_EXPLORER_STATE,
+  DEFAULT_LINK_STATE,
   comboToMatchingIndices,
   encodeExplorerState,
   rulePairings,
@@ -58,7 +58,7 @@ export function dimensionBand(s: Scaling): string {
 
 function explorerHref(family: TileFamilyId, root: TileTypeId, subset: readonly number[], combo: string, level: number): string {
   const q = encodeExplorerState({
-    ...DEFAULT_EXPLORER_STATE,
+    ...DEFAULT_LINK_STATE,
     family,
     rootTile: root,
     level,
