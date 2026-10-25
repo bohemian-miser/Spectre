@@ -30,7 +30,7 @@ import { CENTRE_MAP_TTL_MS, centreMapKey, loadCentreMap, saveCentreMap } from '.
 import { createCentreMapClient } from '../workers/centreMapClient';
 import type { CentreMapPhase, CentreMapResult } from '../workers/centreMapJobs';
 import { createFaultLinesClient } from '../workers/faultLinesClient';
-import { BoxSelect, Magnifier, SelectionPanel, Thumb, explorerHref, type Item } from './centremap/parts';
+import { BoxSelect, Magnifier, SelectionPanel, Thumb, explorerHref, ruleColour, type Item } from './centremap/parts';
 import '../styles/centremap.css';
 
 const FAMILIES: readonly { id: TileFamilyId; label: string }[] = [
@@ -45,8 +45,6 @@ const PLOT = 520;
 const PLOT_BOX = { min: { x: 0, y: 0 }, max: { x: PLOT, y: PLOT } };
 const NEAREST = 8;
 
-const RULE_HUES = [210, 20, 130, 280, 45, 330, 170, 0, 90, 250];
-const ruleColour = (i: number) => `hsl(${RULE_HUES[i % RULE_HUES.length]} 70% 52%)`;
 const groupColour = (i: number) => (i < 0 ? 'hsl(0 0% 60%)' : `hsl(${(i * 137.5) % 360} 68% 50%)`);
 
 /** Pearson correlation of two matrix rows (log-scaled), as a similarity in [−1, 1]. */
@@ -252,7 +250,10 @@ export default function CentreMapPage(): JSX.Element {
   const matchCount = matches?.filter(Boolean).length ?? 0;
 
   /** A box picks what it covers, but only the search's matches while one is on. */
-  const pickBox = (ids: readonly number[]) => setPicked(searching && matches ? ids.filter((i) => matches[i]) : ids);
+  const keep = (ids: readonly number[]) => (searching && matches ? ids.filter((i) => matches[i]) : ids);
+  const pickBox = (ids: readonly number[]) => setPicked(keep(ids));
+  // On the heatmap a search only dims rows, so it only filters rows: every column the box covers stays.
+  const pickHeatBox = (rows: readonly number[], cols: readonly number[]) => setPicked([...new Set([...keep(rows), ...cols])]);
   const label = (i: number) => `${result!.items[i].rule} · ${result!.items[i].combo}`;
   const dist = (a: number, b: number) => result!.result.matrix[a * n + b];
   const nearest = useMemo(() => {
@@ -495,7 +496,7 @@ export default function CentreMapPage(): JSX.Element {
                   </label>
                 ))}
               </div>
-              <Heatmap matrix={result.result.matrix} n={n} rows={orderFor(rowOrder)} cols={orderFor(colOrder)} matches={searching ? matches : null} label={label} onPick={setSelected} selecting={dragMode === 'select'} picked={picked} onBox={pickBox} />
+              <Heatmap matrix={result.result.matrix} n={n} rows={orderFor(rowOrder)} cols={orderFor(colOrder)} matches={searching ? matches : null} label={label} onPick={setSelected} selecting={dragMode === 'select'} picked={picked} onBox={pickHeatBox} />
             </section>
           </div>
 
@@ -699,7 +700,8 @@ function Heatmap(props: {
   onPick: (i: number) => void;
   selecting: boolean;
   picked: readonly number[] | null;
-  onBox: (picked: readonly number[]) => void;
+  /** The box's rows and its columns. */
+  onBox: (rows: readonly number[], cols: readonly number[]) => void;
 }): JSX.Element {
   const { matrix, n, rows, cols, matches, label, onPick, selecting, picked, onBox } = props;
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -789,10 +791,7 @@ function Heatmap(props: {
                   const c1 = at(b.cx1, rect.left, rect.width);
                   const r0 = at(b.cy0, rect.top, rect.height);
                   const r1 = at(b.cy1, rect.top, rect.height);
-                  const out = new Set<number>();
-                  for (let r = r0; r <= r1; r++) out.add(rows[r]);
-                  for (let c = c0; c <= c1; c++) out.add(cols[c]);
-                  onBox([...out]);
+                  onBox(rows.slice(r0, r1 + 1), cols.slice(c0, c1 + 1));
                 }}
               />
             )}

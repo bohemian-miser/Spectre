@@ -122,7 +122,10 @@ describe('CentreMapPage', () => {
     fireEvent.click(screen.getByTestId('centremap-overlay-one'));
     expect(shown()).toMatch(/^1 \/ 270/);
     expect(screen.getByTestId('centremap-tiles').querySelectorAll('figure')).toHaveLength(10);
-    fireEvent.click(screen.getByLabelText('Clear selection'));
+    // The pairing on show opens in the Explorer.
+    expect(screen.getByTestId('centremap-overlay-explorer').getAttribute('href')).toMatch(/#\/explorer\?v=1/);
+    // Esc clears the selection.
+    fireEvent.keyDown(window, { key: 'Escape' });
     expect(screen.queryByTestId('centremap-picked')).toBeNull();
     // While a search is on, a box picks only its matches.
     fireEvent.change(screen.getByTestId('centremap-rule'), { target: { value: '0356' } });
@@ -131,6 +134,15 @@ describe('CentreMapPage', () => {
     fireEvent.pointerUp(box, { clientX: 600, clientY: 600 });
     expect(screen.getByTestId('centremap-picked').textContent).toMatch(/^8 pairings selected/);
     fireEvent.click(screen.getByLabelText('Clear selection'));
+    // On the heatmap a search only filters the box's rows: a box along one row keeps every column it covers.
+    const heat = screen.getByTestId('centremap-heatmap');
+    heat.getBoundingClientRect = () => ({ left: 0, top: 0, width: 270, height: 270, right: 270, bottom: 270, x: 0, y: 0, toJSON: () => ({}) }) as DOMRect;
+    const heatBox = screen.getByTestId('centremap-heat-box');
+    fireEvent.pointerDown(heatBox, { clientX: 10, clientY: 100 });
+    fireEvent.pointerMove(heatBox, { clientX: 59, clientY: 100.5 });
+    fireEvent.pointerUp(heatBox, { clientX: 59, clientY: 100.5 });
+    expect(Number(/^(\d+) pairings selected/.exec(screen.getByTestId('centremap-picked').textContent!)![1])).toBeGreaterThanOrEqual(50);
+    fireEvent.keyDown(window, { key: 'Escape' });
     fireEvent.change(screen.getByTestId('centremap-rule'), { target: { value: '' } });
     fireEvent.click(screen.getByTestId('centremap-drag-pan'));
 

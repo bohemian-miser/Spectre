@@ -22,6 +22,9 @@ import { PanZoom } from '../../components/PanZoom';
 import type { FaultLinesClient } from '../../workers/faultLinesClient';
 
 export const THUMB = 240;
+
+const RULE_HUES = [210, 20, 130, 280, 45, 330, 170, 0, 90, 250];
+export const ruleColour = (i: number): string => `hsl(${RULE_HUES[i % RULE_HUES.length]} 70% 52%)`;
 /** The magnified view's render size, in pixels. */
 const BIG = 900;
 
@@ -252,14 +255,18 @@ export function SelectionPanel(props: {
   // ← → step through: all overlaid, then each pairing, and round again.
   const step = useRef<(d: number) => void>(() => {});
   step.current = (d: number) => setAt((a) => ((a + 1 + d + items.length + 1) % (items.length + 1)) - 1);
+  const clear = useRef(onClear);
+  clear.current = onClear;
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight' && e.key !== 'Escape') return;
       const t = e.target as HTMLElement | null;
       if (t?.closest?.('input, select, textarea, [contenteditable="true"], .join-picker')) return;
       if (globalThis.document?.querySelector('.centremap-modal')) return; // the magnifier has the keys
       e.preventDefault();
-      step.current(e.key === 'ArrowLeft' ? -1 : 1);
+      // Esc clears the selection.
+      if (e.key === 'Escape') clear.current();
+      else step.current(e.key === 'ArrowLeft' ? -1 : 1);
     };
     globalThis.addEventListener('keydown', onKey);
     return () => globalThis.removeEventListener('keydown', onKey);
@@ -273,7 +280,7 @@ export function SelectionPanel(props: {
       <h2 id="centremap-picked-h">
         {(whole?.count ?? items.length).toLocaleString('en-US')} pairing{(whole?.count ?? items.length) === 1 ? '' : 's'} selected
         {whole && whole.count > items.length && <span className="muted"> · the board and tiles show a sample of {items.length}</span>}
-        <button type="button" className="centremap-close" onClick={onClear} aria-label="Clear selection">
+        <button type="button" className="centremap-close" onClick={onClear} aria-label="Clear selection" title="Clear selection (Esc)">
           ×
         </button>
       </h2>
@@ -323,6 +330,13 @@ export function SelectionPanel(props: {
             <button type="button" onClick={() => step.current(1)} aria-label="Next pattern">
               ›
             </button>
+            {at >= 0 || items.length === 1 ? (
+              <a href={explorerHref(family, items[Math.max(0, at)].subset, items[Math.max(0, at)].combo, Math.min(level, 5))} data-testid="centremap-overlay-explorer">
+                Open in the Explorer ↗
+              </a>
+            ) : (
+              <span className="muted">step to one to open it in the Explorer</span>
+            )}
           </div>
           <OverlayBoard client={client} family={family} level={level} items={items} dark={dark} at={at} />
           <figcaption className="muted">
