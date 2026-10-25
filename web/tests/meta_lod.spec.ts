@@ -7,8 +7,8 @@ import { expect, test } from '@playwright/test';
  * with a carpet of coloured blobs. `lv=` is a zoom preset in infinite mode, so
  * these deep levels land on an aggregate cut without any wheel scrubbing.
  *
- * `fl=` is the display-flag bitmask: 23 is the default (backgrounds, outlines,
- * lines, rainbow tails); 22 is the same with backgrounds cleared.
+ * `fl=` is the display-flag bitmask: 23 is backgrounds, outlines,
+ * lines and rainbow tails; 22 is the same with backgrounds cleared.
  */
 const RULE = 'e=2578&c=0100101100';
 // `fc=0` keeps find-all out of it: it is on by default now, and circuits held

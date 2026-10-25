@@ -394,7 +394,7 @@ describe('ExplorerPage — infinite mode', () => {
   });
 
   it('the flow toggle draws runs, sources and sinks from the labels\' directions', () => {
-    // fl = default 23 + FLOW 2048.
+    // fl = 23 (default minus non-crossing only) + FLOW 2048.
     window.history.replaceState(null, '', '/#/explorer?v=1&f=hex&lv=2&e=128&fl=2071');
     const { container } = render(<ExplorerPage />);
     const layer = container.querySelector('g.flow-layer');
@@ -426,7 +426,7 @@ describe('ExplorerPage — infinite mode', () => {
   });
 
   it('curved strands draw the circuits as curves', () => {
-    // fl = default 23 + CURVED_STRANDS 4096.
+    // fl = 23 (default minus non-crossing only) + CURVED_STRANDS 4096.
     window.history.replaceState(null, '', '/#/explorer?v=1&f=hex&lv=2&e=15&fl=4119');
     const { container } = render(<ExplorerPage />);
     const d = container.querySelector('.circuit-path')?.getAttribute('d') ?? '';
@@ -439,7 +439,8 @@ describe('ExplorerPage — infinite mode', () => {
   });
 
   it('several strands per class: the class chips step their counts, and the rule stays valid', () => {
-    window.history.replaceState(null, '', '/#/explorer?v=1&f=hex&lv=2&e=15');
+    // fl=23: non-crossing only off, so crossing pairings are counted too.
+    window.history.replaceState(null, '', '/#/explorer?v=1&f=hex&lv=2&e=15&fl=23');
     const { container, getByLabelText, getByTestId, queryByTestId } = render(<ExplorerPage />);
     const circuits = () => container.querySelectorAll('.circuit-path').length;
     const before = circuits();
@@ -506,7 +507,8 @@ describe('ExplorerPage — infinite mode', () => {
   });
 
   it('opens a tile in the big pairing editor, steps tiles, and closes on Escape', () => {
-    window.history.replaceState(null, '', '/#/explorer?v=1&f=hex&lv=2&e=15');
+    // fl=23: non-crossing only off, so crossing pairings are counted too.
+    window.history.replaceState(null, '', '/#/explorer?v=1&f=hex&lv=2&e=15&fl=23');
     const { getByLabelText, getByTestId, queryByTestId } = render(<ExplorerPage />);
     fireEvent.click(getByLabelText("Edit Pi's pairing"));
     expect(getByTestId('tile-editor').getAttribute('aria-label')).toBe('Pairing for Pi');
@@ -521,7 +523,8 @@ describe('ExplorerPage — infinite mode', () => {
   });
 
   it('steps every tile through the combinations at once, like aperiodic-circuits', () => {
-    window.history.replaceState(null, '', '/#/explorer?v=1&f=hex&lv=2&e=15');
+    // fl=23: non-crossing only off, so crossing pairings are counted too.
+    window.history.replaceState(null, '', '/#/explorer?v=1&f=hex&lv=2&e=15&fl=23');
     const { getByLabelText, getByTestId } = render(<ExplorerPage />);
     // Hexagons with {1, 5}: Pi and Psi have three pairings each, nothing else has a choice.
     const pos = () => getByTestId('combo-position').textContent;

@@ -321,8 +321,8 @@ export const FLAG = {
   NON_CROSSING_ONLY: 128,
   /**
    * Hide the stats readout over the view. Phrased as HIDE rather than SHOW so
-   * the default stays 23 and every link written before it still means what it
-   * meant.
+   * adding it left the default bitmask unchanged and every link written before
+   * it still means what it meant.
    */
   HIDE_STATS: 256,
   /** Draw the dual of the strand graph: a node per region, an edge per strand. */
@@ -349,8 +349,13 @@ export const FLAG = {
  */
 export const ALL_FLAGS: number = Object.values(FLAG).reduce((a, b) => a | b, 0);
 
+/**
+ * 151. NON_CROSSING_ONLY joined the default later (it was 23); the filter only
+ * narrows what the matching sliders offer, never the matchings a link draws,
+ * so an old link that omits `fl=` still shows the same tiling.
+ */
 export const DEFAULT_FLAGS =
-  FLAG.BACKGROUNDS | FLAG.OUTLINES | FLAG.LINES | FLAG.RAINBOW_TAILS; // 23
+  FLAG.BACKGROUNDS | FLAG.OUTLINES | FLAG.LINES | FLAG.RAINBOW_TAILS | FLAG.NON_CROSSING_ONLY;
 
 export const DEFAULT_EXPLORER_STATE: ExplorerState = Object.freeze({
   family: 'spectre' as TileFamilyId,

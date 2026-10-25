@@ -38,8 +38,8 @@ describe('explorer state codec', () => {
   it('emits only the version for the default state', () => {
     expect(encodeExplorerQuery(DEFAULT_EXPLORER_STATE)).toBe(`v=${CODEC_VERSION}`);
     expect(decodeExplorerQuery('')).toEqual(DEFAULT_EXPLORER_STATE);
-    expect(DEFAULT_FLAGS).toBe(23);
-    expect(FLAG.BACKGROUNDS | FLAG.OUTLINES | FLAG.LINES | FLAG.RAINBOW_TAILS).toBe(23);
+    expect(DEFAULT_FLAGS).toBe(151);
+    expect(DEFAULT_FLAGS & FLAG.NON_CROSSING_ONLY).toBe(FLAG.NON_CROSSING_ONLY);
   });
 
   it('round-trips a fully populated state', () => {
