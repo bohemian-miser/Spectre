@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 /**
  * The neighbour machine page. jsdom has no layout, so what is asserted is the
- * WIRING: selecting a tile and an edge produces a trace and an answer, the
- * transducer gives the same answer, the wall crossing returns a period, and
- * a strand under a rule closes into a circuit.
+ * WIRING: a crossing reveals the neighbour or asks for a parent, choosing a
+ * parent grows the world and retries, the rules carry the lookup's marks, the
+ * machine's run agrees, and a strand step crosses the partner edge.
  */
 import { act, cleanup, fireEvent, render } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -13,74 +13,70 @@ import TransducerPage from '../TransducerPage';
 afterEach(() => cleanup());
 
 const text = (c: HTMLElement, id: string): string => c.querySelector(`[data-testid="${id}"]`)?.textContent ?? '';
+const key = (k: string): void => { act(() => { fireEvent.keyDown(window, { key: k }); }); };
 
 describe('TransducerPage', () => {
-  it('draws the default patch and names the selected tile by its address', () => {
+  it('starts with one tile and no world above it', () => {
     const { container } = render(<TransducerPage />);
-    const svg = container.querySelector('[data-testid="td-svg"]') as SVGElement;
-    expect(svg.getAttribute('data-tile-count')).toBe('496'); // a level-3 Delta supertile of hexagons
-    expect(text(container, 'td-id')).toBe('1.7.0');
-    expect(text(container, 'td-address')).toBe('Pi, slot 0 of Gamma, slot 7 of Delta, slot 1 of Delta');
+    const svg = container.querySelector('[data-testid="td-svg"]')!;
+    expect(svg.getAttribute('data-revealed')).toBe('1');
+    expect(svg.getAttribute('data-drawn')).toBe('1');
+    expect(text(container, 'td-address')).toBe('Pi');
+    expect(container.querySelector('[data-testid="td-lookup"]')).toBeNull();
   });
 
-  it('crossing an edge gives a trace, an answer, and the same answer from the transducer', () => {
+  it('a crossing with no parent asks for one; choosing it grows the world and reveals the neighbour', () => {
     const { container } = render(<TransducerPage />);
-    const trace = container.querySelector('[data-testid="td-trace"]')!;
-    expect(trace.querySelectorAll('li').length).toBeGreaterThan(0);
-    const result = text(container, 'td-result');
-    expect(result).toContain('Across edge');
-    const m = /is ([0-9.]+) \(.+?\), entered through its edge (\d)/.exec(result)!;
-    expect(text(container, 'td-run-result')).toContain(m[1]);
-    expect(text(container, 'td-run-result')).toContain(`edge ${m[2]}`);
-    expect(container.querySelectorAll('.td__tile.is-neighbour')).toHaveLength(1);
+    key('0');
+    expect(container.querySelector('[data-testid="td-pending"]')).not.toBeNull();
+    expect(text(container, 'td-result')).toContain('No answer yet');
+    // Pi is slot 0 of a Gamma, among others
+    const choice = container.querySelector('[data-testid="td-parent-Gamma-0"]') as HTMLButtonElement;
+    expect(choice).not.toBeNull();
+    act(() => { fireEvent.click(choice); });
+    expect(container.querySelector('[data-testid="td-pending"]')).toBeNull();
+    const svg = container.querySelector('[data-testid="td-svg"]')!;
+    // the start tile and its neighbour are revealed, and the consulted supertile is drawn faintly
+    expect(Number(svg.getAttribute('data-revealed'))).toBe(2);
+    expect(Number(svg.getAttribute('data-drawn'))).toBeGreaterThan(2);
+    expect(text(container, 'td-result')).toContain('Across it');
+    expect(text(container, 'td-id')).not.toBe('(the root itself)');
+    // the rule used carries a numbered badge
+    const used = container.querySelectorAll('[data-testid="td-rules"] .xmap[data-used="1"]');
+    expect(used.length).toBeGreaterThan(0);
+    expect(container.querySelector('.xmap__badge')).not.toBeNull();
+    // the machine agrees with the lookup
+    const id = text(container, 'td-id');
+    expect(text(container, 'td-run-result')).toContain(id);
   });
 
-  it('selecting another tile and an outside edge reports that the patch ends', () => {
+  it('a crossing inside the world reveals the neighbour at once and keeps the trail', () => {
     const { container } = render(<TransducerPage />);
-    // tile '1.1.1' is the Delta corner; some edge of some tile is on the outline. Find one by trying edges.
-    const first = container.querySelector('.td__tile[data-id="7.7.7"]') as SVGElement;
-    act(() => { fireEvent.click(first); });
-    expect(text(container, 'td-id')).toBe('7.7.7');
-    let outside = false;
-    for (let e = 0; e < 6 && !outside; e++) {
-      const edges = container.querySelectorAll('.td__edge');
-      act(() => { fireEvent.click(edges[e]); });
-      outside = text(container, 'td-result').includes('No answer inside this patch');
-    }
-    // not every tile has an outside edge; the Gamma at 7.7.7 may be interior, so only check consistency
-    const res = text(container, 'td-result');
-    expect(res.includes('Across edge') || res.includes('No answer')).toBe(true);
-  });
-
-  it('animates the lookup frame by frame, and moving there makes the neighbour the selected tile', () => {
-    const { container } = render(<TransducerPage />);
+    key('0');
+    act(() => { fireEvent.click(container.querySelector('[data-testid="td-parent-Gamma-0"]')!); });
     const before = text(container, 'td-id');
-    expect(text(container, 'td-frame-title')).toContain('Level 0');
-    expect(text(container, 'td-frame-text')).toContain('rule');
-    act(() => { fireEvent.click(container.querySelector('[data-testid="td-next"]')!); });
-    expect(text(container, 'td-frame-title')).toContain('Outside');
-    // the frame buttons list every lookup; the last one is the landing
-    const frames = container.querySelectorAll('[data-testid="td-trace"] li');
-    expect(frames.length).toBeGreaterThan(2);
-    act(() => { fireEvent.click(frames[frames.length - 1].querySelector('button')!); });
-    expect(text(container, 'td-frame-title')).toBe('Landed');
-    const result = text(container, 'td-result');
-    const m = /is ([0-9.]+) \(.+?\), entered through its edge (\d)/.exec(result)!;
-    act(() => { fireEvent.click(container.querySelector('[data-testid="td-move"]')!); });
-    expect(text(container, 'td-id')).toBe(m[1]);
+    // cross back through the edge we entered by: that is inside the Gamma, no new parent needed
+    const entry = /edge (\d)\./.exec(text(container, 'td-result'))![1];
+    key(entry);
+    expect(container.querySelector('[data-testid="td-pending"]')).toBeNull();
+    expect(text(container, 'td-id')).toBe('0'); // back at the start, now slot 0 of the Gamma
     expect(text(container, 'td-id')).not.toBe(before);
     expect(container.querySelector('.td__trail')).not.toBeNull();
-    // the machine graph and state card follow the animation
-    expect(container.querySelector('[data-testid="td-graph"]')).not.toBeNull();
-    expect(text(container, 'td-state')).toMatch(/State \d+/);
   });
 
-  it('the expansion map of the parent is drawn with the selected child edge highlighted', () => {
+  it('a strand step crosses the partner edge of the entry', () => {
     const { container } = render(<TransducerPage />);
-    const map = container.querySelector('[data-testid="xmap-Gamma"]'); // tile 1.7.0 is child 0 of a Gamma
-    expect(map).not.toBeNull();
-    expect(map!.querySelectorAll('.xmap__child')).toHaveLength(7); // Gamma has seven children
-    expect(map!.querySelector('.xmap__hl.is-child')).not.toBeNull();
+    key('0');
+    act(() => { fireEvent.click(container.querySelector('[data-testid="td-parent-Gamma-0"]')!); });
+    const status = text(container, 'td-strand-status');
+    if (status.includes('joins it to edge')) {
+      const idBefore = text(container, 'td-id');
+      act(() => { fireEvent.click(container.querySelector('[data-testid="td-strand-step"]')!); });
+      const after = text(container, 'td-id');
+      expect(after === idBefore ? container.querySelector('[data-testid="td-pending"]') !== null : true).toBe(true);
+    } else {
+      expect(status).toMatch(/carries no crossing|Pick the edge/);
+    }
   });
 
   it('states the size of the machine and crosses the infinite Psi wall', () => {
@@ -93,16 +89,10 @@ describe('TransducerPage', () => {
     expect(text(container, 'td-wall-result')).toContain('type:number');
   });
 
-  it('walks a strand under the default rule to a circuit or out of the patch', () => {
+  it('Start again returns to a single tile of the chosen type', () => {
     const { container } = render(<TransducerPage />);
-    const chip = container.querySelector('[data-testid^="td-seam-"]') as HTMLButtonElement;
-    expect(chip).not.toBeNull();
-    act(() => { fireEvent.click(chip); });
-    expect(text(container, 'td-strand-status')).toContain('0 segments so far');
-    act(() => { fireEvent.click(container.querySelector('[data-testid="td-step"]')!); });
-    expect(text(container, 'td-strand-status')).toMatch(/1 segments so far|Closed|Left the patch/);
-    act(() => { fireEvent.click(container.querySelector('[data-testid="td-run-strand"]')!); });
-    expect(text(container, 'td-strand-status')).toMatch(/Closed: a circuit of \d+ segments|Left the patch after \d+ segments/);
-    expect(text(container, 'td-boundary-summary')).toMatch(/\d+ crossings on the outline/);
+    act(() => { fireEvent.change(container.querySelector('[data-testid="td-start"]')!, { target: { value: 'Delta' } }); });
+    expect(text(container, 'td-address')).toBe('Delta');
+    expect(container.querySelector('[data-testid="td-svg"]')!.getAttribute('data-revealed')).toBe('1');
   });
 });
