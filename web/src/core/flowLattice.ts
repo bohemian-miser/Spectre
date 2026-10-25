@@ -386,13 +386,17 @@ export function edgeVar(model: FlowModel, type: TileTypeId, edge: number): { ind
 export interface EchelonRow {
   /** Directed entries per unknown (0 in the class-0 column). */
   readonly entries: readonly number[];
-  /** How much of each tile type's row went in, by `types` index. */
+  /** How much of each tile type's row went in, by `types` index: `mix[i] / mixDen`. */
   readonly mix: readonly number[];
+  readonly mixDen: number;
   /**
-   * Class 0's ± carried along: each class-0 tile's row brings ±1, so the mix
-   * brings ±(sum of |mix| over those tiles). 0 when class 0 is out.
+   * The class-0 term: `zero` times one class-0 tile's own share z (each such
+   * tile's z sits in exactly one row), or 0 when the row has none. The row
+   * balances when d + zero·z = 0 for some z that tile's lines allow.
    */
   readonly zero: number;
+  /** The tile whose class-0 share the row carries, when `zero` > 0. */
+  readonly zeroType: TileTypeId | null;
 }
 
 const echelonCache = new Map<FlowModel, readonly EchelonRow[]>();
@@ -402,56 +406,102 @@ const gcd = (a: number, b: number): number => (b === 0 ? Math.abs(a) : gcd(b, a 
 /**
  * The balance matrix in reduced row echelon form, by whole-number row
  * operations (no fractions: each step scales by the pivot and divides out
- * common factors), pivoting on the directed columns only. Rows that end up
- * with no directed entry and no ± are dropped.
+ * common factors). Each class-0 tile's share z_t is a column of its own,
+ * pivoted first, so it ends up in exactly one row; the directed columns are
+ * pivoted after. That keeps the form exact: every row balancing (see
+ * {@link echelonBalances}) is the same as the flow being a circuit. Rows with
+ * nothing left are dropped.
  */
 export function echelonRows(model: FlowModel): readonly EchelonRow[] {
   const hit = echelonCache.get(model);
   if (hit) return hit;
   const nt = model.types.length;
-  const rows = model.matrix.map((r, i) => ({
+  const zeroIdx = model.zeroTypes.map((t) => model.types.indexOf(t));
+  // The mix is m / den, so the row itself can always be divided down to its smallest whole form.
+  type Row = { e: number[]; z: number[]; m: number[]; den: number };
+  const rows: Row[] = model.matrix.map((r, i) => ({
     e: r.map((v, k) => (k === model.zeroVar ? 0 : v)),
+    z: zeroIdx.map((j): number => (j === i ? 1 : 0)),
     m: model.types.map((_, j): number => (j === i ? 1 : 0)),
+    den: 1,
   }));
-  const tidy = (r: { e: number[]; m: number[] }) => {
-    const g = [...r.e, ...r.m].reduce((a, v) => gcd(a, v), 0);
+  const tidy = (r: Row) => {
+    const g = [...r.e, ...r.z].reduce((a, v) => gcd(a, v), 0);
     if (g > 1) {
       r.e = r.e.map((v) => v / g);
-      r.m = r.m.map((v) => v / g);
+      r.z = r.z.map((v) => v / g);
+      r.den *= g;
+    }
+    const h = r.m.reduce((a, v) => gcd(a, v), r.den);
+    if (h > 1) {
+      r.m = r.m.map((v) => v / h);
+      r.den /= h;
     }
   };
+  // Columns in pivot order: the class-0 shares, then the directed unknowns.
+  const cols: { get: (r: Row) => number }[] = [
+    ...zeroIdx.map((_, j) => ({ get: (r: Row) => r.z[j] })),
+    ...model.vars.flatMap((_, k) => (k === model.zeroVar ? [] : [{ get: (r: Row) => r.e[k] }])),
+  ];
   let top = 0;
-  for (let col = 0; col < model.vars.length && top < nt; col++) {
-    if (col === model.zeroVar) continue;
+  for (const col of cols) {
+    if (top >= nt) break;
     let best = -1;
     for (let r = top; r < nt; r++) {
-      const v = rows[r].e[col];
-      if (v !== 0 && (best < 0 || Math.abs(v) < Math.abs(rows[best].e[col]))) best = r;
+      const v = col.get(rows[r]);
+      if (v !== 0 && (best < 0 || Math.abs(v) < Math.abs(col.get(rows[best])))) best = r;
     }
     if (best < 0) continue;
     [rows[top], rows[best]] = [rows[best], rows[top]];
     const piv = rows[top];
-    if (piv.e[col] < 0) {
+    if (col.get(piv) < 0) {
       piv.e = piv.e.map((v) => -v || 0);
+      piv.z = piv.z.map((v) => -v || 0);
       piv.m = piv.m.map((v) => -v || 0);
     }
     for (let r = 0; r < nt; r++) {
-      if (r === top || rows[r].e[col] === 0) continue;
-      const p = piv.e[col];
-      const v = rows[r].e[col];
+      const v = col.get(rows[r]);
+      if (r === top || v === 0) continue;
+      const p = col.get(piv);
       const g = gcd(p, v);
-      rows[r].e = rows[r].e.map((w, k) => (p / g) * w - (v / g) * piv.e[k]);
-      rows[r].m = rows[r].m.map((w, k) => (p / g) * w - (v / g) * piv.m[k]);
+      const mixIn = (w: number[], q: number[]) => w.map((x, k) => (p / g) * x - (v / g) * q[k]);
+      const cur = rows[r];
+      rows[r] = {
+        e: mixIn(cur.e, piv.e),
+        z: mixIn(cur.z, piv.z),
+        m: cur.m.map((x, k) => (p / g) * x * piv.den - (v / g) * piv.m[k] * cur.den),
+        den: cur.den * piv.den,
+      };
       tidy(rows[r]);
     }
     top++;
   }
-  const zeroIdx = model.zeroTypes.map((t) => model.types.indexOf(t));
   const out = rows
-    .map((r) => ({ entries: r.e, mix: r.m, zero: zeroIdx.reduce((a, i) => a + Math.abs(r.m[i]), 0) }))
+    .map((r) => {
+      const j = r.z.findIndex((v) => v !== 0);
+      return {
+        entries: r.e,
+        mix: r.m,
+        mixDen: r.den,
+        zero: j < 0 ? 0 : Math.abs(r.z[j]),
+        zeroType: j < 0 ? null : model.zeroTypes[j],
+      };
+    })
     .filter((r) => r.entries.some((v) => v !== 0) || r.zero > 0);
   echelonCache.set(model, out);
   return out;
+}
+
+/** The values a class-0 share can take with n lines: −n, −n+2, …, n. */
+export function zeroValues(n: number): number[] {
+  return Array.from({ length: n + 1 }, (_, i) => 2 * i - n);
+}
+
+/** Whether a reduced row balances for x: d + zero·z = 0 for some z its tile's lines allow. */
+export function echelonBalances(model: FlowModel, row: EchelonRow, x: readonly number[]): boolean {
+  const d = row.entries.reduce((a, v, k) => a + v * (x[k] ?? 0), 0);
+  if (row.zero === 0) return d === 0;
+  return zeroValues(zeroLines(model, x)).some((z) => d + row.zero * z === 0);
 }
 
 /** Per tile type, flow out minus flow in (class 0's share included): all zero exactly when x is a circuit. */

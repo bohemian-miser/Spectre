@@ -6,7 +6,7 @@
  * lines per edge as its flow needs. The maths lives in core/flowLattice.ts.
  */
 
-import { useMemo, useState, type KeyboardEvent } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import {
   applyMatching,
   combine,
@@ -14,6 +14,7 @@ import {
   directedMatchings,
   describeFlow,
   directedNet,
+  echelonBalances,
   echelonRows,
   edgeVar,
   flowLines,
@@ -26,6 +27,7 @@ import {
   traceStrandPaths,
   zeroFlow,
   zeroLines,
+  zeroValues,
   type FlowMode,
   type DirectedMatching,
   type FlowModel,
@@ -87,6 +89,32 @@ function slicePoint(model: FlowModel, axes: readonly [number, number], flat: boo
   return null;
 }
 
+/**
+ * Keep an element from shrinking while its text changes under it, so whatever
+ * sits below doesn't jump each time a flow turns valid or invalid. It may
+ * still grow; the floor resets when `resetKey` or the element's width changes.
+ */
+function useNoShrink<T extends HTMLElement>(resetKey: string) {
+  const ref = useRef<T>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    el.style.minHeight = '';
+    let width = el.offsetWidth;
+    const ro = new ResizeObserver(() => {
+      if (el.offsetWidth !== width) {
+        width = el.offsetWidth;
+        el.style.minHeight = '';
+      }
+      const h = Math.ceil(el.getBoundingClientRect().height);
+      if (h > (parseFloat(el.style.minHeight) || 0)) el.style.minHeight = `${h}px`;
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [resetKey]);
+  return ref;
+}
+
 function firstFlow(m: FlowModel): number[] {
   return vecAt(m, startAxes(m), 1, 0);
 }
@@ -135,6 +163,7 @@ export default function LatticePage(): JSX.Element {
     setCol(0);
     setComboIdx({});
   };
+  const panelsRef = useNoShrink<HTMLDivElement>(`${mode}|${zeroEither}|${level}`);
   const flat = model.basis.length < 2;
   const sel = slicePoint(model, axes, flat, x);
   const combos: ComboTable = useMemo(
@@ -230,7 +259,7 @@ export default function LatticePage(): JSX.Element {
         </label>
       </div>
 
-      <div className="lattice-panels">
+      <div className="lattice-panels" ref={panelsRef}>
         <section className="lattice-panel" aria-labelledby="lattice-plot-h">
           <h2 id="lattice-plot-h">Lattice slice</h2>
           <LatticePlot
@@ -267,8 +296,9 @@ export default function LatticePage(): JSX.Element {
           Row echelon form
           <span className="muted">
             {' '}
-            (whole-number row operations; each row is a mix of tile rows, and every class-0 tile in the mix
-            brings its <span className="mono">±1</span> along)
+            (whole-number row operations; each row is a mix of tile rows. Each class-0 tile&rsquo;s share
+            gets a row of its own, listing the values it can take, so the rows all balance exactly when the
+            tiles do)
           </span>
         </label>
         <div className="lattice-balance-grid">
@@ -592,14 +622,18 @@ function CircuitPatch(props: {
           )),
         )}
       </svg>
-      {strandCount > 0 && unbalanced === 0 && (
-        <p className="lattice-turns" data-testid="lattice-turns">
+      {/* Always laid out, hidden when it doesn't apply, so the page doesn't jump as the flow turns valid. */}
+      {(() => {
+        const shown = strandCount > 0 && unbalanced === 0;
+        return (
+        <p className={`lattice-turns${shown ? '' : ' is-hidden'}`} data-testid="lattice-turns" aria-hidden={!shown}>
           <span className="lattice-swatch is-cw" /> {turns.count.cw} clockwise loop{turns.count.cw === 1 ? '' : 's'}
           <span className="lattice-swatch is-ccw" /> {turns.count.ccw} anticlockwise
           <span className="lattice-swatch is-open" /> {turns.count.open} running off the edge
           {model.zeroEitherWay ? ' or meeting head-on across class 0' : ''}
         </p>
-      )}
+        );
+      })()}
       <p className="muted">
         {unbalanced > 0
           ? `${unbalanced} of ${tiles.length} tiles don't balance (tinted): their strand ends are shown as dots, filled where flow leaves and hollow where it enters.`
@@ -611,8 +645,21 @@ function CircuitPatch(props: {
   );
 }
 
-/** `+2 Delta − Psi` style text for a mix of tile rows. */
-function mixText(model: FlowModel, mix: readonly number[]): string {
+/** The values a class-0 term can take, `−3, −1, +1, +3` style; just `±n` past four of them. */
+function valuesText(scale: number, n: number): string {
+  if (n > 3) return `±${scale * n}`;
+  return zeroValues(n)
+    .map((z) => signed(scale * z))
+    .join(', ');
+}
+
+/** `2 Delta − Psi` style text for a mix of tile rows, over its denominator when there is one. */
+function mixText(model: FlowModel, mix: readonly number[], den = 1): string {
+  const body = mixTerms(model, mix);
+  return den === 1 ? body : `(${body}) / ${den}`;
+}
+
+function mixTerms(model: FlowModel, mix: readonly number[]): string {
   const terms = mix.flatMap((c, i) => (c === 0 ? [] : [{ neg: c < 0, text: `${Math.abs(c) === 1 ? '' : `${Math.abs(c)} `}${model.types[i]}` }]));
   return terms.map((t, i) => (i === 0 ? `${t.neg ? '−' : ''}${t.text}` : ` ${t.neg ? '−' : '+'} ${t.text}`)).join('');
 }
@@ -630,10 +677,10 @@ function EchelonBody(props: {
     <tbody data-testid="lattice-echelon">
       {echelonRows(model).map((row, i) => {
         const d = row.entries.reduce((a, v, k) => a + v * (x[k] ?? 0), 0);
-        // The ± is k lots of ±1, each worth up to n lines, so this row can reach d ± k·n in steps of 2.
+        // One class-0 tile's share at most, times row.zero: it can be any of zeroValues(n0), scaled.
         const reach = row.zero * n0;
-        const good = Math.abs(d) <= reach && (reach - Math.abs(d)) % 2 === 0;
-        const mix = mixText(model, row.mix);
+        const good = echelonBalances(model, row, x);
+        const mix = mixText(model, row.mix, row.mixDen);
         const short = row.mix.filter((c) => c !== 0).length <= 2;
         return (
           <tr key={i} className={good ? undefined : 'is-unbalanced'}>
@@ -645,11 +692,12 @@ function EchelonBody(props: {
                 return (
                   <td
                     key={k}
-                    className={[colClass(k), row.zero ? '' : 'is-zero', row.zero && n0 > 0 ? 'is-term' : ''].filter(Boolean).join(' ')}
+                    className={[colClass(k), 'lattice-zero-col', row.zero ? '' : 'is-zero', row.zero && n0 > 0 ? 'is-term' : ''].filter(Boolean).join(' ')}
+                    title={row.zero ? `${row.zero === 1 ? '' : `${row.zero} × `}${row.zeroType}'s class-0 share: one of ${valuesText(row.zero, n0)}` : undefined}
                     data-testid={`lattice-echelon-${i}-0`}
                     {...hoverProps(k)}
                   >
-                    {row.zero === 0 ? '·' : `±${n0 > 0 ? reach : row.zero}`}
+                    {row.zero === 0 ? '·' : valuesText(row.zero, n0)}
                   </td>
                 );
               }
@@ -779,12 +827,12 @@ function MatrixEditor(props: {
                     return (
                       <td
                         key={k}
-                        className={[colClass(k), has ? '' : 'is-zero', has && n0 > 0 ? 'is-term' : ''].filter(Boolean).join(' ')}
-                        title={has ? `±${n0}: takes up ${signed(z[i])} here` : undefined}
+                        className={[colClass(k), 'lattice-zero-col', has ? '' : 'is-zero', has && n0 > 0 ? 'is-term' : ''].filter(Boolean).join(' ')}
+                        title={has ? `one of ${valuesText(1, n0)}: takes up ${signed(z[i])} here` : undefined}
                         data-testid={`lattice-cell-${t}-${model.vars[k].label}`}
                         {...hoverProps(k)}
                       >
-                        {has ? `±${n0}` : '·'}
+                        {has ? valuesText(1, n0) : '·'}
                       </td>
                     );
                   }
@@ -923,6 +971,27 @@ function FlowTileStrip(props: {
   );
 }
 
+/**
+ * A notch at the middle of edge a–b showing its direction: pointing out of
+ * the tile where positive flow leaves (sign +1), in where it enters (−1), and
+ * a small diamond (both ways) for class 0 run either way (sign 0). Nothing
+ * for an edge without a direction.
+ */
+function notch(a: Pt, b: Pt, centre: Pt, sign: 1 | -1 | 0 | null, colour: string): JSX.Element | null {
+  if (sign === null) return null;
+  const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+  const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+  const t = { x: (b.x - a.x) / len, y: (b.y - a.y) / len };
+  // Outward normal: away from the tile's centre.
+  let u = { x: -t.y, y: t.x };
+  if (u.x * (mid.x - centre.x) + u.y * (mid.y - centre.y) < 0) u = { x: -u.x, y: -u.y };
+  const w = 0.15;
+  const h = 0.19;
+  const at = (s: number, k: number) => `${mid.x + t.x * s + u.x * k},${mid.y + t.y * s + u.y * k}`;
+  const points = sign === 0 ? [at(-w, 0), at(0, h * 0.8), at(w, 0), at(0, -h * 0.8)] : [at(-w, 0), at(0, sign * h), at(w, 0)];
+  return <polygon className={`lattice-notch is-${sign > 0 ? 'out' : sign < 0 ? 'in' : 'either'}`} points={points.join(' ')} style={{ fill: colour }} />;
+}
+
 function FlowTile(props: {
   model: FlowModel;
   type: TileTypeId;
@@ -979,6 +1048,7 @@ function FlowTile(props: {
                   : 'class 0 (no direction)'}
             </title>
             <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} style={{ stroke: colour }} />
+            {notch(a, b, centre, isZero ? 0 : ev ? ev.sign : null, colour)}
             <line className="lattice-flow-hit" x1={a.x} y1={a.y} x2={b.x} y2={b.y} />
             <text x={lab.x} y={lab.y + 0.09} textAnchor="middle" style={{ fill: colour }}>
               {v ? v.label : '0'}

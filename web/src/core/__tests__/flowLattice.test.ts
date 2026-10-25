@@ -3,6 +3,7 @@ import {
   combine,
   directedMatchings,
   defaultAxes,
+  echelonBalances,
   echelonRows,
   flowModel,
   hexMeetings,
@@ -110,7 +111,7 @@ describe('flowLattice', () => {
     expect(liftZero(m, fewer)).toEqual(x);
   });
 
-  it('echelonRows: each row is its mix of tile rows, carrying ±1 per class-0 tile', () => {
+  it('echelonRows: each row is its mix of tile rows, with at most one class-0 share, and exact', () => {
     for (const mode of ['labels', 'groups'] as const) {
       for (const zero of [false, true]) {
         const m = flowModel(mode, zero);
@@ -121,28 +122,37 @@ describe('flowLattice', () => {
         for (const r of rows) {
           r.entries.forEach((v, k) => {
             const want = k === m.zeroVar ? 0 : r.mix.reduce((a, c, i) => a + c * m.matrix[i][k], 0);
-            expect(v).toBe(want);
+            expect(v * r.mixDen).toBe(want);
           });
-          expect(r.zero).toBe(m.zeroTypes.reduce((a, t) => a + Math.abs(r.mix[m.types.indexOf(t)]), 0));
+          // At most one class-0 tile's share per row, and it's from a tile in the mix.
+          if (r.zero > 0) expect(r.mix[m.types.indexOf(r.zeroType!)]).not.toBe(0);
+          else expect(r.zeroType).toBeNull();
           // Pivots step right, and nothing sits above or below a pivot.
-          const p = r.entries.findIndex((v) => v !== 0);
+          // (Rows carrying a class-0 share pivot on it instead.)
+          const p = r.zero > 0 ? -1 : r.entries.findIndex((v) => v !== 0);
           if (p >= 0) {
             expect(p).toBeGreaterThan(lastPivot);
             lastPivot = p;
             for (const o of rows) if (o !== r) expect(o.entries[p]).toBe(0);
           }
         }
-        // Every circuit fits every reduced row: d within ±(zero·n), same parity.
-        for (const b of m.basis) {
-          const n = zeroLines(m, b);
-          for (const r of rows) {
-            const d = r.entries.reduce((a, v, k) => a + v * b[k], 0);
-            expect(Math.abs(d)).toBeLessThanOrEqual(r.zero * n);
-            expect((r.zero * n - Math.abs(d)) % 2).toBe(0);
-          }
+        // Exact: every row balances just when the flow is a circuit, circuits or not.
+        let seed = 7;
+        const rand = () => ((seed = (seed * 48271) % 2147483647) % 5) - 2;
+        const trials = [...m.basis, ...Array.from({ length: 300 }, () => m.vars.map((_, k) => (k === m.zeroVar ? Math.abs(rand()) : rand())))];
+        for (const x of trials) {
+          expect(rows.every((r) => echelonBalances(m, r, x)), x.join(',')).toBe(isCircuit(m, x));
         }
       }
     }
+  });
+
+  it('echelonRows: class-0 slack never hides a tile without a class-0 edge', () => {
+    // Labels mode, class 0 either way: one line on class 0 leaves Delta and Gamma 2 short.
+    const m = flowModel('labels', true);
+    const x = [1, 0, -1, 1, 1, 0, 1, 1];
+    expect(isCircuit(m, x)).toBe(false);
+    expect(echelonRows(m).every((r) => echelonBalances(m, r, x))).toBe(false);
   });
 
   it('pairStrands refuses an unbalanced boundary', () => {
