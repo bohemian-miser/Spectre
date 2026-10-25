@@ -310,22 +310,6 @@ export function rasterizeStrands(
   ws?: StrandWorkspace,
 ): Uint8ClampedArray {
   const c = strandComponents(g, digits, ws);
-  let minX = Infinity;
-  let minY = Infinity;
-  let maxX = -Infinity;
-  let maxY = -Infinity;
-  for (let n = 0; n < g.nNodes; n++) {
-    if (g.nodeX[n] < minX) minX = g.nodeX[n];
-    if (g.nodeX[n] > maxX) maxX = g.nodeX[n];
-    if (g.nodeY[n] < minY) minY = g.nodeY[n];
-    if (g.nodeY[n] > maxY) maxY = g.nodeY[n];
-  }
-  const pad = 2;
-  const sc = (size - 2 * pad) / Math.max(maxX - minX, maxY - minY, 1e-9);
-  const ox = pad + (size - 2 * pad - (maxX - minX) * sc) / 2;
-  const oy = pad + (size - 2 * pad - (maxY - minY) * sc) / 2;
-  const img = new Uint8ClampedArray(size * size * 4);
-
   let maxClosed = 2;
   for (let i = 0; i < c.n; i++) if (c.ends[i] === 0 && c.segs[i] > maxClosed) maxClosed = c.segs[i];
   const openTop: number[] = [];
@@ -347,15 +331,48 @@ export function rasterizeStrands(
     return palette.smallCircuit;
   };
 
-  // Occurrence pairs, drawn in order of component size.
+  return rasterizeComponents(g, c, size, color, (ci) => c.segs[ci]);
+}
+
+/**
+ * Draw each segment of `c` as a 1px straight chord into an RGBA buffer
+ * (transparent background), coloured by its component (`null` skips it),
+ * lowest `rank` first so higher-ranked components sit on top.
+ */
+export function rasterizeComponents(
+  g: StrandGraph,
+  c: StrandComponents,
+  size: number,
+  color: (comp: number) => Rgb | null,
+  rank: (comp: number) => number,
+): Uint8ClampedArray {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (let n = 0; n < g.nNodes; n++) {
+    if (g.nodeX[n] < minX) minX = g.nodeX[n];
+    if (g.nodeX[n] > maxX) maxX = g.nodeX[n];
+    if (g.nodeY[n] < minY) minY = g.nodeY[n];
+    if (g.nodeY[n] > maxY) maxY = g.nodeY[n];
+  }
+  const pad = 2;
+  const sc = (size - 2 * pad) / Math.max(maxX - minX, maxY - minY, 1e-9);
+  const ox = pad + (size - 2 * pad - (maxX - minX) * sc) / 2;
+  const oy = pad + (size - 2 * pad - (maxY - minY) * sc) / 2;
+  const img = new Uint8ClampedArray(size * size * 4);
+
+  // Occurrence pairs, drawn in rank order.
   const pairs: number[] = [];
   for (let o = 0; o < g.occNode.length; o++) if (o < c.partner[o]) pairs.push(o);
-  pairs.sort((a, b) => c.segs[c.comp[g.occNode[a]]] - c.segs[c.comp[g.occNode[b]]]);
+  pairs.sort((a, b) => rank(c.comp[g.occNode[a]]) - rank(c.comp[g.occNode[b]]));
 
   for (const o of pairs) {
     const a = g.occNode[o];
     const b = g.occNode[c.partner[o]];
-    const [cr, cg, cb] = color(c.comp[a]);
+    const rgb = color(c.comp[a]);
+    if (!rgb) continue;
+    const [cr, cg, cb] = rgb;
     let x0 = Math.round(ox + (g.nodeX[a] - minX) * sc);
     let y0 = Math.round(size - oy - (g.nodeY[a] - minY) * sc);
     const x1 = Math.round(ox + (g.nodeX[b] - minX) * sc);

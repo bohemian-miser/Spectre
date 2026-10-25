@@ -21,6 +21,7 @@ import {
   type TileFamilyId,
 } from '../core';
 import { normalizeBase } from '../lib/siteNav';
+import { usePrefersDark } from '../hooks/usePrefersDark';
 import { EXPLORER_ROUTE, stateToHash } from '../lib/urlState';
 import { createThumbnailClient, type ThumbnailClient } from '../workers/thumbnailClient';
 import {
@@ -108,20 +109,6 @@ function formatHash(s: HashState): string {
 function defaultBase(): string {
   const env = (import.meta as unknown as { env?: { BASE_URL?: string } }).env;
   return env?.BASE_URL ?? '/';
-}
-
-function usePrefersDark(): boolean {
-  const query = '(prefers-color-scheme: light)';
-  const get = () => typeof window === 'undefined' || !window.matchMedia || !window.matchMedia(query).matches;
-  const [dark, setDark] = useState(get);
-  useEffect(() => {
-    if (typeof window === 'undefined' || !window.matchMedia) return;
-    const mq = window.matchMedia(query);
-    const on = () => setDark(!mq.matches);
-    mq.addEventListener?.('change', on);
-    return () => mq.removeEventListener?.('change', on);
-  }, []);
-  return dark;
 }
 
 function explorerHref(base: string, family: TileFamilyId, rule: string, combo: string, level: number): string {

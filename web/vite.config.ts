@@ -33,6 +33,7 @@ export default defineConfig({
         lattice: resolve(__dirname, 'lattice.html'),
         multiedge: resolve(__dirname, 'multiedge.html'),
         dimension: resolve(__dirname, 'dimension.html'),
+        faultlines: resolve(__dirname, 'faultlines.html'),
         legacy: resolve(__dirname, 'legacy.html'),
         widgets: resolve(__dirname, 'widgets.html'),
       },
