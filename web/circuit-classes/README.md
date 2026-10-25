@@ -92,6 +92,10 @@ rule, class 0 included; cost is the boundary (×4.24 a level), not the area
 - `--compare`: groups pairings by their boundary state (equal states at level
   n means the same pattern above level n), and prints two distances between
   the pairings named, by boundary dots and by the strands' length;
+- `--like`: every pairing of a rule ranked by how closely its level profile
+  (longest circuit born, share of segments closed, share on the five longest
+  arcs) matches the one named: the look-alikes, whether or not they route
+  the strands the same way. `--near` ranks by routing distance instead.
 - `rule-all` and `rule-0?1??` patterns expand to many pairings.
 
 Write-up and a worked example (hexagon `023468-111000100`, whose first real

@@ -95,6 +95,39 @@ two classes of six. The other, `001001100 100000101 101000100 101000101
 101001100 101001101`, is a triangle fractal with dimension 1.45 and is not
 related.)
 
+Boundary classes are strict: equal routing of every strand. A pairing can
+draw the same kind of picture while routing the strands differently, and
+there is one such in this rule, **`020001001`**. It is a class of its own,
+but its level profile is the family's: first real circuit at level 6 (408
+segments, against 402), the next generation at level 8 (25,878 against
+25,692), the same share of segments on closed circuits to three decimals at
+every level, the same arc dimension. So the family of look-alikes is seven:
+
+```
+011001100  110000101  111000100  111000101  111001100  111001101  020001001
+```
+
+## The cheap way
+
+None of this needed level 11. Two quick checks answer "which of these is the
+odd one out" and "what else looks like this" in seconds:
+
+* **`--compare` at level 2.** The boundary classes of the six pairings are
+  already settled at level 1 (five together, `011000101` alone), and at
+  level 2 the routing distance by length is 46%. Equal states at level n mean
+  the same pattern above level n, so nothing deeper can change the answer.
+  Level 2 is 63 tiles per supertile and runs in well under a second.
+* **`--like` at level 6.** Ranks every pairing of the rule by how closely its
+  level profile (longest circuit born, share of segments closed, share on
+  the five longest arcs, levels 2 to 6) matches the one named. For
+  `111000100` the six class members and `020001001` come first at distances
+  0 to 1.3; the next pairing is at 4.8. Half a minute for the 320 pairings.
+* **`--near` at level 5** does the same by routing distance and finds only
+  the strict class (the six at 0%, everything else at 75% or more).
+
+The deep run is for the other question, what the pattern *is*, where a
+rooted patch cannot reach.
+
 ## What the five are
 
 Here is `111000100` to level 11, 7.3 billion tiles:
@@ -154,6 +187,8 @@ cd web
 npx tsx circuit-classes/deep-orbit.ts hex 9 023468-111000100          # one combination, a table and a verdict
 npx tsx circuit-classes/deep-orbit.ts --compare hex 9 023468-111000100 023468-011000101 ...
 npx tsx circuit-classes/deep-orbit.ts --compare hex 5 023468-all       # every pairing of a rule, by boundary class
+npx tsx circuit-classes/deep-orbit.ts --like hex 6 023468-111000100     # every pairing of the rule, most similar profile first
+npx tsx circuit-classes/deep-orbit.ts --near hex 5 023468-111000100     # every pairing of the rule, nearest routing first
 npx tsx circuit-classes/deep-orbit.ts --compare hex 7 '023468-?1?00?10?'   # '?' = any digit
 npx tsx circuit-classes/deep-orbit.ts --json spectre 8 2578-0100101100 # one JSON line per combination
 NODE_OPTIONS=--max-old-space-size=12000 npx tsx circuit-classes/deep-orbit.ts hex 11 023468-111000100

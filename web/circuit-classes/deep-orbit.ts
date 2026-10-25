@@ -27,6 +27,8 @@
  *   npx tsx circuit-classes/deep-orbit.ts <family> <maxLevel> <rule>-0????01100   ('?' = any digit)
  *   npx tsx circuit-classes/deep-orbit.ts --json ...   one JSON line per combination
  *   npx tsx circuit-classes/deep-orbit.ts --compare <family> <maxLevel> <rule-combo> [...]
+ *   npx tsx circuit-classes/deep-orbit.ts --near <family> <level> <rule-combo>   every pairing of the rule, nearest first
+ *   npx tsx circuit-classes/deep-orbit.ts --like <family> <level> <rule-combo>   every pairing of the rule, most similar level profile first
  *
  * The default report prints, per combination and level: tiles and boundary
  * dots of the Delta supertile, circuits born (count, longest, distinct
@@ -630,6 +632,69 @@ export function compare(family: TileFamilyId, subset: readonly number[], combos:
   }
 }
 
+/**
+ * Every pairing of a rule, ranked by how differently it routes the strands from
+ * `combo` at level `level`: the share of the strands' length on arcs joined
+ * differently, and the share of boundary dots. Cheap: one level-`level` orbit
+ * per pairing, nothing deeper.
+ */
+export function nearest(family: TileFamilyId, subset: readonly number[], combo: string, level: number, show = 40): void {
+  const ref = runOrbit(family, subset, combo, level, true).history![level];
+  const rows: { combo: string; mass: number; dots: number; first: number; born: number }[] = [];
+  for (const c of allCombos(family, subset)) {
+    const o = runOrbit(family, subset, c, level, true);
+    const d = routingDistance(o.history![level], ref);
+    const first = o.levels.find((r) => r.births.some((b) => b[2] > 12))?.level ?? -1;
+    rows.push({ combo: c, mass: d.mass, dots: d.dots, first, born: o.levels[level].births.length ? o.levels[level].births[0][2] : 0 });
+  }
+  rows.sort((a, b) => a.mass - b.mass || a.dots - b.dots);
+  console.log(`\n== ${family} ${subset.join('')}: pairings nearest to ${combo} at level ${level} ==`);
+  console.log('combination   by length  by dots   first big circuit at level   longest born at this level');
+  for (const r of rows.slice(0, show)) {
+    console.log(`${r.combo.padEnd(13)} ${(r.mass * 100).toFixed(1).padStart(8)}% ${(r.dots * 100).toFixed(1).padStart(7)}%   ${String(r.first < 0 ? '-' : r.first).padStart(10)}   ${String(r.born).padStart(20)}`);
+  }
+}
+
+/**
+ * Every pairing of a rule, ranked by how much its level profile looks like
+ * `combo`'s: at each level 2..level, the longest circuit born (log scale), the
+ * share of segments on circuits closed so far, and the share carried by the
+ * five longest arcs. Two pairings with the same profile draw the same kind of
+ * picture at every scale whether or not they route the strands the same way,
+ * so this finds the look-alikes that `--near` and the boundary classes miss.
+ */
+export function lookalikes(family: TileFamilyId, subset: readonly number[], combo: string, level: number, show = 40): void {
+  const profile = (o: Orbit): number[] => {
+    const out: number[] = [];
+    for (let k = 2; k <= level; k++) {
+      const r = o.levels[k];
+      const d = r.perType[DELTA];
+      out.push(Math.log((r.births.length ? r.births[0][2] : 0) + 1) / 3, d.segs ? (4 * d.closedSegs) / d.segs : 0, d.segs ? (2 * d.arcTop5) / d.segs : 0);
+    }
+    return out;
+  };
+  const refOrbit = runOrbit(family, subset, combo, level);
+  const ref = profile(refOrbit);
+  const rows: { combo: string; d: number; born: number[]; closed: number[] }[] = [];
+  for (const c of allCombos(family, subset)) {
+    const o = runOrbit(family, subset, c, level);
+    const p = profile(o);
+    let d = 0;
+    for (let i = 0; i < p.length; i++) d += Math.abs(p[i] - ref[i]);
+    rows.push({
+      combo: c, d,
+      born: o.levels.slice(2).map((r) => (r.births.length ? r.births[0][2] : 0)),
+      closed: o.levels.slice(2).map((r) => (r.perType[DELTA].segs ? r.perType[DELTA].closedSegs / r.perType[DELTA].segs : 0)),
+    });
+  }
+  rows.sort((a, b) => a.d - b.d);
+  console.log(`\n== ${family} ${subset.join('')}: pairings whose level profile looks most like ${combo}'s (levels 2 to ${level}) ==`);
+  console.log(`combination   distance  longest circuit born per level 2..${level}`.padEnd(70) + 'share of segments on closed circuits');
+  for (const r of rows.slice(0, show)) {
+    console.log(`${r.combo.padEnd(13)} ${r.d.toFixed(2).padStart(8)}  ${r.born.map((x) => String(x)).join(' ').padEnd(45)} ${r.closed.map((x) => x.toFixed(2)).join(' ')}`);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // CLI
 // ---------------------------------------------------------------------------
@@ -653,6 +718,8 @@ if (process.argv[1]?.endsWith('deep-orbit.ts')) {
   const args = process.argv.slice(2);
   const json = args.includes('--json');
   const cmp = args.includes('--compare');
+  const near = args.includes('--near');
+  const like = args.includes('--like');
   const rest = args.filter((a) => !a.startsWith('--'));
   const [familyArg, levelsArg, ...shares] = rest;
   const family = familyArg as TileFamilyId;
@@ -662,7 +729,11 @@ if (process.argv[1]?.endsWith('deep-orbit.ts')) {
     process.exit(2);
   }
   const items = expandShares(family, shares);
-  if (cmp) {
+  if (near) {
+    for (const { subset, combo } of items) nearest(family, subset, combo, maxLevel);
+  } else if (like) {
+    for (const { subset, combo } of items) lookalikes(family, subset, combo, maxLevel);
+  } else if (cmp) {
     const rule = items[0].subset.join('');
     if (items.some((it) => it.subset.join('') !== rule)) throw new Error('--compare needs combinations of one rule');
     compare(family, items[0].subset, items.map((it) => it.combo), maxLevel);
