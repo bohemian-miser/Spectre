@@ -13,6 +13,8 @@ import {
   signedArea,
   traceStrandPaths,
   tileStrandPoints,
+  zeroFlow,
+  zeroLines,
 } from '../flowLattice';
 
 describe('flowLattice', () => {
@@ -64,6 +66,49 @@ describe('flowLattice', () => {
         expect(strands, `${mode} ${t.inst.type}`).not.toBeNull();
         expect(strands!.length * 2).toBe(pts.length);
       }
+    }
+  });
+
+  it('class 0 either way: labels mode gains nothing, groups mode grows to 7D', () => {
+    const labels = flowModel('labels', true);
+    expect(labels.dropped).toEqual([]);
+    expect(labels.zeroTypes).toEqual(['Theta', 'Xi', 'Phi', 'Psi']);
+    // The directed classes already balance those four tiles, so class 0 never gets a line.
+    expect(labels.basis).toEqual(flowModel('labels').basis);
+    for (const b of labels.basis) expect(zeroLines(labels, b)).toBe(0);
+
+    const m = flowModel('groups', true);
+    expect(m.vars).toHaveLength(12);
+    expect(m.basis).toHaveLength(7);
+    for (const b of m.basis) expect(isCircuit(m, b)).toBe(true);
+    expect(m.basis.some((b) => zeroLines(m, b) > 0)).toBe(true);
+    // Every old circuit is still one.
+    for (const b of flowModel('groups').basis) expect(isCircuit(m, b)).toBe(true);
+  });
+
+  it('class 0 either way soaks up an imbalance of the right parity, and no more', () => {
+    const m = flowModel('groups', true);
+    const x = m.basis.find((b) => zeroLines(m, b) > 0)!;
+    const n = zeroLines(m, x);
+    const z = zeroFlow(m, x);
+    m.types.forEach((t, i) => {
+      if (!m.zeroTypes.includes(t)) expect(z[i]).toBe(0);
+      else expect((n - Math.abs(z[i])) % 2).toBe(0);
+    });
+    // Nudging one variable by 1 flips some tile's parity: not a circuit any more.
+    const nudged = x.map((v, k) => (k === x.findIndex((w) => w !== 0) ? v + 1 : v));
+    expect(isCircuit(m, nudged)).toBe(false);
+  });
+
+  it('class 0 either way: every tile of a patch still pairs its strands up', () => {
+    const m = flowModel('groups', true);
+    const x = combine(m.basis, m.basis.map((_, i) => (i % 2 ? -1 : 1)), m.vars.length);
+    expect(zeroLines(m, x)).toBeGreaterThan(0);
+    for (const t of hexPatch(2)) {
+      const pts = tileStrandPoints(m, t.inst.type, x, t.pts);
+      const strands = pairStrands(pts);
+      expect(strands, t.inst.type).not.toBeNull();
+      expect(strands!.length * 2).toBe(pts.length);
     }
   });
 

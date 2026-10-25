@@ -19,6 +19,14 @@
  * A class or group is dropped when its edges can't be oriented: the Psi's
  * class-0 edge meets another Psi's class-0 edge, so its flow would have to
  * equal its own negative.
+ *
+ * Unless class 0 is allowed either way round. Then its edges carry n lines
+ * with no fixed direction: at each tile any of them may run in or out, so the
+ * class-0 edge soaks up the tile's imbalance z provided |z| <= n and z has n's
+ * parity. Theta, Xi, Phi and Psi are the tiles with a class-0 edge, and their
+ * class-0 edges all meet each other, so they share one n; the circuits are
+ * the flows that balance every other tile and leave those four with nets of
+ * one parity (n is then the biggest of them). That is still a lattice.
  */
 
 import { HEX_LEAF_ORDER, HEX_PTS, edgeLabels, type TileTypeId } from './families';
@@ -44,6 +52,10 @@ export interface FlowVar {
 
 export interface FlowModel {
   readonly mode: FlowMode;
+  /** Class 0 included with no fixed direction (see the top of the file). */
+  readonly zeroEitherWay: boolean;
+  /** Tile types with a class-0 edge, when `zeroEitherWay`; else empty. */
+  readonly zeroTypes: readonly TileTypeId[];
   readonly types: readonly TileTypeId[];
   readonly vars: readonly FlowVar[];
   /** Classes or groups left out because they can't carry a direction. */
@@ -170,10 +182,11 @@ function orient(mode: FlowMode, keys: readonly string[]): Map<string, 1 | -1> | 
   return sign;
 }
 
-const modelCache = new Map<FlowMode, FlowModel>();
+const modelCache = new Map<string, FlowModel>();
 
-export function flowModel(mode: FlowMode): FlowModel {
-  const hit = modelCache.get(mode);
+export function flowModel(mode: FlowMode, zeroEitherWay = false): FlowModel {
+  const cacheKey = `${mode}|${zeroEitherWay}`;
+  const hit = modelCache.get(cacheKey);
   if (hit) return hit;
   const groups = slotGroups(mode);
   const perMajor = new Map<number, number>();
@@ -181,10 +194,15 @@ export function flowModel(mode: FlowMode): FlowModel {
   const seenMajor = new Map<number, number>();
   const vars: FlowVar[] = [];
   const dropped: string[] = [];
+  const zeroSet = new Set<TileTypeId>();
   for (const g of groups) {
     const n = seenMajor.get(g.major) ?? 0;
     seenMajor.set(g.major, n + 1);
     const label = perMajor.get(g.major)! > 1 ? `${g.major}${String.fromCharCode(97 + n)}` : String(g.major);
+    if (zeroEitherWay && g.major === 0) {
+      for (const k of g.keys) zeroSet.add(k.split('#')[0] as TileTypeId);
+      continue;
+    }
     const sign = orient(mode, g.keys);
     if (!sign) {
       dropped.push(label);
@@ -200,17 +218,36 @@ export function flowModel(mode: FlowMode): FlowModel {
   const matrix = types.map((t) =>
     vars.map((v) => v.slots.reduce((acc, s) => acc + (s.type === t ? s.sign : 0), 0)),
   );
-  const model: FlowModel = { mode, types, vars, dropped, matrix, basis: integerKernel(matrix, vars.length) };
-  modelCache.set(mode, model);
+  const zeroTypes = types.filter((t) => zeroSet.has(t));
+  const model: FlowModel = { mode, zeroEitherWay, zeroTypes, types, vars, dropped, matrix, basis: flowBasis(matrix, vars.length, zeroTypes.map((t) => types.indexOf(t))) };
+  modelCache.set(cacheKey, model);
   return model;
+}
+
+/**
+ * The circuits' basis. With class-0 tiles (rows `zeroRows`) the lattice is
+ * { x : A x + z = 0 } where z is one common c on those rows plus 2·w on all
+ * but the first of them, i.e. their nets share a parity. Solve for x, c and w
+ * together and keep x: no circuit has x = 0 but c or w nonzero, so that loses
+ * nothing.
+ */
+function flowBasis(matrix: readonly (readonly number[])[], n: number, zeroRows: readonly number[]): number[][] {
+  if (zeroRows.length === 0) return integerKernel(matrix, n);
+  const aux = zeroRows.length;
+  const wide = matrix.map((row, i) => {
+    const k = zeroRows.indexOf(i);
+    return [...row, k >= 0 ? 1 : 0, ...zeroRows.slice(1).map((r) => (r === i ? 2 : 0))];
+  });
+  return integerKernel(wide, n + aux, n);
 }
 
 /**
  * Integer basis of { x : A x = 0 } by unimodular column operations (A U = [H | 0],
  * so U's trailing columns span the kernel), then greedy pairwise shortening so
- * the vectors read as small loops.
+ * the vectors read as small loops. With `keep` < n, only the first `keep`
+ * coordinates of each vector are returned (and shortened).
  */
-export function integerKernel(A: readonly (readonly number[])[], n: number): number[][] {
+export function integerKernel(A: readonly (readonly number[])[], n: number, keep = n): number[][] {
   const M = A.map((r) => [...r]);
   const U: number[][] = Array.from({ length: n }, (_, i) => Array.from({ length: n }, (_, j) => (i === j ? 1 : 0)));
   const colSub = (j: number, k: number, q: number) => {
@@ -239,7 +276,7 @@ export function integerKernel(A: readonly (readonly number[])[], n: number): num
     }
   }
   const basis: number[][] = [];
-  for (let j = piv; j < n; j++) basis.push(U.map((r) => r[j]));
+  for (let j = piv; j < n; j++) basis.push(U.slice(0, keep).map((r) => r[j]));
   const norm = (v: readonly number[]) => v.reduce((a, x) => a + x * x, 0);
   for (let changed = true; changed; ) {
     changed = false;
@@ -276,6 +313,41 @@ export function linesNeeded(x: readonly number[]): number {
   return x.reduce((m, v) => Math.max(m, Math.abs(v)), 0);
 }
 
+/** Per tile type, the directed edges' flow out minus flow in, before class 0 takes any up. */
+function directedNet(model: FlowModel, x: readonly number[]): number[] {
+  return model.matrix.map((row) => row.reduce((a, v, k) => a + v * (x[k] ?? 0), 0));
+}
+
+/**
+ * Lines on every class-0 edge when it runs either way: the biggest imbalance
+ * among the class-0 tiles, so each can soak its own up. 0 when class 0 is out.
+ */
+export function zeroLines(model: FlowModel, x: readonly number[]): number {
+  const net = directedNet(model, x);
+  return model.zeroTypes.reduce((m, t) => Math.max(m, Math.abs(net[model.types.indexOf(t)])), 0);
+}
+
+/**
+ * Per tile type, class 0's flow out minus flow in there: minus the tile's
+ * imbalance when n lines can make it (same parity), else one short of it.
+ * Zero for tiles without a class-0 edge, or when class 0 is out.
+ */
+export function zeroFlow(model: FlowModel, x: readonly number[]): number[] {
+  const net = directedNet(model, x);
+  const n = zeroLines(model, x);
+  return model.types.map((t, i) => {
+    if (!model.zeroTypes.includes(t)) return 0;
+    const v = net[i];
+    if ((n - Math.abs(v)) % 2 === 0) return -v;
+    return v > 0 ? 1 - v : -1 - v;
+  });
+}
+
+/** Lines the busiest edge needs, class 0 included. */
+export function flowLines(model: FlowModel, x: readonly number[]): number {
+  return Math.max(linesNeeded(x), zeroLines(model, x));
+}
+
 /** Which unknown a tile's edge carries, and its sign there; null for a dropped edge. */
 export function edgeVar(model: FlowModel, type: TileTypeId, edge: number): { index: number; sign: 1 | -1 } | null {
   for (let index = 0; index < model.vars.length; index++) {
@@ -285,9 +357,10 @@ export function edgeVar(model: FlowModel, type: TileTypeId, edge: number): { ind
   return null;
 }
 
-/** Per tile type, flow out minus flow in: all zero exactly when x is a circuit. */
+/** Per tile type, flow out minus flow in (class 0's share included): all zero exactly when x is a circuit. */
 export function netFlow(model: FlowModel, x: readonly number[]): number[] {
-  return model.matrix.map((row) => row.reduce((a, v, k) => a + v * (x[k] ?? 0), 0));
+  const z = zeroFlow(model, x);
+  return directedNet(model, x).map((v, i) => v + z[i]);
 }
 
 export function isCircuit(model: FlowModel, x: readonly number[]): boolean {
@@ -317,6 +390,8 @@ export function defaultAxes(model: FlowModel): [number, number] {
 /** `{3: +1, 5: −2}` style text for a flow vector. */
 export function describeFlow(model: FlowModel, x: readonly number[]): string {
   const parts = x.flatMap((v, k) => (v === 0 ? [] : [`${model.vars[k].label}: ${v > 0 ? '+' : '−'}${Math.abs(v)}`]));
+  const n0 = zeroLines(model, x);
+  if (n0 > 0) parts.push(`0: ±${n0}`);
   return parts.length ? parts.join(', ') : 'empty';
 }
 
@@ -344,7 +419,21 @@ export interface Strand {
  */
 export function tileStrandPoints(model: FlowModel, type: TileTypeId, x: readonly number[], pts: readonly Pt[]): StrandPoint[] {
   const out: StrandPoint[] = [];
+  // A class-0 edge carries n lines, enough of them out (the rest in) to give class 0's flow here.
+  const zeroEdge = model.zeroTypes.includes(type) ? edgeLabels('hex', type).findIndex((l) => parseEdgeLabel(l).major === 0) : -1;
+  const n0 = zeroEdge >= 0 ? zeroLines(model, x) : 0;
+  const z0 = zeroEdge >= 0 ? zeroFlow(model, x)[model.types.indexOf(type)] : 0;
+  const zeroOut = Math.ceil((n0 + z0) / 2);
   for (let edge = 0; edge < pts.length; edge++) {
+    if (edge === zeroEdge) {
+      const a = pts[edge];
+      const b = pts[(edge + 1) % pts.length];
+      for (let i = 0; i < n0; i++) {
+        const t = (i + 1) / (n0 + 1);
+        out.push({ edge, pos: { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }, dir: i < zeroOut ? 'out' : 'in' });
+      }
+      continue;
+    }
     let flow = 0;
     model.vars.forEach((v, k) => {
       for (const s of v.slots) if (s.type === type && s.edge === edge) flow += s.sign * x[k];
