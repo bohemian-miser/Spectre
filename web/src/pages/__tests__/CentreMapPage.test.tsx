@@ -60,6 +60,12 @@ describe('CentreMapPage', () => {
     expect(Number(m![1])).toBeGreaterThan(0);
     expect(Number(m![1])).toBeLessThan(270);
 
+    // The heatmap can be reordered: similar rows together (the default), by group, or rule by rule.
+    expect((screen.getByTestId('centremap-order') as HTMLSelectElement).value).toBe('similar');
+    fireEvent.change(screen.getByTestId('centremap-order'), { target: { value: 'pairings' } });
+    fireEvent.change(screen.getByTestId('centremap-order'), { target: { value: 'groups' } });
+    expect(screen.getByTestId('centremap-heatmap')).toBeTruthy();
+
     // Picking a dot opens it, with its closest pairings and an Explorer link.
     fireEvent.click(dots[0]);
     const sel = screen.getByTestId('centremap-selected');

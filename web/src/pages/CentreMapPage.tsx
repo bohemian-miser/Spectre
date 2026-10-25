@@ -20,6 +20,7 @@ import {
   matchesJoins,
   matchesPattern,
   rulePairings,
+  seriate,
   validEdgeSubsets,
   type EdgeJoin,
   type TileFamilyId,
@@ -98,6 +99,13 @@ function rowCorrelation(m: Float32Array, n: number): Float32Array {
   return out;
 }
 
+type HeatOrder = 'similar' | 'groups' | 'pairings';
+const HEAT_ORDERS: readonly { id: HeatOrder; label: string }[] = [
+  { id: 'similar', label: 'similar next to similar' },
+  { id: 'groups', label: 'by group' },
+  { id: 'pairings', label: 'rule by rule' },
+];
+
 const PHASE_LABEL: Record<CentreMapPhase, string> = {
   centres: 'Finding circuit centres',
   distances: 'Measuring distances',
@@ -113,6 +121,7 @@ export default function CentreMapPage(): JSX.Element {
   const [progress, setProgress] = useState<{ phase: CentreMapPhase; done: number; total: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [colourBy, setColourBy] = useState<'rule' | 'group'>('rule');
+  const [heatOrder, setHeatOrder] = useState<HeatOrder>('similar');
   const [threshold, setThreshold] = useState(0.9);
   const [ruleFilter, setRuleFilter] = useState('');
   const [pattern, setPattern] = useState('');
@@ -184,6 +193,8 @@ export default function CentreMapPage(): JSX.Element {
     return out;
   }, [clustering, n]);
   const groupCount = clustering?.clusters.filter((c) => c.length > 1).length ?? 0;
+  const similarOrder = useMemo(() => (result ? seriate(result.result.matrix, n) : []), [result, n]);
+  const order = heatOrder === 'similar' ? similarOrder : heatOrder === 'groups' ? (clustering?.order ?? []) : Array.from({ length: n }, (_, i) => i);
 
   const searching = !!ruleFilter || !!pattern.trim() || joins.length > 0;
   const matches = useMemo(() => {
@@ -370,7 +381,17 @@ export default function CentreMapPage(): JSX.Element {
             </section>
             <section aria-labelledby="centremap-heat-h">
               <h2 id="centremap-heat-h">Distances, A → B</h2>
-              <Heatmap matrix={result.result.matrix} n={n} order={clustering.order} matches={searching ? matches : null} label={label} onPick={setSelected} />
+              <label className="centremap-order">
+                Order
+                <select value={heatOrder} onChange={(e) => setHeatOrder(e.target.value as HeatOrder)} data-testid="centremap-order">
+                  {HEAT_ORDERS.map((o) => (
+                    <option key={o.id} value={o.id}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <Heatmap matrix={result.result.matrix} n={n} order={order} matches={searching ? matches : null} label={label} onPick={setSelected} />
             </section>
           </div>
 
@@ -545,7 +566,7 @@ function Heatmap(props: {
       <p className="muted centremap-note">
         {hover
           ? `${label(hover[0])} → ${label(hover[1])}: ${matrix[hover[0] * n + hover[1]].toFixed(2)} tiles`
-          : 'Row A, column B: how far A’s centres are from B’s, bright = near. Rows and columns in group order; click a row to pick it.'}
+          : 'Row A, column B: how far A’s centres are from B’s, bright = near. Rows and columns in the same order; click a row to pick it.'}
       </p>
     </div>
   );

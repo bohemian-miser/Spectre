@@ -334,3 +334,66 @@ export function centreMap(
   });
   return { level, counts, matrix };
 }
+
+/**
+ * An order for the rows and columns of a distance matrix that puts similar
+ * ones next to each other (seriation): average-linkage clustering of the
+ * symmetric distance (A → B + B → A) / 2, merging the two closest groups
+ * each time, and at each merge flipping either group so the two ends that
+ * meet are the closest of the four ways round. A cheap stand-in for optimal
+ * leaf ordering; O(n³), fine for a few hundred rows.
+ */
+export function seriate(matrix: Float32Array, n: number): number[] {
+  if (n === 0) return [];
+  let max = 0;
+  for (const v of matrix) if (Number.isFinite(v) && v > max) max = v;
+  const d = new Float64Array(n * n);
+  for (let a = 0; a < n; a++) {
+    for (let b = 0; b < n; b++) {
+      const x = matrix[a * n + b];
+      const y = matrix[b * n + a];
+      d[a * n + b] = ((Number.isFinite(x) ? x : max) + (Number.isFinite(y) ? y : max)) / 2;
+    }
+  }
+  // Sums of point distances between groups, so average linkage updates in O(n).
+  const sum = Float64Array.from(d);
+  const groups: (number[] | null)[] = Array.from({ length: n }, (_, i) => [i]);
+  for (let merges = 1; merges < n; merges++) {
+    let best = Infinity;
+    let bi = -1;
+    let bj = -1;
+    for (let i = 0; i < n; i++) {
+      const gi = groups[i];
+      if (!gi) continue;
+      for (let j = i + 1; j < n; j++) {
+        const gj = groups[j];
+        if (!gj) continue;
+        const avg = sum[i * n + j] / (gi.length * gj.length);
+        if (avg < best) {
+          best = avg;
+          bi = i;
+          bj = j;
+        }
+      }
+    }
+    const a = groups[bi]!;
+    const b = groups[bj]!;
+    // Which ends meet: a's last or first with b's first or last.
+    const ends: [boolean, boolean, number][] = [
+      [false, false, d[a[a.length - 1] * n + b[0]]],
+      [false, true, d[a[a.length - 1] * n + b[b.length - 1]]],
+      [true, false, d[a[0] * n + b[0]]],
+      [true, true, d[a[0] * n + b[b.length - 1]]],
+    ];
+    ends.sort((x, y) => x[2] - y[2]);
+    const [flipA, flipB] = ends[0];
+    groups[bi] = [...(flipA ? [...a].reverse() : a), ...(flipB ? [...b].reverse() : b)];
+    groups[bj] = null;
+    for (let k = 0; k < n; k++) {
+      if (!groups[k] || k === bi) continue;
+      sum[bi * n + k] += sum[bj * n + k];
+      sum[k * n + bi] = sum[bi * n + k];
+    }
+  }
+  return groups.find((g): g is number[] => !!g)!;
+}

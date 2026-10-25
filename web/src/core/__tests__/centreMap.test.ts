@@ -5,6 +5,7 @@ import {
   chamferMatrix,
   distanceTransform,
   gridFor,
+  seriate,
   sizeBand,
   type CentreSet,
 } from '../centreMap';
@@ -114,6 +115,25 @@ describe('directed chamfer distance', () => {
     for (let i = 0; i < n; i++) expect(r.matrix[i * n + i]).toBe(0);
     expect(r.counts.every((c) => c.all >= c.inside && c.inside > 0)).toBe(true);
     expect(r.matrix[0 * n + 2]).toBeGreaterThan(0);
+  });
+});
+
+describe('seriation', () => {
+  it('orders rows so blocks of alike ones come out together, as a permutation', () => {
+    // Three hidden blocks, shuffled: near within a block, far across, and not quite symmetric.
+    const block = [0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2];
+    const n = block.length;
+    const m = new Float32Array(n * n);
+    for (let a = 0; a < n; a++) for (let b = 0; b < n; b++) m[a * n + b] = a === b ? 0 : block[a] === block[b] ? 1 + rand() * 0.5 : 10 + rand();
+    const order = seriate(m, n);
+    expect([...order].sort((x, y) => x - y)).toEqual(Array.from({ length: n }, (_, i) => i));
+    const runs = order.map((i) => block[i]).filter((b, k, arr) => k === 0 || b !== arr[k - 1]);
+    expect(runs).toHaveLength(3);
+    // Neighbours in the order are closer than in the original one.
+    const adjacent = (o: readonly number[]) => o.slice(1).reduce((t, i, k) => t + m[o[k] * n + i], 0);
+    expect(adjacent(order)).toBeLessThan(adjacent(Array.from({ length: n }, (_, i) => i)));
+    expect(seriate(new Float32Array(0), 0)).toEqual([]);
+    expect(seriate(Float32Array.from([0]), 1)).toEqual([0]);
   });
 });
 
