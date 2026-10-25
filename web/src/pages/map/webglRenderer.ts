@@ -42,6 +42,7 @@ import {
   type TileFamilyId,
   type ViewportCut,
 } from '../../core';
+import { planBatches, type CircuitBatch } from './circuitBatches';
 import { originRelativeCenter, type MapCamera } from './camera';
 import type { LeafChordTable } from './chords';
 import { GLYPH_LEVEL, buildGlyphMeshes, buildLeafAtlas, glyphFitForCut } from './glyphs';
@@ -277,11 +278,15 @@ layout(location=4) in vec2 aA;
 layout(location=5) in vec2 aB;
 layout(location=6) in float aSA;
 layout(location=7) in float aSB;
+// Solid ink and a mix flag (1 = solid circuit, 0 = rainbow). Per segment in a
+// batch of found circuits; a single pass sets it as a constant.
+layout(location=8) in vec4 aSolid;
 uniform vec4 uView;
 uniform vec2 uHalfRes;
 uniform float uHalfPx;
 flat out vec2 vA;
 flat out vec2 vB;
+flat out vec4 vSolid;
 out float vS;
 
 void main() {
@@ -300,6 +305,7 @@ void main() {
 
   vA = pa;
   vB = pb;
+  vSolid = aSolid;
   vS = (idx < 2) ? aSA : aSB;
 
   vec2 base = (idx < 2) ? pa : pb;
@@ -321,12 +327,12 @@ const FS_TRAIL = `#version 300 es
 precision highp float;
 flat in vec2 vA;
 flat in vec2 vB;
+flat in vec4 vSolid;
 in float vS;
 uniform vec2 uHalfRes;
 uniform float uHalfPx;
 uniform float uTotalLen;
 uniform float uAlpha;
-uniform vec4 uSolid;
 out vec4 o;
 
 vec3 hsl2rgb(float h, float s, float l) {
@@ -345,8 +351,8 @@ void main() {
   float t = clamp(vS / max(uTotalLen, 1e-6), 0.0, 1.0);
   float deg = t * 300.0;
   float l = 0.5 + 0.15 * cos(radians(deg - 240.0));
-  // uSolid.a is a mix flag: 1 = solid circuit ink, 0 = the rainbow.
-  o = vec4(mix(hsl2rgb(deg / 360.0, 1.0, l), uSolid.rgb, uSolid.a), uAlpha);
+  // vSolid.a is a mix flag: 1 = solid circuit ink, 0 = the rainbow.
+  o = vec4(mix(hsl2rgb(deg / 360.0, 1.0, l), vSolid.rgb, vSolid.a), uAlpha);
 }`;
 
 const FS_COLOR = `#version 300 es
@@ -637,6 +643,53 @@ export function createWebGLRenderer(
     G.deleteVertexArray(b.vao);
   };
 
+  /** A batch of found circuits on the GPU: one segment list, drawn in one call. */
+  interface BatchBuffers {
+    readonly batch: CircuitBatch;
+    readonly seg: WebGLBuffer;
+    readonly arc: WebGLBuffer;
+    readonly rgba: WebGLBuffer;
+    readonly vao: WebGLVertexArrayObject;
+  }
+
+  const makeBatchBuffers = (batch: CircuitBatch): BatchBuffers => {
+    const seg = G.createBuffer();
+    const arc = G.createBuffer();
+    const rgba = G.createBuffer();
+    const vao = G.createVertexArray();
+    G.bindVertexArray(vao);
+    G.bindBuffer(G.ARRAY_BUFFER, seg);
+    G.bufferData(G.ARRAY_BUFFER, batch.seg, G.STATIC_DRAW);
+    G.enableVertexAttribArray(4);
+    G.vertexAttribPointer(4, 2, G.FLOAT, false, 16, 0);
+    G.vertexAttribDivisor(4, 1);
+    G.enableVertexAttribArray(5);
+    G.vertexAttribPointer(5, 2, G.FLOAT, false, 16, 8);
+    G.vertexAttribDivisor(5, 1);
+    G.bindBuffer(G.ARRAY_BUFFER, arc);
+    G.bufferData(G.ARRAY_BUFFER, batch.arc, G.STATIC_DRAW);
+    G.enableVertexAttribArray(6);
+    G.vertexAttribPointer(6, 1, G.FLOAT, false, 8, 0);
+    G.vertexAttribDivisor(6, 1);
+    G.enableVertexAttribArray(7);
+    G.vertexAttribPointer(7, 1, G.FLOAT, false, 8, 4);
+    G.vertexAttribDivisor(7, 1);
+    G.bindBuffer(G.ARRAY_BUFFER, rgba);
+    G.bufferData(G.ARRAY_BUFFER, batch.rgba, G.STATIC_DRAW);
+    G.enableVertexAttribArray(8);
+    G.vertexAttribPointer(8, 4, G.FLOAT, false, 16, 0);
+    G.vertexAttribDivisor(8, 1);
+    G.bindVertexArray(null);
+    return { batch, seg, arc, rgba, vao };
+  };
+
+  const deleteBatchBuffers = (b: BatchBuffers): void => {
+    G.deleteBuffer(b.seg);
+    G.deleteBuffer(b.arc);
+    G.deleteBuffer(b.rgba);
+    G.deleteVertexArray(b.vao);
+  };
+
   const trailBufs = makeTrailBuffers();
   const vboTrailXY = trailBufs.xy;
   const vboTrailS = trailBufs.arc;
@@ -742,7 +795,6 @@ export function createWebGLRenderer(
   const uTrailHalfPx = loc(progTrail, 'uHalfPx');
   const uTrailTotal = loc(progTrail, 'uTotalLen');
   const uTrailAlpha = loc(progTrail, 'uAlpha');
-  const uTrailSolid = loc(progTrail, 'uSolid');
   const uRegionView = loc(progRegion, 'uView');
   const uRegionAlpha = loc(progRegion, 'uAlpha');
   const uRegionTexLoc = loc(progRegion, 'uRegionTex');
@@ -756,8 +808,12 @@ export function createWebGLRenderer(
   // Kept circuits: frozen geometry, uploaded once per entry and reused (the
   // map is keyed by geometry identity; entries leave it when they leave the
   // list).
+  /** Circuits drawn a pass each: those without solid ink (kept tails). */
   let circuits: readonly TrailGeometry[] = [];
   const circuitBufs = new Map<TrailGeometry, TrailBuffers>();
+  /** Solid circuits, batched by cell (see `circuitBatches.ts`). */
+  let batches = new Map<string, CircuitBatch>();
+  const batchBufs = new Map<string, BatchBuffers>();
   let disposed = false;
   let contextLost = false;
 
@@ -853,8 +909,19 @@ export function createWebGLRenderer(
 
   const setCircuits = (next: readonly TrailGeometry[] | null): void => {
     if (disposed || contextLost) return;
-    circuits = (next ?? []).filter((c) => c.pointCount >= 2);
+    const all = (next ?? []).filter((c) => c.pointCount >= 2);
+    circuits = all.filter((c) => !c.color);
     syncTrailBufs();
+    batches = planBatches(
+      all.filter((c) => c.color),
+      batches,
+    );
+    for (const [key, bufs] of batchBufs) {
+      if (batches.get(key) === bufs.batch) continue;
+      deleteBatchBuffers(bufs);
+      batchBufs.delete(key);
+    }
+    for (const [key, batch] of batches) if (!batchBufs.has(key)) batchBufs.set(key, makeBatchBuffers(batch));
   };
 
   const setHighlights = (next: readonly TrailGeometry[] | null): void => {
@@ -1024,8 +1091,8 @@ export function createWebGLRenderer(
         G.uniform1f(uTrailTotal, geom.totalLength);
         G.uniform1f(uTrailAlpha, 1);
         const solid = geom.color;
-        if (solid) G.uniform4f(uTrailSolid, solid[0], solid[1], solid[2], 1);
-        else G.uniform4f(uTrailSolid, 0, 0, 0, 0);
+        if (solid) G.vertexAttrib4f(8, solid[0], solid[1], solid[2], 1);
+        else G.vertexAttrib4f(8, 0, 0, 0, 0);
         G.enable(G.BLEND);
         G.blendFunc(G.SRC_ALPHA, G.ONE_MINUS_SRC_ALPHA);
         G.bindVertexArray(vao);
@@ -1034,6 +1101,25 @@ export function createWebGLRenderer(
         drawCalls++;
         trailPoints += geom.pointCount;
       };
+      if (!hideStrands && batchBufs.size > 0) {
+        // Found circuits: one call per cell, the colour riding each segment.
+        G.useProgram(progTrail);
+        G.uniform2f(uTrailHalfRes, bw / 2, bh / 2);
+        G.uniform1f(uTrailHalfPx, (BASE_LINE_PX * lineScale * trailScale * dpr) / 2);
+        G.uniform1f(uTrailTotal, 1);
+        G.uniform1f(uTrailAlpha, 1);
+        G.enable(G.BLEND);
+        G.blendFunc(G.SRC_ALPHA, G.ONE_MINUS_SRC_ALPHA);
+        for (const { batch, vao } of batchBufs.values()) {
+          const off = originRelativeCenter(cam, batch.origin);
+          G.uniform4f(uTrailView, -off.x, -off.y, (2 * cam.scale * dpr) / bw, (-2 * cam.scale * dpr) / bh);
+          G.bindVertexArray(vao);
+          G.drawArraysInstanced(G.TRIANGLES, 0, 6, batch.segments);
+          drawCalls++;
+          trailPoints += batch.segments;
+        }
+        G.disable(G.BLEND);
+      }
       for (const geom of hideStrands ? [] : circuits) {
         const bufs = circuitBufs.get(geom);
         if (bufs) drawTrailPass(geom, bufs.vao);
@@ -1082,6 +1168,8 @@ export function createWebGLRenderer(
       G.deleteBuffer(vboTrailS);
       for (const bufs of circuitBufs.values()) deleteTrailBuffers(bufs);
       circuitBufs.clear();
+      for (const bufs of batchBufs.values()) deleteBatchBuffers(bufs);
+      batchBufs.clear();
       G.deleteVertexArray(vaoLeaf);
       G.deleteVertexArray(vaoLine);
       G.deleteVertexArray(vaoGlyph);
