@@ -18,7 +18,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { mul, transPt, type Affine, type Pt } from '../geom';
-import { LEAF_ORDER, TILE_NAMES, leafPts, type TileTypeId } from '../families';
+import { FAMILIES, LEAF_ORDER, TILE_NAMES, leafPts, type TileTypeId } from '../families';
 import { SUPER_RULES, buildSystem, type TileNode } from '../tiles';
 import {
   Z_IDENT,
@@ -911,6 +911,56 @@ describe('viewport coverage regression (measured holes)', () => {
         ancestorLevel: Math.min(cut.ancestorLevel + 6, UNROOTED_MAX_LEVEL),
       });
       expect(cut.count).toBe(deep.count);
+    }
+  });
+
+  it('closes holes that outlast the count window and slip between grid cells', () => {
+    // Hex seed 1: the count held from level 13 to 18 — one level past the
+    // window — while 34 tiles of a sibling supertile were missing in a strip
+    // ~3 units deep along the rect's bottom edge, thinner than a grid cell.
+    // A traced strand read the missing chord as a dead end. Spectre seed 1
+    // shipped a 240-unit feed-sized rect 6 tiles short the same way. Only the
+    // seam proof sees them.
+    const spectre = createUnrootedEngine(1);
+    const wide = { cx: 1036.5, cy: 515.5, halfW: 240, halfH: 240 };
+    const wideCut = spectre.query(wide, 200_000);
+    expect(wideCut.count).toBe(
+      spectre.query(wide, 200_000, { ancestorLevel: wideCut.ancestorLevel + 10 }).count,
+    );
+
+    const engine = createUnrootedEngine(1, 'hex');
+    const view = { cx: 3745.25, cy: 11624.225981816848, halfW: 40, halfH: 40 };
+    const cut = engine.query(view, 100_000);
+    const deep = engine.query(view, 100_000, { ancestorLevel: cut.ancestorLevel + 8 });
+    expect(cut.count).toBe(deep.count);
+    let found = false;
+    for (let i = 0; i < cut.count; i++) {
+      const x = cut.pos[i * 2] + cut.origin.x;
+      const y = cut.pos[i * 2 + 1] + cut.origin.y;
+      if (Math.abs(x - 3760) < 1e-3 && Math.abs(y - 11585.688) < 1e-3) found = true;
+    }
+    expect(found).toBe(true);
+  });
+
+  it('leaf cuts match a far higher descent across families and sizes', () => {
+    // The seam proof must never reject a complete cut — every family's
+    // outlines have to meet edge to edge for it to close, or queries would
+    // climb to UNROOTED_MAX_LEVEL and throw. Sweep rects of the sizes a trace
+    // feeds itself with, away from the origin: each must hold exactly the
+    // leaves a descent from far above the chosen ancestor finds.
+    const sizes = [20, 40, 90, 240];
+    for (const family of FAMILIES) {
+      const engine = createUnrootedEngine(1, family);
+      for (let i = 0; i < 8; i++) {
+        const half = sizes[i % sizes.length];
+        const view = { cx: 1000 + i * 1733.3, cy: 500 - i * 977.7, halfW: half, halfH: half };
+        const cut = engine.query(view, 200_000);
+        expect(cut.cutLevel).toBe(0);
+        const deep = engine.query(view, 200_000, {
+          ancestorLevel: Math.min(cut.ancestorLevel + 8, UNROOTED_MAX_LEVEL),
+        });
+        expect(cut.count, `${family} ${JSON.stringify(view)}`).toBe(deep.count);
+      }
     }
   });
 });

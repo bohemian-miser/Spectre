@@ -27,13 +27,20 @@ export interface TilingClientOptions {
 function createSyncClient(): TilingClient {
   return {
     usesWorker: false,
+    // Answered on a timer task, as a worker's reply would be, never as a
+    // microtask: a caller that issues its next query from the last one's
+    // result (the trace feeder does, whenever a query outlasts its throttle)
+    // would otherwise chain queries forever without the thread ever reaching
+    // a timer, an event or a frame.
     query: (req) =>
       new Promise<UnrootedQueryResponse>((resolve, reject) => {
-        try {
-          resolve(runUnrootedQuery(req));
-        } catch (err) {
-          reject(err instanceof Error ? err : new Error(String(err)));
-        }
+        setTimeout(() => {
+          try {
+            resolve(runUnrootedQuery(req));
+          } catch (err) {
+            reject(err instanceof Error ? err : new Error(String(err)));
+          }
+        }, 0);
       }),
     dispose: () => {},
   };

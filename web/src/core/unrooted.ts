@@ -52,6 +52,7 @@ import {
   zBasePairXform,
   zConj,
   zInv,
+  zLeafPts,
   zMul,
   zRot,
   zSupertileTransforms,
@@ -202,6 +203,63 @@ const COVER_PROBE_LIFT = 2;
  * belt on braces.
  */
 const COVER_STABLE_WINDOW = 5;
+
+/**
+ * Slack, in world units, of the seam-closure proof's "in the view" test (see
+ * `probeView`). An edge is tested against the view shrunk by this much, so
+ * the tile across it — whose float bounding box can be off by ~2e-4 at
+ * |world| ~ 1e12 — certainly met the view and was emitted, if it exists.
+ */
+const SEAM_SLACK = 1e-3;
+
+/**
+ * A leaf outline's exact Z[zeta12] vertices (4 integers each, local to the
+ * leaf's origin) in every pose a world transform can give it: pose
+ * `k * 2 + m` is rotation `k * 30` degrees with mirror `m` applied first.
+ */
+interface LeafPoses {
+  readonly n: number;
+  readonly z: readonly Float64Array[];
+}
+
+// Leaf nodes are unique to their family, like the bbox cache's keys.
+const leafPosesCache = new WeakMap<TileNode, LeafPoses>();
+
+function leafPoses(family: TileFamilyId, node: TileNode & { kind: 'leaf' }): LeafPoses {
+  const hit = leafPosesCache.get(node);
+  if (hit) return hit;
+  const pts = zLeafPts(family, node.type);
+  const z: Float64Array[] = [];
+  for (let k = 0; k < 12; ++k) {
+    for (let m = 0; m < 2; ++m) {
+      const zs = new Float64Array(pts.length * 4);
+      pts.forEach((p, i) => zs.set(zRot(m ? zConj(p) : p, k), i * 4));
+      z.push(zs);
+    }
+  }
+  const out = { n: pts.length, z };
+  leafPosesCache.set(node, out);
+  return out;
+}
+
+/** murmur3's 32-bit finalizer: every input bit reaches every output bit. */
+function fmix32(h: number): number {
+  h = Math.imul(h ^ (h >>> 16), 0x85ebca6b);
+  h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35);
+  return h ^ (h >>> 16);
+}
+
+/**
+ * 32-bit print of an exact point. Coefficients can pass 2^32, so the high
+ * words are folded in too; identical points always print identically.
+ */
+function zPrint(c0: number, c1: number, c2: number, c3: number): number {
+  let h = Math.imul(c0 | 0, 0x9e3779b1) ^ ((c0 / 4294967296) | 0);
+  h = Math.imul(h ^ (c1 | 0), 0xc2b2ae3d) ^ ((c1 / 4294967296) | 0);
+  h = Math.imul(h ^ (c2 | 0), 0x27d4eb2f) ^ ((c2 / 4294967296) | 0);
+  h = Math.imul(h ^ (c3 | 0), 0x165667b1) ^ ((c3 / 4294967296) | 0);
+  return fmix32(h);
+}
 
 const leafIndexCache = new Map<TileFamilyId, Map<TileTypeId, number>>();
 
@@ -609,12 +667,35 @@ export function createUnrootedEngine(
    *    the view still lies outside the subtree entirely. The occupancy grid
    *    catches that case directly: every cell of the view must be reached by
    *    some node's AABB, or the descent root is too low.
+   *
+   * Both of those are still evidence, not proof: a hole thinner than a grid
+   * cell, sitting under a count plateau one level longer than the window,
+   * slips through (measured: hex seed 1 near (3760, 11585), a 34-tile strip
+   * along a 40-unit rect's edge, plateau 13..18 — the walk read the missing
+   * chord as a dead end). So a LEAF probe can also be asked for `seams`, a
+   * proof rather than evidence: every edge of an emitted tile that meets the
+   * view must be shared by another emitted tile. Both tiles on an edge meet
+   * the view whenever the edge does, so an unshared edge in the view is the
+   * subtree's own boundary crossing it — a hole, however thin. And when no
+   * boundary meets the view, the (connected) view lies wholly inside the
+   * emitted tiles.
+   *
+   * Matching edges needs no table. Every tile walks its outline the same way
+   * round (leaves are never mirrored in world frame; a mirrored one would
+   * count negated), so a shared edge is walked once each way, and summing an
+   * antisymmetric print `E(p, q) - E(q, p)` over all in-view edges cancels it
+   * exactly — the prints come from the points' exact integer coordinates.
+   * Any unshared edge leaves the sum nonzero, bar a 2^-64 coincidence across
+   * the two independent 32-bit sums. Which edges count is decided from floats
+   * derived from those same exact points, so both carriers of an edge always
+   * agree on it.
    */
   function probeView(
     level: number,
     probeCut: number,
     view: ViewRect,
-  ): { count: number; uncovered: number } {
+    seams = false,
+  ): { count: number; uncovered: number; seamsClosed: boolean } {
     const W = worldOfAncestor[level];
     const wMinX = view.cx - view.halfW;
     const wMaxX = view.cx + view.halfW;
@@ -624,6 +705,76 @@ export function createUnrootedEngine(
     const cellH = (2 * view.halfH) / COVER_GRID_Y;
     const grid = new Uint8Array(COVER_GRID_X * COVER_GRID_Y);
     let count = 0;
+    // The two seam sums (see above); both stay 0 when every edge is shared.
+    let seamA = 0;
+    let seamB = 0;
+    const sMinX = wMinX + SEAM_SLACK;
+    const sMaxX = wMaxX - SEAM_SLACK;
+    const sMinY = wMinY + SEAM_SLACK;
+    const sMaxY = wMaxY - SEAM_SLACK;
+    const addSeams = (
+      leaf: TileNode & { kind: 'leaf' },
+      k: number,
+      m: number,
+      a: number,
+      b: number,
+      c: number,
+      d: number,
+    ): void => {
+      const poses = leafPoses(family, leaf);
+      const z = poses.z[k * 2 + m];
+      const n = poses.n;
+      const sign = m ? -1 : 1;
+      let p0 = 0;
+      let px0 = 0;
+      let py0 = 0;
+      let hp = 0;
+      let px = 0;
+      let py = 0;
+      // Vertex i closes the edge from vertex i - 1; the last pass closes the
+      // outline back to vertex 0.
+      for (let i = 0; i <= n; ++i) {
+        let hq: number;
+        let qx: number;
+        let qy: number;
+        if (i === n) {
+          hq = p0;
+          qx = px0;
+          qy = py0;
+        } else {
+          const v = i * 4;
+          const c0 = a + z[v];
+          const c1 = b + z[v + 1];
+          const c2 = c + z[v + 2];
+          const c3 = d + z[v + 3];
+          hq = zPrint(c0, c1, c2, c3);
+          qx = c0 + c1 * HALF_SQRT3 + c2 * 0.5;
+          qy = c1 * 0.5 + c2 * HALF_SQRT3 + c3;
+          if (i === 0) {
+            p0 = hq;
+            px0 = qx;
+            py0 = qy;
+          }
+        }
+        if (
+          i > 0 &&
+          !(
+            (px < qx ? qx : px) < sMinX ||
+            (px < qx ? px : qx) > sMaxX ||
+            (py < qy ? qy : py) < sMinY ||
+            (py < qy ? py : qy) > sMaxY
+          )
+        ) {
+          const fa = fmix32(hp + Math.imul(hq, 0x9e3779b1)) - fmix32(hq + Math.imul(hp, 0x9e3779b1));
+          const fb = fmix32(hp ^ Math.imul(hq, 0x85ebca77)) - fmix32(hq ^ Math.imul(hp, 0x85ebca77));
+          seamA = (seamA + sign * fa) | 0;
+          seamB = (seamB + sign * fb) | 0;
+        }
+        hp = hq;
+        px = qx;
+        py = qy;
+      }
+    };
     const mark = (nMinX: number, nMaxX: number, nMinY: number, nMaxY: number): void => {
       const gx0 = Math.max(0, Math.floor((nMinX - wMinX) / cellW));
       const gx1 = Math.min(COVER_GRID_X - 1, Math.floor((nMaxX - wMinX) / cellW));
@@ -670,6 +821,7 @@ export function createUnrootedEngine(
       if (node.kind === 'leaf' || (probeCut > 0 && lvl <= probeCut)) {
         count++;
         mark(nMinX, nMaxX, nMinY, nMaxY);
+        if (seams && node.kind === 'leaf') addSeams(node, k, m, a, b, c, d);
         return;
       }
       const table = lvl >= 1 ? composeTable(family, lvl) : pairTable(family);
@@ -692,7 +844,7 @@ export function createUnrootedEngine(
     walk(nodeAt(level), level, W.k, W.m, W.t[0], W.t[1], W.t[2], W.t[3]);
     let uncovered = 0;
     for (let i = 0; i < grid.length; ++i) if (grid[i] === 0) uncovered += 1;
-    return { count, uncovered };
+    return { count, uncovered, seamsClosed: seamA === 0 && seamB === 0 };
   }
 
   // Reusable scratch buffers (results are exact-size copies, so the scratch
@@ -739,7 +891,11 @@ export function createUnrootedEngine(
         if (
           lower.count > 0 &&
           lower.uncovered === 0 &&
-          lower.count === probeView(upper, probeCut, view).count
+          lower.count === probeView(upper, probeCut, view).count &&
+          // Leaf cuts then prove their seams closed — the one test here that
+          // is exact rather than evidence (see `probeView`). Last, because it
+          // hashes every edge in the view: run it once, not once per climb.
+          (probeCut !== 0 || probeView(ancestorLevel, 0, view, true).seamsClosed)
         ) {
           break;
         }

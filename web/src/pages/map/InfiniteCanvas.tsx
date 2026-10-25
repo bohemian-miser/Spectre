@@ -172,6 +172,15 @@ const FEED_HALF_MIN = 40;
 const FEED_HALF_MAX = 240;
 const FEED_GROW = 1.5;
 const FEED_BUDGET = 100_000;
+/**
+ * The part of a feed rect (as a fraction of its half-extent, about its
+ * centre) where a missing continuation is believed as a dead end. A feed is
+ * centred on the head when it is REQUESTED, but the walk then runs on across
+ * it, and it is near a rect's edge that a cut can miss tiles (the engine now
+ * proves its leaf cuts complete, which this backs up). A miss outside the
+ * core reads as a frontier, and the next feed is centred on that very spot.
+ */
+const FEED_TRUSTED_FRACTION = 0.5;
 
 /**
  * Find-all-circuits: ceilings for welding + tracing the whole display cut on
@@ -1505,8 +1514,9 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
    * an `'end'` from a DISPLAY cut is only a candidate (rare engine states can
    * under-cover a rect; measured and fixed in `unrooted.ts`, but belt on
    * braces here) — it demotes to `'frontier'` and a head-centred feed cut is
-   * asked to confirm. Only an `'end'` seen by a feed cut, whose rect is
-   * centred on the head by construction, is believed.
+   * asked to confirm. Only an `'end'` seen by a feed cut is believed, and the
+   * feed only vouches for the core of its rect around the head it was
+   * centred on ({@link FEED_TRUSTED_FRACTION}).
    */
   const advanceAgainst = useCallback(
     (index: ChordIndex | null, covered: ViewRect | null, fromFeed: boolean): void => {
@@ -1793,7 +1803,14 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
         const table = chordsRef.current;
         if (!table || res.cut.cutLevel !== 0) return;
         const index = buildChordIndex(res.cut, table);
-        advanceAgainstRef.current?.(index, res.cut.truncated ? null : req.view, true);
+        const { cx, cy, halfW, halfH } = req.view;
+        const trusted = {
+          cx,
+          cy,
+          halfW: halfW * FEED_TRUSTED_FRACTION,
+          halfH: halfH * FEED_TRUSTED_FRACTION,
+        };
+        advanceAgainstRef.current?.(index, res.cut.truncated ? null : trusted, true);
       },
       onError: () => {
         // Best-effort: the display query is what surfaces engine errors.
