@@ -13,6 +13,7 @@ import {
   signedArea,
   traceStrandPaths,
   tileStrandPoints,
+  liftZero,
   zeroFlow,
   zeroLines,
 } from '../flowLattice';
@@ -69,47 +70,43 @@ describe('flowLattice', () => {
     }
   });
 
-  it('class 0 either way: labels mode gains nothing, groups mode grows to 7D', () => {
+  it('class 0 either way: a 0 column, plus the ±2 pair in both modes; groups mode reaches 8D', () => {
     const labels = flowModel('labels', true);
     expect(labels.dropped).toEqual([]);
     expect(labels.zeroTypes).toEqual(['Theta', 'Xi', 'Phi', 'Psi']);
-    // The directed classes already balance those four tiles, so class 0 never gets a line.
-    expect(labels.basis).toEqual(flowModel('labels').basis);
-    for (const b of labels.basis) expect(zeroLines(labels, b)).toBe(0);
+    expect(labels.vars.map((v) => v.label)).toEqual(['0', '1', '2', '3', '4', '5', '6', '8']);
+    // Labels mode: the old two loops (no class-0 lines needed) and the pure pair.
+    expect(labels.basis).toHaveLength(3);
+    expect(labels.basis.filter((b) => zeroLines(labels, b) > 0)).toEqual([[2, 0, 0, 0, 0, 0, 0, 0]]);
+    for (const b of labels.basis) expect(isCircuit(labels, b)).toBe(true);
 
     const m = flowModel('groups', true);
-    expect(m.vars).toHaveLength(12);
-    expect(m.basis).toHaveLength(7);
+    expect(m.vars).toHaveLength(13);
+    expect(m.basis).toHaveLength(8);
     for (const b of m.basis) expect(isCircuit(m, b)).toBe(true);
-    expect(m.basis.some((b) => zeroLines(m, b) > 0)).toBe(true);
-    // Every old circuit is still one.
-    for (const b of flowModel('groups').basis) expect(isCircuit(m, b)).toBe(true);
+    // Some loops need class-0 lines alongside directed ones.
+    expect(m.basis.some((b) => zeroLines(m, b) > 0 && b.some((v, k) => k !== m.zeroVar && v !== 0))).toBe(true);
+    // Every old circuit is still one, once its class-0 lines are lifted.
+    for (const b of flowModel('groups').basis) expect(isCircuit(m, liftZero(m, [0, ...b]))).toBe(true);
   });
 
   it('class 0 either way soaks up an imbalance of the right parity, and no more', () => {
     const m = flowModel('groups', true);
-    const x = m.basis.find((b) => zeroLines(m, b) > 0)!;
+    const x = m.basis.find((b) => zeroLines(m, b) > 0 && b.some((v, k) => k !== m.zeroVar && v !== 0))!;
     const n = zeroLines(m, x);
     const z = zeroFlow(m, x);
     m.types.forEach((t, i) => {
       if (!m.zeroTypes.includes(t)) expect(z[i]).toBe(0);
       else expect((n - Math.abs(z[i])) % 2).toBe(0);
     });
-    // Nudging one variable by 1 flips some tile's parity: not a circuit any more.
-    const nudged = x.map((v, k) => (k === x.findIndex((w) => w !== 0) ? v + 1 : v));
-    expect(isCircuit(m, nudged)).toBe(false);
-  });
-
-  it('class 0 either way: every tile of a patch still pairs its strands up', () => {
-    const m = flowModel('groups', true);
-    const x = combine(m.basis, m.basis.map((_, i) => (i % 2 ? -1 : 1)), m.vars.length);
-    expect(zeroLines(m, x)).toBeGreaterThan(0);
-    for (const t of hexPatch(2)) {
-      const pts = tileStrandPoints(m, t.inst.type, x, t.pts);
-      const strands = pairStrands(pts);
-      expect(strands, t.inst.type).not.toBeNull();
-      expect(strands!.length * 2).toBe(pts.length);
-    }
+    // One more line breaks the parity; two more is the same circuit with an extra in-and-out pair.
+    const more = (d: number) => x.map((v, k) => (k === m.zeroVar ? v + d : v));
+    expect(isCircuit(m, more(1))).toBe(false);
+    expect(isCircuit(m, more(2))).toBe(true);
+    // Too few lines can't take up the imbalance; lifting puts back just enough.
+    const fewer = more(-2);
+    expect(isCircuit(m, fewer)).toBe(false);
+    expect(liftZero(m, fewer)).toEqual(x);
   });
 
   it('pairStrands refuses an unbalanced boundary', () => {

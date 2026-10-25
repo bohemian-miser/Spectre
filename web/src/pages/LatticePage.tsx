@@ -17,6 +17,7 @@ import {
   flowLines,
   flowModel,
   hexPatch,
+  liftZero,
   netFlow,
   signedArea,
   tileStrandPoints,
@@ -47,7 +48,22 @@ const MODE_TEXT: Record<FlowMode, string> = {
 
 function vecAt(model: FlowModel, axes: readonly [number, number], a: number, b: number): number[] {
   const coeffs = model.basis.map((_, i) => (i === axes[0] ? a : 0) + (i === axes[1] && axes[1] !== axes[0] ? b : 0));
-  return combine(model.basis, coeffs, model.vars.length);
+  return liftZero(model, combine(model.basis, coeffs, model.vars.length));
+}
+
+/**
+ * The usual axes, but with class 0 in, axis b is a loop that uses it: one that
+ * mixes class 0 with the directed classes if there is one, else the pure ±2.
+ */
+function startAxes(model: FlowModel): [number, number] {
+  const [a, b] = defaultAxes(model);
+  const z = model.zeroVar;
+  if (z < 0) return [a, b];
+  const uses = model.basis.map((v) => v[z] !== 0);
+  const mixed = model.basis.findIndex((v, i) => uses[i] && v.some((w, k) => k !== z && w !== 0));
+  const pick = mixed >= 0 ? mixed : uses.indexOf(true);
+  if (pick < 0 || pick === a || pick === b) return [a, b];
+  return [a === pick ? b : a, pick];
 }
 
 const signed = (n: number) => (n > 0 ? `+${n}` : n < 0 ? `−${-n}` : '0');
@@ -70,7 +86,7 @@ function slicePoint(model: FlowModel, axes: readonly [number, number], flat: boo
 }
 
 function firstFlow(m: FlowModel): number[] {
-  return vecAt(m, defaultAxes(m), 1, 0);
+  return vecAt(m, startAxes(m), 1, 0);
 }
 
 /** The tile's class-0 edge when class 0 runs either way, else −1. */
@@ -82,7 +98,7 @@ export default function LatticePage(): JSX.Element {
   const [mode, setMode] = useState<FlowMode>('labels');
   const [zeroEither, setZeroEither] = useState(false);
   const model = useMemo(() => flowModel(mode, zeroEither), [mode, zeroEither]);
-  const [axes, setAxes] = useState<[number, number]>(() => defaultAxes(flowModel('labels')));
+  const [axes, setAxes] = useState<[number, number]>(() => startAxes(flowModel('labels')));
   const [maxLines, setMaxLines] = useState(1);
   const [level, setLevel] = useState(2);
   const [x, setX] = useState<number[]>(() => firstFlow(flowModel('labels')));
@@ -97,7 +113,7 @@ export default function LatticePage(): JSX.Element {
 
   const pickMode = (m: FlowMode) => {
     setMode(m);
-    setAxes(defaultAxes(flowModel(m, zeroEither)));
+    setAxes(startAxes(flowModel(m, zeroEither)));
     setX(firstFlow(flowModel(m, zeroEither)));
     setHoverVar(null);
     setCol(0);
@@ -105,10 +121,14 @@ export default function LatticePage(): JSX.Element {
     setTileSel(0);
     setCursor([1, 0]);
   };
-  // The unknowns stay the same either way, so the flow is kept; only the basis moves.
+  // The flow is kept, gaining (or losing) its class-0 lines; the basis moves.
   const pickZero = (on: boolean) => {
+    const next = flowModel(mode, on);
+    const byLabel = new Map(model.vars.map((v, k) => [v.label, x[k]]));
     setZeroEither(on);
-    setAxes(defaultAxes(flowModel(mode, on)));
+    setAxes(startAxes(next));
+    setX(liftZero(next, next.vars.map((v) => byLabel.get(v.label) ?? 0)));
+    setCol(0);
     setComboIdx({});
   };
   const flat = model.basis.length < 2;
@@ -242,7 +262,8 @@ export default function LatticePage(): JSX.Element {
           <MatrixEditor
             model={model}
             x={x}
-            onChange={setX}
+            onChange={(next) => setX(liftZero(model, next))}
+            onRaw={setX}
             hover={hoverVar}
             onHover={setHoverVar}
             selected={col}
@@ -269,10 +290,12 @@ export default function LatticePage(): JSX.Element {
         {model.zeroEitherWay ? (
           <p data-testid="lattice-zero-note">
             Class 0 runs either way: every class-0 edge carries the same number of lines, and at each
-            tile any of them may go in or out. So the <span className="mono">0</span> column has no
-            counter: Theta, Xi, Phi and Psi each let it take up their imbalance, which works when their
-            nets share a parity, and it needs as many lines as the biggest of them. Where two strands
-            meet head-on across a class-0 edge the flow simply stops. The lattice has dimension{' '}
+            tile any of them may go in or out. Its counter sets that number, and every tile with a
+            class-0 edge (Theta, Xi, Phi, Psi) gains its <span className="mono">±</span>: the lines take
+            up the tile&rsquo;s imbalance as long as there are enough of them and the parity matches.
+            Changing another flow raises them if it has to. Two extra lines that go in and straight back
+            out are a circuit by themselves (<span className="mono">0: ±2</span>). Where two strands meet
+            head-on across a class-0 edge the flow simply stops. The lattice has dimension{' '}
             {model.basis.length}.
           </p>
         ) : (
@@ -405,7 +428,6 @@ function LatticePlot(props: {
 function Readout(props: { model: FlowModel; x: readonly number[]; sel: readonly [number, number] | null; flat: boolean }): JSX.Element {
   const { model, x, sel, flat } = props;
   const odd = x.flatMap((v, k) => (v % 2 !== 0 ? [model.vars[k].label] : []));
-  if (zeroLines(model, x) % 2 !== 0) odd.push('0');
   const lines = flowLines(model, x);
   const net = netFlow(model, x);
   const off = model.types.flatMap((t, i) =>
@@ -578,16 +600,24 @@ function CircuitPatch(props: {
 function MatrixEditor(props: {
   model: FlowModel;
   x: readonly number[];
+  /** A flow edit: class-0 lines get lifted to fit. */
   onChange: (x: number[]) => void;
+  /** An edit of the class-0 lines themselves, kept as typed. */
+  onRaw: (x: number[]) => void;
   hover: number | null;
   onHover: (k: number | null) => void;
   selected: number;
   onSelect: (k: number) => void;
 }): JSX.Element {
-  const { model, x, onChange, hover, onHover, selected, onSelect } = props;
-  const set = (k: number, v: number) => onChange(x.map((old, i) => (i === k ? Math.max(-MAX_COUNT, Math.min(MAX_COUNT, v)) : old)));
+  const { model, x, onChange, onRaw, hover, onHover, selected, onSelect } = props;
+  // Class 0's counter is its line count, so it stops at 0; its own steps aren't lifted.
+  const zv = model.zeroVar;
+  const set = (k: number, v: number) => {
+    const next = x.map((old, i) => (i === k ? Math.max(k === zv ? 0 : -MAX_COUNT, Math.min(MAX_COUNT, v)) : old));
+    if (k === zv) onRaw(next);
+    else onChange(next);
+  };
   const net = netFlow(model, x);
-  const zero = model.zeroEitherWay;
   const z = zeroFlow(model, x);
   const n0 = zeroLines(model, x);
   const last = model.vars.length - 1;
@@ -635,11 +665,6 @@ function MatrixEditor(props: {
                 {v.label}
               </th>
             ))}
-            {zero && (
-              <th scope="col" className="lattice-zero-col" style={{ borderBottomColor: edgeClassColor(0) }}>
-                0
-              </th>
-            )}
             <th scope="col">Net</th>
           </tr>
           <tr className="lattice-flow-row">
@@ -650,18 +675,15 @@ function MatrixEditor(props: {
                   <button type="button" aria-label={`More flow on ${v.label}`} onClick={() => set(k, x[k] + 1)} disabled={x[k] >= MAX_COUNT}>
                     +
                   </button>
-                  <output data-testid={`lattice-count-${v.label}`}>{signed(x[k])}</output>
-                  <button type="button" aria-label={`Less flow on ${v.label}`} onClick={() => set(k, x[k] - 1)} disabled={x[k] <= -MAX_COUNT}>
+                  <output data-testid={`lattice-count-${v.label}`} title={k === zv ? 'Lines on every class-0 edge, each free to run either way' : undefined}>
+                    {k === zv ? `±${n0}` : signed(x[k])}
+                  </output>
+                  <button type="button" aria-label={`Less flow on ${v.label}`} onClick={() => set(k, x[k] - 1)} disabled={x[k] <= (k === zv ? 0 : -MAX_COUNT)}>
                     −
                   </button>
                 </div>
               </td>
             ))}
-            {zero && (
-              <td className="lattice-zero-col" title="Lines on every class-0 edge, either way round: set by the tiles" data-testid="lattice-count-0">
-                ±{n0}
-              </td>
-            )}
             <td>
               <button type="button" className="lattice-clear" onClick={() => onChange(x.map(() => 0))}>
                 Clear
@@ -674,6 +696,21 @@ function MatrixEditor(props: {
             <tr key={t} className={net[i] === 0 ? undefined : 'is-unbalanced'}>
               <th scope="row">{t}</th>
               {model.matrix[i].map((v, k) => {
+                if (k === zv) {
+                  // Class 0 spreads its ± to every tile with a class-0 edge; the tooltip says what it takes up.
+                  const has = model.zeroTypes.includes(t);
+                  return (
+                    <td
+                      key={k}
+                      className={[colClass(k), has ? '' : 'is-zero', has && n0 > 0 ? 'is-term' : ''].filter(Boolean).join(' ')}
+                      title={has ? `±${n0}: takes up ${signed(z[i])} here` : undefined}
+                      data-testid={`lattice-cell-${t}-${model.vars[k].label}`}
+                      {...hoverProps(k)}
+                    >
+                      {has ? `±${n0}` : '·'}
+                    </td>
+                  );
+                }
                 const live = x[k] !== 0 && v !== 0;
                 return (
                   <td
@@ -687,11 +724,6 @@ function MatrixEditor(props: {
                   </td>
                 );
               })}
-              {zero && (
-                <td className={['lattice-zero-col', model.zeroTypes.includes(t) ? '' : 'is-zero', z[i] !== 0 ? 'is-term' : ''].filter(Boolean).join(' ')} data-testid={`lattice-cell-${t}-0`}>
-                  {model.zeroTypes.includes(t) ? signed(z[i]) : '·'}
-                </td>
-              )}
               <td className={`lattice-net ${net[i] === 0 ? 'is-good' : 'is-bad'}`} data-testid={`lattice-net-${t}`}>
                 {signed(net[i])}
               </td>
@@ -851,10 +883,10 @@ function FlowTile(props: {
             onPointerLeave={ev ? () => onHover(null) : undefined}
           >
             <title>
-              {v
-                ? `${v.label}: ${flow === 0 ? 'no flow' : `${Math.abs(flow)} ${flow > 0 ? 'out' : 'in'}`}`
-                : isZero
-                  ? `class 0, either way: ${zeroDirs.length === 0 ? 'no lines' : `${zeroOut} out, ${zeroDirs.length - zeroOut} in`}`
+              {isZero
+                ? `class 0, either way: ${zeroDirs.length === 0 ? 'no lines' : `${zeroOut} out, ${zeroDirs.length - zeroOut} in`}`
+                : v
+                  ? `${v.label}: ${flow === 0 ? 'no flow' : `${Math.abs(flow)} ${flow > 0 ? 'out' : 'in'}`}`
                   : 'class 0 (no direction)'}
             </title>
             <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} style={{ stroke: colour }} />

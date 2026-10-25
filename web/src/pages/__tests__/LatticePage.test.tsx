@@ -145,20 +145,35 @@ describe('LatticePage', () => {
     expect(screen.getByText(/The lattice has dimension 5/)).toBeTruthy();
   });
 
-  it('class 0 either way adds a counterless 0 column and grows the groups lattice', () => {
+  it('class 0 either way: a 0 counter whose ± spreads to the class-0 tiles, and an axis that uses it', () => {
     const { container } = render(<LatticePage />);
     fireEvent.change(screen.getByLabelText(/Unknowns/), { target: { value: 'groups' } });
     fireEvent.click(screen.getByTestId('lattice-zero-toggle'));
-    expect(screen.getByTestId('lattice-zero-note').textContent).toContain('dimension 7');
-    // Tile, twelve groups, 0, Net.
+    expect(screen.getByTestId('lattice-zero-note').textContent).toContain('dimension 8');
+    // Tile, 0, twelve groups, Net.
     expect(screen.getByTestId('lattice-matrix').querySelectorAll('thead tr:first-child th')).toHaveLength(15);
-    // Pick a basis loop that needs class 0 as axis a, then its a = 1 point.
-    const axis = screen.getByLabelText(/Axis a/) as HTMLSelectElement;
-    const withZero = [...axis.options].find((o) => o.textContent!.includes('0: ±'))!;
-    fireEvent.change(axis, { target: { value: withZero.value } });
-    fireEvent.click(screen.getByTestId('lattice-pt-1_0'));
-    expect(screen.getByTestId('lattice-count-0').textContent).not.toBe('±0');
+    // Axis b starts on a loop that needs class 0.
+    const axisB = screen.getByLabelText(/Axis b/) as HTMLSelectElement;
+    expect(axisB.selectedOptions[0].textContent).toContain('0: ±');
+    fireEvent.click(screen.getByTestId('lattice-pt-0_1'));
+    const n = Number(screen.getByTestId('lattice-count-0').textContent!.replace('±', ''));
+    expect(n).toBeGreaterThan(0);
+    expect(screen.getByTestId('lattice-cell-Psi-0').textContent).toBe(`±${n}`);
+    expect(screen.getByTestId('lattice-cell-Delta-0').textContent).toBe('·');
     expect(screen.getByTestId('lattice-balance').textContent).toContain('Every tile balances');
     expect(container.querySelector('svg.lattice-patch')!.getAttribute('data-unbalanced')).toBe('0');
+    // One more line breaks the parity; one more again restores it.
+    fireEvent.click(screen.getByLabelText('More flow on 0'));
+    expect(screen.getByTestId('lattice-count-0').textContent).toBe(`±${n + 1}`);
+    expect(screen.getByTestId('lattice-balance').textContent).toContain('Not a circuit');
+    fireEvent.click(screen.getByLabelText('More flow on 0'));
+    expect(screen.getByTestId('lattice-balance').textContent).toContain('Every tile balances');
+  });
+
+  it('labels mode with class 0 either way gains just the in-and-out pair', () => {
+    render(<LatticePage />);
+    fireEvent.click(screen.getByTestId('lattice-zero-toggle'));
+    expect(screen.getByTestId('lattice-zero-note').textContent).toContain('dimension 3');
+    expect((screen.getByLabelText(/Axis b/) as HTMLSelectElement).selectedOptions[0].textContent).toBe('0: ±2');
   });
 });
