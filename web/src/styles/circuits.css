@@ -1,0 +1,159 @@
+/* Circuits page. Shell tokens come from widgets.css. */
+
+.circuits-page header p {
+  max-width: 90ch;
+}
+.circuits-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 18px;
+  margin: 10px 0;
+}
+.circuits-controls label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.circuits-note {
+  font-size: 12px;
+  margin: 2px 0 8px;
+  max-width: 90ch;
+}
+.circuits-kind h2 {
+  font-size: 16px;
+  margin: 18px 0 2px;
+}
+.circuits-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 10px;
+}
+.circuits-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 12px;
+}
+.circuits-card.is-on {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+.circuits-card .mono {
+  font-size: 13px;
+  letter-spacing: 0.06em;
+}
+.circuits-empty {
+  height: 150px;
+  display: flex;
+  align-items: center;
+  color: var(--muted, gray);
+}
+.circuits-silhouette path,
+.circuits-big path {
+  fill: none;
+  stroke: var(--text);
+  stroke-width: 14;
+  stroke-linejoin: round;
+}
+.circuits-big path {
+  stroke-width: 1.2;
+  vector-effect: non-scaling-stroke;
+}
+.circuits-detail {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  padding: 10px 14px;
+  margin: 18px 0;
+}
+.circuits-detail h2 {
+  margin: 0 0 6px;
+  font-size: 15px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+.circuits-close {
+  margin-left: auto;
+  border: none;
+  background: none;
+  color: var(--text);
+  font-size: 20px;
+  cursor: pointer;
+}
+.circuits-members {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  font-size: 13px;
+}
+.circuits-detail-body {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 460px), 1fr));
+  gap: 18px;
+}
+.circuits-detail h3 {
+  font-size: 14px;
+  margin: 10px 0 4px;
+}
+.circuits-shape-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.circuits-shape-tabs button {
+  border: 1px solid var(--line);
+  background: var(--panel-2, var(--panel));
+  color: var(--text);
+  border-radius: 999px;
+  padding: 2px 10px;
+  cursor: pointer;
+  font-size: 12px;
+}
+.circuits-shape-tabs button.is-on {
+  border-color: var(--accent);
+}
+.circuits-zoom {
+  width: 100%;
+  aspect-ratio: 1;
+  background: var(--bg, var(--panel));
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.circuits-big {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.circuits-table {
+  border-collapse: collapse;
+  font-size: 12px;
+  width: 100%;
+}
+.circuits-table th,
+.circuits-table td {
+  border-bottom: 1px solid var(--line);
+  padding: 3px 6px;
+  text-align: right;
+  white-space: nowrap;
+}
+.circuits-table th:first-child,
+.circuits-table td:first-child {
+  text-align: left;
+}
+.circuits-table td.circuits-sizes {
+  text-align: left;
+  white-space: normal;
+}

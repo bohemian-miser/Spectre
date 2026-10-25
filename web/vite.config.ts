@@ -35,6 +35,7 @@ export default defineConfig({
         multiedge: resolve(__dirname, 'multiedge.html'),
         dimension: resolve(__dirname, 'dimension.html'),
         centremap: resolve(__dirname, 'centremap.html'),
+        circuits: resolve(__dirname, 'circuits.html'),
         legacy: resolve(__dirname, 'legacy.html'),
         widgets: resolve(__dirname, 'widgets.html'),
       },

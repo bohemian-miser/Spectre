@@ -30,12 +30,13 @@ describe('siteNav', () => {
       'multiedge',
       'dimension',
       'centremap',
+      'circuits',
       'legacy',
     ]);
     expect(new Set(SITE_NAV.map((i) => i.id)).size).toBe(SITE_NAV.length);
   });
 
-  it('ships all thirteen destinations', () => {
+  it('ships all fourteen destinations', () => {
     expect(readyNav().map((i) => i.id)).toEqual([
       'explorer',
       'tails',
@@ -49,6 +50,7 @@ describe('siteNav', () => {
       'multiedge',
       'dimension',
       'centremap',
+      'circuits',
       'legacy',
     ]);
   });

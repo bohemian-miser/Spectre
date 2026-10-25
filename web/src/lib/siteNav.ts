@@ -131,6 +131,14 @@ export const SITE_NAV: readonly NavItem[] = Object.freeze([
     blurb: 'Every pairing compared by where its circuit centres are: heatmap, UMAP and search.',
   },
   {
+    id: 'circuits',
+    label: 'Circuits',
+    short: 'Circuits',
+    entry: 'circuits.html',
+    status: 'ready',
+    blurb: 'Every circuit type of a rule: classes, families, growth and silhouettes of the giants.',
+  },
+  {
     id: 'legacy',
     label: 'Legacy p5 app',
     short: 'Legacy',
