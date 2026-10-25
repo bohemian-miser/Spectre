@@ -210,9 +210,15 @@
   cursor: pointer;
 }
 .centremap-order {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+  font-size: 13px;
+  margin-bottom: 6px;
+}
+.centremap-order label {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 13px;
-  margin-bottom: 6px;
 }
