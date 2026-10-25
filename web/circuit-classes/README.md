@@ -125,3 +125,28 @@ The hexagon full rule `01234568` (1,953,125) and the Tile(1,1) iso full rule
 Tile(1,1), and the iso labelling is the hexagon rule drawn on Spectres strand
 for strand, so both would mostly repeat the Tile(1,1) result. Their small
 rules are included.
+
+## Centre map sweep
+
+The Centre map page compares pairings by where their circuits' centres fall
+(directed chamfer distance, `src/core/centreMap.ts`). In the browser it does
+the full matrix for a few hundred pairings. For every pairing of a family at
+one level there is a one-off GitHub Actions run instead:
+`.github/workflows/centremap-sweep.yml`, started by hand (Actions → Centre map
+sweep → Run workflow; family `hex`, level `5`).
+
+- `centremap-landmarks.ts`: the global numbering of the pairings and the
+  landmarks every pairing is measured against (all pairings of the smaller
+  rules plus 128 seeded ones from the all-edges rule; 572 for hexagons).
+- `centremap-sweep.ts`: one shard of the pairings, each a row of
+  log-quantised distances (one byte each) to the landmarks. 64 shards over
+  16 jobs; hexagons at level 5 (1,953,569 pairings) take about 12 minutes.
+- `centremap-embed.py`: drops duplicate rows, PCA to 50 dimensions, UMAP to
+  2-D, and writes `web/public/data/centremap/<family>-<level>/` (`meta.json`,
+  `xy.i16`, `longest.u16`).
+
+The workflow commits that folder to the branch `centremap-data/<family>-<level>`
+for a pull request. A quick local run of the whole pipeline:
+
+    CENTREMAP_LIMIT=6000 npx tsx circuit-classes/centremap-sweep.ts hex 3 0 1 /tmp/cm
+    python3 circuit-classes/centremap-embed.py /tmp/cm /tmp/cm-out
