@@ -242,16 +242,21 @@ export function SelectionPanel(props: {
   client: FaultLinesClient;
   dark: boolean;
   onClear: () => void;
+  /** Told which of `items` the board shows (-1: all overlaid), so the charts can mark it. */
+  onShow?: (at: number) => void;
   /** The whole selection, when `items` is only a sample of it: its patterns and size. */
   whole?: { readonly patterns: readonly SelectionPattern[]; readonly count: number };
 }): JSX.Element {
-  const { family, level, items, client, dark, onClear, whole } = props;
+  const { family, level, items, client, dark, onClear, onShow, whole } = props;
   const sampled = useMemo(() => selectionPatterns(family, items), [family, items]);
   const patterns = whole?.patterns ?? sampled;
   const [hoverDigit, setHoverDigit] = useState<{ rule: string; position: number } | null>(null);
   /** What the patch shows: -1 for everything overlaid, else one selected pairing. */
   const [at, setAt] = useState(-1);
   useEffect(() => setAt(-1), [items]);
+  const show = useRef(onShow);
+  show.current = onShow;
+  useEffect(() => show.current?.(at), [at]);
   // ← → step through: all overlaid, then each pairing, and round again.
   const step = useRef<(d: number) => void>(() => {});
   step.current = (d: number) => setAt((a) => ((a + 1 + d + items.length + 1) % (items.length + 1)) - 1);

@@ -407,3 +407,22 @@
   padding: 1px 9px;
   cursor: pointer;
 }
+.centremap-atlas-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  pointer-events: none;
+}
+.centremap-atlas .centremap-zoom {
+  max-width: 900px;
+}
+/* The pairing the selection's board shows on its own: its row and column on the heatmap. */
+.centremap-heat-shown {
+  position: absolute;
+  box-sizing: border-box;
+  outline: 2px solid var(--accent);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 35%, transparent);
+  pointer-events: none;
+}

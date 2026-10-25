@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { comboOptionCounts, validEdgeSubsets } from '../../core';
 import CentreMapPage from '../CentreMapPage';
 
 describe('CentreMapPage', () => {
@@ -114,11 +115,17 @@ describe('CentreMapPage', () => {
     // The tiles follow: only that pairing's chords, each drawn by 1 of 1.
     expect(chords().length).toBeLessThan(allChords);
     expect(chords().every((t) => t === '1 of 1')).toBe(true);
+    // The pairing on show is marked on both charts: a ring on the UMAP, its row and column on the heatmap.
+    expect(screen.getByTestId('centremap-umap-shown')).toBeTruthy();
+    expect(screen.getByTestId('centremap-heat-shown-row')).toBeTruthy();
+    expect(screen.getByTestId('centremap-heat-shown-col')).toBeTruthy();
     fireEvent.keyDown(window, { key: 'ArrowLeft' });
     fireEvent.keyDown(window, { key: 'ArrowLeft' });
     expect(shown()).toMatch(/^270 \/ 270 · /);
     fireEvent.click(screen.getByTestId('centremap-overlay-all'));
     expect(shown()).toBe('all 270');
+    expect(screen.queryByTestId('centremap-umap-shown')).toBeNull();
+    expect(screen.queryByTestId('centremap-heat-shown-row')).toBeNull();
     fireEvent.click(screen.getByTestId('centremap-overlay-one'));
     expect(shown()).toMatch(/^1 \/ 270/);
     expect(screen.getByTestId('centremap-tiles').querySelectorAll('figure')).toHaveLength(10);
@@ -178,4 +185,29 @@ describe('CentreMapPage', () => {
     expect(screen.getByTestId('centremap-summary').textContent).toMatch(/^270 pairings at level 4/);
     expect(screen.getByTestId('centremap-recompute')).toBeTruthy();
   }, 90000);
+
+  it('shows the precomputed hexagon map: searches it digit by digit', async () => {
+    let offset = 0;
+    const rules = validEdgeSubsets('hex')
+      .filter((r) => r.edges.length)
+      .slice(0, 2)
+      .map((r) => {
+        const optionCounts = comboOptionCounts('hex', r.edges);
+        const total = optionCounts.reduce((a, b) => a * b, 1);
+        const out = { subset: r.edges, optionCounts, offset, total };
+        offset += total;
+        return out;
+      });
+    const meta = { family: 'hex', level: 5, total: offset, rules, landmarks: [0], distinct: offset, bounds: { min: [0, 0], max: [1, 1] }, files: { xy: 'xy.i16', longest: 'longest.u16' } };
+    const body = (url: string) =>
+      url.endsWith('meta.json') ? JSON.stringify(meta) : url.endsWith('xy.i16') ? new Int16Array(2 * offset).buffer : new Uint16Array(offset).buffer;
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => new Response(body(String(url)))));
+    render(<CentreMapPage />);
+    fireEvent.click(screen.getByTestId('centremap-source-atlas'));
+    await waitFor(() => expect(screen.getByTestId('centremap-atlas-summary').textContent).toMatch(new RegExp(`^${offset} pairings at level 5`)));
+    expect(screen.getByTestId('centremap-atlas-matches').textContent).toBe('Showing all');
+    fireEvent.change(screen.getByTestId('centremap-atlas-rule'), { target: { value: rules[1].subset.join('') } });
+    expect(screen.getByTestId('centremap-atlas-matches').textContent).toBe(`${rules[1].total} of ${offset} match`);
+    vi.unstubAllGlobals();
+  });
 });

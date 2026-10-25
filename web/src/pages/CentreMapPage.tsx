@@ -29,8 +29,10 @@ import { usePrefersDark } from '../hooks/usePrefersDark';
 import { CENTRE_MAP_TTL_MS, centreMapKey, loadCentreMap, saveCentreMap } from '../lib/centreMapCache';
 import { createCentreMapClient } from '../workers/centreMapClient';
 import type { CentreMapPhase, CentreMapResult } from '../workers/centreMapJobs';
-import { createFaultLinesClient } from '../workers/faultLinesClient';
+import { createFaultLinesClient, type FaultLinesClient } from '../workers/faultLinesClient';
 import { BoxSelect, Magnifier, SelectionPanel, Thumb, explorerHref, ruleColour, type Item } from './centremap/parts';
+import { AtlasView } from './centremap/Atlas';
+import { loadAtlas, type Atlas } from './centremap/atlasData';
 import '../styles/centremap.css';
 
 const FAMILIES: readonly { id: TileFamilyId; label: string }[] = [
@@ -95,6 +97,7 @@ const PHASE_LABEL: Record<CentreMapPhase, string> = {
 };
 
 export default function CentreMapPage(): JSX.Element {
+  const [source, setSource] = useState<'browser' | 'atlas'>('browser');
   const [family, setFamily] = useState<TileFamilyId>('spectre');
   const [level, setLevel] = useState<number>(5);
   const [matchSizes, setMatchSizes] = useState(true);
@@ -114,6 +117,8 @@ export default function CentreMapPage(): JSX.Element {
   const [dragMode, setDragMode] = useState<'pan' | 'select'>('pan');
   const [picked, setPicked] = useState<readonly number[] | null>(null);
   const [selected, setSelected] = useState<number | null>(null);
+  /** The picked pairing the selection's board shows on its own, marked on both charts. */
+  const [shown, setShown] = useState<number | null>(null);
   /** The magnifier: which of [selected, ...nearest] it shows, and how. */
   const [magnified, setMagnified] = useState<{ at: number; view: 'strands' | 'centres' } | null>(null);
   const client = useMemo(() => createCentreMapClient(), []);
@@ -216,6 +221,8 @@ export default function CentreMapPage(): JSX.Element {
   };
 
   const n = result?.items.length ?? 0;
+  const pickedItems = useMemo(() => (result && picked ? picked.map((i) => result.items[i]) : []), [result, picked]);
+  useEffect(() => setShown(null), [picked]);
   const similarity = useMemo(() => (result ? rowCorrelation(result.result.matrix, n) : null), [result, n]);
   const clustering = useMemo(() => (similarity ? clusterBySimilarity(similarity, n, threshold) : null), [similarity, n, threshold]);
   const groupOf = useMemo(() => {
@@ -285,6 +292,26 @@ export default function CentreMapPage(): JSX.Element {
         </p>
       </header>
 
+      <div className="centremap-controls" role="group" aria-label="Source">
+        <span className="centremap-modal-views">
+          Pairings
+          {(
+            [
+              ['browser', 'a survey measured here'],
+              ['atlas', 'every hexagon pairing at level 5 (precomputed)'],
+            ] as const
+          ).map(([id, text]) => (
+            <button key={id} type="button" className={source === id ? 'is-on' : undefined} aria-pressed={source === id} onClick={() => setSource(id)} data-testid={`centremap-source-${id}`}>
+              {text}
+            </button>
+          ))}
+        </span>
+      </div>
+
+      {source === 'atlas' ? (
+        <AtlasLoader family="hex" level={5} thumbs={thumbs} dark={dark} />
+      ) : (
+      <>
       <div className="centremap-controls" role="group" aria-label="Survey">
         <label>
           Tiles
@@ -472,6 +499,7 @@ export default function CentreMapPage(): JSX.Element {
                 label={label}
                 selecting={dragMode === 'select'}
                 picked={picked}
+                shown={shown}
                 onBox={pickBox}
               />
             </section>
@@ -496,7 +524,7 @@ export default function CentreMapPage(): JSX.Element {
                   </label>
                 ))}
               </div>
-              <Heatmap matrix={result.result.matrix} n={n} rows={orderFor(rowOrder)} cols={orderFor(colOrder)} matches={searching ? matches : null} label={label} onPick={setSelected} selecting={dragMode === 'select'} picked={picked} onBox={pickHeatBox} />
+              <Heatmap matrix={result.result.matrix} n={n} rows={orderFor(rowOrder)} cols={orderFor(colOrder)} matches={searching ? matches : null} label={label} onPick={setSelected} selecting={dragMode === 'select'} picked={picked} shown={shown} onBox={pickHeatBox} />
             </section>
           </div>
 
@@ -512,10 +540,11 @@ export default function CentreMapPage(): JSX.Element {
             <SelectionPanel
               family={result.family}
               level={result.result.level}
-              items={picked.map((i) => result.items[i])}
+              items={pickedItems}
               client={thumbs}
               dark={dark}
               onClear={() => setPicked(null)}
+              onShow={(at) => setShown(at >= 0 && picked[at] !== undefined ? picked[at] : null)}
             />
           )}
 
@@ -593,8 +622,37 @@ export default function CentreMapPage(): JSX.Element {
           )}
         </>
       )}
+      </>
+      )}
     </article>
   );
+}
+
+/** Fetches a precomputed atlas (once per mount) and shows it. */
+function AtlasLoader(props: { family: TileFamilyId; level: number; thumbs: FaultLinesClient; dark: boolean }): JSX.Element {
+  const { family, level, thumbs, dark } = props;
+  const [atlas, setAtlas] = useState<Atlas | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    const abort = new AbortController();
+    setAtlas(null);
+    setError(null);
+    loadAtlas(import.meta.env.BASE_URL, family, level, abort.signal)
+      .then(setAtlas)
+      .catch((e: unknown) => {
+        if (!abort.signal.aborted) setError(e instanceof Error ? e.message : String(e));
+      });
+    return () => abort.abort();
+  }, [family, level]);
+  if (error) {
+    return (
+      <p className="muted" data-testid="centremap-atlas-error">
+        The precomputed map isn&rsquo;t available ({error}). It is made by the Centre map sweep workflow and lands in the repository once its pull request merges.
+      </p>
+    );
+  }
+  if (!atlas) return <p className="muted" data-testid="centremap-atlas-loading">Loading the precomputed map…</p>;
+  return <AtlasView atlas={atlas} thumbs={thumbs} dark={dark} />;
 }
 
 function Scatter(props: {
@@ -609,9 +667,11 @@ function Scatter(props: {
   label: (i: number) => string;
   selecting: boolean;
   picked: readonly number[] | null;
+  /** The pairing the selection's board shows on its own. */
+  shown: number | null;
   onBox: (picked: readonly number[]) => void;
 }): JSX.Element {
-  const { embedding, n, colourOf, matches, hover, selected, onHover, onPick, label, selecting, picked, onBox } = props;
+  const { embedding, n, colourOf, matches, hover, selected, onHover, onPick, label, selecting, picked, shown, onBox } = props;
   const pickedSet = useMemo(() => (picked ? new Set(picked) : null), [picked]);
   const pts = useMemo(() => {
     let minX = Infinity;
@@ -664,6 +724,12 @@ function Scatter(props: {
                     </circle>
                   );
                 })}
+                {shown !== null && pts[shown] && (
+                  <g className="centremap-shown" pointerEvents="none" data-testid="centremap-umap-shown">
+                    <circle cx={pts[shown].x} cy={pts[shown].y} r={7 / k} fill={colourOf(shown)} stroke="var(--text)" strokeWidth={2 / k} />
+                    <circle cx={pts[shown].x} cy={pts[shown].y} r={13 / k} fill="none" stroke="var(--accent)" strokeWidth={3 / k} />
+                  </g>
+                )}
               </g>
               </svg>
               {selecting && (
@@ -700,10 +766,13 @@ function Heatmap(props: {
   onPick: (i: number) => void;
   selecting: boolean;
   picked: readonly number[] | null;
+  /** The pairing the selection's board shows on its own: its row and column are outlined. */
+  shown: number | null;
   /** The box's rows and its columns. */
   onBox: (rows: readonly number[], cols: readonly number[]) => void;
 }): JSX.Element {
-  const { matrix, n, rows, cols, matches, label, onPick, selecting, picked, onBox } = props;
+  const { matrix, n, rows, cols, matches, label, onPick, selecting, picked, shown, onBox } = props;
+  const shownAt = useMemo(() => (shown === null ? null : { r: rows.indexOf(shown), c: cols.indexOf(shown) }), [shown, rows, cols]);
   const canvas = useRef<HTMLCanvasElement>(null);
   const [hover, setHover] = useState<[number, number] | null>(null);
   useEffect(() => {
@@ -779,6 +848,24 @@ function Heatmap(props: {
                 transform: `translate(${api.camera.x}px, ${api.camera.y}px) scale(${api.camera.scale})`,
               }}
             />
+            {shownAt && (
+              <>
+                {shownAt.r >= 0 && (
+                  <div
+                    className="centremap-heat-shown"
+                    data-testid="centremap-heat-shown-row"
+                    style={{ left: api.camera.x, top: api.camera.y + shownAt.r * api.camera.scale, width: n * api.camera.scale, height: Math.max(2, api.camera.scale) }}
+                  />
+                )}
+                {shownAt.c >= 0 && (
+                  <div
+                    className="centremap-heat-shown"
+                    data-testid="centremap-heat-shown-col"
+                    style={{ left: api.camera.x + shownAt.c * api.camera.scale, top: api.camera.y, width: Math.max(2, api.camera.scale), height: n * api.camera.scale }}
+                  />
+                )}
+              </>
+            )}
             {selecting && (
               <BoxSelect
                 testid="centremap-heat-box"
