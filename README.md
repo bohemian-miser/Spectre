@@ -63,6 +63,7 @@ The open question: you can have [a fixed number | an infinite number] of infinit
 * **Rules & isomorphism** (`/rules.html`) - how the rules of Tile(1,1), the hexagons and the hexagon-matching Spectre labels line up, with combination counts per rule and where the combinations are the same patterns.
 * **Supertiles** (`/supertiles.html`) - pull a supertile apart into the pieces it's made of.
 * **Strand machine** (`/machine.html`) - walk a strand one tile at a time and see which joins the labels allow vs which the tiling actually uses.
+* **Neighbour machine** (`/transducer.html`) - Simon Tatham's combinatorial coordinates for the hexagons, live: every tile has an address, crossing an edge is a sum with carries on the address, and the sum is a 243-state finite-state transducer you can step through symbol by symbol (it even crosses infinite supertile walls). Then a rule and pairing go on top and the same machine walks a strand, and the page shows the supertile's boundary state, the thing the deep orbit iterates.
 * **Legacy app** (`/legacy.html`) - the original p5 version. It lets you draw on each of the 10 flavours of tile, has better navigation, and you can change the colours.
 
 ## Results so far
