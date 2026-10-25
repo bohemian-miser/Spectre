@@ -198,7 +198,7 @@ export function centreRadius(length: number): number {
   return CENTRE_SCALE * l * l;
 }
 
-const CENTRE_SCALE = 0.1;
+const CENTRE_SCALE = 0.05;
 
 /** Number of (counted) segments in a path. */
 export function pathLength(p: Path): number {

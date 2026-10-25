@@ -299,6 +299,9 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
    */
   const multiOnSpectres = asSpectres && hasMultiStrands(state.contracts);
   const linesOn = hasFlag(state, FLAG.LINES) && !multiOnSpectres;
+  const centresOn = hasFlag(state, FLAG.CENTRES) && !multiOnSpectres;
+  /** Strands are traced for either: centres still show with circuit lines off. */
+  const strandsOn = linesOn || centresOn;
   const curvedStrands = hasFlag(state, FLAG.CURVED_STRANDS);
   const nonCrossingOnly = hasFlag(state, FLAG.NON_CROSSING_ONLY);
   const mode = explorerMode(state);
@@ -415,7 +418,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
   // null and the worker is never asked.
   const analysisInput = useMemo(
     () =>
-      !infinite && linesOn && state.subset.length
+      !infinite && strandsOn && state.subset.length
         ? {
             family: drawFamily,
             hexRule: asSpectres,
@@ -435,7 +438,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
         : null,
     [
       infinite,
-      linesOn,
+      strandsOn,
       drawFamily,
       asSpectres,
       state.rootTile,
@@ -467,7 +470,6 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
     return out;
   }, [loopFocus, analysis.result]);
   const lengthColours = hasFlag(state, FLAG.LENGTH_COLOURS);
-  const centresOn = hasFlag(state, FLAG.CENTRES);
   const circuitColors = useMemo(() => {
     const ranked = analysis.result?.circuitColors;
     if (!ranked || !lengthColours) return ranked;
@@ -523,12 +525,12 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
   /** Strand chords: local geometry, identical to what the rooted view draws. */
   const infiniteChords = useMemo(
     () =>
-      infinite && linesOn && state.subset.length
+      infinite && strandsOn && state.subset.length
         ? asSpectres
           ? buildHexRuleSpectreChordTable(state.subset, state.matching, state.contracts, curvedStrands)
           : buildLeafChordTable(family, state.subset, state.matching, state.contracts, curvedStrands)
         : null,
-    [infinite, linesOn, asSpectres, family, state.subset, state.matching, state.contracts, curvedStrands],
+    [infinite, strandsOn, asSpectres, family, state.subset, state.matching, state.contracts, curvedStrands],
   );
 
   const infiniteStyle = useMemo<MapRenderStyle>(() => {
@@ -553,8 +555,9 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
       // Flat ink, contrasting with whatever is behind it (no circuit colours).
       lineColor: fills ? DEFAULT_LINE_COLOR : LIGHT_LINE_COLOR,
       lineScale: lineWidth,
+      hideStrands: !linesOn,
     };
-  }, [drawFamily, state.colorScheme, state.customColors, state.flags, lineWidth]);
+  }, [drawFamily, state.colorScheme, state.customColors, state.flags, lineWidth, linesOn]);
 
   /** Tile colours for the trace ticker — the palette the tiles are drawn in. */
   const leafCss = useMemo(
@@ -1659,7 +1662,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
             regionFill={regionsOn && !!infiniteChords}
             persistFound={persistFoundOn}
             circuitColours={lengthColours ? 'length' : 'distinct'}
-            showCentres={linesOn && centresOn}
+            showCentres={centresOn}
             findCeiling={findCeiling}
             foundHold={foundHold}
             highlight={graphPick}
@@ -1774,7 +1777,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
                     />
                   </g>
                 ) : null}
-                {analysis.result && linesOn && centresOn ? (
+                {analysis.result && centresOn ? (
                   <g transform={svgMatrixString(model.viewTransform)}>
                     <CentreLayer
                       circuits={analysis.result.circuits}
@@ -1829,7 +1832,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
                 rainbowTails={hasFlag(state, FLAG.RAINBOW_TAILS)}
                 highlightLengths={highlightLengths}
                 highlightCircuits={focusedCircuits}
-                showCentres={linesOn && centresOn}
+                centreCircuits={centresOn ? analysis.result?.circuits : undefined}
                 centreScale={lineWidth}
                 strokeWidth={BASE_CIRCUIT_STROKE * lineWidth}
                 regionFill={linesOn && regionsOn ? analysis.result?.dual : undefined}

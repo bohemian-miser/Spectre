@@ -791,7 +791,7 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
     ctx.lineWidth = 1;
 
     const circuits = [...foundRef.current, ...keptRef.current.filter((k) => k.kind === 'circuit').map((k) => k.geom)]
-      .map((g) => ({ g, len: g.tileLength ?? Math.max(1, g.pointCount - 1), c: circuitCentre(g) }))
+      .map((g) => ({ g, len: g.tileLength ?? Math.max(1, g.pointCount - 1), c: g.centre ?? circuitCentre(g) }))
       .sort((a, b) => b.len - a.len);
     for (const { g, len, c } of circuits) {
       const p = toScreen(c.x, c.y);
@@ -830,14 +830,19 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
       ctx.stroke();
     }
     const p = toScreen(centre.x, centre.y);
-    const r = Math.max(3, centreRadius(trail.steps + 1) * px);
+    // Once the strand closes it is a circuit like any other, and its dot is
+    // drawn exactly like a found one's; while it walks, a ringed blob with a
+    // cross, never too small to see.
+    const closed = trail.status === 'closed';
+    const r = Math.max(closed ? 1.5 : 3, centreRadius(trail.steps) * px);
     ctx.beginPath();
     ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
-    ctx.fillStyle = css(trail.color, 0.85);
+    ctx.fillStyle = css(trail.color, closed ? 0.9 : 0.85);
     ctx.fill();
-    ctx.strokeStyle = 'rgba(0,0,0,0.8)';
-    ctx.lineWidth = 2;
+    ctx.strokeStyle = closed ? 'rgba(0,0,0,0.7)' : 'rgba(0,0,0,0.8)';
+    ctx.lineWidth = closed ? 1 : 2;
     ctx.stroke();
+    if (closed) return;
     // A cross through the blob, so its exact centre reads at any size.
     ctx.beginPath();
     ctx.moveTo(p.x - r * 0.5, p.y);
@@ -1436,7 +1441,10 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
     // Same strand, traced again, is not a second strand.
     const key = circuitKey(geom);
     if (keptRef.current.some((k) => circuitKey(k.geom) === key)) return;
-    setKept([...keptRef.current.slice(-(MAX_KEPT_CIRCUITS - 1)), { geom, kind }]);
+    // Measured like a found circuit (tiles crossed) rather than by the drawn
+    // geometry, whose curved chords carry several points each.
+    const kept = kind === 'circuit' ? { ...geom, tileLength: old.steps, centre: trailCentre(old) ?? undefined } : geom;
+    setKept([...keptRef.current.slice(-(MAX_KEPT_CIRCUITS - 1)), { geom: kept, kind }]);
   }, [setKept]);
 
   /**
