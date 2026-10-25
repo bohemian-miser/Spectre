@@ -334,6 +334,14 @@ export function rasterizeStrands(
   return rasterizeComponents(g, c, size, color, (ci) => c.segs[ci]);
 }
 
+export interface ThumbFrame {
+  readonly minX: number;
+  readonly minY: number;
+  readonly sc: number;
+  readonly ox: number;
+  readonly oy: number;
+}
+
 /** How a patch maps into a `size` × `size` thumbnail: x = ox + (wx − minX)·sc, y = size − oy − (wy − minY)·sc. */
 export function thumbFrame(g: StrandGraph, size: number): { minX: number; minY: number; sc: number; ox: number; oy: number } {
   let minX = Infinity;
@@ -364,8 +372,10 @@ export function rasterizeComponents(
   size: number,
   color: (comp: number) => Rgb | null,
   rank: (comp: number) => number,
+  /** Where the patch goes in the image; by default it fills it ({@link thumbFrame}). */
+  frame: ThumbFrame = thumbFrame(g, size),
 ): Uint8ClampedArray {
-  const { minX, minY, sc, ox, oy } = thumbFrame(g, size);
+  const { minX, minY, sc, ox, oy } = frame;
   const img = new Uint8ClampedArray(size * size * 4);
 
   // Occurrence pairs, drawn in rank order.

@@ -47,8 +47,8 @@ const FAMILIES: readonly { id: TileFamilyId; label: string }[] = [
 ];
 const LEVELS = [4, 5] as const;
 /** The all-edges rule has hundreds of thousands of pairings; everything else is enumerated. */
-/** Default cap on pairings per rule; bigger rules are sampled (with a fixed seed). */
-const DEFAULT_MAX_PER_RULE = 200;
+/** How many of the all-edges rule's pairings to sample by default (with a fixed seed). */
+const DEFAULT_ALL_EDGES_SAMPLE = 200;
 const PLOT = 520;
 const PLOT_BOX = { min: { x: 0, y: 0 }, max: { x: PLOT, y: PLOT } };
 const THUMB = 240;
@@ -160,7 +160,7 @@ export default function CentreMapPage(): JSX.Element {
   );
   const dark = usePrefersDark();
 
-  const [maxPerRule, setMaxPerRule] = useState(DEFAULT_MAX_PER_RULE);
+  const [maxPerRule, setMaxPerRule] = useState(DEFAULT_ALL_EDGES_SAMPLE);
   const [includeAllEdges, setIncludeAllEdges] = useState(false);
   const plan = useMemo(() => {
     const rules = validEdgeSubsets(family).filter((s) => s.edges.length);
@@ -170,13 +170,15 @@ export default function CentreMapPage(): JSX.Element {
     rules
       .filter((s) => includeAllEdges || s.edges.length < all)
       .forEach((s, ruleIndex) => {
-        // A fixed seed per rule, so the same cap always samples the same pairings.
+        // Every rule is measured in full but the all-edges one, which is sampled
+        // down to the cap: a fixed seed, so the same cap picks the same pairings.
         let seed = 12345 + ruleIndex;
         const random = () => {
           seed = (seed * 1103515245 + 12345) % 2147483648;
           return seed / 2147483648;
         };
-        const { combos, total } = rulePairings(family, s.edges, Math.max(1, maxPerRule), random);
+        const limit = s.edges.length < all ? Number.MAX_SAFE_INTEGER : Math.max(1, maxPerRule);
+        const { combos, total } = rulePairings(family, s.edges, limit, random);
         combos.sort();
         used.push({ subset: s.edges, combos, total });
         for (const combo of combos) items.push({ rule: s.edges.join(''), subset: s.edges, combo, ruleIndex });
@@ -302,7 +304,7 @@ export default function CentreMapPage(): JSX.Element {
       <header>
         <h1>Centre map</h1>
         <p className="muted">
-          The pairings of every rule (up to a cap per rule, sampled beyond it; the all-edges rule only if you ask), drawn on one rooted patch and reduced to its circuits&rsquo;
+          Every pairing of every rule (the all-edges rule only if you ask, and then a sample of it), drawn on one rooted patch and reduced to its circuits&rsquo;
           centres (the average of each circuit&rsquo;s points). For two pairings A and B, the <b>directed chamfer distance</b>{' '}
           A&nbsp;→&nbsp;B is the average distance from each of A&rsquo;s centres to the nearest centre of B: 0 when every
           centre of A has one of B&rsquo;s right on it. It is fast because B&rsquo;s centres are drawn onto a grid once and a
@@ -333,8 +335,13 @@ export default function CentreMapPage(): JSX.Element {
             ))}
           </select>
         </label>
-        <label title="Rules with more pairings than this are sampled at random (the same sample each time)">
-          Max pairings per rule
+        <label title="The all-edges rule has hundreds of thousands of pairings, so it is always sampled">
+          <input type="checkbox" checked={includeAllEdges} onChange={(e) => setIncludeAllEdges(e.target.checked)} data-testid="centremap-all-edges" /> Include
+          the all-edges rule
+        </label>
+        {includeAllEdges && (
+        <label title="How many of the all-edges rule's pairings to sample (the same sample each time); every other rule is measured in full">
+          Its pairings
           <input
             type="number"
             min={1}
@@ -345,10 +352,7 @@ export default function CentreMapPage(): JSX.Element {
             style={{ width: '7ch' }}
           />
         </label>
-        <label title="The all-edges rule has hundreds of thousands of pairings, so it is always sampled">
-          <input type="checkbox" checked={includeAllEdges} onChange={(e) => setIncludeAllEdges(e.target.checked)} data-testid="centremap-all-edges" /> Include
-          the all-edges rule
-        </label>
+        )}
         <label title="A centre is only near one of a similar size: each size band (×4 in length) away costs as much as 4 tiles of distance">
           <input type="checkbox" checked={matchSizes} onChange={(e) => setMatchSizes(e.target.checked)} /> Match sizes
         </label>
@@ -1033,6 +1037,24 @@ function SelectionPanel(props: {
   const { family, level, items, client, dark, onClear } = props;
   const patterns = useMemo(() => selectionPatterns(family, items), [family, items]);
   const [hoverDigit, setHoverDigit] = useState<{ rule: string; position: number } | null>(null);
+  /** What the patch shows: -1 for everything overlaid, else one selected pairing. */
+  const [at, setAt] = useState(-1);
+  useEffect(() => setAt(-1), [items]);
+  // ← → step through: all overlaid, then each pairing, and round again.
+  const step = useRef<(d: number) => void>(() => {});
+  step.current = (d: number) => setAt((a) => ((a + 1 + d + items.length + 1) % (items.length + 1)) - 1);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+      const t = e.target as HTMLElement | null;
+      if (t?.closest?.('input, select, textarea, [contenteditable="true"], .join-picker')) return;
+      if (globalThis.document?.querySelector('.centremap-modal')) return; // the magnifier has the keys
+      e.preventDefault();
+      step.current(e.key === 'ArrowLeft' ? -1 : 1);
+    };
+    globalThis.addEventListener('keydown', onKey);
+    return () => globalThis.removeEventListener('keydown', onKey);
+  }, []);
   const spread = hoverDigit ? patterns.find((p) => p.rule === hoverDigit.rule)?.spread[hoverDigit.position] : undefined;
   const types = leafOrder(family);
   return (
@@ -1071,10 +1093,31 @@ function SelectionPanel(props: {
       </p>
       <div className="centremap-overlays">
         <figure className="centremap-overlay">
-          <OverlayBoard client={client} family={family} level={level} items={items} dark={dark} />
+          <div className="centremap-overlay-head">
+            <span className="centremap-modal-views" role="group" aria-label="Show">
+              <button type="button" className={at < 0 ? 'is-on' : undefined} aria-pressed={at < 0} onClick={() => setAt(-1)} data-testid="centremap-overlay-all">
+                all overlaid
+              </button>
+              <button type="button" className={at >= 0 ? 'is-on' : undefined} aria-pressed={at >= 0} onClick={() => setAt(at >= 0 ? at : 0)} data-testid="centremap-overlay-one">
+                one at a time
+              </button>
+            </span>
+            <button type="button" onClick={() => step.current(-1)} aria-label="Previous pattern">
+              ‹
+            </button>
+            <span className="mono" data-testid="centremap-overlay-label">
+              {at < 0 ? `all ${items.length}` : `${at + 1} / ${items.length} · ${items[at].rule} · ${items[at].combo}`}
+            </span>
+            <button type="button" onClick={() => step.current(1)} aria-label="Next pattern">
+              ›
+            </button>
+          </div>
+          <OverlayBoard client={client} family={family} level={level} items={items} dark={dark} at={at} />
           <figcaption className="muted">
-            Every selected pairing&rsquo;s strands on the level-{level} patch: faint blue where a few pass, yellow where all do. Wheel
-            or pinch to zoom, drag to pan.
+            {at < 0
+              ? 'Every selected pairing’s strands on the patch: faint blue where a few pass, yellow where all do.'
+              : 'One selected pairing, its circuits coloured by size like the thumbnails.'}{' '}
+            ← → flick through all of them and each one; wheel or pinch to zoom, drag to pan.
           </figcaption>
         </figure>
         <div className="centremap-tiles" data-testid="centremap-tiles">
@@ -1091,14 +1134,19 @@ function SelectionPanel(props: {
 const OVERLAY = 1600;
 const OVERLAY_BOX = { min: { x: 0, y: 0 }, max: { x: OVERLAY, y: OVERLAY } };
 
-function OverlayBoard(props: { client: FaultLinesClient; family: TileFamilyId; level: number; items: readonly Item[]; dark: boolean }): JSX.Element {
-  const { client, family, level, items, dark } = props;
+/**
+ * The selection on the patch: all of it overlaid (`at` = -1), or one pairing
+ * (`at` = its index), drawn in the frame that fits every selected rule so
+ * flicking between them keeps the patch still.
+ */
+function OverlayBoard(props: { client: FaultLinesClient; family: TileFamilyId; level: number; items: readonly Item[]; dark: boolean; at: number }): JSX.Element {
+  const { client, family, level, items, dark, at } = props;
   const canvas = useRef<HTMLCanvasElement>(null);
+  const frameSubsets = useMemo(() => [...new Map(items.map((it) => [it.rule, it.subset])).values()], [items]);
   useEffect(() => {
     const abort = new AbortController();
-    const ctx0 = canvas.current?.getContext('2d');
-    ctx0?.clearRect(0, 0, OVERLAY, OVERLAY);
-    const first = items[0];
+    const one = at >= 0 ? items[at] : null;
+    const first = one ?? items[0];
     client
       .thumb(
         {
@@ -1108,7 +1156,10 @@ function OverlayBoard(props: { client: FaultLinesClient; family: TileFamilyId; l
           combo: first.combo,
           size: OVERLAY,
           dark,
-          overlay: items.map((it) => ({ subset: it.subset, combo: it.combo })),
+          view: 'strands',
+          frameSubsets,
+          vivid: true,
+          ...(one ? {} : { overlay: items.map((it) => ({ subset: it.subset, combo: it.combo })) }),
         },
         abort.signal,
       )
@@ -1118,7 +1169,7 @@ function OverlayBoard(props: { client: FaultLinesClient; family: TileFamilyId; l
       })
       .catch(() => {});
     return () => abort.abort();
-  }, [client, family, level, items, dark]);
+  }, [client, family, level, items, dark, at, frameSubsets]);
   return (
     <PanZoom className="centremap-zoom centremap-overlay-zoom" fitBounds={OVERLAY_BOX} padding={0} maxScale={8} showControls ariaLabel="Overlay: wheel or pinch to zoom, drag to pan">
       {(api) => (
@@ -1127,7 +1178,7 @@ function OverlayBoard(props: { client: FaultLinesClient; family: TileFamilyId; l
           width={OVERLAY}
           height={OVERLAY}
           data-testid="centremap-overlay"
-          aria-label="All selected pairings overlaid"
+          aria-label={at >= 0 ? `${items[at].rule} · ${items[at].combo}` : 'All selected pairings overlaid'}
           style={{
             width: OVERLAY,
             height: OVERLAY,
