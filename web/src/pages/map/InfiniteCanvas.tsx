@@ -43,6 +43,7 @@ import {
   SIN30,
   circuitLengthRgb,
   circuitHueRgb,
+  centreRadius,
   isAggregateType,
   pathLength,
   pathSegments,
@@ -67,6 +68,7 @@ import {
   scaleForTileCount,
   screenToWorld,
   viewRectFor,
+  worldToScreen,
   zoomAt,
   type MapCamera,
 } from './camera';
@@ -110,6 +112,7 @@ import {
   isTerminal,
   startTrail,
   trailGeometry,
+  trailCentre,
   trailLength,
   trimTrail,
   type ChordEnd,
@@ -211,6 +214,9 @@ const CHAIN_REFRESH_MS = 400;
  * The find-all ceiling and its clamp live in `core/serialize`, next to the URL
  * state that carries them, so the codec and this component cannot drift apart.
  */
+
+/** Points kept on the chased strand's centre track before it is thinned out. */
+const CENTRE_TRACK_MAX = 4000;
 
 /*
  * There is no built-in cap on held circuits any more. It was the one thing
@@ -486,6 +492,12 @@ export interface InfiniteCanvasProps {
    */
   readonly circuitColours?: 'length' | 'distinct';
   /**
+   * Mark each found or kept circuit's centre (the average of its points) with
+   * a dot sized by its length, and while a strand is being chased, the centre
+   * of everything it has walked so far, with the path that centre has taken.
+   */
+  readonly showCentres?: boolean;
+  /**
    * Ceiling on the tiles find-all will analyse in one pass, and so the widest
    * view `zoomToCircuitView` will park at. Higher shows more circuits at once
    * and costs more time per cut. Defaults to {@link DEFAULT_FIND_CEILING}.
@@ -577,6 +589,7 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
     findCircuits = false,
     persistFound = false,
     circuitColours = 'length',
+    showCentres = false,
     findCeiling = DEFAULT_FIND_CEILING,
     foundHold = DEFAULT_FOUND_HOLD,
     highlight = null,
@@ -742,6 +755,99 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
     statusCbRef.current?.(next);
   }, []);
 
+  // --- circuit centres -------------------------------------------------------
+  const centresCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const showCentresRef = useRef(showCentres);
+  showCentresRef.current = showCentres;
+  /** Where the chased strand's centre has been, in world coordinates (x, y pairs). */
+  const centreTrackRef = useRef<{ trail: StrandTrail | null; steps: number; xy: number[] }>({ trail: null, steps: -1, xy: [] });
+  /**
+   * Draw the centres on their own 2D canvas over the map, so both renderers
+   * get them. Called after every map draw; the walk schedules one per step.
+   */
+  const drawCentresRef = useRef((width: number, height: number, dpr: number): void => {
+    const canvas = centresCanvasRef.current;
+    if (!canvas) return;
+    const w = Math.round(width * dpr);
+    const h = Math.round(height * dpr);
+    if (canvas.width !== w) canvas.width = w;
+    if (canvas.height !== h) canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    const trail = trailRef.current;
+    const track = centreTrackRef.current;
+    if (track.trail !== trail) centreTrackRef.current = { trail, steps: -1, xy: [] };
+    if (!showCentresRef.current) return;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const cam = camRef.current;
+    // Dots follow the line-width setting, like the strands they mark.
+    const px = cam.scale * (styleRef.current?.lineScale ?? 1);
+    const toScreen = (x: number, y: number) => worldToScreen(cam, x, y, width, height);
+    const css = (rgb: readonly number[] | undefined, a = 1) =>
+      rgb ? `rgba(${Math.round(rgb[0] * 255)},${Math.round(rgb[1] * 255)},${Math.round(rgb[2] * 255)},${a})` : `rgba(255,255,255,${a})`;
+    ctx.strokeStyle = 'rgba(0,0,0,0.7)';
+    ctx.lineWidth = 1;
+
+    const circuits = [...foundRef.current, ...keptRef.current.filter((k) => k.kind === 'circuit').map((k) => k.geom)]
+      .map((g) => ({ g, len: g.tileLength ?? Math.max(1, g.pointCount - 1), c: circuitCentre(g) }))
+      .sort((a, b) => b.len - a.len);
+    for (const { g, len, c } of circuits) {
+      const p = toScreen(c.x, c.y);
+      const r = Math.max(1.5, centreRadius(len) * px);
+      if (p.x < -r || p.y < -r || p.x > width + r || p.y > height + r) continue;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+      ctx.fillStyle = css(g.color, 0.9);
+      ctx.fill();
+      ctx.stroke();
+    }
+
+    if (!trail) return;
+    const centre = trailCentre(trail);
+    if (!centre) return;
+    const live = centreTrackRef.current;
+    if (live.steps !== trail.steps) {
+      live.steps = trail.steps;
+      live.xy.push(centre.x, centre.y);
+      // Keep the track light however long the chase runs: halve it when full.
+      if (live.xy.length > CENTRE_TRACK_MAX * 2) live.xy = live.xy.filter((_, i) => i % 4 < 2);
+    }
+    if (live.xy.length >= 4) {
+      ctx.beginPath();
+      for (let i = 0; i < live.xy.length; i += 2) {
+        const p = toScreen(live.xy[i], live.xy[i + 1]);
+        if (i === 0) ctx.moveTo(p.x, p.y);
+        else ctx.lineTo(p.x, p.y);
+      }
+      ctx.lineJoin = 'round';
+      ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+      ctx.lineWidth = 3.5;
+      ctx.stroke();
+      ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
+    const p = toScreen(centre.x, centre.y);
+    const r = Math.max(3, centreRadius(trail.steps + 1) * px);
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+    ctx.fillStyle = css(trail.color, 0.85);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.8)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    // A cross through the blob, so its exact centre reads at any size.
+    ctx.beginPath();
+    ctx.moveTo(p.x - r * 0.5, p.y);
+    ctx.lineTo(p.x + r * 0.5, p.y);
+    ctx.moveTo(p.x, p.y - r * 0.5);
+    ctx.lineTo(p.x, p.y + r * 0.5);
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  });
+
   // --- draw ------------------------------------------------------------------
   const draw = useCallback((): void => {
     rafRef.current = 0;
@@ -750,6 +856,7 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
     if (!renderer || width <= 0 || height <= 0) return;
     const dpr = Math.min(2, (typeof devicePixelRatio === 'number' ? devicePixelRatio : 1) || 1);
     const stats: MapRenderStats = renderer.render(camRef.current, width, height, dpr);
+    drawCentresRef.current(width, height, dpr);
     publish({
       draw: {
         drawMs: stats.drawMs,
@@ -766,6 +873,11 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
     if (rafRef.current) return;
     rafRef.current = requestAnimationFrame(draw);
   }, [draw]);
+
+  // Turning centres on or off only needs a redraw.
+  useEffect(() => {
+    scheduleDraw();
+  }, [showCentres, scheduleDraw]);
 
   // --- queries ----------------------------------------------------------------
   const requestQuery = useCallback((): void => {
@@ -2140,6 +2252,7 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
       onPointerCancel={onPointerEnd}
     >
       <canvas ref={canvasRef} />
+      <canvas ref={centresCanvasRef} className="map-centres" aria-hidden="true" />
       {children}
     </div>
   );

@@ -4,6 +4,8 @@ import {
   TAIL_COLOR,
   analyze,
   buildSystem,
+  centreRadius,
+  pathCentre,
   connectionPoint,
   flatten,
   metaEdges,
@@ -12,6 +14,7 @@ import {
   type CircuitAnalysis,
 } from '../../core';
 import {
+  buildCentreDots,
   buildOverlayPaths,
   deriveCircuitColors,
   lengthChips,
@@ -244,5 +247,31 @@ describe('overlay chords', () => {
       [metaEdges('spectre', 'Delta')[0].major]: { minor: 0, t: 0.2 },
     });
     expect(moved[0].from).not.toEqual(base[0].from);
+  });
+});
+
+describe('circuit centres', () => {
+  it('puts a dot at the average of each circuit\'s points, biggest first, coloured like the circuit', () => {
+    const a = smallAnalysis();
+    const dots = buildCentreDots(a.circuits, a.circuitColorByLength);
+    expect(dots).toHaveLength(a.circuits.length);
+    for (let i = 1; i < dots.length; i++) expect(dots[i - 1].length).toBeGreaterThanOrEqual(dots[i].length);
+    for (const d of dots) {
+      const p = a.circuits[d.index];
+      expect(d.length).toBe(pathLength(p));
+      expect(d.color).toBe(a.circuitColorByLength.get(d.length));
+      expect(d.r).toBe(centreRadius(d.length));
+      const c = pathCentre(p);
+      expect([d.x, d.y]).toEqual([c.x, c.y]);
+    }
+  });
+
+  it('averages points, and grows dots with the square of the log of the length', () => {
+    const square = { closed: true, points: [{ x: 0, y: 0 }, { x: 2, y: 0 }, { x: 2, y: 2 }, { x: 0, y: 2 }] };
+    expect(pathCentre(square)).toEqual({ x: 1, y: 1 });
+    expect(centreRadius(0)).toBe(0);
+    expect(centreRadius(6)).toBeLessThan(0.5);
+    expect(centreRadius(30000)).toBeGreaterThan(5);
+    expect(centreRadius(1000) / centreRadius(100)).toBeCloseTo((Math.log(1001) / Math.log(101)) ** 2, 9);
   });
 });

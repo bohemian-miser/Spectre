@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildStrandGraph, comboOptionCounts, strandWorkspace } from '../strandGraph';
+import { LIGHT_STRAND_PALETTE, buildStrandGraph, comboOptionCounts, strandWorkspace } from '../strandGraph';
 import { buildSystem, flatten } from '../tiles';
 import {
   clusterBySimilarity,
@@ -9,6 +9,7 @@ import {
   patchAddresses,
   patchSpan,
   placeStrands,
+  rasterizeFaultCentres,
   seamLevels,
   sharedDigits,
   sharedLevel,
@@ -81,6 +82,23 @@ describe('placing and comparing pairings', () => {
     expect(faultSimilarity(a, a)).toBe(1);
     expect(faultSimilarity(b, c)).toBe(1);
     expect(faultSimilarity(a, b)).toBe(0);
+  });
+
+  it('draws circuit centres as dots, the big ones in the big-strand colours', () => {
+    const g = buildStrandGraph('spectre', [0, 3, 5, 6], L);
+    const img = rasterizeFaultCentres(g, addr, comboDigits('0000000000', g.types.length), 120, LIGHT_STRAND_PALETTE);
+    const colours = new Set<string>();
+    let lit = 0;
+    for (let p = 0; p < img.length; p += 4) {
+      if (!img[p + 3]) continue;
+      lit++;
+      colours.add(`${img[p]},${img[p + 1]},${img[p + 2]}`);
+    }
+    expect(lit).toBeGreaterThan(0);
+    expect(colours.has(LIGHT_STRAND_PALETTE.smallCircuit.join(','))).toBe(true);
+    expect([...LIGHT_STRAND_PALETTE.bands].some((b) => colours.has(b.join(',')))).toBe(true);
+    // Dots only: far fewer pixels than the strands drawn.
+    expect(lit).toBeLessThan(120 * 120 * 0.5);
   });
 
   it('compares more leniently at a coarser grain', () => {

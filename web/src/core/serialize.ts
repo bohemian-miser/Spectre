@@ -338,6 +338,8 @@ export const FLAG = {
    * look) rather than giving the lengths present clearly different hues.
    */
   LENGTH_COLOURS: 8192,
+  /** Mark each circuit's centre (the average of its points) with a dot sized by its length. */
+  CENTRES: 16384,
 } as const;
 
 /**

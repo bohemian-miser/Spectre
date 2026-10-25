@@ -334,18 +334,8 @@ export function rasterizeStrands(
   return rasterizeComponents(g, c, size, color, (ci) => c.segs[ci]);
 }
 
-/**
- * Draw each segment of `c` as a 1px straight chord into an RGBA buffer
- * (transparent background), coloured by its component (`null` skips it),
- * lowest `rank` first so higher-ranked components sit on top.
- */
-export function rasterizeComponents(
-  g: StrandGraph,
-  c: StrandComponents,
-  size: number,
-  color: (comp: number) => Rgb | null,
-  rank: (comp: number) => number,
-): Uint8ClampedArray {
+/** How a patch maps into a `size` × `size` thumbnail: x = ox + (wx − minX)·sc, y = size − oy − (wy − minY)·sc. */
+export function thumbFrame(g: StrandGraph, size: number): { minX: number; minY: number; sc: number; ox: number; oy: number } {
   let minX = Infinity;
   let minY = Infinity;
   let maxX = -Infinity;
@@ -360,6 +350,22 @@ export function rasterizeComponents(
   const sc = (size - 2 * pad) / Math.max(maxX - minX, maxY - minY, 1e-9);
   const ox = pad + (size - 2 * pad - (maxX - minX) * sc) / 2;
   const oy = pad + (size - 2 * pad - (maxY - minY) * sc) / 2;
+  return { minX, minY, sc, ox, oy };
+}
+
+/**
+ * Draw each segment of `c` as a 1px straight chord into an RGBA buffer
+ * (transparent background), coloured by its component (`null` skips it),
+ * lowest `rank` first so higher-ranked components sit on top.
+ */
+export function rasterizeComponents(
+  g: StrandGraph,
+  c: StrandComponents,
+  size: number,
+  color: (comp: number) => Rgb | null,
+  rank: (comp: number) => number,
+): Uint8ClampedArray {
+  const { minX, minY, sc, ox, oy } = thumbFrame(g, size);
   const img = new Uint8ClampedArray(size * size * 4);
 
   // Occurrence pairs, drawn in rank order.

@@ -610,3 +610,8 @@
     width: 150px;
   }
 }
+
+/* Circuit centres, drawn over the map; taps go through to the map. */
+.map-centres {
+  pointer-events: none;
+}

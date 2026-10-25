@@ -26,6 +26,7 @@ import {
   createUnrootedEngine,
   instanceAffine,
   isAggregateType,
+  pathCentre,
   tracePaths,
   transPt,
   weldSegments,
@@ -54,6 +55,7 @@ import {
   startTrail,
   transitionCounts,
   TRANSITION_TYPES,
+  trailCentre,
   trailGeometry,
   trailLength,
   trimTrail,
@@ -248,6 +250,19 @@ describe('walking a strand', () => {
     expect(mine!.closed).toBe(true);
     // The trail repeats its first point at the end; the path does not.
     expect(trail.count - 1).toBe(mine!.points.length);
+  });
+
+  it('puts a closed walk\'s centre where the traced circuit\'s is, and keeps it through a trim', () => {
+    const { trail, cut } = walkFromCentre(rect(20), tableFor(LOOP_SUBSET, LOOP_COMBO))!;
+    const { circuits } = tracePaths(weldSegments(cutSegments(cut, tableFor(LOOP_SUBSET, LOOP_COMBO))));
+    const mine = circuits.find((c) => c.points.some((p) => near(p, trail.start, 0.1)))!;
+    const a = trailCentre(trail)!;
+    const b = pathCentre(mine);
+    expect(Math.hypot(a.x - b.x, a.y - b.y)).toBeLessThan(0.01);
+    // The centre is of everything walked, not of the window still held.
+    trimTrail(trail, 0);
+    const c = trailCentre(trail)!;
+    expect(Math.hypot(a.x - c.x, a.y - c.y)).toBeLessThan(1e-9);
   });
 
   it('calls a genuine dead end an end, not a frontier', () => {
