@@ -46,6 +46,15 @@
   min-width: 0;
   max-width: 100%;
 }
+.lattice-controls label.lattice-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  align-self: end;
+  padding-bottom: 6px;
+  font-size: 13px;
+  color: var(--text);
+}
 .lattice-controls select {
   width: 100%;
   min-width: 0;

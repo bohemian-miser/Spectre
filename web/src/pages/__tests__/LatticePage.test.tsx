@@ -144,4 +144,21 @@ describe('LatticePage', () => {
     expect(head).toHaveLength(14);
     expect(screen.getByText(/The lattice has dimension 5/)).toBeTruthy();
   });
+
+  it('class 0 either way adds a counterless 0 column and grows the groups lattice', () => {
+    const { container } = render(<LatticePage />);
+    fireEvent.change(screen.getByLabelText(/Unknowns/), { target: { value: 'groups' } });
+    fireEvent.click(screen.getByTestId('lattice-zero-toggle'));
+    expect(screen.getByTestId('lattice-zero-note').textContent).toContain('dimension 7');
+    // Tile, twelve groups, 0, Net.
+    expect(screen.getByTestId('lattice-matrix').querySelectorAll('thead tr:first-child th')).toHaveLength(15);
+    // Pick a basis loop that needs class 0 as axis a, then its a = 1 point.
+    const axis = screen.getByLabelText(/Axis a/) as HTMLSelectElement;
+    const withZero = [...axis.options].find((o) => o.textContent!.includes('0: ±'))!;
+    fireEvent.change(axis, { target: { value: withZero.value } });
+    fireEvent.click(screen.getByTestId('lattice-pt-1_0'));
+    expect(screen.getByTestId('lattice-count-0').textContent).not.toBe('±0');
+    expect(screen.getByTestId('lattice-balance').textContent).toContain('Every tile balances');
+    expect(container.querySelector('svg.lattice-patch')!.getAttribute('data-unbalanced')).toBe('0');
+  });
 });

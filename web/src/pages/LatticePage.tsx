@@ -14,19 +14,22 @@ import {
   directedMatchings,
   describeFlow,
   edgeVar,
+  flowLines,
   flowModel,
   hexPatch,
-  linesNeeded,
   netFlow,
   signedArea,
   tileStrandPoints,
   traceStrandPaths,
+  zeroFlow,
+  zeroLines,
   type FlowMode,
   type DirectedMatching,
   type FlowModel,
   type Strand,
 } from '../core/flowLattice';
-import { HEX_PTS, type TileTypeId } from '../core/families';
+import { HEX_PTS, edgeLabels, type TileTypeId } from '../core/families';
+import { parseEdgeLabel } from '../core/edges';
 import type { Pt } from '../core/geom';
 import { edgeClassColor } from '../lib/palette';
 import '../styles/lattice.css';
@@ -70,9 +73,15 @@ function firstFlow(m: FlowModel): number[] {
   return vecAt(m, defaultAxes(m), 1, 0);
 }
 
+/** The tile's class-0 edge when class 0 runs either way, else −1. */
+function zeroEdgeOf(model: FlowModel, type: TileTypeId): number {
+  return model.zeroTypes.includes(type) ? edgeLabels('hex', type).findIndex((l) => parseEdgeLabel(l).major === 0) : -1;
+}
+
 export default function LatticePage(): JSX.Element {
   const [mode, setMode] = useState<FlowMode>('labels');
-  const model = useMemo(() => flowModel(mode), [mode]);
+  const [zeroEither, setZeroEither] = useState(false);
+  const model = useMemo(() => flowModel(mode, zeroEither), [mode, zeroEither]);
   const [axes, setAxes] = useState<[number, number]>(() => defaultAxes(flowModel('labels')));
   const [maxLines, setMaxLines] = useState(1);
   const [level, setLevel] = useState(2);
@@ -88,13 +97,19 @@ export default function LatticePage(): JSX.Element {
 
   const pickMode = (m: FlowMode) => {
     setMode(m);
-    setAxes(defaultAxes(flowModel(m)));
-    setX(firstFlow(flowModel(m)));
+    setAxes(defaultAxes(flowModel(m, zeroEither)));
+    setX(firstFlow(flowModel(m, zeroEither)));
     setHoverVar(null);
     setCol(0);
     setComboIdx({});
     setTileSel(0);
     setCursor([1, 0]);
+  };
+  // The unknowns stay the same either way, so the flow is kept; only the basis moves.
+  const pickZero = (on: boolean) => {
+    setZeroEither(on);
+    setAxes(defaultAxes(flowModel(mode, on)));
+    setComboIdx({});
   };
   const flat = model.basis.length < 2;
   const sel = slicePoint(model, axes, flat, x);
@@ -143,6 +158,10 @@ export default function LatticePage(): JSX.Element {
               </option>
             ))}
           </select>
+        </label>
+        <label className="lattice-check">
+          <input type="checkbox" checked={zeroEither} onChange={(e) => pickZero(e.target.checked)} data-testid="lattice-zero-toggle" />
+          Class 0 either way
         </label>
         {(['a', 'b'] as const).map((name, k) =>
           flat && k === 1 ? null : (
@@ -247,12 +266,24 @@ export default function LatticePage(): JSX.Element {
           ends left over, drawn as dots (filled where flow leaves, hollow where it enters). Hover a
           column or an edge to find its partners.
         </p>
-        <p>
-          Dropped as directionless:{' '}
-          <span className="mono">{model.dropped.join(', ') || 'nothing'}</span> (the Psi&rsquo;s
-          class-0 edge meets another Psi&rsquo;s class-0 edge, so its flow would have to equal its own
-          negative). The lattice has dimension {model.basis.length}.
-        </p>
+        {model.zeroEitherWay ? (
+          <p data-testid="lattice-zero-note">
+            Class 0 runs either way: every class-0 edge carries the same number of lines, and at each
+            tile any of them may go in or out. So the <span className="mono">0</span> column has no
+            counter: Theta, Xi, Phi and Psi each let it take up their imbalance, which works when their
+            nets share a parity, and it needs as many lines as the biggest of them. Where two strands
+            meet head-on across a class-0 edge the flow simply stops. The lattice has dimension{' '}
+            {model.basis.length}.
+          </p>
+        ) : (
+          <p>
+            Dropped as directionless:{' '}
+            <span className="mono">{model.dropped.join(', ') || 'nothing'}</span> (the Psi&rsquo;s
+            class-0 edge meets another Psi&rsquo;s class-0 edge, so its flow would have to equal its own
+            negative; tick <em>Class 0 either way</em> to let it in without a direction). The lattice has
+            dimension {model.basis.length}.
+          </p>
+        )}
         <p className="muted">
           The two choices of unknowns differ. Some classes (2, 3, 5, 8) split into groups of edges that
           never touch each other. The labels tie those groups&rsquo; flows together with their{' '}
@@ -302,7 +333,7 @@ function LatticePlot(props: {
   const within = new Map<number, number>();
   const dots = rows.flatMap((b) =>
     cols.map((a) => {
-      const lines = linesNeeded(vecAt(model, axes, a, b));
+      const lines = flowLines(model, vecAt(model, axes, a, b));
       for (let m = Math.max(lines, 1); m <= 3; m++) within.set(m, (within.get(m) ?? 0) + 1);
       return { a, b, lines };
     }),
@@ -374,7 +405,8 @@ function LatticePlot(props: {
 function Readout(props: { model: FlowModel; x: readonly number[]; sel: readonly [number, number] | null; flat: boolean }): JSX.Element {
   const { model, x, sel, flat } = props;
   const odd = x.flatMap((v, k) => (v % 2 !== 0 ? [model.vars[k].label] : []));
-  const lines = linesNeeded(x);
+  if (zeroLines(model, x) % 2 !== 0) odd.push('0');
+  const lines = flowLines(model, x);
   const net = netFlow(model, x);
   const off = model.types.flatMap((t, i) =>
     net[i] === 0 ? [] : [`${t} has ${Math.abs(net[i])} more ${net[i] > 0 ? 'out' : 'in'}`],
@@ -529,6 +561,7 @@ function CircuitPatch(props: {
           <span className="lattice-swatch is-cw" /> {turns.count.cw} clockwise loop{turns.count.cw === 1 ? '' : 's'}
           <span className="lattice-swatch is-ccw" /> {turns.count.ccw} anticlockwise
           <span className="lattice-swatch is-open" /> {turns.count.open} running off the edge
+          {model.zeroEitherWay ? ' or meeting head-on across class 0' : ''}
         </p>
       )}
       <p className="muted">
@@ -554,6 +587,9 @@ function MatrixEditor(props: {
   const { model, x, onChange, hover, onHover, selected, onSelect } = props;
   const set = (k: number, v: number) => onChange(x.map((old, i) => (i === k ? Math.max(-MAX_COUNT, Math.min(MAX_COUNT, v)) : old)));
   const net = netFlow(model, x);
+  const zero = model.zeroEitherWay;
+  const z = zeroFlow(model, x);
+  const n0 = zeroLines(model, x);
   const last = model.vars.length - 1;
   const cur = Math.min(selected, last);
   const hoverProps = (k: number) => ({
@@ -599,6 +635,11 @@ function MatrixEditor(props: {
                 {v.label}
               </th>
             ))}
+            {zero && (
+              <th scope="col" className="lattice-zero-col" style={{ borderBottomColor: edgeClassColor(0) }}>
+                0
+              </th>
+            )}
             <th scope="col">Net</th>
           </tr>
           <tr className="lattice-flow-row">
@@ -616,6 +657,11 @@ function MatrixEditor(props: {
                 </div>
               </td>
             ))}
+            {zero && (
+              <td className="lattice-zero-col" title="Lines on every class-0 edge, either way round: set by the tiles" data-testid="lattice-count-0">
+                ±{n0}
+              </td>
+            )}
             <td>
               <button type="button" className="lattice-clear" onClick={() => onChange(x.map(() => 0))}>
                 Clear
@@ -641,6 +687,11 @@ function MatrixEditor(props: {
                   </td>
                 );
               })}
+              {zero && (
+                <td className={['lattice-zero-col', model.zeroTypes.includes(t) ? '' : 'is-zero', z[i] !== 0 ? 'is-term' : ''].filter(Boolean).join(' ')} data-testid={`lattice-cell-${t}-0`}>
+                  {model.zeroTypes.includes(t) ? signed(z[i]) : '·'}
+                </td>
+              )}
               <td className={`lattice-net ${net[i] === 0 ? 'is-good' : 'is-bad'}`} data-testid={`lattice-net-${t}`}>
                 {signed(net[i])}
               </td>
@@ -764,6 +815,9 @@ function FlowTile(props: {
   const centre = { x: pts.reduce((a, p) => a + p.x, 0) / pts.length, y: pts.reduce((a, p) => a + p.y, 0) / pts.length };
   const points = tileStrandPoints(model, type, x, pts);
   const strands = pairs ? applyMatching(points, pairs) : null;
+  const zeroEdge = zeroEdgeOf(model, type);
+  const zeroDirs = points.filter((p) => p.edge === zeroEdge);
+  const zeroOut = zeroDirs.filter((p) => p.dir === 'out').length;
   const pad = 0.55;
   const xs = pts.map((p) => p.x);
   const ys = pts.map((p) => p.y);
@@ -779,8 +833,14 @@ function FlowTile(props: {
         const lab = { x: mid.x + ((mid.x - centre.x) / len) * 0.3, y: mid.y + ((mid.y - centre.y) / len) * 0.3 };
         const flow = ev ? ev.sign * x[ev.index] : 0;
         const v = ev ? model.vars[ev.index] : null;
-        const colour = v ? edgeClassColor(v.major) : 'var(--muted)';
-        const cls = ['lattice-flow-edge', ev === null ? 'is-dropped' : '', flow !== 0 ? 'is-live' : '', ev && hover === ev.index ? 'is-hovered' : '']
+        const isZero = e === zeroEdge;
+        const colour = v ? edgeClassColor(v.major) : isZero ? edgeClassColor(0) : 'var(--muted)';
+        const cls = [
+          'lattice-flow-edge',
+          ev === null && !isZero ? 'is-dropped' : '',
+          flow !== 0 || (isZero && zeroDirs.length > 0) ? 'is-live' : '',
+          ev && hover === ev.index ? 'is-hovered' : '',
+        ]
           .filter(Boolean)
           .join(' ');
         return (
@@ -790,7 +850,13 @@ function FlowTile(props: {
             onPointerEnter={ev ? () => onHover(ev.index) : undefined}
             onPointerLeave={ev ? () => onHover(null) : undefined}
           >
-            <title>{v ? `${v.label}: ${flow === 0 ? 'no flow' : `${Math.abs(flow)} ${flow > 0 ? 'out' : 'in'}`}` : 'class 0 (no direction)'}</title>
+            <title>
+              {v
+                ? `${v.label}: ${flow === 0 ? 'no flow' : `${Math.abs(flow)} ${flow > 0 ? 'out' : 'in'}`}`
+                : isZero
+                  ? `class 0, either way: ${zeroDirs.length === 0 ? 'no lines' : `${zeroOut} out, ${zeroDirs.length - zeroOut} in`}`
+                  : 'class 0 (no direction)'}
+            </title>
             <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} style={{ stroke: colour }} />
             <line className="lattice-flow-hit" x1={a.x} y1={a.y} x2={b.x} y2={b.y} />
             <text x={lab.x} y={lab.y + 0.09} textAnchor="middle" style={{ fill: colour }}>
