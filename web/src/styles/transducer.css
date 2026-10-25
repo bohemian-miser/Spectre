@@ -280,18 +280,21 @@
   stroke-width: 0.06;
 }
 .xmap__slot {
-  font-size: 0.6px;
+  font-size: 0.55px;
   font-weight: 700;
   fill: #111;
   text-anchor: middle;
   dominant-baseline: middle;
 }
 .xmap__type {
-  font-size: 0.38px;
+  font-size: 0.26px;
   font-weight: 400;
+  fill: #111;
+  text-anchor: middle;
+  dominant-baseline: middle;
 }
 .xmap__edge {
-  font-size: 0.26px;
+  font-size: 0.24px;
   fill: #222;
   text-anchor: middle;
   dominant-baseline: middle;
@@ -399,7 +402,7 @@
 .td__graph .edgelabel {
   font-size: 11px;
 }
-.td__graph .edgelabel .writes {
+.td__graph .edgelabel.writes {
   fill: #ff7a59;
 }
 .td__state {

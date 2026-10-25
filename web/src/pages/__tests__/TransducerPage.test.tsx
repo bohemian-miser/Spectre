@@ -19,7 +19,8 @@ describe('TransducerPage', () => {
     const { container } = render(<TransducerPage />);
     const svg = container.querySelector('[data-testid="td-svg"]') as SVGElement;
     expect(svg.getAttribute('data-tile-count')).toBe('496'); // a level-3 Delta supertile of hexagons
-    expect(text(container, 'td-address')).toBe('P 0G 7D 1D'); // id 1.7.0 in a Delta
+    expect(text(container, 'td-id')).toBe('1.7.0');
+    expect(text(container, 'td-address')).toBe('Pi, slot 0 of Gamma, slot 7 of Delta, slot 1 of Delta');
   });
 
   it('crossing an edge gives a trace, an answer, and the same answer from the transducer', () => {
@@ -27,8 +28,8 @@ describe('TransducerPage', () => {
     const trace = container.querySelector('[data-testid="td-trace"]')!;
     expect(trace.querySelectorAll('li').length).toBeGreaterThan(0);
     const result = text(container, 'td-result');
-    expect(result).toContain('Answer');
-    const m = /is (.+?), entered through its edge (\d)/.exec(result)!;
+    expect(result).toContain('Across edge');
+    const m = /is ([0-9.]+) \(.+?\), entered through its edge (\d)/.exec(result)!;
     expect(text(container, 'td-run-result')).toContain(m[1]);
     expect(text(container, 'td-run-result')).toContain(`edge ${m[2]}`);
     expect(container.querySelectorAll('.td__tile.is-neighbour')).toHaveLength(1);
@@ -39,7 +40,7 @@ describe('TransducerPage', () => {
     // tile '1.1.1' is the Delta corner; some edge of some tile is on the outline. Find one by trying edges.
     const first = container.querySelector('.td__tile[data-id="7.7.7"]') as SVGElement;
     act(() => { fireEvent.click(first); });
-    expect(text(container, 'td-address')).toContain('7D');
+    expect(text(container, 'td-id')).toBe('7.7.7');
     let outside = false;
     for (let e = 0; e < 6 && !outside; e++) {
       const edges = container.querySelectorAll('.td__edge');
@@ -48,26 +49,26 @@ describe('TransducerPage', () => {
     }
     // not every tile has an outside edge; the Gamma at 7.7.7 may be interior, so only check consistency
     const res = text(container, 'td-result');
-    expect(res.includes('Answer') || res.includes('No answer')).toBe(true);
+    expect(res.includes('Across edge') || res.includes('No answer')).toBe(true);
   });
 
   it('animates the lookup frame by frame, and moving there makes the neighbour the selected tile', () => {
     const { container } = render(<TransducerPage />);
-    const before = text(container, 'td-address');
+    const before = text(container, 'td-id');
     expect(text(container, 'td-frame-title')).toContain('Level 0');
-    expect(text(container, 'td-frame-text')).toContain('map');
+    expect(text(container, 'td-frame-text')).toContain('rule');
     act(() => { fireEvent.click(container.querySelector('[data-testid="td-next"]')!); });
     expect(text(container, 'td-frame-title')).toContain('Outside');
     // the frame buttons list every lookup; the last one is the landing
     const frames = container.querySelectorAll('[data-testid="td-trace"] li');
     expect(frames.length).toBeGreaterThan(2);
     act(() => { fireEvent.click(frames[frames.length - 1].querySelector('button')!); });
-    expect(text(container, 'td-frame-title')).toBe('Done');
+    expect(text(container, 'td-frame-title')).toBe('Landed');
     const result = text(container, 'td-result');
-    const m = /is (.+?), entered through its edge (\d)/.exec(result)!;
+    const m = /is ([0-9.]+) \(.+?\), entered through its edge (\d)/.exec(result)!;
     act(() => { fireEvent.click(container.querySelector('[data-testid="td-move"]')!); });
-    expect(text(container, 'td-address')).toBe(m[1]);
-    expect(text(container, 'td-address')).not.toBe(before);
+    expect(text(container, 'td-id')).toBe(m[1]);
+    expect(text(container, 'td-id')).not.toBe(before);
     expect(container.querySelector('.td__trail')).not.toBeNull();
     // the machine graph and state card follow the animation
     expect(container.querySelector('[data-testid="td-graph"]')).not.toBeNull();
@@ -84,8 +85,8 @@ describe('TransducerPage', () => {
 
   it('states the size of the machine and crosses the infinite Psi wall', () => {
     const { container } = render(<TransducerPage />);
-    expect(text(container, 'td-machine-facts')).toMatch(/\d+ states/);
-    expect(text(container, 'td-wall-result')).toContain('for ever');
+    expect(text(container, 'td-machine-facts')).toMatch(/\d+ rows/);
+    expect(text(container, 'td-wall-result')).toContain('repeating');
     act(() => {
       fireEvent.change(container.querySelector('[data-testid="td-wall-period"]')!, { target: { value: 'nonsense' } });
     });
