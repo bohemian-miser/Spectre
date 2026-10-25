@@ -17,7 +17,7 @@
  *
  * Usage: tsx circuit-atlas.ts <family> <rule> <level> <deepLevel> <out.json>
  */
-import { writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { type Pt, type TileFamilyId } from '../src/core';
 import { boundaryClasses } from './boundary-classes';
 import { CircuitShapes, type BornCircuit } from './circuit-shapes';
@@ -160,15 +160,24 @@ if (process.argv[1]?.endsWith('circuit-atlas.ts')) {
   const { classOf, combos } = boundaryClasses(fam, subset, 4);
   const groups = new Map<number, string[]>();
   combos.forEach((c, i) => (groups.get(classOf[i]) ?? groups.set(classOf[i], []).get(classOf[i])!).push(c));
+  // Saved after every class, so a killed run resumes where it stopped.
+  const partial = `${outFile}.partial`;
+  const done: AtlasClass[] = existsSync(partial) ? (JSON.parse(readFileSync(partial, 'utf8')) as AtlasClass[]) : [];
   const classes: AtlasClass[] = [];
   for (const members of [...groups.values()].sort((a, b) => b.length - a.length)) {
     const t0 = Date.now();
     const representative = members[0];
+    const saved = done.find((c) => c.representative === representative);
+    if (saved) {
+      classes.push(saved);
+      continue;
+    }
     const pattern = [...representative].map((ch, i) => (members.every((m) => m[i] === ch) ? ch : '?')).join('');
     let res = analyse(fam, subset, representative, level);
     // Late starters (nothing big yet, or space-filling) get the deeper run.
     if (deep > level && (res.kind === 'space-filling' || res.kind === 'small' || res.kind === 'none')) res = analyse(fam, subset, representative, deep);
     classes.push({ representative, members, pattern, ...res });
+    writeFileSync(partial, JSON.stringify(classes));
     console.error(`${pattern} (${members.length}): ${res.kind}, D ${res.dimension?.toFixed(2) ?? '-'}, depth ${res.depth}, ${((Date.now() - t0) / 1000).toFixed(0)}s`);
   }
   writeFileSync(outFile, JSON.stringify({ family, rule, generated: new Date().toISOString().slice(0, 10), classes }));
