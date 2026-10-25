@@ -27,6 +27,15 @@ describe('CentreMapPage', () => {
     fireEvent.change(screen.getByTestId('centremap-level'), { target: { value: '4' } });
     const start = screen.getByTestId('centremap-start');
     expect(start.textContent).toBe('Compare 270 pairings');
+    // A cap per rule samples the big rules; the all-edges rule joins only on request.
+    fireEvent.change(screen.getByTestId('centremap-max'), { target: { value: '20' } });
+    expect(start.textContent).toBe('Compare 74 pairings'); // 4 + 2 + 8 + 20 + 20 + 20
+    fireEvent.click(screen.getByTestId('centremap-all-edges'));
+    expect(start.textContent).toBe('Compare 94 pairings');
+    expect(screen.getByText(/01235678 \(20 of 625,000, sampled\)/)).toBeTruthy();
+    fireEvent.click(screen.getByTestId('centremap-all-edges'));
+    fireEvent.change(screen.getByTestId('centremap-max'), { target: { value: '200' } });
+    expect(start.textContent).toBe('Compare 270 pairings');
     fireEvent.click(start);
     await waitFor(() => expect(screen.getByTestId('centremap-summary')).toBeTruthy(), { timeout: 60000 });
     expect(screen.getByTestId('centremap-summary').textContent).toMatch(/^270 pairings at level 4/);

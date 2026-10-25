@@ -1,6 +1,7 @@
 /**
- * Centre map: every pairing of every rule (but the all-edges one), compared
- * by where its circuits' centres are.
+ * Centre map: the pairings of every rule (capped per rule and sampled beyond
+ * the cap; the all-edges rule only on request), compared by where their
+ * circuits' centres are.
  *
  * Each pairing is drawn on one rooted patch and reduced to its circuits'
  * centres. For pairings A and B, the directed chamfer distance A → B is the
@@ -41,7 +42,8 @@ const FAMILIES: readonly { id: TileFamilyId; label: string }[] = [
 ];
 const LEVELS = [4, 5] as const;
 /** The all-edges rule has hundreds of thousands of pairings; everything else is enumerated. */
-const MAX_PER_RULE = 2000;
+/** Default cap on pairings per rule; bigger rules are sampled (with a fixed seed). */
+const DEFAULT_MAX_PER_RULE = 200;
 const PLOT = 520;
 const PLOT_BOX = { min: { x: 0, y: 0 }, max: { x: PLOT, y: PLOT } };
 const THUMB = 240;
@@ -150,20 +152,29 @@ export default function CentreMapPage(): JSX.Element {
   );
   const dark = usePrefersDark();
 
+  const [maxPerRule, setMaxPerRule] = useState(DEFAULT_MAX_PER_RULE);
+  const [includeAllEdges, setIncludeAllEdges] = useState(false);
   const plan = useMemo(() => {
     const rules = validEdgeSubsets(family).filter((s) => s.edges.length);
     const all = rules[rules.length - 1]?.edges.length ?? 0;
     const items: Item[] = [];
-    const used: { subset: readonly number[]; combos: string[] }[] = [];
+    const used: { subset: readonly number[]; combos: string[]; total: number }[] = [];
     rules
-      .filter((s) => s.edges.length < all)
+      .filter((s) => includeAllEdges || s.edges.length < all)
       .forEach((s, ruleIndex) => {
-        const { combos } = rulePairings(family, s.edges, MAX_PER_RULE);
-        used.push({ subset: s.edges, combos });
+        // A fixed seed per rule, so the same cap always samples the same pairings.
+        let seed = 12345 + ruleIndex;
+        const random = () => {
+          seed = (seed * 1103515245 + 12345) % 2147483648;
+          return seed / 2147483648;
+        };
+        const { combos, total } = rulePairings(family, s.edges, Math.max(1, maxPerRule), random);
+        combos.sort();
+        used.push({ subset: s.edges, combos, total });
         for (const combo of combos) items.push({ rule: s.edges.join(''), subset: s.edges, combo, ruleIndex });
       });
     return { items, rules: used };
-  }, [family]);
+  }, [family, maxPerRule, includeAllEdges]);
 
   // Saved surveys (30 days in localStorage): the same settings show at once.
   const cacheKey = useMemo(
@@ -279,7 +290,7 @@ export default function CentreMapPage(): JSX.Element {
       <header>
         <h1>Centre map</h1>
         <p className="muted">
-          Every pairing of every rule but the all-edges one, drawn on one rooted patch and reduced to its circuits&rsquo;
+          The pairings of every rule (up to a cap per rule, sampled beyond it; the all-edges rule only if you ask), drawn on one rooted patch and reduced to its circuits&rsquo;
           centres (the average of each circuit&rsquo;s points). For two pairings A and B, the <b>directed chamfer distance</b>{' '}
           A&nbsp;→&nbsp;B is the average distance from each of A&rsquo;s centres to the nearest centre of B: 0 when every
           centre of A has one of B&rsquo;s right on it. It is fast because B&rsquo;s centres are drawn onto a grid once and a
@@ -309,6 +320,22 @@ export default function CentreMapPage(): JSX.Element {
               </option>
             ))}
           </select>
+        </label>
+        <label title="Rules with more pairings than this are sampled at random (the same sample each time)">
+          Max pairings per rule
+          <input
+            type="number"
+            min={1}
+            step={10}
+            value={maxPerRule}
+            onChange={(e) => setMaxPerRule(Math.max(1, Math.floor(Number(e.target.value)) || 1))}
+            data-testid="centremap-max"
+            style={{ width: '7ch' }}
+          />
+        </label>
+        <label title="The all-edges rule has hundreds of thousands of pairings, so it is always sampled">
+          <input type="checkbox" checked={includeAllEdges} onChange={(e) => setIncludeAllEdges(e.target.checked)} data-testid="centremap-all-edges" /> Include
+          the all-edges rule
         </label>
         <label title="A centre is only near one of a similar size: each size band (×4 in length) away costs as much as 4 tiles of distance">
           <input type="checkbox" checked={matchSizes} onChange={(e) => setMatchSizes(e.target.checked)} /> Match sizes
@@ -340,7 +367,14 @@ export default function CentreMapPage(): JSX.Element {
         )}
       </div>
       <p className="muted centremap-note">
-        Rules: {rules.join(', ')} — {plan.items.length.toLocaleString('en-US')} pairings, all of them non-crossing.
+        Rules:{' '}
+        {plan.rules
+          .map((r) => {
+            const name = r.subset.join('');
+            return r.combos.length < r.total ? `${name} (${r.combos.length} of ${r.total.toLocaleString('en-US')}, sampled)` : name;
+          })
+          .join(', ')}{' '}
+        — {plan.items.length.toLocaleString('en-US')} pairings, all of them non-crossing.
       </p>
 
       {result && clustering && (
