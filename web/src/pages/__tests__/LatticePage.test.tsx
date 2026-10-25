@@ -158,7 +158,9 @@ describe('LatticePage', () => {
     fireEvent.click(screen.getByTestId('lattice-pt-0_1'));
     const n = Number(screen.getByTestId('lattice-count-0').textContent!.replace('±', ''));
     expect(n).toBeGreaterThan(0);
-    expect(screen.getByTestId('lattice-cell-Psi-0').textContent).toBe(`±${n}`);
+    // The cell lists what class 0 can be there: −n, −n+2, …, n.
+    const values = Array.from({ length: n + 1 }, (_, i) => 2 * i - n).map((v) => (v > 0 ? `+${v}` : v < 0 ? `−${-v}` : '0'));
+    expect(screen.getByTestId('lattice-cell-Psi-0').textContent).toBe(n > 3 ? `±${n}` : values.join(', '));
     expect(screen.getByTestId('lattice-cell-Delta-0').textContent).toBe('·');
     // The ± carries through to the Net column: the row's directed sum, ± the class-0 lines.
     const psiNet = screen.getByTestId('lattice-net-Psi');
