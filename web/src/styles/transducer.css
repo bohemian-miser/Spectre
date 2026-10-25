@@ -228,3 +228,191 @@
   padding-left: 1.2rem;
   font-size: 0.82rem;
 }
+
+/* Expansion maps: the lookup tables as pictures. */
+.xmap {
+  margin: 0;
+  display: inline-flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  vertical-align: top;
+}
+.xmap__svg {
+  width: 100%;
+  height: auto;
+  background: var(--panel, #11151c);
+  border: 1px solid var(--rule, #2a3140);
+  border-radius: 8px;
+}
+.xmap figcaption {
+  font-size: 0.8rem;
+  color: var(--fg-muted, #9aa4b2);
+}
+.xmap__child {
+  stroke: var(--panel, #11151c);
+  stroke-width: 0.06;
+  opacity: 0.75;
+}
+.xmap__arc line {
+  stroke-width: 0.1;
+  opacity: 0.7;
+}
+.xmap__arc.is-active line {
+  stroke-width: 0.2;
+  opacity: 1;
+}
+.xmap__arc line.is-piece {
+  stroke-width: 0.32;
+  opacity: 1;
+}
+.xmap__arclabel,
+.xmap__piece {
+  font-size: 0.34px;
+  text-anchor: middle;
+  dominant-baseline: middle;
+  font-weight: 700;
+  paint-order: stroke;
+}
+.xmap__piece {
+  fill: #fff;
+  font-size: 0.3px;
+  stroke: rgba(0, 0, 0, 0.7);
+  stroke-width: 0.06;
+}
+.xmap__slot {
+  font-size: 0.6px;
+  font-weight: 700;
+  fill: #111;
+  text-anchor: middle;
+  dominant-baseline: middle;
+}
+.xmap__type {
+  font-size: 0.38px;
+  font-weight: 400;
+}
+.xmap__edge {
+  font-size: 0.26px;
+  fill: #222;
+  text-anchor: middle;
+  dominant-baseline: middle;
+  opacity: 0.8;
+}
+.xmap__hl {
+  stroke-width: 0.22;
+  stroke-linecap: round;
+}
+.xmap__hl.is-child {
+  stroke: #ffd166;
+}
+.xmap__hl.is-partner {
+  stroke: #6ea8fe;
+}
+.xmap__hl.is-entered {
+  stroke: #8fd694;
+}
+
+/* The animation and the walk. */
+.td__anim {
+  display: grid;
+  grid-template-columns: minmax(220px, 300px) 1fr;
+  gap: 1rem;
+  align-items: start;
+  padding: 0.8rem;
+  border: 1px solid var(--rule, #2a3140);
+  border-radius: 8px;
+}
+.td__anim-text {
+  line-height: 1.55;
+}
+.td__anim-text .is-level {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--fg-muted, #9aa4b2);
+}
+.td__frames {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+.td__frames li button {
+  font: inherit;
+  font-size: 0.8rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--rule, #2a3140);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.td__frames li button.is-current {
+  border-color: var(--accent, #6ea8fe);
+  background: color-mix(in srgb, var(--accent, #6ea8fe) 18%, transparent);
+}
+.td__trail {
+  fill: none;
+  stroke: #8fd694;
+  stroke-width: 0.12;
+  stroke-dasharray: 0.25 0.15;
+  pointer-events: none;
+}
+.td__gallery {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.8rem;
+}
+
+/* The transducer run as a graph. */
+.td__graph {
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--rule, #2a3140);
+  border-radius: 8px;
+  background: var(--panel, #11151c);
+}
+.td__graph .node circle {
+  fill: var(--panel-2, #1b2230);
+  stroke: var(--rule, #2a3140);
+  stroke-width: 2;
+}
+.td__graph .node.is-accepting circle {
+  stroke: #8fd694;
+}
+.td__graph .node.is-current circle {
+  stroke: #ffd166;
+  stroke-width: 4;
+}
+.td__graph text {
+  font-size: 12px;
+  fill: currentColor;
+  text-anchor: middle;
+}
+.td__graph .edge {
+  stroke: var(--fg-muted, #9aa4b2);
+  stroke-width: 1.5;
+  fill: none;
+  marker-end: url(#td-arrow);
+}
+.td__graph .edgelabel {
+  font-size: 11px;
+}
+.td__graph .edgelabel .writes {
+  fill: #ff7a59;
+}
+.td__state {
+  border: 1px solid var(--rule, #2a3140);
+  border-radius: 8px;
+  padding: 0.6rem 0.85rem;
+}
+.td__state ul {
+  margin: 0.3rem 0 0;
+  padding-left: 1.2rem;
+}
+@media (max-width: 800px) {
+  .td__anim {
+    grid-template-columns: 1fr;
+  }
+}
