@@ -135,6 +135,18 @@ inside space-filling open strands", a cousin of the `blob` class with a very
 late start. The classifier's thresholds cannot see it because its first
 generation appears at the last level the classifier looks at.
 
+**Where it sits in the rule.** Running all 320 pairings of `023468` to level
+7, by the level at which the first circuit longer than 12 segments is born:
+36 start at level 2, 168 at level 3, 106 at level 4, 4 at level 5 and 6 at
+level 6. The six at level 6 are this class, with first generations of 294 to
+402 segments (the members differ inside level-1 supertiles, so the first
+circuit's exact length differs while everything above is the same). The four
+at level 5 are two pairs, `100000001 101000001` (60, then 4,002 at level 7)
+and `120000001 121000001` (3,282, then 166,035), space-filling too. Every
+other pairing of the rule has shown its first real circuit by level 4, which
+is why the classifier's level 4 to 6 window serves the rest and misses these
+ten.
+
 ## Running it
 
 ```bash
