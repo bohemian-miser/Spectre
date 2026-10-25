@@ -123,6 +123,14 @@ export const SITE_NAV: readonly NavItem[] = Object.freeze([
     blurb: 'Which pairings put their big circuits in the same places, along the same supertile seams.',
   },
   {
+    id: 'centremap',
+    label: 'Centre map',
+    short: 'Centres',
+    entry: 'centremap.html',
+    status: 'ready',
+    blurb: 'Every pairing compared by where its circuit centres are: heatmap, UMAP and search.',
+  },
+  {
     id: 'legacy',
     label: 'Legacy p5 app',
     short: 'Legacy',

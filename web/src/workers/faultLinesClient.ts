@@ -58,7 +58,13 @@ export function createFaultLinesClient(opts: { forceSync?: boolean } = {}): Faul
   const queue: { job: FaultThumbJob; signal?: AbortSignal; resolve: (v: Uint8ClampedArray) => void; reject: (e: Error) => void }[] = [];
   let busy = false;
   const pump = () => {
-    if (busy || !worker) return;
+    if (busy) return;
+    // Disposed (React's StrictMode does that on its trial unmount): start again.
+    if (!worker) {
+      worker = spawn();
+      if (!worker) return;
+      attach(worker);
+    }
     let next = queue.shift();
     while (next?.signal?.aborted) {
       next.reject(new Error('aborted'));
