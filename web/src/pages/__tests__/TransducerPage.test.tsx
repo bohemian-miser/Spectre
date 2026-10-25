@@ -51,6 +51,37 @@ describe('TransducerPage', () => {
     expect(res.includes('Answer') || res.includes('No answer')).toBe(true);
   });
 
+  it('animates the lookup frame by frame, and moving there makes the neighbour the selected tile', () => {
+    const { container } = render(<TransducerPage />);
+    const before = text(container, 'td-address');
+    expect(text(container, 'td-frame-title')).toContain('Level 0');
+    expect(text(container, 'td-frame-text')).toContain('map');
+    act(() => { fireEvent.click(container.querySelector('[data-testid="td-next"]')!); });
+    expect(text(container, 'td-frame-title')).toContain('Outside');
+    // the frame buttons list every lookup; the last one is the landing
+    const frames = container.querySelectorAll('[data-testid="td-trace"] li');
+    expect(frames.length).toBeGreaterThan(2);
+    act(() => { fireEvent.click(frames[frames.length - 1].querySelector('button')!); });
+    expect(text(container, 'td-frame-title')).toBe('Done');
+    const result = text(container, 'td-result');
+    const m = /is (.+?), entered through its edge (\d)/.exec(result)!;
+    act(() => { fireEvent.click(container.querySelector('[data-testid="td-move"]')!); });
+    expect(text(container, 'td-address')).toBe(m[1]);
+    expect(text(container, 'td-address')).not.toBe(before);
+    expect(container.querySelector('.td__trail')).not.toBeNull();
+    // the machine graph and state card follow the animation
+    expect(container.querySelector('[data-testid="td-graph"]')).not.toBeNull();
+    expect(text(container, 'td-state')).toMatch(/State \d+/);
+  });
+
+  it('the expansion map of the parent is drawn with the selected child edge highlighted', () => {
+    const { container } = render(<TransducerPage />);
+    const map = container.querySelector('[data-testid="xmap-Gamma"]'); // tile 1.7.0 is child 0 of a Gamma
+    expect(map).not.toBeNull();
+    expect(map!.querySelectorAll('.xmap__child')).toHaveLength(7); // Gamma has seven children
+    expect(map!.querySelector('.xmap__hl.is-child')).not.toBeNull();
+  });
+
   it('states the size of the machine and crosses the infinite Psi wall', () => {
     const { container } = render(<TransducerPage />);
     expect(text(container, 'td-machine-facts')).toMatch(/\d+ states/);
