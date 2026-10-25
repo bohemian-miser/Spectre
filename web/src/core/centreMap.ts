@@ -283,16 +283,8 @@ export const CENTRE_GRID = 384;
 /** Window margin, as a share of the patch's span. */
 export const WINDOW_MARGIN = 0.06;
 
-/** Everything for a survey: centres of every pairing, the mask, and the matrix. */
-export function centreMap(
-  family: TileFamilyId,
-  level: number,
-  rules: readonly CentreMapRule[],
-  opts: ChamferOptions,
-  onProgress?: (phase: 'centres' | 'distances', done: number, total: number) => void,
-): CentreMap {
-  const total = rules.reduce((t, r) => t + r.combos.length, 0);
-  const sets: CentreSet[] = [];
+/** The grid and averaging mask for a survey over these rules' patches (all at one level). */
+export function centreSurveyFrame(graphs: readonly StrandGraph[]): { grid: CentreGrid; mask: Uint8Array } {
   const insideXs: number[] = [];
   const insideYs: number[] = [];
   const edgeXs: number[] = [];
@@ -301,9 +293,7 @@ export function centreMap(
   let minY = Infinity;
   let maxX = -Infinity;
   let maxY = -Infinity;
-  for (const r of rules) {
-    const g = buildStrandGraph(family, r.subset, level);
-    const ws = strandWorkspace(g);
+  for (const g of graphs) {
     for (let v = 0; v < g.nNodes; v++) {
       const x = g.nodeX[v];
       const y = g.nodeY[v];
@@ -318,14 +308,34 @@ export function centreMap(
         edgeYs.push(y);
       }
     }
+  }
+  const grid = gridFor(minX, minY, maxX, maxY, CENTRE_GRID);
+  const span = Math.max(maxX - minX, maxY - minY);
+  const mask = innerWindow(grid, { xs: insideXs, ys: insideYs }, { xs: edgeXs, ys: edgeYs }, span * WINDOW_MARGIN);
+  return { grid, mask };
+}
+
+/** Everything for a survey: centres of every pairing, the mask, and the matrix. */
+export function centreMap(
+  family: TileFamilyId,
+  level: number,
+  rules: readonly CentreMapRule[],
+  opts: ChamferOptions,
+  onProgress?: (phase: 'centres' | 'distances', done: number, total: number) => void,
+): CentreMap {
+  const total = rules.reduce((t, r) => t + r.combos.length, 0);
+  const sets: CentreSet[] = [];
+  const graphs: StrandGraph[] = [];
+  for (const r of rules) {
+    const g = buildStrandGraph(family, r.subset, level);
+    graphs.push(g);
+    const ws = strandWorkspace(g);
     for (const d of r.combos) {
       sets.push(circuitCentreSet(g, d, ws));
       onProgress?.('centres', sets.length, total);
     }
   }
-  const grid = gridFor(minX, minY, maxX, maxY, CENTRE_GRID);
-  const span = Math.max(maxX - minX, maxY - minY);
-  const mask = innerWindow(grid, { xs: insideXs, ys: insideYs }, { xs: edgeXs, ys: edgeYs }, span * WINDOW_MARGIN);
+  const { grid, mask } = centreSurveyFrame(graphs);
   const matrix = chamferMatrix(sets, grid, mask, opts, (done, n) => onProgress?.('distances', done, n));
   const counts = sets.map((s) => {
     let inside = 0;
@@ -498,4 +508,115 @@ export function overlayImage(counts: Uint16Array, total: number, dark: boolean):
     out[p * 4 + 3] = 255;
   }
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// Rows against fixed targets (landmarks), for surveys too big for a full
+// matrix: each target's distance maps are built once and kept compactly, then
+// any number of pairings are measured against them.
+
+/** Distances in a target map are stored in 1/TARGET_SCALE of a cell, as Uint16. */
+export const TARGET_SCALE = 16;
+const TARGET_NONE = 0xffff;
+
+/** One target's distance map per size band (null where it has no centres in that band). */
+export interface ChamferTarget {
+  readonly bands: readonly (Uint16Array | null)[];
+}
+
+export function chamferTarget(set: CentreSet, grid: CentreGrid, matchSizes: boolean): ChamferTarget {
+  const size = grid.size;
+  const cells = size * size;
+  const nb = matchSizes ? SIZE_BANDS : 1;
+  const marked = new Uint8Array(cells);
+  const scratch = new Float64Array(cells);
+  const bands: (Uint16Array | null)[] = [];
+  for (let k = 0; k < nb; k++) {
+    marked.fill(0);
+    let any = false;
+    for (let i = 0; i < set.n; i++) {
+      if (nb > 1 && sizeBand(set.lens[i]) !== k) continue;
+      marked[cellOf(grid, set.xs[i], set.ys[i])] = 1;
+      any = true;
+    }
+    if (!any) {
+      bands.push(null);
+      continue;
+    }
+    distanceTransform(marked, size, scratch);
+    const out = new Uint16Array(cells);
+    for (let c = 0; c < cells; c++) out[c] = Math.min(TARGET_NONE - 1, Math.round(Math.sqrt(scratch[c]) * TARGET_SCALE));
+    bands.push(out);
+  }
+  return { bands };
+}
+
+/** A pairing's centres as the chamfer sees them: cell, band and weight of each one inside the mask. */
+export interface ChamferSource {
+  readonly cell: Int32Array;
+  readonly band: Uint8Array;
+  readonly w: Float64Array;
+  readonly total: number;
+}
+
+export function chamferSource(set: CentreSet, grid: CentreGrid, mask: Uint8Array, opts: ChamferOptions): ChamferSource {
+  const cell: number[] = [];
+  const band: number[] = [];
+  const w: number[] = [];
+  for (let i = 0; i < set.n; i++) {
+    const c = cellOf(grid, set.xs[i], set.ys[i]);
+    if (!mask[c]) continue;
+    cell.push(c);
+    band.push(opts.matchSizes ? sizeBand(set.lens[i]) : 0);
+    w.push(opts.weightBySize ? Math.log(1 + set.lens[i]) : 1);
+  }
+  // In cell order, so looking them up walks each distance map nearly in order (far kinder to the cache).
+  const order = cell.map((_, i) => i).sort((a, b) => cell[a] - cell[b]);
+  return {
+    cell: Int32Array.from(order, (i) => cell[i]),
+    band: Uint8Array.from(order, (i) => band[i]),
+    w: Float64Array.from(order, (i) => w[i]),
+    total: w.reduce((a, b) => a + b, 0),
+  };
+}
+
+/**
+ * Directed chamfer distance source → target in world units, as
+ * {@link chamferMatrix} computes it (to 1/TARGET_SCALE of a cell); NaN when
+ * the source has no centres inside the mask.
+ */
+export function chamferToTarget(src: ChamferSource, target: ChamferTarget, grid: CentreGrid): number {
+  if (!src.total) return NaN;
+  const nb = target.bands.length;
+  const step = (SIZE_STEP / grid.h) * TARGET_SCALE; // per band of difference, in stored units
+  const far = grid.size * TARGET_SCALE;
+  let sum = 0;
+  const bands = target.bands;
+  for (let i = 0; i < src.cell.length; i++) {
+    const c = src.cell[i];
+    let best2 = Infinity; // squared, in stored units
+    if (nb === 1) {
+      const b = bands[0];
+      best2 = b ? b[c] * b[c] : far * far;
+    } else {
+      const home = src.band[i];
+      for (let off = 0; off < nb; off++) {
+        const pen2 = off * step * (off * step);
+        if (pen2 >= best2) break;
+        const b1 = home - off >= 0 ? bands[home - off] : null;
+        if (b1) {
+          const d2 = b1[c] * b1[c] + pen2;
+          if (d2 < best2) best2 = d2;
+        }
+        const b2 = off && home + off < nb ? bands[home + off] : null;
+        if (b2) {
+          const d2 = b2[c] * b2[c] + pen2;
+          if (d2 < best2) best2 = d2;
+        }
+      }
+      if (best2 === Infinity) best2 = far * far;
+    }
+    sum += src.w[i] * Math.sqrt(best2);
+  }
+  return (sum / src.total / TARGET_SCALE) * grid.h;
 }

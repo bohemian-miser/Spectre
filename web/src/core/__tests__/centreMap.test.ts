@@ -12,7 +12,7 @@ import {
 import { comboDigitsFromIndex, comboOptionCounts } from '../strandGraph';
 import { comboToMatchingIndices } from '../matchings';
 import { matchesJoins, matchesPattern, pairingEdgeChords, selectionPatterns, selectionTileChords } from '../pairingSearch';
-import { accumulateStrands, overlayImage, patchFrame } from '../centreMap';
+import { accumulateStrands, centreSurveyFrame, chamferSource, chamferTarget, chamferToTarget, circuitCentreSet, overlayImage, patchFrame } from '../centreMap';
 import { buildStrandGraph } from '../strandGraph';
 import { leafOrder } from '../families';
 import { comboDigits } from '../faultLines';
@@ -210,5 +210,24 @@ describe('selections', () => {
     let lit = 0;
     for (let p = 3; p < img.length; p += 4) if (img[p]) lit++;
     expect(lit).toBe(once);
+  });
+});
+
+describe('rows against fixed targets', () => {
+  it('match the full matrix to within the stored precision', () => {
+    const rules = [[1, 5], [0, 3, 5, 6]].map((subset) => ({ subset, g: buildStrandGraph('spectre', subset, 3) }));
+    const sets = rules.flatMap(({ subset, g }) => {
+      const oc = comboOptionCounts('spectre', subset);
+      return [0, 1].map((i) => circuitCentreSet(g, comboDigitsFromIndex(oc, i)));
+    });
+    const { grid, mask } = centreSurveyFrame(rules.map((r) => r.g));
+    for (const opts of [{ matchSizes: true, weightBySize: true }, { matchSizes: false, weightBySize: false }]) {
+      const full = chamferMatrix(sets, grid, mask, opts);
+      const targets = sets.map((s) => chamferTarget(s, grid, opts.matchSizes));
+      sets.forEach((s, a) => {
+        const src = chamferSource(s, grid, mask, opts);
+        targets.forEach((t, b) => expect(Math.abs(chamferToTarget(src, t, grid) - full[a * sets.length + b])).toBeLessThan(grid.h / 16 + 1e-6));
+      });
+    }
   });
 });

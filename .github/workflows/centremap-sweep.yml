@@ -1,0 +1,111 @@
+name: Centre map sweep
+
+# A one-off, run by hand: every pairing of every rule of one family at one
+# level, measured against the landmark pairings (web/circuit-classes/
+# centremap-sweep.ts), laid out with UMAP (centremap-embed.py), and committed
+# to a branch `centremap-data/<family>-<level>` for a pull request.
+
+on:
+  workflow_dispatch:
+    inputs:
+      family:
+        description: Tile family
+        default: hex
+        type: choice
+        options: [hex, spectre]
+      level:
+        description: Supertile level
+        default: '5'
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  sweep:
+    name: Sweep ${{ matrix.job }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: true
+      matrix:
+        # 16 jobs x 4 processes = 64 shards.
+        job: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: web
+
+      - name: Sweep four shards
+        working-directory: web
+        env:
+          FAMILY: ${{ inputs.family }}
+          LEVEL: ${{ inputs.level }}
+          JOB: ${{ matrix.job }}
+        run: |
+          set -e
+          pids=""
+          for p in 0 1 2 3; do
+            npx --yes tsx circuit-classes/centremap-sweep.ts "$FAMILY" "$LEVEL" $(( JOB * 4 + p )) 64 out &
+            pids="$pids $!"
+          done
+          for pid in $pids; do wait $pid; done
+          ls -la out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: centremap-shards-${{ matrix.job }}
+          path: web/out
+          retention-days: 3
+
+  embed:
+    name: Lay out and commit
+    needs: sweep
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: centremap-shards-*
+          path: shards
+          merge-multiple: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install numpy, scikit-learn, umap-learn
+        run: pip install numpy scikit-learn umap-learn
+
+      - name: Lay out
+        env:
+          FAMILY: ${{ inputs.family }}
+          LEVEL: ${{ inputs.level }}
+        run: python web/circuit-classes/centremap-embed.py shards "web/public/data/centremap/$FAMILY-$LEVEL"
+
+      - name: Commit to a branch
+        env:
+          FAMILY: ${{ inputs.family }}
+          LEVEL: ${{ inputs.level }}
+        run: |
+          set -e
+          branch="centremap-data/$FAMILY-$LEVEL"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+          git add "web/public/data/centremap/$FAMILY-$LEVEL"
+          git commit -m "Centre map data: $FAMILY, level $LEVEL (from the Centre map sweep workflow)"
+          git push --force origin "$branch"
+          echo "Pushed $branch" >> "$GITHUB_STEP_SUMMARY"
