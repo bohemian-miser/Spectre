@@ -232,3 +232,14 @@ any level of detail, without building the patch around it:
 writes the largest circuits born in a level-10 Delta (1.4 million tiles for
 this pairing) as closed polylines in the supertile's frame, each level-3 arc
 drawn as a chord. Drawn to level 0 a circuit has exactly one point per tile.
+
+## Deep levels and giants
+
+`renormalize-lean.ts` is the renormalisation in typed arrays, keeping only
+the previous level and summary statistics: level 10 of the hexagon all-edges
+rule (930 million tiles per supertile) in under two minutes. `draw-giants.ts`
+draws a combination's largest born circuits and its longest open strand from
+the hierarchy:
+
+    npx tsx circuit-classes/renormalize-lean.ts hex 01234568 241400332 10
+    MAXPTS=900000 npx tsx circuit-classes/draw-giants.ts 01234568 241400332 9 1000 out.json
