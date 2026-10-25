@@ -21,10 +21,15 @@ import {
   encodeExplorerState,
   matchesJoins,
   matchesPattern,
+  leafOrder,
+  leafPts,
+  selectionPatterns,
+  selectionTileChords,
   rulePairings,
   seriate,
   validEdgeSubsets,
   type EdgeJoin,
+  type TileTypeId,
   type TileFamilyId,
 } from '../core';
 import { JoinPicker } from '../components/JoinPicker';
@@ -137,6 +142,9 @@ export default function CentreMapPage(): JSX.Element {
   const [pattern, setPattern] = useState('');
   const [joins, setJoins] = useState<readonly EdgeJoin[]>([]);
   const [hover, setHover] = useState<number | null>(null);
+  /** What a drag on the charts does, and the pairings picked out by a box. */
+  const [dragMode, setDragMode] = useState<'pan' | 'select'>('pan');
+  const [picked, setPicked] = useState<readonly number[] | null>(null);
   const [selected, setSelected] = useState<number | null>(null);
   /** The magnifier: which of [selected, ...nearest] it shows, and how. */
   const [magnified, setMagnified] = useState<{ at: number; view: 'strands' | 'centres' } | null>(null);
@@ -191,6 +199,7 @@ export default function CentreMapPage(): JSX.Element {
     setProgress(null);
     setError(null);
     setResult({ result: saved, items: plan.items, family });
+    setPicked(null);
     setSavedAt(saved.savedAt);
     setResultKey(cacheKey);
     return true;
@@ -217,6 +226,7 @@ export default function CentreMapPage(): JSX.Element {
         onProgress: (phase, done, total) => setProgress({ phase, done, total }),
         onDone: (r) => {
           setResult({ result: r, items, family: fam });
+          setPicked(null);
           setResultKey(key);
           const now = Date.now();
           setSavedAt(saveCentreMap(key, r, now) ? now : null);
@@ -269,6 +279,8 @@ export default function CentreMapPage(): JSX.Element {
   }, [result, ruleFilter, pattern, joins]);
   const matchCount = matches?.filter(Boolean).length ?? 0;
 
+  /** A box picks what it covers, but only the search's matches while one is on. */
+  const pickBox = (ids: readonly number[]) => setPicked(searching && matches ? ids.filter((i) => matches[i]) : ids);
   const label = (i: number) => `${result!.items[i].rule} · ${result!.items[i].combo}`;
   const dist = (a: number, b: number) => result!.result.matrix[a * n + b];
   const nearest = useMemo(() => {
@@ -457,6 +469,19 @@ export default function CentreMapPage(): JSX.Element {
             <JoinPicker family={result.family} joins={joins} onChange={setJoins} />
           </section>
 
+          <div className="centremap-controls" role="group" aria-label="Drag">
+            <span className="centremap-modal-views">
+              Drag to
+              {(['pan', 'select'] as const).map((m) => (
+                <button key={m} type="button" className={dragMode === m ? 'is-on' : undefined} aria-pressed={dragMode === m} onClick={() => setDragMode(m)} data-testid={`centremap-drag-${m}`}>
+                  {m === 'pan' ? 'pan' : 'select an area'}
+                </button>
+              ))}
+            </span>
+            <span className="muted">
+              {dragMode === 'select' ? 'Drag a box on either chart to pick the pairings inside it (on the heatmap, its rows and columns).' : 'Wheel or pinch zooms either way.'}
+            </span>
+          </div>
           <div className="centremap-views">
             <section aria-labelledby="centremap-umap-h">
               <h2 id="centremap-umap-h">UMAP of the rows</h2>
@@ -470,6 +495,9 @@ export default function CentreMapPage(): JSX.Element {
                 onHover={setHover}
                 onPick={setSelected}
                 label={label}
+                selecting={dragMode === 'select'}
+                picked={picked}
+                onBox={pickBox}
               />
             </section>
             <section aria-labelledby="centremap-heat-h">
@@ -493,9 +521,28 @@ export default function CentreMapPage(): JSX.Element {
                   </label>
                 ))}
               </div>
-              <Heatmap matrix={result.result.matrix} n={n} rows={orderFor(rowOrder)} cols={orderFor(colOrder)} matches={searching ? matches : null} label={label} onPick={setSelected} />
+              <Heatmap matrix={result.result.matrix} n={n} rows={orderFor(rowOrder)} cols={orderFor(colOrder)} matches={searching ? matches : null} label={label} onPick={setSelected} selecting={dragMode === 'select'} picked={picked} onBox={pickBox} />
             </section>
           </div>
+
+          {picked && picked.length === 0 && (
+            <p className="muted" data-testid="centremap-picked-none">
+              No pairings in that box.{' '}
+              <button type="button" className="link-button" onClick={() => setPicked(null)}>
+                Clear
+              </button>
+            </p>
+          )}
+          {picked && picked.length > 0 && (
+            <SelectionPanel
+              family={result.family}
+              level={result.result.level}
+              items={picked.map((i) => result.items[i])}
+              client={thumbs}
+              dark={dark}
+              onClear={() => setPicked(null)}
+            />
+          )}
 
           {selected !== null && (
             <section className="centremap-selected" aria-labelledby="centremap-selected-h" data-testid="centremap-selected">
@@ -585,8 +632,12 @@ function Scatter(props: {
   onHover: (i: number | null) => void;
   onPick: (i: number) => void;
   label: (i: number) => string;
+  selecting: boolean;
+  picked: readonly number[] | null;
+  onBox: (picked: readonly number[]) => void;
 }): JSX.Element {
-  const { embedding, n, colourOf, matches, hover, selected, onHover, onPick, label } = props;
+  const { embedding, n, colourOf, matches, hover, selected, onHover, onPick, label, selecting, picked, onBox } = props;
+  const pickedSet = useMemo(() => (picked ? new Set(picked) : null), [picked]);
   const pts = useMemo(() => {
     let minX = Infinity;
     let minY = Infinity;
@@ -613,10 +664,11 @@ function Scatter(props: {
         {(api) => {
           const k = api.camera.scale || 1;
           return (
-            <svg data-testid="centremap-umap" onMouseLeave={() => onHover(null)}>
+            <>
+              <svg data-testid="centremap-umap" onMouseLeave={() => onHover(null)}>
               <g transform={`translate(${api.camera.x} ${api.camera.y}) scale(${k})`}>
                 {order.map((i) => {
-                  const on = !matches || matches[i];
+                  const on = (!matches || matches[i]) && (!pickedSet || pickedSet.has(i));
                   // Radii and strokes in screen pixels, whatever the zoom.
                   return (
                     <circle
@@ -626,7 +678,7 @@ function Scatter(props: {
                       r={(i === selected ? 7 : on && matches ? 5.5 : 4.5) / k}
                       fill={colourOf(i)}
                       opacity={on ? 0.9 : 0.12}
-                      stroke={i === selected || i === hover ? 'var(--text)' : 'none'}
+                      stroke={i === selected || i === hover ? 'var(--text)' : pickedSet?.has(i) ? 'var(--accent)' : 'none'}
                       strokeWidth={1.5 / k}
                       data-index={i}
                       data-panzoom-ignore=""
@@ -638,7 +690,21 @@ function Scatter(props: {
                   );
                 })}
               </g>
-            </svg>
+              </svg>
+              {selecting && (
+                <BoxSelect
+                  testid="centremap-umap-box"
+                  onBox={(b) => {
+                    const k2 = api.camera.scale || 1;
+                    const x0 = (b.x0 - api.camera.x) / k2;
+                    const x1 = (b.x1 - api.camera.x) / k2;
+                    const y0 = (b.y0 - api.camera.y) / k2;
+                    const y1 = (b.y1 - api.camera.y) / k2;
+                    onBox(pts.map((p, i) => (p.x >= x0 && p.x <= x1 && p.y >= y0 && p.y <= y1 ? i : -1)).filter((i) => i >= 0));
+                  }}
+                />
+              )}
+            </>
           );
         }}
       </PanZoom>
@@ -657,8 +723,11 @@ function Heatmap(props: {
   matches: readonly boolean[] | null;
   label: (i: number) => string;
   onPick: (i: number) => void;
+  selecting: boolean;
+  picked: readonly number[] | null;
+  onBox: (picked: readonly number[]) => void;
 }): JSX.Element {
-  const { matrix, n, rows, cols, matches, label, onPick } = props;
+  const { matrix, n, rows, cols, matches, label, onPick, selecting, picked, onBox } = props;
   const canvas = useRef<HTMLCanvasElement>(null);
   const [hover, setHover] = useState<[number, number] | null>(null);
   useEffect(() => {
@@ -677,10 +746,13 @@ function Heatmap(props: {
       return vals.length ? lo / vals.length : 0;
     };
     const img = ctx.createImageData(n, n);
+    // A selection (from either chart) keeps its rows and columns bright and dims the rest.
+    const isPicked = new Uint8Array(n);
+    for (const i of picked ?? []) isPicked[i] = 1;
     for (let r = 0; r < n; r++) {
       const a = rows[r];
-      const dim = matches && !matches[a];
       for (let c = 0; c < n; c++) {
+        const dim = (matches && !matches[a]) || (picked && !isPicked[a] && !isPicked[cols[c]]);
         const v = matrix[a * n + cols[c]];
         const t = Number.isFinite(v) ? 1 - q(v) : 0; // near = bright
         const p = (r * n + c) * 4;
@@ -691,7 +763,7 @@ function Heatmap(props: {
       }
     }
     ctx.putImageData(img, 0, 0);
-  }, [matrix, n, rows, cols, matches]);
+  }, [matrix, n, rows, cols, matches, picked]);
   // The canvas is scaled and moved by the camera, so its on-screen box is
   // where the cells are.
   const cell = (clientX: number, clientY: number): [number, number] | null => {
@@ -719,17 +791,38 @@ function Heatmap(props: {
     >
       <PanZoom className="centremap-zoom" fitBounds={box} fitKey={String(n)} padding={0} maxScale={400} showControls ariaLabel="Heatmap: wheel or pinch to zoom, drag to pan">
         {(api) => (
-          <canvas
-            ref={canvas}
-            width={n}
-            height={n}
-            data-testid="centremap-heatmap"
-            style={{
-              width: n,
-              height: n,
-              transform: `translate(${api.camera.x}px, ${api.camera.y}px) scale(${api.camera.scale})`,
-            }}
-          />
+          <>
+            <canvas
+              ref={canvas}
+              width={n}
+              height={n}
+              data-testid="centremap-heatmap"
+              style={{
+                width: n,
+                height: n,
+                transform: `translate(${api.camera.x}px, ${api.camera.y}px) scale(${api.camera.scale})`,
+              }}
+            />
+            {selecting && (
+              <BoxSelect
+                testid="centremap-heat-box"
+                onBox={(b) => {
+                  // The box's corners in cells, clamped to the matrix: its rows and its columns.
+                  const rect = canvas.current?.getBoundingClientRect();
+                  if (!rect?.width) return;
+                  const at = (v: number, lo: number, len: number) => Math.min(n - 1, Math.max(0, Math.floor(((v - lo) / len) * n)));
+                  const c0 = at(b.cx0, rect.left, rect.width);
+                  const c1 = at(b.cx1, rect.left, rect.width);
+                  const r0 = at(b.cy0, rect.top, rect.height);
+                  const r1 = at(b.cy1, rect.top, rect.height);
+                  const out = new Set<number>();
+                  for (let r = r0; r <= r1; r++) out.add(rows[r]);
+                  for (let c = c0; c <= c1; c++) out.add(cols[c]);
+                  onBox([...out]);
+                }}
+              />
+            )}
+          </>
         )}
       </PanZoom>
       <p className="muted centremap-note">
@@ -862,5 +955,224 @@ function Magnifier(props: {
       </div>
     </div>,
     document.body,
+  );
+}
+
+/**
+ * Drag a box over a chart. Covers the chart while selecting (so the drag isn't
+ * a pan) and reports the box in the overlay's own pixels and in client
+ * pixels, corners ordered.
+ */
+function BoxSelect(props: {
+  testid: string;
+  onBox: (b: { x0: number; y0: number; x1: number; y1: number; cx0: number; cy0: number; cx1: number; cy1: number }) => void;
+}): JSX.Element {
+  const { testid, onBox } = props;
+  const host = useRef<HTMLDivElement>(null);
+  const [drag, setDrag] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
+  const local = (e: React.PointerEvent) => {
+    const r = host.current!.getBoundingClientRect();
+    return { x: e.clientX - r.left, y: e.clientY - r.top };
+  };
+  return (
+    <div
+      ref={host}
+      className="centremap-box"
+      data-panzoom-ignore=""
+      data-testid={testid}
+      onPointerDown={(e) => {
+        const p = local(e);
+        (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+        setDrag({ x0: p.x, y0: p.y, x1: p.x, y1: p.y });
+      }}
+      onPointerMove={(e) => {
+        if (!drag) return;
+        const p = local(e);
+        setDrag({ ...drag, x1: p.x, y1: p.y });
+      }}
+      onPointerUp={() => {
+        if (!drag) return;
+        setDrag(null);
+        const r = host.current!.getBoundingClientRect();
+        const x0 = Math.min(drag.x0, drag.x1);
+        const x1 = Math.max(drag.x0, drag.x1);
+        const y0 = Math.min(drag.y0, drag.y1);
+        const y1 = Math.max(drag.y0, drag.y1);
+        if (x1 - x0 < 3 && y1 - y0 < 3) return;
+        onBox({ x0, y0, x1, y1, cx0: x0 + r.left, cy0: y0 + r.top, cx1: x1 + r.left, cy1: y1 + r.top });
+      }}
+    >
+      {drag && (
+        <div
+          className="centremap-box-rect"
+          style={{
+            left: Math.min(drag.x0, drag.x1),
+            top: Math.min(drag.y0, drag.y1),
+            width: Math.abs(drag.x1 - drag.x0),
+            height: Math.abs(drag.y1 - drag.y0),
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * The pairings picked out by a box: per rule, one combination string with '?'
+ * where they differ (hover a digit for the values it takes), all their strands
+ * overlaid on the patch, and every tile with all the paths they draw on it.
+ */
+function SelectionPanel(props: {
+  family: TileFamilyId;
+  level: number;
+  items: readonly Item[];
+  client: FaultLinesClient;
+  dark: boolean;
+  onClear: () => void;
+}): JSX.Element {
+  const { family, level, items, client, dark, onClear } = props;
+  const patterns = useMemo(() => selectionPatterns(family, items), [family, items]);
+  const [hoverDigit, setHoverDigit] = useState<{ rule: string; position: number } | null>(null);
+  const spread = hoverDigit ? patterns.find((p) => p.rule === hoverDigit.rule)?.spread[hoverDigit.position] : undefined;
+  const types = leafOrder(family);
+  return (
+    <section className="centremap-selected" aria-labelledby="centremap-picked-h" data-testid="centremap-picked">
+      <h2 id="centremap-picked-h">
+        {items.length} pairing{items.length === 1 ? '' : 's'} selected
+        <button type="button" className="centremap-close" onClick={onClear} aria-label="Clear selection">
+          ×
+        </button>
+      </h2>
+      <ul className="centremap-patterns" data-testid="centremap-patterns">
+        {patterns.map((p) => (
+          <li key={p.rule}>
+            <span className="mono centremap-pattern-rule">{p.rule}</span>
+            <span className="mono centremap-pattern" onMouseLeave={() => setHoverDigit(null)}>
+              {[...p.pattern].map((ch, i) => (
+                <span
+                  key={i}
+                  className={ch === '?' ? 'is-wild' : undefined}
+                  data-position={i}
+                  onMouseEnter={() => setHoverDigit({ rule: p.rule, position: i })}
+                  title={`${types[i]}: ${p.spread[i].values.map((v) => `${v.digit} ×${v.count}`).join(', ')}`}
+                >
+                  {ch}
+                </span>
+              ))}
+            </span>
+            <span className="muted"> ×{p.count}</span>
+          </li>
+        ))}
+      </ul>
+      <p className="muted centremap-note" data-testid="centremap-spread">
+        {spread
+          ? `${hoverDigit!.rule}, digit ${spread.position + 1} (${spread.type}): ${spread.values.map((v) => `${v.digit} ×${v.count}`).join(' · ')}`
+          : 'Hover a digit to see the values it takes across the selection; ? marks the ones that vary.'}
+      </p>
+      <div className="centremap-overlays">
+        <figure className="centremap-overlay">
+          <OverlayBoard client={client} family={family} level={level} items={items} dark={dark} />
+          <figcaption className="muted">
+            Every selected pairing&rsquo;s strands on the level-{level} patch: faint blue where a few pass, yellow where all do. Wheel
+            or pinch to zoom, drag to pan.
+          </figcaption>
+        </figure>
+        <div className="centremap-tiles" data-testid="centremap-tiles">
+          {types.map((t) => (
+            <TileChords key={t} family={family} type={t} items={items} />
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/** The overlay's render size: big enough to zoom into a level-5 patch. */
+const OVERLAY = 1600;
+const OVERLAY_BOX = { min: { x: 0, y: 0 }, max: { x: OVERLAY, y: OVERLAY } };
+
+function OverlayBoard(props: { client: FaultLinesClient; family: TileFamilyId; level: number; items: readonly Item[]; dark: boolean }): JSX.Element {
+  const { client, family, level, items, dark } = props;
+  const canvas = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const abort = new AbortController();
+    const ctx0 = canvas.current?.getContext('2d');
+    ctx0?.clearRect(0, 0, OVERLAY, OVERLAY);
+    const first = items[0];
+    client
+      .thumb(
+        {
+          family,
+          level,
+          subset: first.subset,
+          combo: first.combo,
+          size: OVERLAY,
+          dark,
+          overlay: items.map((it) => ({ subset: it.subset, combo: it.combo })),
+        },
+        abort.signal,
+      )
+      .then((rgba) => {
+        const ctx = abort.signal.aborted ? null : canvas.current?.getContext('2d');
+        if (ctx) ctx.putImageData(new ImageData(new Uint8ClampedArray(rgba), OVERLAY, OVERLAY), 0, 0);
+      })
+      .catch(() => {});
+    return () => abort.abort();
+  }, [client, family, level, items, dark]);
+  return (
+    <PanZoom className="centremap-zoom centremap-overlay-zoom" fitBounds={OVERLAY_BOX} padding={0} maxScale={8} showControls ariaLabel="Overlay: wheel or pinch to zoom, drag to pan">
+      {(api) => (
+        <canvas
+          ref={canvas}
+          width={OVERLAY}
+          height={OVERLAY}
+          data-testid="centremap-overlay"
+          aria-label="All selected pairings overlaid"
+          style={{
+            width: OVERLAY,
+            height: OVERLAY,
+            transform: `translate(${api.camera.x}px, ${api.camera.y}px) scale(${api.camera.scale})`,
+          }}
+        />
+      )}
+    </PanZoom>
+  );
+}
+
+/** One tile with every chord the selection draws on it: thicker and stronger the more pairings draw it. */
+function TileChords(props: { family: TileFamilyId; type: TileTypeId; items: readonly Item[] }): JSX.Element {
+  const { family, type, items } = props;
+  const outline = leafPts(family, type);
+  const chords = useMemo(() => selectionTileChords(family, items, type), [family, items, type]);
+  const xs = outline.map((p) => p.x);
+  const ys = outline.map((p) => p.y);
+  const span = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys));
+  const pad = span * 0.08;
+  const sw = span / 70;
+  const n = items.length;
+  return (
+    <figure className="centremap-tile">
+      <svg viewBox={`${Math.min(...xs) - pad} ${Math.min(...ys) - pad} ${Math.max(...xs) - Math.min(...xs) + 2 * pad} ${Math.max(...ys) - Math.min(...ys) + 2 * pad}`}>
+        <polygon points={outline.map((p) => `${p.x},${p.y}`).join(' ')} className="tile-editor-body" />
+        {chords.map((c, i) => (
+          <line
+            key={i}
+            x1={c.a.x}
+            y1={c.a.y}
+            x2={c.b.x}
+            y2={c.b.y}
+            stroke="var(--accent)"
+            strokeWidth={sw * (1 + 3 * (c.count / n))}
+            strokeOpacity={0.25 + 0.75 * (c.count / n)}
+            strokeLinecap="round"
+          >
+            <title>{`${c.count} of ${n}`}</title>
+          </line>
+        ))}
+      </svg>
+      <figcaption>
+        {type} <span className="muted">· {chords.length} path{chords.length === 1 ? '' : 's'}</span>
+      </figcaption>
+    </figure>
   );
 }

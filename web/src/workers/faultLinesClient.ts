@@ -173,7 +173,8 @@ function syncClient(): FaultLinesClient {
 /** The most recent thumbnails, by everything that decides their pixels. */
 function thumbCache(limit = 400) {
   const map = new Map<string, Uint8ClampedArray>();
-  const key = (j: FaultThumbJob) => `${j.family}|${j.level}|${j.subset.join('')}|${j.combo}|${j.size}|${j.dark}|${j.view ?? 'strands'}`;
+  const key = (j: FaultThumbJob) =>
+    `${j.family}|${j.level}|${j.subset.join('')}|${j.combo}|${j.size}|${j.dark}|${j.view ?? 'strands'}|${j.overlay?.map((o) => `${o.subset.join('')}:${o.combo}`).join(',') ?? ''}`;
   return {
     get: (j: FaultThumbJob) => map.get(key(j)),
     set(j: FaultThumbJob, rgba: Uint8ClampedArray) {

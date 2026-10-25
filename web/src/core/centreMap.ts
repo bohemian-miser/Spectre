@@ -397,3 +397,105 @@ export function seriate(matrix: Float32Array, n: number): number[] {
   }
   return groups.find((g): g is number[] => !!g)!;
 }
+
+/** A shared mapping from patch coordinates to a `size` × `size` image, for overlaying several rules. */
+export interface PatchFrame {
+  readonly size: number;
+  readonly minX: number;
+  readonly minY: number;
+  readonly sc: number;
+  readonly ox: number;
+  readonly oy: number;
+}
+
+/** The frame that fits every graph's points (rules differ slightly at the patch edge). */
+export function patchFrame(graphs: readonly StrandGraph[], size: number): PatchFrame {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const g of graphs) {
+    for (let v = 0; v < g.nNodes; v++) {
+      if (g.nodeX[v] < minX) minX = g.nodeX[v];
+      if (g.nodeX[v] > maxX) maxX = g.nodeX[v];
+      if (g.nodeY[v] < minY) minY = g.nodeY[v];
+      if (g.nodeY[v] > maxY) maxY = g.nodeY[v];
+    }
+  }
+  const pad = 2;
+  const sc = (size - 2 * pad) / Math.max(maxX - minX, maxY - minY, 1e-9);
+  return { size, minX, minY, sc, ox: pad + (size - 2 * pad - (maxX - minX) * sc) / 2, oy: pad + (size - 2 * pad - (maxY - minY) * sc) / 2 };
+}
+
+/**
+ * Add one pairing's strands to `counts`: every pixel its chords cross goes up
+ * by one (once per pairing, however many chords cross it; `stamp` remembers
+ * which pairing last touched each pixel, `id` must be new per call).
+ */
+export function accumulateStrands(
+  g: StrandGraph,
+  digits: readonly number[],
+  frame: PatchFrame,
+  counts: Uint16Array,
+  stamp: Uint32Array,
+  id: number,
+): void {
+  const { size, minX, minY, sc, ox, oy } = frame;
+  const sx = (n: number) => Math.round(ox + (g.nodeX[n] - minX) * sc);
+  const sy = (n: number) => Math.round(size - oy - (g.nodeY[n] - minY) * sc);
+  for (let t = 0; t < g.nTiles; t++) {
+    const base = g.tileOcc[t];
+    for (const [a, b] of g.options[g.tileType[t]][digits[g.tileType[t]]] ?? []) {
+      let x0 = sx(g.occNode[base + a]);
+      let y0 = sy(g.occNode[base + a]);
+      const x1 = sx(g.occNode[base + b]);
+      const y1 = sy(g.occNode[base + b]);
+      const dx = Math.abs(x1 - x0);
+      const dy = -Math.abs(y1 - y0);
+      const stx = x0 < x1 ? 1 : -1;
+      const sty = y0 < y1 ? 1 : -1;
+      let err = dx + dy;
+      for (;;) {
+        if (x0 >= 0 && y0 >= 0 && x0 < size && y0 < size) {
+          const p = y0 * size + x0;
+          if (stamp[p] !== id) {
+            stamp[p] = id;
+            counts[p]++;
+          }
+        }
+        if (x0 === x1 && y0 === y1) break;
+        const e2 = 2 * err;
+        if (e2 >= dy) {
+          err += dy;
+          x0 += stx;
+        }
+        if (e2 <= dx) {
+          err += dx;
+          y0 += sty;
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Colour an overlay: transparent where no pairing passes, then from a faint
+ * blue (a few of them) to bright yellow (all of them).
+ */
+export function overlayImage(counts: Uint16Array, total: number, dark: boolean): Uint8ClampedArray {
+  const out = new Uint8ClampedArray(counts.length * 4);
+  const lo = dark ? [60, 80, 160] : [150, 170, 230];
+  const mid = [220, 60, 90];
+  const hi = dark ? [255, 235, 90] : [230, 170, 0];
+  for (let p = 0; p < counts.length; p++) {
+    const c = counts[p];
+    if (!c) continue;
+    const t = total > 1 ? (c - 1) / (total - 1) : 1;
+    const [a, b, u] = t < 0.5 ? [lo, mid, t * 2] : [mid, hi, (t - 0.5) * 2];
+    out[p * 4] = a[0] + (b[0] - a[0]) * u;
+    out[p * 4 + 1] = a[1] + (b[1] - a[1]) * u;
+    out[p * 4 + 2] = a[2] + (b[2] - a[2]) * u;
+    out[p * 4 + 3] = 255;
+  }
+  return out;
+}

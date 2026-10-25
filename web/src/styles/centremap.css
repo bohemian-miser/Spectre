@@ -302,3 +302,92 @@
   cursor: pointer;
   font: inherit;
 }
+
+/* Box selection over a chart. */
+.centremap-box {
+  position: absolute;
+  inset: 0;
+  cursor: crosshair;
+  touch-action: none;
+}
+.centremap-box-rect {
+  position: absolute;
+  border: 1.5px dashed var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  pointer-events: none;
+}
+
+/* The selection: patterns, the overlaid patch and the tiles. */
+.centremap-patterns {
+  list-style: none;
+  padding: 0;
+  margin: 4px 0;
+  display: grid;
+  gap: 4px;
+}
+.centremap-patterns li {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.centremap-pattern-rule {
+  min-width: 9ch;
+}
+.centremap-pattern {
+  font-size: 16px;
+  letter-spacing: 0.12em;
+}
+.centremap-pattern span {
+  cursor: default;
+  padding: 0 1px;
+  border-radius: 3px;
+}
+.centremap-pattern span:hover {
+  background: var(--panel-2);
+}
+.centremap-pattern span.is-wild {
+  color: var(--accent);
+  font-weight: 700;
+}
+.centremap-overlays {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: flex-start;
+}
+.centremap-overlay {
+  margin: 0;
+  max-width: 100%;
+}
+.centremap-overlay-zoom {
+  width: min(640px, 100vw - 64px);
+  max-width: none;
+}
+.centremap-overlay canvas {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+  display: block;
+}
+.centremap-overlay figcaption {
+  font-size: 12px;
+  margin-top: 4px;
+  max-width: 640px;
+}
+.centremap-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 8px;
+  flex: 1 1 280px;
+  min-width: 0;
+}
+.centremap-tile {
+  margin: 0;
+  font-size: 12px;
+}
+.centremap-tile svg {
+  width: 100%;
+  aspect-ratio: 1;
+  display: block;
+}

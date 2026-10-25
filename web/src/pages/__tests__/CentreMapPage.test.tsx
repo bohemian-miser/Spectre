@@ -10,7 +10,13 @@ describe('CentreMapPage', () => {
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation((() => ({
       createImageData: (w: number, h: number) => ({ data: new Uint8ClampedArray(w * h * 4), width: w, height: h }),
       putImageData: () => {},
+      clearRect: () => {},
     })) as unknown as typeof HTMLCanvasElement.prototype.getContext);
+    if (typeof globalThis.PointerEvent === 'undefined') {
+      (globalThis as unknown as { PointerEvent: unknown }).PointerEvent = class extends MouseEvent {
+        pointerId = 1;
+      };
+    }
     if (typeof globalThis.ImageData === 'undefined') {
       (globalThis as unknown as { ImageData: unknown }).ImageData = class {
         constructor(public data: Uint8ClampedArray, public width: number, public height: number) {}
@@ -78,6 +84,37 @@ describe('CentreMapPage', () => {
     fireEvent.change(screen.getByTestId('centremap-col-order'), { target: { value: 'combo' } });
     expect((screen.getByTestId('centremap-col-order') as HTMLSelectElement).value).toBe('combo');
     expect(screen.getByTestId('centremap-heatmap')).toBeTruthy();
+
+    // Clear the join search first, so a box picks from everything.
+    fireEvent.click(screen.getByRole('button', { name: 'Clear' }));
+    expect(screen.getByTestId('centremap-matches').textContent).toBe('Showing all');
+
+    // Select mode: a box on the UMAP picks the pairings inside it, summed up per rule.
+    fireEvent.click(screen.getByTestId('centremap-drag-select'));
+    const box = screen.getByTestId('centremap-umap-box');
+    fireEvent.pointerDown(box, { clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(box, { clientX: 600, clientY: 600 });
+    fireEvent.pointerUp(box, { clientX: 600, clientY: 600 });
+    const picked = screen.getByTestId('centremap-picked');
+    expect(picked.textContent).toMatch(/^270 pairings selected/);
+    const patterns = screen.getByTestId('centremap-patterns').querySelectorAll('li');
+    expect(patterns).toHaveLength(6);
+    expect(patterns[0].textContent).toMatch(/^15/);
+    fireEvent.mouseEnter(patterns[5].querySelectorAll('[data-position]')[1]);
+    expect(screen.getByTestId('centremap-spread').textContent).toMatch(/^023678, digit 2 \(\w+\): \d ×\d+/);
+    expect(screen.getByTestId('centremap-overlay')).toBeTruthy();
+    expect(screen.getByTestId('centremap-tiles').querySelectorAll('figure')).toHaveLength(10);
+    fireEvent.click(screen.getByLabelText('Clear selection'));
+    expect(screen.queryByTestId('centremap-picked')).toBeNull();
+    // While a search is on, a box picks only its matches.
+    fireEvent.change(screen.getByTestId('centremap-rule'), { target: { value: '0356' } });
+    fireEvent.pointerDown(box, { clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(box, { clientX: 600, clientY: 600 });
+    fireEvent.pointerUp(box, { clientX: 600, clientY: 600 });
+    expect(screen.getByTestId('centremap-picked').textContent).toMatch(/^8 pairings selected/);
+    fireEvent.click(screen.getByLabelText('Clear selection'));
+    fireEvent.change(screen.getByTestId('centremap-rule'), { target: { value: '' } });
+    fireEvent.click(screen.getByTestId('centremap-drag-pan'));
 
     // Picking a dot opens it, with its closest pairings and an Explorer link.
     fireEvent.click(dots[0]);

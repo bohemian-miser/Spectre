@@ -62,3 +62,78 @@ export function matchesJoins(family: TileFamilyId, subset: readonly number[], co
     ),
   );
 }
+
+/** Which digits a position takes across a selection, commonest first. */
+export interface DigitSpread {
+  readonly position: number;
+  readonly type: TileTypeId;
+  readonly values: readonly { readonly digit: string; readonly count: number }[];
+}
+
+export interface SelectionPattern {
+  readonly rule: string;
+  readonly subset: readonly number[];
+  readonly count: number;
+  /** The shared digit where every selected pairing of this rule agrees, '?' where they differ. */
+  readonly pattern: string;
+  readonly spread: readonly DigitSpread[];
+}
+
+/** Per rule in a selection: its combination strings summed up as one pattern with '?' wildcards. */
+export function selectionPatterns(
+  family: TileFamilyId,
+  items: readonly { readonly rule: string; readonly subset: readonly number[]; readonly combo: string }[],
+): SelectionPattern[] {
+  const types = leafOrder(family);
+  const by = new Map<string, { subset: readonly number[]; combos: string[] }>();
+  for (const it of items) {
+    const e = by.get(it.rule) ?? { subset: it.subset, combos: [] };
+    e.combos.push(it.combo);
+    by.set(it.rule, e);
+  }
+  return [...by].map(([rule, { subset, combos }]) => {
+    const len = Math.max(...combos.map((c) => c.length));
+    const spread: DigitSpread[] = Array.from({ length: len }, (_, i) => {
+      const tally = new Map<string, number>();
+      for (const c of combos) tally.set(c[i] ?? '0', (tally.get(c[i] ?? '0') ?? 0) + 1);
+      return {
+        position: i,
+        type: types[i],
+        values: [...tally].map(([digit, count]) => ({ digit, count })).sort((a, b) => b.count - a.count || a.digit.localeCompare(b.digit)),
+      };
+    });
+    return { rule, subset, count: combos.length, pattern: spread.map((s) => (s.values.length === 1 ? s.values[0].digit : '?')).join(''), spread };
+  });
+}
+
+/** One chord drawn on a tile, in the tile's own frame, and how many selected pairings draw it. */
+export interface TileChordTally {
+  readonly a: { readonly x: number; readonly y: number };
+  readonly b: { readonly x: number; readonly y: number };
+  readonly count: number;
+}
+
+/** Every chord the selected pairings draw on one tile, with how many of them draw it. */
+export function selectionTileChords(
+  family: TileFamilyId,
+  items: readonly { readonly subset: readonly number[]; readonly combo: string }[],
+  type: TileTypeId,
+): TileChordTally[] {
+  const t = leafOrder(family).indexOf(type);
+  if (t < 0) return [];
+  const key = (p: { x: number; y: number }) => `${p.x.toFixed(3)},${p.y.toFixed(3)}`;
+  const tally = new Map<string, { a: { x: number; y: number }; b: { x: number; y: number }; count: number }>();
+  for (const it of items) {
+    const pts = connectionPoints(family, type, new Set(it.subset)).map((c) => c.pt);
+    if (pts.length < 2 || pts.length % 2) continue;
+    const m = matchingAt(pts.length, comboToMatchingIndices(family, it.subset, it.combo)[t] ?? 0);
+    for (const [i, j] of m ?? []) {
+      const [a, b] = key(pts[i]) < key(pts[j]) ? [pts[i], pts[j]] : [pts[j], pts[i]];
+      const k = `${key(a)}|${key(b)}`;
+      const e = tally.get(k);
+      if (e) e.count++;
+      else tally.set(k, { a, b, count: 1 });
+    }
+  }
+  return [...tally.values()].sort((x, y) => x.count - y.count);
+}

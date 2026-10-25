@@ -11,8 +11,11 @@ import {
 } from '../centreMap';
 import { comboDigitsFromIndex, comboOptionCounts } from '../strandGraph';
 import { comboToMatchingIndices } from '../matchings';
-import { matchesJoins, matchesPattern, pairingEdgeChords } from '../pairingSearch';
+import { matchesJoins, matchesPattern, pairingEdgeChords, selectionPatterns, selectionTileChords } from '../pairingSearch';
+import { accumulateStrands, overlayImage, patchFrame } from '../centreMap';
+import { buildStrandGraph } from '../strandGraph';
 import { leafOrder } from '../families';
+import { comboDigits } from '../faultLines';
 
 let seed = 3;
 const rand = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
@@ -164,5 +167,48 @@ describe('pairing search', () => {
     expect(matchesJoins('spectre', subset, combos[0], [])).toBe(true);
     expect(matchesJoins('spectre', subset, combos[0], [{ type, a: 0, b: 0 }])).toBe(false);
     expect(comboToMatchingIndices('spectre', subset, combos[0]).length).toBe(types.length);
+  });
+});
+
+describe('selections', () => {
+  const items = ['0000000000', '0100000000', '0110000000', '0100000001'].map((combo) => ({ rule: '1278', subset: [1, 2, 7, 8], combo }));
+
+  it('sums a rule\'s selected combination strings up as one pattern, with the values each digit takes', () => {
+    const [p] = selectionPatterns('spectre', [...items, { rule: '15', subset: [1, 5], combo: '0000000000' }]);
+    expect(p.rule).toBe('1278');
+    expect(p.count).toBe(4);
+    expect(p.pattern).toBe('0??000000?');
+    expect(p.spread[1].values).toEqual([{ digit: '1', count: 3 }, { digit: '0', count: 1 }]);
+    expect(p.spread[0].values).toEqual([{ digit: '0', count: 4 }]);
+    expect(p.spread[1].type).toBe(leafOrder('spectre')[1]);
+    expect(selectionPatterns('spectre', items)).toHaveLength(1);
+  });
+
+  it('tallies the paths the selection draws on a tile', () => {
+    const type = leafOrder('spectre')[1];
+    const chords = selectionTileChords('spectre', items, type);
+    const total = chords.reduce((t, c) => t + c.count, 0);
+    // Every pairing draws the same number of chords on the tile; two options, split 1 : 3.
+    const perPairing = pairingEdgeChords('spectre', [1, 2, 7, 8], '0000000000', type).length;
+    expect(total).toBe(perPairing * items.length);
+    expect(Math.max(...chords.map((c) => c.count))).toBeLessThanOrEqual(items.length);
+    expect(new Set(chords.map((c) => c.count)).has(1)).toBe(true);
+  });
+
+  it('overlays strands: each pixel counts the pairings through it, once each', () => {
+    const g = buildStrandGraph('spectre', [1, 2, 7, 8], 2);
+    const frame = patchFrame([g], 64);
+    const counts = new Uint16Array(64 * 64);
+    const stamp = new Uint32Array(64 * 64);
+    accumulateStrands(g, comboDigits('0000000000', g.types.length), frame, counts, stamp, 1);
+    const once = counts.reduce((t, c) => t + c, 0);
+    expect(once).toBeGreaterThan(0);
+    expect(Math.max(...counts)).toBe(1);
+    accumulateStrands(g, comboDigits('0000000000', g.types.length), frame, counts, stamp, 2);
+    expect(Math.max(...counts)).toBe(2);
+    const img = overlayImage(counts, 2, true);
+    let lit = 0;
+    for (let p = 3; p < img.length; p += 4) if (img[p]) lit++;
+    expect(lit).toBe(once);
   });
 });
