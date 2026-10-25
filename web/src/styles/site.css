@@ -16,9 +16,8 @@ body,
 .site-header {
   display: flex;
   align-items: center;
-  gap: 16px;
-  flex-wrap: wrap;
-  padding: 10px 16px;
+  gap: 24px;
+  padding: 8px 18px;
   border-bottom: 1px solid var(--line);
   background: var(--panel);
   position: sticky;
@@ -27,24 +26,35 @@ body,
 }
 
 .site-brand {
-  font-weight: 650;
-  letter-spacing: 0.01em;
-  color: var(--text);
-  text-decoration: none;
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 8px;
+  flex-shrink: 0;
+  font-weight: 700;
+  font-size: 16px;
+  color: var(--text);
+  text-decoration: none;
+  white-space: nowrap;
 }
 .site-brand-mark {
   color: var(--accent);
 }
 
+/* One row, like the sister site: the links never wrap. When even the short
+   labels do not fit (phones), the row scrolls sideways instead. */
 .site-nav {
+  position: relative; /* offsetParent for scrolling the active link into view */
   flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.site-nav::-webkit-scrollbar {
+  display: none;
 }
 .site-nav ul {
   display: flex;
-  flex-wrap: wrap;
+  align-items: center;
   gap: 4px;
   list-style: none;
   margin: 0;
@@ -55,20 +65,19 @@ body,
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 10px;
-  border-radius: var(--radius);
-  color: var(--muted);
+  padding: 6px 12px;
+  border-radius: 999px;
+  color: var(--text);
   text-decoration: none;
-  border: 1px solid transparent;
+  white-space: nowrap;
 }
 .site-nav-link:hover {
-  color: var(--text);
   background: var(--panel-2);
 }
-.site-nav-link.is-active {
-  color: var(--text);
-  border-color: var(--line);
-  background: var(--panel-2);
+.site-nav-link.is-active,
+.site-nav-link.is-active:hover {
+  background: var(--text);
+  color: var(--panel);
 }
 .site-nav-link.is-planned {
   opacity: 0.55;
@@ -76,7 +85,6 @@ body,
 }
 .site-nav-link.is-planned:hover {
   background: none;
-  color: var(--muted);
 }
 .site-nav-link em {
   font-style: normal;
@@ -87,8 +95,45 @@ body,
   border-radius: 999px;
   padding: 1px 5px;
 }
+.site-nav-link .short {
+  display: none;
+}
+
 .site-repo {
-  border: 1px solid var(--line);
+  display: flex;
+  flex-shrink: 0;
+  margin-left: auto;
+  padding: 6px;
+  color: var(--muted);
+}
+.site-repo:hover {
+  color: var(--text);
+}
+
+/* Twelve destinations do not fit at full length on most screens. */
+@media (max-width: 1500px) {
+  .site-nav-link .long {
+    display: none;
+  }
+  .site-nav-link .short {
+    display: inline;
+  }
+}
+
+@media (max-width: 1100px) {
+  .site-header {
+    gap: 8px;
+    padding: 6px 10px;
+  }
+  .site-brand-name {
+    display: none;
+  }
+  .site-nav ul {
+    gap: 0;
+  }
+  .site-nav-link {
+    padding: 5px 10px;
+  }
 }
 
 .site-main {
