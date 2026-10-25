@@ -1,16 +1,15 @@
 /**
- * `ExpansionMap` — one parent type's expansion, drawn as the lookup table it
- * is: the children in place with their slot numbers and types, every child
- * edge numbered, and the parent's six edges marked along the outside as the
- * runs of child edges that make them up (the B table). Highlights show one
- * lookup: the child edge being asked about, the glued partner it meets inside
- * (the G table), or the parent edge and piece it lies on, and the child edge
- * entered on the way back down.
+ * `ExpansionMap` — one type's substitution rule as a picture: the children in
+ * their slots with slot numbers and types, every child edge numbered, and the
+ * supertile's six edges marked along the outside as the runs of child edges
+ * that make them up. Highlights show one lookup: the child edge asked about,
+ * the sibling edge it meets inside, or the supertile edge and piece it lies
+ * on, and the child edge entered on the way back down.
  */
 import { useMemo } from 'react';
 
 import {
-  HEX_LETTER, buildSystem, edgeParts, flatten, leafPts, levelMirror, transPt,
+  buildSystem, edgeParts, flatten, leafPts, levelMirror, transPt,
   type HexType,
 } from '../../core';
 import { tileColor } from '../../lib/palette';
@@ -106,7 +105,8 @@ export function ExpansionMap({ parent, highlight = {}, size = 240, title }: Expa
         {/* child labels and edge numbers */}
         {children.map((ch) => (
           <g key={`l${ch.s}`}>
-            <text x={ch.c.x} y={ch.c.y} className="xmap__slot">{ch.s}<tspan className="xmap__type">{HEX_LETTER[ch.type]}</tspan></text>
+            <text x={ch.c.x} y={ch.c.y - 0.1} className="xmap__slot">{ch.s}</text>
+            <text x={ch.c.x} y={ch.c.y + 0.3} className="xmap__type">{ch.type}</text>
             {ch.pts.map((_, e) => {
               const t = towards(mid(ch.pts[e], ch.pts[(e + 1) % 6]), ch.c, 0.3);
               return <text key={e} x={t.x} y={t.y} className="xmap__edge">{e}</text>;
@@ -121,7 +121,7 @@ export function ExpansionMap({ parent, highlight = {}, size = 240, title }: Expa
           return <line key={`${ch.s}-${e}`} x1={p.x} y1={p.y} x2={q.x} y2={q.y} className={`xmap__hl ${cls}`} />;
         }))}
       </svg>
-      <figcaption>{title ?? `${parent} (${HEX_LETTER[parent]}) expands to ${children.map((c) => HEX_LETTER[c.type]).join(' ')}`}</figcaption>
+      <figcaption>{title ?? `${parent}: slots 0 to 7 hold ${children.map((c) => c.type).join(', ')}`}</figcaption>
     </figure>
   );
 }

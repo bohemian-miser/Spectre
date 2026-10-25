@@ -33,11 +33,6 @@ import { chordPairing, slotsOfType } from './automaton';
 export type HexType = 'Gamma' | 'Delta' | 'Theta' | 'Lambda' | 'Xi' | 'Pi' | 'Sigma' | 'Phi' | 'Psi';
 export const HEX_TYPES: readonly HexType[] = ['Gamma', 'Delta', 'Theta', 'Lambda', 'Xi', 'Pi', 'Sigma', 'Phi', 'Psi'];
 
-/** Tatham's single-letter names, for compact addresses: G D J L X P S F Y. */
-export const HEX_LETTER: Readonly<Record<HexType, string>> = {
-  Gamma: 'G', Delta: 'D', Theta: 'J', Lambda: 'L', Xi: 'X', Pi: 'P', Sigma: 'S', Phi: 'F', Psi: 'Y',
-};
-const LETTER_TYPE: Readonly<Record<string, HexType>> = Object.fromEntries(HEX_TYPES.map((t) => [HEX_LETTER[t], t]));
 
 interface ChildEdge { readonly s: number; readonly e: number }
 const RULES = tables.rules as Readonly<Record<string, readonly string[]>>;
@@ -109,22 +104,23 @@ export function idOf(a: Address): string {
   return [...a.path].reverse().map((l) => l.slot).join('.');
 }
 
-/** 'X 5D 1G': an Xi, child 5 of a Delta, child 1 of a Gamma. */
+/** 'Xi, slot 5 of Delta, slot 1 of Gamma'. */
 export function formatAddress(a: Address): string {
-  return [HEX_LETTER[a.leaf], ...a.path.map((l) => `${l.slot}${HEX_LETTER[l.parent]}`)].join(' ');
+  return [a.leaf, ...a.path.map((l) => `slot ${l.slot} of ${l.parent}`)].join(', ');
 }
 
+/** The inverse of formatAddress; null unless every link is a slot of that parent type holding the type below. */
 export function parseAddress(text: string): Address | null {
-  const parts = text.trim().split(/\s+/).filter(Boolean);
+  const parts = text.split(',').map((x) => x.trim()).filter(Boolean);
   if (!parts.length) return null;
-  const leaf = LETTER_TYPE[parts[0].toUpperCase()];
+  const leaf = HEX_TYPES.find((t) => t.toLowerCase() === parts[0].toLowerCase());
   if (!leaf) return null;
   const path: Link[] = [];
   let t: HexType = leaf;
   for (const p of parts.slice(1)) {
-    const m = /^([0-7])([A-Za-z])$/.exec(p);
+    const m = /^slot ([0-7]) of ([A-Za-z]+)$/i.exec(p);
     if (!m) return null;
-    const parent = LETTER_TYPE[m[2].toUpperCase()];
+    const parent = HEX_TYPES.find((x) => x.toLowerCase() === m[2].toLowerCase());
     if (!parent || childType(parent, Number(m[1])) !== t) return null;
     path.push({ slot: Number(m[1]), parent });
     t = parent;

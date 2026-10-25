@@ -96,7 +96,7 @@ export const SITE_NAV: readonly NavItem[] = Object.freeze([
     short: 'Neighbours',
     entry: 'transducer.html',
     status: 'ready',
-    blurb: 'Tatham’s addresses and transducer for the hexagons, stepped by hand, then our strands run on it.',
+    blurb: 'Cross an edge from a tile’s slot path alone, one lookup at a time, then walk a strand on the same machine.',
   },
   {
     id: 'lattice',
