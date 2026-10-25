@@ -60,3 +60,22 @@ test('widgets.html still renders the dev gallery', async ({ page }) => {
   await expect(page.locator('svg.tiling-view')).toBeVisible();
   await expect(page.locator('.tile-palette-cell').first()).toBeVisible();
 });
+
+test('the quick bar under the field steps pairings, opens tiles and sets strands', async ({ page }) => {
+  await page.goto('#/explorer?v=1&f=spectre&lv=2&e=2578&c=0100101100');
+  const bar = page.getByTestId('quick-bar');
+  await expect(bar).toBeVisible();
+  await expect(page.getByTestId('quick-tail-free')).toHaveClass(/good/);
+
+  const before = await page.getByTestId('quick-position').innerText();
+  await bar.getByRole('button', { name: 'Next pairing ›' }).click();
+  await expect(page.getByTestId('quick-position')).not.toHaveText(before);
+
+  await bar.locator('[data-tile="Theta"]').click();
+  await expect(page.getByTestId('tile-editor')).toBeVisible();
+  await page.getByRole('button', { name: 'Close' }).click();
+
+  await page.getByTestId('quick-strands-5').click();
+  await expect(page.getByTestId('quick-strands-5')).toHaveText('×2');
+  await expect(page.getByTestId('quick-tail-free')).toHaveClass(/bad/);
+});

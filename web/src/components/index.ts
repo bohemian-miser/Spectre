@@ -11,6 +11,8 @@ export type { AppShellProps } from './AppShell';
 export { TileView, default as TileViewDefault } from './TileView';
 export { TileEditor } from './TileEditor';
 export type { TileEditorProps } from './TileEditor';
+export { TileGlyph } from './TileGlyph';
+export type { TileGlyphProps } from './TileGlyph';
 export type {
   TileViewProps,
   EdgeRef,
@@ -68,6 +70,8 @@ export { ContractSlider, contractToU, uToContract } from './controls/ContractSli
 export type { ContractSliderProps } from './controls/ContractSlider';
 
 export { StrandRuleControls } from './controls/StrandRuleControls';
+export { QuickBar } from './controls/QuickBar';
+export type { QuickBarProps } from './controls/QuickBar';
 export { DecompositionPanel } from './controls/DecompositionPanel';
 export type { StrandRuleControlsProps } from './controls/StrandRuleControls';
 export { SeamContractControls } from './controls/SeamContractControls';

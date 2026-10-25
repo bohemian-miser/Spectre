@@ -20,7 +20,7 @@ import {
   type TileFamilyId,
   type TileTypeId,
 } from '../../core';
-import { matchingOptions, tileMatchingInfo } from '../../lib/matchingModel';
+import { comboOdometer } from '../../lib/comboOdometer';
 import { EdgeSubsetPicker } from './EdgeSubsetPicker';
 import { MatchingSlider } from './MatchingSlider';
 
@@ -104,33 +104,11 @@ export function StrandRuleControls(props: StrandRuleControlsProps): JSX.Element 
     });
   }, [combo, multi, family, order, subset, matching, contracts]);
 
-  /**
-   * Every tile's options at once, as one odometer: the first tile type with a
-   * choice turns fastest, as in aperiodic-circuits' "next combination".
-   */
-  const combos = useMemo(() => {
-    const options = order.map((type) => {
-      const info = tileMatchingInfo(family, type, selected, contracts);
-      return info.odd ? [] : matchingOptions(info, nonCrossingOnly);
-    });
-    const sizes = options.map((o) => Math.max(1, o.length));
-    const total = sizes.reduce((a, b) => a * b, 1);
-    const digits = order.map((_, i) => Math.max(0, options[i].indexOf(matching[i] ?? 0)));
-    const position = digits.reduceRight((acc, d, i) => acc * sizes[i] + d, 0);
-    const vectorOf = (ds: readonly number[]) => order.map((_, i) => options[i][ds[i]] ?? 0);
-    const step = (delta: 1 | -1): readonly number[] => {
-      const ds = [...digits];
-      for (let i = 0; i < ds.length; i++) {
-        if (sizes[i] <= 1) continue;
-        ds[i] += delta;
-        if (ds[i] >= 0 && ds[i] < sizes[i]) break;
-        ds[i] = delta > 0 ? 0 : sizes[i] - 1; // carry on to the next tile
-      }
-      return vectorOf(ds);
-    };
-    const random = (): readonly number[] => vectorOf(sizes.map((n) => Math.floor(Math.random() * n)));
-    return { total, position, step, random, exact: Number.isSafeInteger(total) };
-  }, [order, family, selected, contracts, nonCrossingOnly, matching]);
+  /** Every tile's options at once, as one odometer (shared with the quick bar). */
+  const combos = useMemo(
+    () => comboOdometer(family, selected, matching, contracts, nonCrossingOnly),
+    [family, selected, matching, contracts, nonCrossingOnly],
+  );
 
   return (
     <>
