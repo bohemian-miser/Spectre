@@ -73,6 +73,8 @@ The infinite line is now proved. Selection `128` on hexagons with combination `0
 
 Where the triangles go: only rules that contain class 0 make them, rules that differ by `15` put their circuits in the same places, and each placement is "every supertile, of every type, at every odd (or every even) level closes a circuit through its children 0, 1, 3, 4, 6, 7". The last part is exact on the hexagons up to level 9, from the FASS routing operator. Write-up in [`docs/PLACEMENTS.md`](docs/PLACEMENTS.md).
 
+Past level 7: [`docs/DEEP_ORBIT.md`](docs/DEEP_ORBIT.md) follows a combination's strands supertile by supertile, exactly, to level 11 and beyond (7 billion tiles), at the cost of the boundary rather than the area, for every family and rule. It sorts the pairings of a rule into classes that are the same pattern above a given level, and says which of a set of look-alikes is the odd one out. Hexagon `023468-111000100` and its five relatives turn out to be space-filling circuits born every other level from level 6 on, which no rooted patch could show.
+
 The original intuition, kept for the record: I'm pretty sure I can make either an infinite line but haven't got a solid proof yet. I think I'd need to rework the generator to do a kind of substitution thing instead of the standard spectre algorithm and then I could show that you make a long line/circuit, and when you substitue all the tiles for the next superset you maintain all the paths (like a standard infinite line proof, like the hilbert curve).
 
 I plan on integrating some cool edge stuff from my [blog](https://substack.com/@theharderthanobsidiantower/p-156511066).

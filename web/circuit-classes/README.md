@@ -75,6 +75,34 @@ Which combinations put their circuits in the same places, and why. Write-up in
   and lists every circuit born at each level (exact; hexagons only for now).
 - `placements.py` makes the tables and figures from the outputs of the three.
 
+## Deep orbit
+
+Past the deepest rooted patch. `deep-orbit.ts` renormalises the strands
+supertile by supertile: a level-k supertile is only its outline crossings,
+which pairs of them its arcs join and how long each arc is, and the
+level-(k+1) state follows from the children's states by welding their outline
+crossings and walking the arcs. What is left over closed into a circuit born
+at that level. Exact `Z[ζ12]` geometry, so it runs on every family and every
+rule, class 0 included; cost is the boundary (×4.24 a level), not the area
+(×7.87). Level 9 in about a minute, level 11 in minutes with a 10 GB heap.
+
+- one combination: a table per level (tiles, dots, births, arcs, the share of
+  segments on circuits closed so far) and the growth and dimension of the
+  longest born circuit and the longest arc;
+- `--compare`: groups pairings by their boundary state (equal states at level
+  n means the same pattern above level n), and prints two distances between
+  the pairings named, by boundary dots and by the strands' length;
+- `rule-all` and `rule-0?1??` patterns expand to many pairings.
+
+Write-up and a worked example (hexagon `023468-111000100`, whose first real
+circuit is born at level 6 and whose generations grow with dimension 2) in
+[`docs/DEEP_ORBIT.md`](../../docs/DEEP_ORBIT.md).
+
+```bash
+npx tsx circuit-classes/deep-orbit.ts hex 9 023468-111000100
+npx tsx circuit-classes/deep-orbit.ts --compare hex 5 023468-all
+```
+
 ## Decomposition
 
 A crossing's position depends only on its seam, not on the rule. So when a
