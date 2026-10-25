@@ -11,10 +11,13 @@
  *   through — enters at one end, leaves at the other;
  *   source  — both ends send flow out;
  *   sink    — both ends take flow in;
- *   neutral — an end sits on an undirected class.
+ *   half    — one end on an undirected class, the other directed: the
+ *             directed end sets the way flow runs, and only the half of the
+ *             chord on the undirected end is left without a direction;
+ *   neutral — both ends sit on undirected classes.
  * Where two chord ends meet across a seam with the same sign, flow collides
  * there (a sink on the edge) or splits there (a source on the edge). Through
- * chords then chain into runs that start at a source and end at a sink, or
+ * and half chords then chain into runs that start at a source and end at a sink, or
  * close up into a true flow loop.
  */
 
@@ -26,13 +29,15 @@ import { pointKey, weldSegments, type Segment } from './circuits';
 import type { TileInstance } from './tiles';
 import { strandCurve, type StrandCurve } from './strandCurves';
 
-export type ChordKind = 'through' | 'source' | 'sink' | 'neutral';
+export type ChordKind = 'through' | 'half' | 'source' | 'sink' | 'neutral';
 
 export interface FlowChord {
-  /** World coordinates; for a through chord the flow runs from `a` to `b`. */
+  /** World coordinates; for a through or half chord the flow runs from `a` to `b`. */
   readonly a: Pt;
   readonly b: Pt;
   readonly kind: ChordKind;
+  /** A half chord's end on the undirected class: the half of it nearer that end has no direction. */
+  readonly undirectedEnd?: 'a' | 'b';
   /** The chord's curve handles, for drawing it curved. */
   readonly ctrl: StrandCurve;
 }
@@ -130,7 +135,10 @@ export function flowOverlay(input: FlowOverlayInput): FlowOverlay {
   const chords: FlowChord[] = welded.map(([p, q], i) => {
     const [sa, sb] = signs[i];
     const ctrl = ctrls[i];
-    if (sa === 0 || sb === 0) return { a: p, b: q, kind: 'neutral', ctrl };
+    if (sa === 0 && sb === 0) return { a: p, b: q, kind: 'neutral', ctrl };
+    // One end undirected: flow leaves through a + end and enters through a − end.
+    if (sa === 0) return sb > 0 ? { a: p, b: q, kind: 'half', undirectedEnd: 'a', ctrl } : { a: q, b: p, kind: 'half', undirectedEnd: 'b', ctrl };
+    if (sb === 0) return sa > 0 ? { a: q, b: p, kind: 'half', undirectedEnd: 'a', ctrl } : { a: p, b: q, kind: 'half', undirectedEnd: 'b', ctrl };
     if (sa === sb) return { a: p, b: q, kind: sa > 0 ? 'source' : 'sink', ctrl };
     return sa < 0 ? { a: p, b: q, kind: 'through', ctrl } : { a: q, b: p, kind: 'through', ctrl };
   });
@@ -149,6 +157,10 @@ export function flowOverlay(input: FlowOverlayInput): FlowOverlay {
     if (c.kind === 'through') {
       add(c.b, { chord: i, arrives: true });
       add(c.a, { chord: i, arrives: false });
+    } else if (c.kind === 'half') {
+      // Only the directed end meets anything with a direction.
+      if (c.undirectedEnd === 'a') add(c.b, { chord: i, arrives: true });
+      else add(c.a, { chord: i, arrives: false });
     } else {
       // A source pushes flow into both its end points; a sink draws from both.
       add(c.a, { chord: i, arrives: c.kind === 'source' });
@@ -167,8 +179,10 @@ export function flowOverlay(input: FlowOverlayInput): FlowOverlay {
     (list[0].arrives ? sinks : sources).push({ x, y });
   }
 
-  // Follow through chords head to tail. At a point, the chord that arrives
-  // hands on to the through chord that leaves, if there is one.
+  // Follow through and half chords head to tail. At a point, the chord that
+  // arrives hands on to the one that leaves, if there is one. A half chord
+  // can only start a run (flow out of its undirected end) or end one.
+  const carries = (c: FlowChord) => c.kind === 'through' || c.kind === 'half';
   const next = new Map<number, number>();
   const hasPrev = new Set<number>();
   for (const list of ends.values()) {
@@ -176,7 +190,7 @@ export function flowOverlay(input: FlowOverlayInput): FlowOverlay {
     const inEnd = list.find((e) => e.arrives);
     const outEnd = list.find((e) => !e.arrives);
     if (!inEnd || !outEnd) continue;
-    if (chords[inEnd.chord].kind === 'through' && chords[outEnd.chord].kind === 'through') {
+    if (carries(chords[inEnd.chord]) && carries(chords[outEnd.chord])) {
       next.set(inEnd.chord, outEnd.chord);
       hasPrev.add(outEnd.chord);
     }
@@ -194,10 +208,10 @@ export function flowOverlay(input: FlowOverlayInput): FlowOverlay {
     runs.push({ chords: out, closed: i === start });
   };
   chords.forEach((c, i) => {
-    if (c.kind === 'through' && !hasPrev.has(i) && runOf[i] === -1) walk(i);
+    if (carries(c) && !hasPrev.has(i) && runOf[i] === -1) walk(i);
   });
   chords.forEach((c, i) => {
-    if (c.kind === 'through' && runOf[i] === -1) walk(i);
+    if (carries(c) && runOf[i] === -1) walk(i);
   });
   return { chords, runs, runOf, sources, sinks, sourceChords, sinkChords };
 }

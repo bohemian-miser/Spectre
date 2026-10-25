@@ -2,7 +2,9 @@
  * `FlowLayer` — the Explorer's circuits with their labels' directions (see
  * core/flowOverlay.ts). Each run of strands from a source to a sink (or round
  * a closed flow loop) gets its own colour and arrows; source chords and seams
- * are green, sink ones red, undirected chords grey and dashed.
+ * are green, sink ones red, undirected chords grey and dashed. A chord with
+ * one end on an undirected class is split at its midpoint: the half on the
+ * directed end takes its run's colour, the other half is dashed.
  */
 
 import { useMemo } from 'react';
@@ -39,23 +41,50 @@ function curveMid(a: Pt, b: Pt, c: StrandCurve): Pt {
   return { x: (a.x + 3 * c.c1.x + 3 * c.c2.x + b.x) / 8, y: (a.y + 3 * c.c1.y + 3 * c.c2.y + b.y) / 8 };
 }
 
+/** Cut a → b (handles h, in that order) at t = ½ into two pieces, each [from, to, handles]. */
+function halves(a: Pt, b: Pt, h: readonly [Pt, Pt], curved: boolean): [[Pt, Pt, readonly [Pt, Pt]], [Pt, Pt, readonly [Pt, Pt]]] {
+  const avg = (p: Pt, q: Pt): Pt => ({ x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 });
+  if (!curved) {
+    const m = avg(a, b);
+    return [[a, m, [a, m]], [m, b, [m, b]]];
+  }
+  // de Casteljau.
+  const [h1, h2] = h;
+  const p01 = avg(a, h1);
+  const p12 = avg(h1, h2);
+  const p23 = avg(h2, b);
+  const p012 = avg(p01, p12);
+  const p123 = avg(p12, p23);
+  const m = avg(p012, p123);
+  return [[a, m, [p01, p012]], [m, b, [p123, p23]]];
+}
+
 export function FlowLayer(props: FlowLayerProps): JSX.Element {
   const { overlay, strokeWidth = 0.12, arrows = true, curved = false } = props;
   // One path per colour keeps the DOM small at level 4.
   const byColour = useMemo(() => {
     const groups = new Map<string, { d: string[]; heads: string[]; dashed: boolean }>();
-    const push = (colour: string, dashed: boolean, a: Pt, b: Pt, ctrl: StrandCurve, head: boolean) => {
+    // `h` is the curve's handles in a → b order.
+    const piece = (colour: string, dashed: boolean, a: Pt, b: Pt, h: readonly [Pt, Pt], head: boolean) => {
       const key = `${colour}|${dashed}`;
       const g = groups.get(key) ?? { d: [], heads: [], dashed };
-      if (curved) {
-        const [h1, h2] = orientCurve(ctrl, a);
-        g.d.push(`M${a.x},${a.y}C${h1.x},${h1.y} ${h2.x},${h2.y} ${b.x},${b.y}`);
-      } else g.d.push(`M${a.x},${a.y}L${b.x},${b.y}`);
-      if (head) g.heads.push(arrow(a, b, strokeWidth * 2.2, curved ? ctrl : undefined));
+      const [h1, h2] = h;
+      if (curved) g.d.push(`M${a.x},${a.y}C${h1.x},${h1.y} ${h2.x},${h2.y} ${b.x},${b.y}`);
+      else g.d.push(`M${a.x},${a.y}L${b.x},${b.y}`);
+      if (head) g.heads.push(arrow(a, b, strokeWidth * 2.2, curved ? { c1: h1, c2: h2 } : undefined));
       groups.set(key, g);
     };
+    const push = (colour: string, dashed: boolean, a: Pt, b: Pt, ctrl: StrandCurve, head: boolean) =>
+      piece(colour, dashed, a, b, orientCurve(ctrl, a), head);
+    const runColour = (i: number) => RUN_COLOURS[overlay.runOf[i] % RUN_COLOURS.length];
     overlay.chords.forEach((c, i) => {
-      if (c.kind === 'through') push(RUN_COLOURS[overlay.runOf[i] % RUN_COLOURS.length], false, c.a, c.b, c.ctrl, arrows);
+      if (c.kind === 'through') push(runColour(i), false, c.a, c.b, c.ctrl, arrows);
+      else if (c.kind === 'half') {
+        const [first, second] = halves(c.a, c.b, orientCurve(c.ctrl, c.a), curved);
+        const [plain, directed] = c.undirectedEnd === 'a' ? [first, second] : [second, first];
+        piece('currentColor', true, ...plain, false);
+        piece(runColour(i), false, ...directed, arrows);
+      }
       else if (c.kind === 'source') push(SOURCE, false, c.a, c.b, c.ctrl, false);
       else if (c.kind === 'sink') push(SINK, false, c.a, c.b, c.ctrl, false);
       else push('currentColor', true, c.a, c.b, c.ctrl, false);
