@@ -195,3 +195,22 @@ type are identical above level n and differ only inside level-n supertiles
 
 prints, per level, how many classes the rule falls into and the named
 pairing's class (here six pairings from level 1 on).
+
+## Renormalisation: where the big circuits are born
+
+`renormalize.ts` runs a pairing up the substitution without building a
+patch. Each supertile type at level n is kept as its outline crossings and
+its boundary map (with the length of every arc). A level-(n + 1) supertile
+glues its children's maps through their shared seams; a walk that closes
+before reaching the outline is a circuit *born* there, in that supertile type
+and through those child slots, and every circuit in the tiling is born in
+exactly one place.
+
+    npx tsx circuit-classes/renormalize.ts hex 023468 111000100 9
+
+The largest circuit born per level is a fingerprint. How fast it grows over
+two levels (the substitution carries a reflection, so two levels is its
+period) gives a dimension D = ln(growth) / ln(4 + sqrt 15): for hexagon rule
+023468 most classes give D = 1.45 (fractal curves), and 111000100's family
+and 020001001 give D = 2.0 (space-filling circuits, born at even levels from
+level 6, straddling child slots 0 and 7).
