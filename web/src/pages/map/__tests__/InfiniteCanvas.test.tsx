@@ -23,6 +23,8 @@ import { InfiniteCanvas, type InfiniteCanvasApi, type InfiniteCanvasStatus } fro
 import type { MapRenderStats, MapRenderStyle, MapRenderer, RegionFillGeometry, TrailGeometry } from '../rendererTypes';
 import { buildChordIndex, hitTestChord } from '../strandWalk';
 import type { GraphSelection } from '../transitions';
+import { FindPassState, type FindPassResult } from '../findPass';
+import type { FindClient } from '../../../workers/findClient';
 import { createUnrootedEngine } from '../../../core';
 
 // Chase tests run the real engine synchronously in jsdom, and the follow
@@ -176,6 +178,7 @@ interface HarnessProps {
   readonly traceSeed?: readonly [number, number, number, number] | null;
   readonly onTraceSeed?: (seed: readonly [number, number, number, number] | null) => void;
   readonly camera?: MapCamera;
+  readonly findClientFactory?: () => FindClient;
   readonly renderer: FakeRenderer;
   readonly apiOut: { current: InfiniteCanvasApi | null };
   readonly onStatus: (s: InfiniteCanvasStatus) => void;
@@ -210,6 +213,7 @@ function Harness(props: HarnessProps): JSX.Element {
       onStatusChange={props.onStatus}
       forceSyncClient
       rendererFactory={() => props.renderer}
+      findClientFactory={props.findClientFactory}
     />
   );
 }
@@ -1204,5 +1208,87 @@ describe('InfiniteCanvas — part-chased strands persist too', () => {
     await settle();
     expect(m.status().trace.circuits).toBe(1); // the part-chase stayed lit
     expect(m.renderer.circuitSets.at(-1)![0].color).toBeUndefined(); // rainbow
+  });
+});
+
+
+describe('InfiniteCanvas — find-all off the main thread', () => {
+  /** A find client whose passes wait until the test lets them run, as a worker's would. */
+  function deferredFinds() {
+    const state = new FindPassState();
+    const calls: { keep?: readonly number[]; run(): void }[] = [];
+    const client: FindClient = {
+      usesWorker: true,
+      pass: (cut, table, keep) =>
+        new Promise<FindPassResult>((resolve) => {
+          calls.push({
+            keep,
+            run: () => {
+              if (keep) state.keep(keep);
+              resolve(state.pass(cut, table));
+            },
+          });
+        }),
+      dispose: () => {},
+    };
+    const release = async (): Promise<void> => {
+      const c = calls.shift();
+      if (!c) throw new Error('no pass waiting');
+      await act(async () => {
+        c.run();
+        await Promise.resolve();
+      });
+    };
+    return { client, calls, release };
+  }
+
+  it('runs one pass at a time, then one more over the newest cut', async () => {
+    const finds = deferredFinds();
+    const m = await mount({ chords: loopTable(), findCircuits: true, persistFound: true, findClientFactory: () => finds.client });
+    await settleUntil(() => finds.calls.length > 0, 'the first pass');
+    expect(m.status().trace.found).toBe(0);
+
+    // Cuts that arrive while it runs do not start passes of their own.
+    act(() => m.api.current?.setCamera({ cx: 4, cy: -3 }));
+    await settle();
+    act(() => m.api.current?.setCamera({ cx: 8, cy: -6 }));
+    await settle();
+    expect(finds.calls.length).toBe(1);
+
+    await finds.release();
+    const first = m.status().trace.found;
+    expect(first).toBeGreaterThan(0);
+    // The waiting cuts are folded into one pass over the newest.
+    await settleUntil(() => finds.calls.length > 0, 'the follow-up pass');
+    expect(finds.calls.length).toBe(1);
+    expect(finds.calls[0].keep).toBeUndefined(); // it already knows everything held
+    await finds.release();
+
+    const solo = await mount({ chords: loopTable(), findCircuits: true, camera: createCamera(8, -6, 36) });
+    await settleUntil(() => solo.status().trace.found > 0, 'the same view inline');
+    expect(m.status().trace.found).toBeGreaterThanOrEqual(solo.status().trace.found);
+    expect(m.status().trace.found).toBeGreaterThanOrEqual(first);
+  });
+
+  it('a pass that finishes after a clear is dropped, and the next starts afresh', async () => {
+    const finds = deferredFinds();
+    const m = await mount({ chords: loopTable(), findCircuits: true, persistFound: true, findClientFactory: () => finds.client });
+    await settleUntil(() => finds.calls.length > 0, 'the first pass');
+    await finds.release();
+    expect(m.status().trace.found).toBeGreaterThan(0);
+
+    act(() => m.api.current?.setCamera({ cx: 5, cy: 2 }));
+    await settleUntil(() => finds.calls.length > 0, 'a second pass');
+    act(() => m.api.current?.clearTrace());
+    await finds.release();
+    expect(m.status().trace.found).toBe(0);
+    expect(m.renderer.circuitSets.at(-1)!.length).toBe(0);
+
+    // The next pass is told it holds nothing, so it finds everything again.
+    act(() => m.api.current?.setCamera({ cx: 0, cy: 0 }));
+    await settleUntil(() => finds.calls.length > 0, 'a pass after the clear');
+    expect(finds.calls[0].keep).toEqual([]);
+    await finds.release();
+    expect(m.status().trace.found).toBeGreaterThan(0);
   });
 });
