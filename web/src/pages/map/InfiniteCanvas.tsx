@@ -278,6 +278,8 @@ export interface InfiniteTraceInfo {
   readonly circuits: number;
   /** Circuits found on screen by the find-all toggle. */
   readonly found: number;
+  /** Those circuits by length (tiles crossed), shortest first, with their ink. */
+  readonly foundLengths?: readonly { readonly length: number; readonly count: number; readonly rgb: readonly [number, number, number] }[];
   /** True when find-all is on but the cut is too big/coarse to analyse. */
   readonly foundSkipped: boolean;
   /**
@@ -826,6 +828,14 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
     const trail = trailRef.current;
     const circuits = keptRef.current.length;
     const { found, skipped, stale } = foundInfoRef.current;
+    const byLength = new Map<number, { count: number; rgb: [number, number, number] }>();
+    for (const g of foundRef.current) {
+      if (g.tileLength === undefined || !g.color) continue;
+      const e = byLength.get(g.tileLength);
+      if (e) e.count++;
+      else byLength.set(g.tileLength, { count: 1, rgb: [Math.round(g.color[0] * 255), Math.round(g.color[1] * 255), Math.round(g.color[2] * 255)] });
+    }
+    const foundLengths = [...byLength].sort((a, b) => a[0] - b[0]).map(([length, e]) => ({ length, ...e }));
     publish({
       trace: trail
         ? {
@@ -835,6 +845,7 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
             length: trailLength(trail),
             circuits,
             found,
+            foundLengths,
             foundSkipped: skipped,
             foundStale: stale,
             tiles: recentTiles(trail, TICKER_TILES),
@@ -844,7 +855,7 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
             steps: trail.steps,
           }
         : circuits || found || skipped
-          ? { ...NO_TRACE, circuits, found, foundSkipped: skipped, foundStale: stale }
+          ? { ...NO_TRACE, circuits, found, foundLengths, foundSkipped: skipped, foundStale: stale }
           : NO_TRACE,
     });
   }, [publish, chainsFor]);
@@ -1219,8 +1230,10 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
         (k) => (ctrlByKey.size ? (ctrlByKey.get(segmentKey([ring[k], ring[k + 1]])) ?? null) : null),
         (i) => arcs[i],
       );
-      const rgb = circuitRgb(lengthOf(path));
+      const tileLength = lengthOf(path);
+      const rgb = circuitRgb(tileLength);
       geoms.push({
+        tileLength,
         color: [rgb[0] / 255, rgb[1] / 255, rgb[2] / 255],
         origin: cut.origin,
         ...packRun(run, cut.origin),

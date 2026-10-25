@@ -31,3 +31,4 @@ export * from './flowLattice';
 export * from './flowOverlay';
 export * from './strandCurves';
 export * from './scaling';
+export * from './decomposition';

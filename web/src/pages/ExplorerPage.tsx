@@ -54,6 +54,7 @@ import {
   flowOverlay,
   hasMultiStrands,
   circuitLengthRgb,
+  formatCounts,
 } from '../core';
 import {
   CircuitLayer,
@@ -68,6 +69,7 @@ import {
   StatsSummary,
   TilePalette,
   TileEditor,
+  DecompositionPanel,
   TilingCanvas,
   TilingView,
   type EdgeRef,
@@ -203,6 +205,77 @@ export interface ExplorerPageProps {
   /** Mirror state into `location.hash` (default true; tests can opt out). */
   readonly syncUrl?: boolean;
   readonly route?: string;
+}
+
+/**
+ * The Analysis panel in infinite mode: the circuits "Find all circuits on
+ * screen" found in view, by length, in the ink they are drawn in. It listens
+ * to the canvas's status for itself and re-renders only when they change, so
+ * the sidebar doesn't redraw at frame rate while you pan.
+ */
+function InfiniteFoundStats(props: {
+  subscribe: { current: ((s: InfiniteCanvasStatus) => void) | null };
+  findOn: boolean;
+  onFindOn(): void;
+  onRooted(): void;
+}): JSX.Element {
+  const { subscribe, findOn, onFindOn, onRooted } = props;
+  type Info = { key: string; found: number; skipped: boolean; stale: boolean; lengths: NonNullable<InfiniteCanvasStatus['trace']['foundLengths']> };
+  const [info, setInfo] = useState<Info | null>(null);
+  useEffect(() => {
+    subscribe.current = (s) => {
+      const t = s.trace;
+      const lengths = t.foundLengths ?? [];
+      const key = `${t.found}|${t.foundSkipped}|${t.foundStale}|${lengths.map((l) => `${l.length}x${l.count}`).join(',')}`;
+      setInfo((prev) => (prev?.key === key ? prev : { key, found: t.found, skipped: t.foundSkipped, stale: t.foundStale, lengths }));
+    };
+    return () => {
+      subscribe.current = null;
+    };
+  }, [subscribe]);
+  if (!findOn) {
+    return (
+      <p className="muted" data-testid="analysis-unavailable">
+        Turn on{' '}
+        <button type="button" className="link-button" onClick={onFindOn}>
+          Find all circuits on screen
+        </button>{' '}
+        to count the circuits in view by length, or{' '}
+        <button type="button" className="link-button" onClick={onRooted}>
+          switch to a rooted patch
+        </button>{' '}
+        for the full analysis, wanderers included.
+      </p>
+    );
+  }
+  if (!info || (info.skipped && info.found === 0)) {
+    return (
+      <p className="muted" data-testid="infinite-stats">
+        {info?.skipped ? 'Too many tiles in view to find circuits: zoom in a little.' : 'Finding circuits…'}
+      </p>
+    );
+  }
+  const total = info.lengths.reduce((a, l) => a + l.count, 0);
+  return (
+    <div data-testid="infinite-stats">
+      <p className="stats-line">
+        <b>{info.found.toLocaleString('en-US')}</b> circuit{info.found === 1 ? '' : 's'} {info.stale ? 'kept from closer in' : 'on screen'},{' '}
+        {info.lengths.length} length{info.lengths.length === 1 ? '' : 's'}.
+      </p>
+      <ul className="length-chips infinite-length-chips">
+        {info.lengths.slice(0, 60).map((l) => (
+          <li key={l.length} title={`${l.count} circuit${l.count === 1 ? '' : 's'} of length ${l.length} (${Math.round((l.count / Math.max(1, total)) * 100)}%)`}>
+            <span className="infinite-swatch" style={{ background: `rgb(${l.rgb.join(',')})` }} />
+            {l.length} <span className="muted">×{l.count}</span>
+          </li>
+        ))}
+      </ul>
+      <p className="muted">
+        Lengths are tiles crossed. Strands still running off the screen aren&rsquo;t counted: the infinite view has no edge to call
+        them wanderers at.
+      </p>
+    </div>
+  );
 }
 
 export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
@@ -355,6 +428,8 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
             // Region colours need the piece polygons; the dual graph alone does not.
             dualPieces: hasFlag(state, FLAG.REGIONS) && state.level <= REGION_FILL_MAX_LEVEL,
             curved: curvedStrands,
+            // Count vectors are only meaningful for a rule's own chords.
+            loopVectors: !asSpectres,
           }
         : null,
     [
@@ -378,6 +453,18 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
    * LENGTH_COLOURS, a length's place on one gradient, as the infinite view
    * colours circuits it finds.
    */
+  /** The loop group the decomposition panel picks out (its vector, as text). */
+  const [loopFocus, setLoopFocus] = useState<string | null>(null);
+  useEffect(() => setLoopFocus(null), [state.subset, state.matching, state.contracts]);
+  const focusedCircuits = useMemo(() => {
+    const vectors = analysis.result?.circuitVectors;
+    if (!loopFocus || !vectors) return null;
+    const out = new Set<number>();
+    vectors.forEach((v, i) => {
+      if (formatCounts(v) === loopFocus) out.add(i);
+    });
+    return out;
+  }, [loopFocus, analysis.result]);
   const lengthColours = hasFlag(state, FLAG.LENGTH_COLOURS);
   const circuitColors = useMemo(() => {
     const ranked = analysis.result?.circuitColors;
@@ -424,6 +511,8 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
 
   const infiniteApiRef = useRef<InfiniteCanvasApi | null>(null);
   const infiniteStatusRef = useRef<InfiniteCanvasStatus | null>(null);
+  /** The infinite-mode stats box listens here for itself (see `InfiniteFoundStats`). */
+  const infiniteStatsSubRef = useRef<((s: InfiniteCanvasStatus) => void) | null>(null);
   const infiniteHudSubRef = useRef<((s: InfiniteCanvasStatus) => void) | null>(null);
   /** Record-the-canvas wiring, shared with the map page (`map/useRecording`). */
   const rec = useCanvasRecording(infiniteApiRef, drawFamily, INFINITE_SEED);
@@ -512,6 +601,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
         pendingLevelRef.current = null;
       }
       infiniteHudSubRef.current?.(s);
+      infiniteStatsSubRef.current?.(s);
     },
     [applyLevelZoom],
   );
@@ -1033,6 +1123,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
               setEditingTile(order[(order.indexOf(editingTile) + d + order.length) % order.length]);
             }}
             onClose={() => setEditingTile(null)}
+            onStrands={(major, count) => dispatch({ type: 'setStrandCount', major, count })}
           />
         ) : null}
         {multiOnSpectres ? (
@@ -1484,19 +1575,12 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
         <fieldset className={infinite ? 'is-unavailable' : undefined}>
           <legend>Analysis</legend>
           {infinite ? (
-            <p className="warning-badge" role="status" data-testid="analysis-unavailable">
-              Circuit analysis needs a rooted patch — there is nothing finite here to weld and
-              trace.{' '}
-              <button
-                type="button"
-                className="link-button"
-                onClick={() => dispatch({ type: 'setMode', mode: 'rooted' })}
-              >
-                Switch to rooted mode
-              </button>{' '}
-              to analyse. The strand lines below the camera are still exact: they are local
-              geometry, which is why they work at any depth.
-            </p>
+            <InfiniteFoundStats
+              subscribe={infiniteStatsSubRef}
+              findOn={findOn}
+              onFindOn={() => dispatch({ type: 'setFindCircuits', findCircuits: true })}
+              onRooted={() => dispatch({ type: 'setMode', mode: 'rooted' })}
+            />
           ) : (
             <>
               {!linesOn ? (
@@ -1537,6 +1621,21 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
             </>
           )}
         </fieldset>
+
+        {state.subset.length && !asSpectres ? (
+          <fieldset>
+            <legend>Decomposition</legend>
+            <DecompositionPanel
+              family={family}
+              subset={state.subset}
+              matching={state.matching}
+              contracts={state.contracts}
+              circuitVectors={!infinite && linesOn ? analysis.result?.circuitVectors : undefined}
+              focus={loopFocus}
+              onFocus={setLoopFocus}
+            />
+          </fieldset>
+        ) : null}
       </aside>
 
       <div className="explorer-viewport" ref={viewportRef}>
@@ -1665,6 +1764,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
                       segmentControl={analysis.result.segmentControls}
                       rainbowTails={hasFlag(state, FLAG.RAINBOW_TAILS)}
                       highlightLengths={highlightLengths}
+                      highlightCircuits={focusedCircuits}
                       tailEndMarkers={state.level <= 3}
                       maxRecords={40000}
                       strokeWidth={BASE_CIRCUIT_STROKE * lineWidth}
@@ -1713,6 +1813,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
                 segmentControl={analysis.result?.segmentControls}
                 rainbowTails={hasFlag(state, FLAG.RAINBOW_TAILS)}
                 highlightLengths={highlightLengths}
+                highlightCircuits={focusedCircuits}
                 strokeWidth={BASE_CIRCUIT_STROKE * lineWidth}
                 regionFill={linesOn && regionsOn ? analysis.result?.dual : undefined}
               />

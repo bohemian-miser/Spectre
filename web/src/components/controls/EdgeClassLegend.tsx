@@ -32,6 +32,8 @@ export interface EdgeClassLegendProps {
   /** Set a class's strand count; omit to hide the steppers. */
   onStrands?(major: number, count: number): void;
   readonly maxStrands?: number;
+  /** Show only these classes (default: every class in the family). */
+  readonly only?: readonly number[];
 }
 
 export function EdgeClassLegend(props: EdgeClassLegendProps): JSX.Element {
@@ -48,8 +50,9 @@ export function EdgeClassLegend(props: EdgeClassLegendProps): JSX.Element {
     strands,
     onStrands,
     maxStrands = 3,
+    only,
   } = props;
-  const majors = familyMajors(family);
+  const majors = only ? familyMajors(family).filter((m) => only.includes(m)) : familyMajors(family);
 
   return (
     <fieldset

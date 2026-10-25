@@ -282,3 +282,71 @@
   min-width: 11em;
   text-align: center;
 }
+
+/* Decomposition: the factors a rule's pairings force, and its loops by vector. */
+.decomposition-factors {
+  margin: 0 0 4px;
+  font-size: 13px;
+}
+.decomposition-atom {
+  color: var(--accent);
+  font-size: 9px;
+  margin-left: 2px;
+  vertical-align: super;
+}
+.decomposition-note {
+  font-size: 12px;
+  margin: 4px 0;
+}
+.decomposition-sub {
+  font-size: 12px;
+  font-weight: 600;
+  margin: 8px 0 4px;
+}
+.decomposition-groups {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.decomposition-groups button {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel-2);
+  color: var(--text);
+  padding: 2px 7px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.decomposition-groups button[aria-pressed='true'] {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+/* Infinite mode's circuit stats: lengths found on screen, in their ink. */
+.infinite-length-chips {
+  list-style: none;
+  margin: 4px 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  font-size: 12px;
+}
+.infinite-length-chips li {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 1px 7px;
+  background: var(--panel-2);
+}
+.infinite-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}

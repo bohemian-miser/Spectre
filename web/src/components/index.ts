@@ -66,6 +66,7 @@ export { ContractSlider, contractToU, uToContract } from './controls/ContractSli
 export type { ContractSliderProps } from './controls/ContractSlider';
 
 export { StrandRuleControls } from './controls/StrandRuleControls';
+export { DecompositionPanel } from './controls/DecompositionPanel';
 export type { StrandRuleControlsProps } from './controls/StrandRuleControls';
 export { SeamContractControls } from './controls/SeamContractControls';
 export type { SeamContractControlsProps } from './controls/SeamContractControls';

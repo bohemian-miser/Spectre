@@ -259,15 +259,21 @@ describe('ExplorerPage — infinite mode', () => {
     expect(container.querySelector('.viewport-caption')?.textContent).toContain('infinite plane');
   });
 
-  it('says analysis needs a rooted patch, and offers the way back', () => {
+  it('in infinite mode, shows the circuits found on screen, or offers the way to them', () => {
     window.history.replaceState(null, '', '/#/explorer?v=1&e=2578&md=infinite');
-    const { container } = render(<ExplorerPage />);
-
-    const note = container.querySelector('[data-testid="analysis-unavailable"]');
-    expect(note?.textContent).toContain('needs a rooted patch');
+    const { container, getByText, getByTestId } = render(<ExplorerPage />);
+    // Finding circuits is on by default: the panel shows the canvas's count.
+    expect(getByTestId('infinite-stats').textContent).toMatch(/Finding circuits|circuits? on screen/);
     expect(container.querySelector('.stats-summary')).toBeNull();
 
-    fireEvent.click(note?.querySelector('button') as Element);
+    // Turned off, the panel says how to turn it back on, or go rooted.
+    fireEvent.click(getByTestId('find-circuits'));
+    expect(getByTestId('analysis-unavailable').textContent).toContain('Find all circuits on screen');
+    fireEvent.click(getByText('Find all circuits on screen', { selector: 'button.link-button' }));
+    expect((getByTestId('find-circuits') as HTMLInputElement).checked).toBe(true);
+
+    fireEvent.click(getByTestId('find-circuits'));
+    fireEvent.click(getByText('switch to a rooted patch'));
     expect(container.querySelector('.explorer-infinite')).toBeNull();
     expect(container.querySelector('svg.tiling-view')).not.toBeNull();
     expect(container.querySelector('.stats-summary')).not.toBeNull();
@@ -499,5 +505,18 @@ describe('ExplorerPage — infinite mode', () => {
     fireEvent.click(getByLabelText('Previous combination'));
     // Back past the first wraps to the last.
     expect(pos()).toBe('Combination 9 of 9');
+  });
+
+  it('shows the rule’s decomposition, and picks out one kind of loop', () => {
+    window.history.replaceState(null, '', '/#/explorer?v=1&f=hex&lv=2&e=15');
+    const { container, getByTestId } = render(<ExplorerPage />);
+    expect(getByTestId('decomposition-factors').textContent).toContain('One factor: 1 5');
+    expect(getByTestId('decomposition-joins').textContent).toContain('Joining different classes');
+    const groups = getByTestId('decomposition-groups').querySelectorAll('button');
+    expect(groups.length).toBeGreaterThan(0);
+    fireEvent.click(groups[0]);
+    const paths = [...container.querySelectorAll('.circuit-path')];
+    expect(paths.some((p) => p.getAttribute('opacity') === '0.12')).toBe(true);
+    expect(paths.some((p) => p.getAttribute('opacity') === '1')).toBe(true);
   });
 });
