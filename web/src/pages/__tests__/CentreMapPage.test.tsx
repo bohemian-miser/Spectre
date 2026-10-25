@@ -33,14 +33,15 @@ describe('CentreMapPage', () => {
     fireEvent.change(screen.getByTestId('centremap-level'), { target: { value: '4' } });
     const start = screen.getByTestId('centremap-start');
     expect(start.textContent).toBe('Compare 270 pairings');
-    // A cap per rule samples the big rules; the all-edges rule joins only on request.
-    fireEvent.change(screen.getByTestId('centremap-max'), { target: { value: '20' } });
-    expect(start.textContent).toBe('Compare 74 pairings'); // 4 + 2 + 8 + 20 + 20 + 20
+    // Every rule is measured in full; only the all-edges rule, on request, is sampled to a cap.
+    expect(screen.queryByTestId('centremap-max')).toBeNull();
     fireEvent.click(screen.getByTestId('centremap-all-edges'));
-    expect(start.textContent).toBe('Compare 94 pairings');
+    expect(start.textContent).toBe('Compare 470 pairings'); // 270 + 200 of the all-edges rule
+    fireEvent.change(screen.getByTestId('centremap-max'), { target: { value: '20' } });
+    expect(start.textContent).toBe('Compare 290 pairings');
     expect(screen.getByText(/01235678 \(20 of 625,000, sampled\)/)).toBeTruthy();
     fireEvent.click(screen.getByTestId('centremap-all-edges'));
-    fireEvent.change(screen.getByTestId('centremap-max'), { target: { value: '200' } });
+    expect(screen.queryByTestId('centremap-max')).toBeNull();
     expect(start.textContent).toBe('Compare 270 pairings');
     fireEvent.click(start);
     await waitFor(() => expect(screen.getByTestId('centremap-summary')).toBeTruthy(), { timeout: 60000 });
@@ -103,6 +104,18 @@ describe('CentreMapPage', () => {
     fireEvent.mouseEnter(patterns[5].querySelectorAll('[data-position]')[1]);
     expect(screen.getByTestId('centremap-spread').textContent).toMatch(/^023678, digit 2 \(\w+\): \d ×\d+/);
     expect(screen.getByTestId('centremap-overlay')).toBeTruthy();
+    // The patch shows everything overlaid, or one pairing at a time; arrows flick through, round again.
+    const shown = () => screen.getByTestId('centremap-overlay-label').textContent;
+    expect(shown()).toBe('all 270');
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    expect(shown()).toMatch(/^1 \/ 270 · \d+ · [0-9a-z]{10}$/);
+    fireEvent.keyDown(window, { key: 'ArrowLeft' });
+    fireEvent.keyDown(window, { key: 'ArrowLeft' });
+    expect(shown()).toMatch(/^270 \/ 270 · /);
+    fireEvent.click(screen.getByTestId('centremap-overlay-all'));
+    expect(shown()).toBe('all 270');
+    fireEvent.click(screen.getByTestId('centremap-overlay-one'));
+    expect(shown()).toMatch(/^1 \/ 270/);
     expect(screen.getByTestId('centremap-tiles').querySelectorAll('figure')).toHaveLength(10);
     fireEvent.click(screen.getByLabelText('Clear selection'));
     expect(screen.queryByTestId('centremap-picked')).toBeNull();

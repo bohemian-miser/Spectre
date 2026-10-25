@@ -39,6 +39,7 @@ import {
   type StrandGraph,
   type StrandPalette,
   type StrandWorkspace,
+  type ThumbFrame,
 } from './strandGraph';
 import type { TileFamilyId } from './families';
 import { comboDigitValue } from './matchings';
@@ -381,11 +382,12 @@ export function rasterizeFaultBands(
   size: number,
   palette: StrandPalette,
   ws?: StrandWorkspace,
+  frame?: ThumbFrame,
 ): Uint8ClampedArray {
   const c = strandComponents(g, digits, ws);
   const { band } = componentBands(c, addr);
   const colours = [palette.smallCircuit, palette.bands[2], palette.bands[1], palette.bands[0]];
-  return rasterizeComponents(g, c, size, (k) => colours[band[k]], (k) => band[k] * 1e9 + c.segs[k]);
+  return rasterizeComponents(g, c, size, (k) => colours[band[k]], (k) => band[k] * 1e9 + c.segs[k], frame);
 }
 
 /**
