@@ -18,7 +18,7 @@ if (!host) throw new Error('#root not found in index.html');
 
 createRoot(host).render(
   <StrictMode>
-    <AppShell active="explorer" wide>
+    <AppShell active="explorer" wide className="is-app">
       <ExplorerPage />
     </AppShell>
   </StrictMode>,

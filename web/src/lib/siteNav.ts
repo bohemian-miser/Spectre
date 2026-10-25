@@ -17,6 +17,8 @@ export interface NavItem {
   /** Stable id; also what `AppShell active=` takes. */
   readonly id: string;
   readonly label: string;
+  /** Compact label the top bar switches to when the full row will not fit. */
+  readonly short: string;
   /**
    * Vite HTML entry, relative to the deploy base. `''` is the base itself
    * (`index.html`), which is the Explorer.
@@ -35,6 +37,7 @@ export const SITE_NAV: readonly NavItem[] = Object.freeze([
   {
     id: 'explorer',
     label: 'Explorer',
+    short: 'Explorer',
     entry: '',
     status: 'ready',
     blurb: 'Build supertiles, pick an edge rule, watch the circuits appear.',
@@ -42,6 +45,7 @@ export const SITE_NAV: readonly NavItem[] = Object.freeze([
   {
     id: 'tails',
     label: 'The Tails Problem',
+    short: 'Tails',
     entry: 'tails.html',
     status: 'ready',
     blurb: 'Why only eight sets of seams close up — and what happens when they do not.',
@@ -49,6 +53,7 @@ export const SITE_NAV: readonly NavItem[] = Object.freeze([
   {
     id: 'classifications',
     label: 'Classifications',
+    short: 'Classes',
     entry: 'classifications.html',
     status: 'ready',
     blurb: 'Every combination of every rule, sorted into triangle fractals, infinite lines and the rest.',
@@ -56,6 +61,7 @@ export const SITE_NAV: readonly NavItem[] = Object.freeze([
   {
     id: 'rules',
     label: 'Rules & isomorphism',
+    short: 'Rules',
     entry: 'rules.html',
     status: 'ready',
     blurb: 'How the rules of Tile(1,1), the hexagons and the iso labels line up, and where their combinations agree.',
@@ -63,6 +69,7 @@ export const SITE_NAV: readonly NavItem[] = Object.freeze([
   {
     id: 'map',
     label: 'Infinite Map',
+    short: 'Map',
     entry: 'map.html',
     status: 'ready',
     blurb: 'Pan and zoom an endless spectre tiling, expanded on demand around the camera.',
@@ -70,6 +77,7 @@ export const SITE_NAV: readonly NavItem[] = Object.freeze([
   {
     id: 'supertiles',
     label: 'Supertiles',
+    short: 'Supertiles',
     entry: 'supertiles.html',
     status: 'ready',
     blurb: 'Push a supertile apart into the pieces it is made of, one substitution at a time.',
@@ -77,6 +85,7 @@ export const SITE_NAV: readonly NavItem[] = Object.freeze([
   {
     id: 'machine',
     label: 'Strand machine',
+    short: 'Machine',
     entry: 'machine.html',
     status: 'ready',
     blurb: 'Walk a strand by hand and see which joins the labels permit, which the tiling uses.',
@@ -84,6 +93,7 @@ export const SITE_NAV: readonly NavItem[] = Object.freeze([
   {
     id: 'lattice',
     label: 'Flow lattice',
+    short: 'Lattice',
     entry: 'lattice.html',
     status: 'ready',
     blurb: 'Give every edge a direction: the circuits form a lattice you can click through.',
@@ -91,6 +101,7 @@ export const SITE_NAV: readonly NavItem[] = Object.freeze([
   {
     id: 'multiedge',
     label: 'Multi-edge',
+    short: 'Multi-edge',
     entry: 'multiedge.html',
     status: 'ready',
     blurb: 'No directions, any number of strands per edge: a parity cube times stacks of pairs.',
@@ -98,6 +109,7 @@ export const SITE_NAV: readonly NavItem[] = Object.freeze([
   {
     id: 'dimension',
     label: 'Dimension',
+    short: 'Dimension',
     entry: 'dimension.html',
     status: 'ready',
     blurb: 'How each rule grows with the supertile level: bounded, curves, fractal or space-filling.',
@@ -105,6 +117,7 @@ export const SITE_NAV: readonly NavItem[] = Object.freeze([
   {
     id: 'faultlines',
     label: 'Fault lines',
+    short: 'Faults',
     entry: 'faultlines.html',
     status: 'ready',
     blurb: 'Which pairings put their big circuits in the same places, along the same supertile seams.',
@@ -112,6 +125,7 @@ export const SITE_NAV: readonly NavItem[] = Object.freeze([
   {
     id: 'legacy',
     label: 'Legacy p5 app',
+    short: 'Legacy',
     entry: 'legacy.html',
     status: 'ready',
     blurb: 'The original canvas app, kept working while the rebuild lands.',

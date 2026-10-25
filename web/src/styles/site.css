@@ -7,6 +7,10 @@ body,
   height: 100%;
 }
 
+:root {
+  --site-header-h: 50px;
+}
+
 .site {
   display: flex;
   flex-direction: column;
@@ -16,9 +20,10 @@ body,
 .site-header {
   display: flex;
   align-items: center;
-  gap: 16px;
-  flex-wrap: wrap;
-  padding: 10px 16px;
+  height: var(--site-header-h);
+  flex-shrink: 0;
+  gap: 24px;
+  padding: 8px 18px;
   border-bottom: 1px solid var(--line);
   background: var(--panel);
   position: sticky;
@@ -27,24 +32,30 @@ body,
 }
 
 .site-brand {
-  font-weight: 650;
-  letter-spacing: 0.01em;
-  color: var(--text);
-  text-decoration: none;
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 8px;
+  flex-shrink: 0;
+  font-weight: 700;
+  font-size: 16px;
+  color: var(--text);
+  text-decoration: none;
+  white-space: nowrap;
 }
 .site-brand-mark {
   color: var(--accent);
 }
 
+/* One row, like the sister site: the links never wrap. Whatever does not fit
+   moves into the "More" dropdown at the end of the row (AppShell useNavFit). */
 .site-nav {
+  position: relative;
   flex: 1 1 auto;
+  min-width: 0;
 }
-.site-nav ul {
+.site-nav > ul {
   display: flex;
-  flex-wrap: wrap;
+  align-items: center;
   gap: 4px;
   list-style: none;
   margin: 0;
@@ -55,20 +66,23 @@ body,
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 10px;
-  border-radius: var(--radius);
-  color: var(--muted);
+  padding: 6px 12px;
+  border-radius: 999px;
+  color: var(--text);
   text-decoration: none;
-  border: 1px solid transparent;
+  white-space: nowrap;
+  border: 0;
+  background: none;
+  font: inherit;
+  cursor: pointer;
 }
 .site-nav-link:hover {
-  color: var(--text);
   background: var(--panel-2);
 }
-.site-nav-link.is-active {
-  color: var(--text);
-  border-color: var(--line);
-  background: var(--panel-2);
+.site-nav-link.is-active,
+.site-nav-link.is-active:hover {
+  background: var(--text);
+  color: var(--panel);
 }
 .site-nav-link.is-planned {
   opacity: 0.55;
@@ -76,7 +90,6 @@ body,
 }
 .site-nav-link.is-planned:hover {
   background: none;
-  color: var(--muted);
 }
 .site-nav-link em {
   font-style: normal;
@@ -87,8 +100,89 @@ body,
   border-radius: 999px;
   padding: 1px 5px;
 }
-.site-repo {
+.site-nav-link .short {
+  display: none;
+}
+
+.site-nav-measure {
+  position: absolute;
+  top: 0;
+  left: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.site-more {
+  position: relative;
+}
+.site-more-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 180px;
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+  background: var(--panel);
   border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+}
+.site-more-menu[hidden] {
+  display: none;
+}
+.site-more-menu .site-nav-link {
+  display: flex;
+  border-radius: calc(var(--radius) - 2px);
+}
+/* The menu has room for the full names whatever the row is using. */
+.site-more-menu .site-nav-link .long {
+  display: inline;
+}
+.site-more-menu .site-nav-link .short {
+  display: none;
+}
+
+.site-repo {
+  display: flex;
+  flex-shrink: 0;
+  margin-left: auto;
+  padding: 6px;
+  color: var(--muted);
+}
+.site-repo:hover {
+  color: var(--text);
+}
+
+/* Twelve destinations do not fit at full length on most screens. */
+@media (max-width: 1500px) {
+  .site-nav-link .long {
+    display: none;
+  }
+  .site-nav-link .short {
+    display: inline;
+  }
+}
+
+@media (max-width: 1100px) {
+  .site-header {
+    gap: 8px;
+    padding: 6px 10px;
+  }
+  .site-brand-name {
+    display: none;
+  }
+  .site-nav > ul,
+  .site-nav-measure {
+    gap: 0;
+  }
+  .site-nav-link {
+    padding: 5px 10px;
+  }
 }
 
 .site-main {
@@ -101,6 +195,12 @@ body,
   width: min(720px, 100%);
   margin: 0 auto;
   padding: 24px 16px;
+}
+
+/* App pages (the explorer) fill the window under the bar, as the
+   aperiodic-circuits explorer does; the footer would only add a scroll. */
+.site.is-app .site-footer {
+  display: none;
 }
 
 .site-footer {
