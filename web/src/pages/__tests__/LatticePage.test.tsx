@@ -160,11 +160,18 @@ describe('LatticePage', () => {
     expect(n).toBeGreaterThan(0);
     expect(screen.getByTestId('lattice-cell-Psi-0').textContent).toBe(`±${n}`);
     expect(screen.getByTestId('lattice-cell-Delta-0').textContent).toBe('·');
+    // The ± carries through to the Net column: the row's directed sum, ± the class-0 lines.
+    const psiNet = screen.getByTestId('lattice-net-Psi');
+    expect(psiNet.textContent).toMatch(new RegExp(`^(0|[+−]\\d+) ±${n}$`));
+    expect(psiNet.className).toContain('is-good');
+    expect(screen.getByTestId('lattice-net-Delta').textContent).toBe('0');
     expect(screen.getByTestId('lattice-balance').textContent).toContain('Every tile balances');
     expect(container.querySelector('svg.lattice-patch')!.getAttribute('data-unbalanced')).toBe('0');
     // One more line breaks the parity; one more again restores it.
     fireEvent.click(screen.getByLabelText('More flow on 0'));
     expect(screen.getByTestId('lattice-count-0').textContent).toBe(`±${n + 1}`);
+    expect(screen.getByTestId('lattice-net-Psi').textContent).toMatch(new RegExp(`±${n + 1}$`));
+    expect(screen.getByTestId('lattice-net-Psi').className).toContain('is-bad');
     expect(screen.getByTestId('lattice-balance').textContent).toContain('Not a circuit');
     fireEvent.click(screen.getByLabelText('More flow on 0'));
     expect(screen.getByTestId('lattice-balance').textContent).toContain('Every tile balances');

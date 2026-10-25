@@ -329,7 +329,7 @@ export function linesNeeded(x: readonly number[]): number {
 }
 
 /** Per tile type, the directed edges' flow out minus flow in, before class 0 takes any up. */
-function directedNet(model: FlowModel, x: readonly number[]): number[] {
+export function directedNet(model: FlowModel, x: readonly number[]): number[] {
   return model.matrix.map((row) => row.reduce((a, v, k) => a + v * (x[k] ?? 0), 0));
 }
 

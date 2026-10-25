@@ -13,6 +13,7 @@ import {
   defaultAxes,
   directedMatchings,
   describeFlow,
+  directedNet,
   edgeVar,
   flowLines,
   flowModel,
@@ -618,6 +619,7 @@ function MatrixEditor(props: {
     else onChange(next);
   };
   const net = netFlow(model, x);
+  const dnet = directedNet(model, x);
   const z = zeroFlow(model, x);
   const n0 = zeroLines(model, x);
   const last = model.vars.length - 1;
@@ -724,9 +726,20 @@ function MatrixEditor(props: {
                   </td>
                 );
               })}
-              <td className={`lattice-net ${net[i] === 0 ? 'is-good' : 'is-bad'}`} data-testid={`lattice-net-${t}`}>
-                {signed(net[i])}
-              </td>
+              {zv >= 0 && model.zeroTypes.includes(t) && n0 > 0 ? (
+                // The row's sum keeps class 0's ±: d ± n, which balances when it can reach 0.
+                <td
+                  className={`lattice-net ${net[i] === 0 ? 'is-good' : 'is-bad'}`}
+                  title={net[i] === 0 ? `class 0 takes up ${signed(z[i])}: balances` : `class 0 can only take up ${signed(z[i])}: ${signed(net[i])} left over`}
+                  data-testid={`lattice-net-${t}`}
+                >
+                  {signed(dnet[i])} ±{n0}
+                </td>
+              ) : (
+                <td className={`lattice-net ${net[i] === 0 ? 'is-good' : 'is-bad'}`} data-testid={`lattice-net-${t}`}>
+                  {signed(net[i])}
+                </td>
+              )}
             </tr>
           ))}
         </tbody>
