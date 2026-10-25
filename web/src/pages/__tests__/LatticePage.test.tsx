@@ -175,6 +175,10 @@ describe('LatticePage', () => {
     expect(screen.getByTestId('lattice-balance').textContent).toContain('Not a circuit');
     fireEvent.click(screen.getByLabelText('More flow on 0'));
     expect(screen.getByTestId('lattice-balance').textContent).toContain('Every tile balances');
+    // Editing another column never moves the class-0 count, even when a tile then needs more lines.
+    const before = screen.getByTestId('lattice-count-0').textContent;
+    for (let i = 0; i < 4; i++) fireEvent.click(screen.getByLabelText('More flow on 8a'));
+    expect(screen.getByTestId('lattice-count-0').textContent).toBe(before);
   });
 
   it('labels mode with class 0 either way gains just the in-and-out pair', () => {

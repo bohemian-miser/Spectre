@@ -263,8 +263,7 @@ export default function LatticePage(): JSX.Element {
           <MatrixEditor
             model={model}
             x={x}
-            onChange={(next) => setX(liftZero(model, next))}
-            onRaw={setX}
+            onChange={setX}
             hover={hoverVar}
             onHover={setHoverVar}
             selected={col}
@@ -294,7 +293,8 @@ export default function LatticePage(): JSX.Element {
             tile any of them may go in or out. Its counter sets that number, and every tile with a
             class-0 edge (Theta, Xi, Phi, Psi) gains its <span className="mono">±</span>: the lines take
             up the tile&rsquo;s imbalance as long as there are enough of them and the parity matches.
-            Changing another flow raises them if it has to. Two extra lines that go in and straight back
+            Editing a flow by hand never changes them; picking a point on the slice gives the fewest
+            that work. Two extra lines that go in and straight back
             out are a circuit by themselves (<span className="mono">0: ±2</span>). Where two strands meet
             head-on across a class-0 edge the flow simply stops. The lattice has dimension{' '}
             {model.basis.length}.
@@ -601,23 +601,17 @@ function CircuitPatch(props: {
 function MatrixEditor(props: {
   model: FlowModel;
   x: readonly number[];
-  /** A flow edit: class-0 lines get lifted to fit. */
   onChange: (x: number[]) => void;
-  /** An edit of the class-0 lines themselves, kept as typed. */
-  onRaw: (x: number[]) => void;
   hover: number | null;
   onHover: (k: number | null) => void;
   selected: number;
   onSelect: (k: number) => void;
 }): JSX.Element {
-  const { model, x, onChange, onRaw, hover, onHover, selected, onSelect } = props;
-  // Class 0's counter is its line count, so it stops at 0; its own steps aren't lifted.
+  const { model, x, onChange, hover, onHover, selected, onSelect } = props;
+  // Class 0's counter is its line count, so it stops at 0. Edits are kept as typed: no column moves another.
   const zv = model.zeroVar;
-  const set = (k: number, v: number) => {
-    const next = x.map((old, i) => (i === k ? Math.max(k === zv ? 0 : -MAX_COUNT, Math.min(MAX_COUNT, v)) : old));
-    if (k === zv) onRaw(next);
-    else onChange(next);
-  };
+  const set = (k: number, v: number) =>
+    onChange(x.map((old, i) => (i === k ? Math.max(k === zv ? 0 : -MAX_COUNT, Math.min(MAX_COUNT, v)) : old)));
   const net = netFlow(model, x);
   const dnet = directedNet(model, x);
   const z = zeroFlow(model, x);
