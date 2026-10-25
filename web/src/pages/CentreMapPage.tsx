@@ -455,6 +455,16 @@ export default function CentreMapPage(): JSX.Element {
               <span data-testid="centremap-matches">
                 {searching ? `${matchCount} of ${n} match` : 'Showing all'}
               </span>
+              {searching && matchCount > 0 && matches && (
+                <button
+                  type="button"
+                  onClick={() => setPicked(matches.flatMap((m, i) => (m ? [i] : [])))}
+                  title="Open the matches in the selection view below, to flick through them with ← →"
+                  data-testid="centremap-matches-open"
+                >
+                  Flick through these
+                </button>
+              )}
               {searching && (
                 <button
                   type="button"

@@ -167,6 +167,20 @@ export function AtlasView(props: { atlas: Atlas; thumbs: FaultLinesClient; dark:
             <input className="mono" value={pattern} placeholder="e.g. 1?0?" onChange={(e) => setPattern(e.target.value)} data-testid="centremap-atlas-pattern" spellCheck={false} />
           </label>
           <span data-testid="centremap-atlas-matches">{search ? `${search.count.toLocaleString('en-US')} of ${n.toLocaleString('en-US')} match` : 'Showing all'}</span>
+          {search && search.count > 0 && (
+            <button
+              type="button"
+              onClick={() => {
+                const ids = new Int32Array(search.count);
+                for (let i = 0, k = 0; i < n; i++) if (search.mask[i]) ids[k++] = i;
+                setPicked(ids);
+              }}
+              title={`Open the matches in the selection view below, to flick through them with ← →${search.count > PANEL_SAMPLE ? ` (a sample of ${PANEL_SAMPLE})` : ''}`}
+              data-testid="centremap-atlas-matches-open"
+            >
+              Flick through these
+            </button>
+          )}
           {searching && (
             <button
               type="button"

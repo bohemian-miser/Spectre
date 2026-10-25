@@ -141,6 +141,13 @@ describe('CentreMapPage', () => {
     fireEvent.pointerUp(box, { clientX: 600, clientY: 600 });
     expect(screen.getByTestId('centremap-picked').textContent).toMatch(/^8 pairings selected/);
     fireEvent.click(screen.getByLabelText('Clear selection'));
+    // The search's matches open in the selection view, to flick through.
+    const matching = Number(/^(\d+) of/.exec(screen.getByTestId('centremap-matches').textContent!)![1]);
+    fireEvent.click(screen.getByTestId('centremap-matches-open'));
+    expect(screen.getByTestId('centremap-picked').textContent).toMatch(new RegExp(`^${matching} pairings selected`));
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    expect(screen.getByTestId('centremap-overlay-label').textContent).toMatch(new RegExp(`^1 / ${matching} · 0356 · `));
+    fireEvent.keyDown(window, { key: 'Escape' });
     // On the heatmap a search only filters the box's rows: a box along one row keeps every column it covers.
     const heat = screen.getByTestId('centremap-heatmap');
     heat.getBoundingClientRect = () => ({ left: 0, top: 0, width: 270, height: 270, right: 270, bottom: 270, x: 0, y: 0, toJSON: () => ({}) }) as DOMRect;
@@ -208,6 +215,8 @@ describe('CentreMapPage', () => {
     expect(screen.getByTestId('centremap-atlas-matches').textContent).toBe('Showing all');
     fireEvent.change(screen.getByTestId('centremap-atlas-rule'), { target: { value: rules[1].subset.join('') } });
     expect(screen.getByTestId('centremap-atlas-matches').textContent).toBe(`${rules[1].total} of ${offset} match`);
+    fireEvent.click(screen.getByTestId('centremap-atlas-matches-open'));
+    expect(screen.getByTestId('centremap-picked').textContent).toMatch(new RegExp(`^${rules[1].total} pairings? selected`));
     vi.unstubAllGlobals();
   });
 });
