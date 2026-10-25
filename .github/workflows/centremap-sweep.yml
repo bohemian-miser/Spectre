@@ -44,6 +44,10 @@ jobs:
         run: npm ci
         working-directory: web
 
+      # Installed once: four `npx tsx` at the same moment race over npx's cache.
+      - name: Install tsx
+        run: npm install -g tsx@4.19.2
+
       - name: Sweep four shards
         working-directory: web
         env:
@@ -54,7 +58,7 @@ jobs:
           set -e
           pids=""
           for p in 0 1 2 3; do
-            npx --yes tsx circuit-classes/centremap-sweep.ts "$FAMILY" "$LEVEL" $(( JOB * 4 + p )) 64 out &
+            tsx circuit-classes/centremap-sweep.ts "$FAMILY" "$LEVEL" $(( JOB * 4 + p )) 64 out &
             pids="$pids $!"
           done
           for pid in $pids; do wait $pid; done
