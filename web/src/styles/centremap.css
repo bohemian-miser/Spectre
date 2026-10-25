@@ -145,7 +145,7 @@
 }
 .centremap-thumb {
   margin: 0;
-  width: 160px;
+  width: 240px;
   font-size: 11px;
 }
 .centremap-thumb button {
@@ -161,8 +161,8 @@
 }
 .centremap-thumb canvas {
   display: block;
-  width: 160px;
-  height: 160px;
+  width: 240px;
+  height: 240px;
 }
 .centremap-thumb figcaption {
   overflow: hidden;
@@ -231,4 +231,74 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
+}
+
+/* Magnifier modal. */
+.centremap-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.centremap-modal-card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px;
+  max-width: 100%;
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow: auto;
+}
+.centremap-modal-head,
+.centremap-modal-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 13px;
+}
+.centremap-modal-head button,
+.centremap-modal-foot button,
+.centremap-modal-views button {
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 2px 10px;
+  cursor: pointer;
+}
+.centremap-modal-views {
+  display: inline-flex;
+  gap: 4px;
+}
+.centremap-modal-views button.is-on {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.centremap-modal-stage .centremap-thumb {
+  width: auto;
+}
+.centremap-modal-stage .centremap-thumb canvas {
+  width: min(900px, calc(100vw - 64px), calc(100vh - 170px));
+  height: auto;
+  aspect-ratio: 1;
+}
+.centremap-modal-stage figcaption {
+  display: none;
+}
+.centremap-page .link-button {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--accent);
+  text-decoration: underline;
+  cursor: pointer;
+  font: inherit;
 }

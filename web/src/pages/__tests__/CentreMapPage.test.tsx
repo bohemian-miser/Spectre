@@ -5,6 +5,7 @@ import CentreMapPage from '../CentreMapPage';
 
 describe('CentreMapPage', () => {
   beforeEach(() => {
+    localStorage.clear();
     // jsdom has no canvas; the heatmap and thumbnails just need somewhere to draw.
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation((() => ({
       createImageData: (w: number, h: number) => ({ data: new Uint8ClampedArray(w * h * 4), width: w, height: h }),
@@ -25,6 +26,15 @@ describe('CentreMapPage', () => {
     render(<CentreMapPage />);
     fireEvent.change(screen.getByTestId('centremap-level'), { target: { value: '4' } });
     const start = screen.getByTestId('centremap-start');
+    expect(start.textContent).toBe('Compare 270 pairings');
+    // A cap per rule samples the big rules; the all-edges rule joins only on request.
+    fireEvent.change(screen.getByTestId('centremap-max'), { target: { value: '20' } });
+    expect(start.textContent).toBe('Compare 74 pairings'); // 4 + 2 + 8 + 20 + 20 + 20
+    fireEvent.click(screen.getByTestId('centremap-all-edges'));
+    expect(start.textContent).toBe('Compare 94 pairings');
+    expect(screen.getByText(/01235678 \(20 of 625,000, sampled\)/)).toBeTruthy();
+    fireEvent.click(screen.getByTestId('centremap-all-edges'));
+    fireEvent.change(screen.getByTestId('centremap-max'), { target: { value: '200' } });
     expect(start.textContent).toBe('Compare 270 pairings');
     fireEvent.click(start);
     await waitFor(() => expect(screen.getByTestId('centremap-summary')).toBeTruthy(), { timeout: 60000 });
@@ -74,5 +84,31 @@ describe('CentreMapPage', () => {
     const sel = screen.getByTestId('centremap-selected');
     expect(sel.querySelector('a')!.getAttribute('href')).toMatch(/#\/explorer\?v=1/);
     expect(sel.querySelectorAll('figure').length).toBe(2 + 8);
+
+    // A thumbnail opens magnified; arrows step through the pick and its closest, V switches the view, Esc closes.
+    fireEvent.click(sel.querySelectorAll('figure button')[2]);
+    const mag = screen.getByTestId('centremap-magnifier');
+    expect(screen.getByTestId('centremap-magnifier-position').textContent).toMatch(/^2 \/ 9 · /);
+    const first = screen.getByTestId('centremap-magnifier-label').textContent;
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    expect(screen.getByTestId('centremap-magnifier-position').textContent).toMatch(/^3 \/ 9 · /);
+    expect(screen.getByTestId('centremap-magnifier-label').textContent).not.toBe(first);
+    fireEvent.keyDown(window, { key: 'ArrowLeft' });
+    fireEvent.keyDown(window, { key: 'ArrowLeft' });
+    expect(screen.getByTestId('centremap-magnifier-position').textContent).toMatch(/^1 \/ 9 · the selected pairing/);
+    const pressed = () => mag.querySelector('[aria-pressed="true"]')!.textContent;
+    expect(pressed()).toBe('centres');
+    fireEvent.keyDown(window, { key: 'v' });
+    expect(pressed()).toBe('strands');
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.queryByTestId('centremap-magnifier')).toBeNull();
+
+    // The survey was saved; a fresh visit with the same settings shows it without recomputing.
+    expect(screen.getByTestId('centremap-saved').textContent).toMatch(/^Saved .*, kept until /);
+    cleanup();
+    render(<CentreMapPage />);
+    fireEvent.change(screen.getByTestId('centremap-level'), { target: { value: '4' } });
+    expect(screen.getByTestId('centremap-summary').textContent).toMatch(/^270 pairings at level 4/);
+    expect(screen.getByTestId('centremap-recompute')).toBeTruthy();
   }, 90000);
 });
