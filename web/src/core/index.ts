@@ -35,3 +35,4 @@ export * from './decomposition';
 export * from './faultLines';
 export * from './centreMap';
 export * from './pairingSearch';
+export * from './transducer';

@@ -30,6 +30,7 @@ export default defineConfig({
         map: resolve(__dirname, 'map.html'),
         supertiles: resolve(__dirname, 'supertiles.html'),
         machine: resolve(__dirname, 'machine.html'),
+        transducer: resolve(__dirname, 'transducer.html'),
         lattice: resolve(__dirname, 'lattice.html'),
         multiedge: resolve(__dirname, 'multiedge.html'),
         dimension: resolve(__dirname, 'dimension.html'),

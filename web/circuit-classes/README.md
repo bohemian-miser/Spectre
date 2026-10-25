@@ -96,6 +96,12 @@ rule, class 0 included; cost is the boundary (×4.24 a level), not the area
   (longest circuit born, share of segments closed, share on the five longest
   arcs) matches the one named: the look-alikes, whether or not they route
   the strands the same way. `--near` ranks by routing distance instead.
+- `--families`: a first cut at a catalogue of circuit types. Every circuit
+  born gets a word, the cyclic order of the child slots it runs through with
+  two-child wiggles collapsed, and words are matched across levels and
+  pairings into families with a start level, a period and a growth. The word
+  is not yet scale-normalised (see the open ends in the doc), so read it as
+  a draft.
 - `rule-all` and `rule-0?1??` patterns expand to many pairings.
 
 Write-up and a worked example (hexagon `023468-111000100`, whose first real

@@ -16,7 +16,7 @@ import {
 } from '../siteNav';
 
 describe('siteNav', () => {
-  it('lists the ten destinations with unique ids', () => {
+  it('lists the destinations with unique ids', () => {
     expect(SITE_NAV.map((i) => i.id)).toEqual([
       'explorer',
       'tails',
@@ -25,6 +25,7 @@ describe('siteNav', () => {
       'map',
       'supertiles',
       'machine',
+      'transducer',
       'lattice',
       'multiedge',
       'dimension',
@@ -34,7 +35,7 @@ describe('siteNav', () => {
     expect(new Set(SITE_NAV.map((i) => i.id)).size).toBe(SITE_NAV.length);
   });
 
-  it('ships all twelve destinations', () => {
+  it('ships all thirteen destinations', () => {
     expect(readyNav().map((i) => i.id)).toEqual([
       'explorer',
       'tails',
@@ -43,6 +44,7 @@ describe('siteNav', () => {
       'map',
       'supertiles',
       'machine',
+      'transducer',
       'lattice',
       'multiedge',
       'dimension',

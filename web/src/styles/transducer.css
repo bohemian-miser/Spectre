@@ -1,0 +1,230 @@
+/* The neighbour machine page. Shares the site shell; the board and traces are bespoke. */
+
+.td {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+.td__intro h1 {
+  margin: 0 0 0.35rem;
+}
+.td__kicker {
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.8rem;
+  color: var(--fg-muted, #9aa4b2);
+}
+.td__lede {
+  font-size: 1.1rem;
+  max-width: 70ch;
+}
+.td__intro p,
+.td__section p {
+  max-width: 76ch;
+  line-height: 1.55;
+}
+
+.td__toc ol {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.2rem;
+  margin: 0;
+  padding: 0 0 0 1.2rem;
+}
+
+.td__board {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.td__controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.2rem;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--rule, #2a3140);
+  border-radius: 8px;
+}
+.td__controls label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: 600;
+}
+.td__controls select,
+.td__controls input,
+.td__wall input {
+  font: inherit;
+  padding: 0.2rem 0.4rem;
+  border-radius: 6px;
+  border: 1px solid var(--rule, #2a3140);
+  background: var(--panel, transparent);
+  color: inherit;
+}
+.td__controls button,
+.td__chip {
+  font: inherit;
+  padding: 0.3rem 0.7rem;
+  border-radius: 6px;
+  border: 1px solid var(--rule, #2a3140);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.td__controls button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.td__chip {
+  margin: 0 0.15rem;
+  padding: 0.1rem 0.5rem;
+}
+.td__chip:hover,
+.td__controls button:not(:disabled):hover {
+  border-color: var(--accent, #6ea8fe);
+}
+.td__hint {
+  color: var(--fg-muted, #9aa4b2);
+}
+
+.td__svg {
+  width: 100%;
+  max-height: 70vh;
+  border: 1px solid var(--rule, #2a3140);
+  border-radius: 8px;
+  background: var(--panel, #11151c);
+}
+.td__tile {
+  stroke: var(--panel, #11151c);
+  stroke-width: 0.06;
+  opacity: 0.45;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+.td__tile.in-grandparent {
+  opacity: 0.55;
+}
+.td__tile.in-parent {
+  opacity: 0.85;
+}
+.td__tile.on-strand {
+  opacity: 1;
+}
+.td__tile.is-selected {
+  opacity: 1;
+  stroke: #fff;
+  stroke-width: 0.12;
+}
+.td__tile.is-neighbour {
+  opacity: 1;
+  stroke: var(--accent, #6ea8fe);
+  stroke-width: 0.14;
+}
+.td__edge line {
+  stroke: rgba(255, 255, 255, 0.35);
+  stroke-width: 0.1;
+  cursor: pointer;
+}
+.td__edge.is-active line {
+  stroke: #ffd166;
+  stroke-width: 0.18;
+}
+.td__edge text {
+  font-size: 0.42px;
+  fill: #fff;
+  pointer-events: none;
+  paint-order: stroke;
+  stroke: rgba(0, 0, 0, 0.6);
+  stroke-width: 0.08;
+}
+.td__strand {
+  fill: none;
+  stroke: #ff7a59;
+  stroke-width: 0.14;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  pointer-events: none;
+}
+
+.td__section h2 {
+  margin: 1.2rem 0 0.4rem;
+}
+.td__section h3 {
+  margin: 1rem 0 0.3rem;
+}
+.td__aside {
+  border-left: 3px solid var(--accent, #6ea8fe);
+  padding: 0.4rem 0.8rem;
+  background: color-mix(in srgb, var(--accent, #6ea8fe) 8%, transparent);
+  border-radius: 0 6px 6px 0;
+}
+
+.td__trace {
+  padding-left: 1.4rem;
+  max-width: 80ch;
+  line-height: 1.5;
+}
+.td__trace li {
+  margin: 0.3rem 0;
+}
+.td__trace-up::marker {
+  color: #ffd166;
+}
+.td__trace-inside::marker {
+  color: var(--accent, #6ea8fe);
+}
+.td__trace-down::marker {
+  color: #8fd694;
+}
+.td__trace-top::marker {
+  color: #ff7a59;
+}
+.td__strandlist {
+  font-size: 0.95rem;
+}
+
+.td__run,
+.td__tables table {
+  border-collapse: collapse;
+  font-size: 0.92rem;
+}
+.td__run th,
+.td__run td,
+.td__tables th,
+.td__tables td {
+  text-align: left;
+  padding: 0.25rem 0.7rem 0.25rem 0;
+  border-bottom: 1px solid var(--rule, #2a3140);
+  vertical-align: top;
+}
+.td__mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.9em;
+}
+.td__tables {
+  max-width: 100%;
+  overflow-x: auto;
+}
+.td__wall {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem 1.4rem;
+  align-items: center;
+}
+.td__wall label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.td__pairs {
+  columns: 2;
+  max-height: 24rem;
+  overflow: auto;
+  padding-left: 1.2rem;
+  font-size: 0.82rem;
+}

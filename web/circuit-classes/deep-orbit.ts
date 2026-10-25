@@ -29,6 +29,7 @@
  *   npx tsx circuit-classes/deep-orbit.ts --compare <family> <maxLevel> <rule-combo> [...]
  *   npx tsx circuit-classes/deep-orbit.ts --near <family> <level> <rule-combo>   every pairing of the rule, nearest first
  *   npx tsx circuit-classes/deep-orbit.ts --like <family> <level> <rule-combo>   every pairing of the rule, most similar level profile first
+ *   npx tsx circuit-classes/deep-orbit.ts --families <family> <level> <rule-all|rule-combo ...>   every circuit family: its word, start level, period, growth
  *
  * The default report prints, per combination and level: tiles and boundary
  * dots of the Delta supertile, circuits born (count, longest, distinct
@@ -82,7 +83,51 @@ export interface Birth {
   readonly type: string;
   /** Child slots the circuit passes through, e.g. '013467'. */
   readonly slots: string;
+  /**
+   * The circuit's word: the cyclic sequence of child slots it runs through,
+   * one entry per weld crossed, canonicalised over rotation and direction,
+   * e.g. '0-1-3-4-6-7'. Two circuits at different levels with the same type
+   * and word run the same course through the substitution.
+   */
+  readonly word: string;
   readonly len: number;
+}
+
+/**
+ * Collapse the wiggles: a strand that crosses back and forth between two
+ * children (a-b-a-b-...) does so more often at every level, so the run is cut
+ * to one a-b. What is left is the cyclic order in which the circuit visits
+ * the children, which is what stays the same from one generation to the next.
+ */
+function collapseWiggles(seq: readonly number[]): number[] {
+  let w = [...seq];
+  for (;;) {
+    const n = w.length;
+    if (n < 4) break;
+    let cut = -1;
+    for (let i = 0; i < n; i++) {
+      if (w[i] === w[(i + 2) % n] && w[(i + 1) % n] === w[(i + 3) % n]) { cut = i; break; }
+    }
+    if (cut < 0) break;
+    const drop = new Set([(cut + 2) % n, (cut + 3) % n]);
+    w = w.filter((_, i) => !drop.has(i));
+  }
+  return w;
+}
+
+/** The lexicographically least rotation of a cyclic sequence, in either direction, wiggles collapsed. */
+function canonicalCycle(raw: readonly number[]): string {
+  const seq = collapseWiggles(raw);
+  const n = seq.length;
+  let best: string | null = null;
+  for (const dir of [seq, [...seq].reverse()]) {
+    for (let r = 0; r < n; r++) {
+      let w = '';
+      for (let i = 0; i < n; i++) w += (i ? '-' : '') + dir[(r + i) % n];
+      if (best === null || w < best) best = w;
+    }
+  }
+  return best ?? '';
 }
 
 const nPts = (st: State): number => st.pts.length >> 2;
@@ -245,9 +290,11 @@ export function compose(children: readonly { state: State; xform: ZAffine; slot:
     let x = x0;
     let l = 0;
     let slots = 0;
+    const seq: number[] = [];
     do {
       seen[x] = 1;
       slots |= 1 << slotOf[x];
+      seq.push(slotOf[x]);
       const y = arcP[x];
       l += arcLen[x];
       seen[y] = 1;
@@ -256,7 +303,7 @@ export function compose(children: readonly { state: State; xform: ZAffine; slot:
     } while (x !== x0);
     let label = '';
     for (let s = 0; s < 8; s++) if (slots & (1 << s)) label += s;
-    births.push({ type, slots: label, len: l });
+    births.push({ type, slots: label, word: canonicalCycle(seq), len: l });
     closed++;
     closedSegs += l;
   }
@@ -323,6 +370,8 @@ export interface LevelRecord {
   perType: TypeStats[];
   /** Circuits born at this level: [type, slots, length, count], longest first. */
   births: [string, string, number, number][];
+  /** The same births by word: [type, word, length, count], longest first. */
+  words: [string, string, number, number][];
   /** Two independent hashes of every type's boundary matching, for grouping combinations. */
   sig: string;
 }
@@ -383,7 +432,18 @@ export function runOrbit(family: TileFamilyId, subset: readonly number[], combo:
       bl.push([t, s, Number(l), c]);
     }
     bl.sort((a, b) => b[2] - a[2]);
-    const r: LevelRecord = { level, perType: TYPES.map((T) => typeStats(states.get(T)!)), births: bl, sig: sigOf(states) };
+    const wt = new Map<string, number>();
+    for (const b of births) {
+      const k = `${b.type}|${b.word}|${b.len}`;
+      wt.set(k, (wt.get(k) ?? 0) + 1);
+    }
+    const wl: [string, string, number, number][] = [];
+    for (const [k, c] of wt) {
+      const [t, w, l] = k.split('|');
+      wl.push([t, w, Number(l), c]);
+    }
+    wl.sort((a, b) => b[2] - a[2]);
+    const r: LevelRecord = { level, perType: TYPES.map((T) => typeStats(states.get(T)!)), births: bl, words: wl, sig: sigOf(states) };
     levels.push(r);
     if (keepHistory) history.push(TYPES.map((T) => ({ partner: states.get(T)!.partner, len: states.get(T)!.len })));
     onLevel?.(r);
@@ -695,6 +755,61 @@ export function lookalikes(family: TileFamilyId, subset: readonly number[], comb
   }
 }
 
+/**
+ * The circuit families of a set of pairings. A family is a (type, word): the
+ * course a circuit runs through the child slots of its supertile. For each
+ * family: which pairings have it, the levels at which it is born, the period
+ * (the step between those levels), and how its length grows per period.
+ * Families that start late or have long periods come first: those are the
+ * ones no rooted patch shows.
+ */
+export function families(family: TileFamilyId, subset: readonly number[], combos: readonly string[], maxLevel: number, minLen = 13): void {
+  interface Fam { type: string; word: string; byCombo: Map<string, Map<number, { len: number; count: number }[]>> }
+  const fams = new Map<string, Fam>();
+  for (const c of combos) {
+    const o = runOrbit(family, subset, c, maxLevel);
+    for (const r of o.levels) {
+      for (const [t, w, len, count] of r.words) {
+        if (len < minLen) continue;
+        const key = `${t}:${w}`;
+        const f = fams.get(key) ?? fams.set(key, { type: t, word: w, byCombo: new Map() }).get(key)!;
+        const bc = f.byCombo.get(c) ?? f.byCombo.set(c, new Map()).get(c)!;
+        (bc.get(r.level) ?? bc.set(r.level, []).get(r.level)!).push({ len, count });
+      }
+    }
+  }
+  const rows = [...fams.values()].map((f) => {
+    const levels = new Set<number>();
+    for (const bc of f.byCombo.values()) for (const k of bc.keys()) levels.add(k);
+    const L = [...levels].sort((a, b) => a - b);
+    let period = 0;
+    for (let i = 1; i < L.length; i++) period = gcd(period, L[i] - L[i - 1]);
+    // growth: the longest length at the last level over the longest at the level one period earlier (same pairing)
+    let growth: number | null = null;
+    for (const bc of f.byCombo.values()) {
+      const ks = [...bc.keys()].sort((a, b) => a - b);
+      if (ks.length >= 2) {
+        const a = ks[ks.length - 1], b = ks[ks.length - 2];
+        const la = Math.max(...bc.get(a)!.map((x) => x.len)), lb = Math.max(...bc.get(b)!.map((x) => x.len));
+        growth = Math.pow(la / lb, period / (a - b));
+        break;
+      }
+    }
+    const area = Math.pow(4 + Math.sqrt(15), period);
+    return { ...f, first: L[0], levels: L, period, growth, dim: growth ? (2 * Math.log(growth)) / Math.log(area) : null, n: f.byCombo.size };
+  });
+  rows.sort((a, b) => b.first - a.first || b.period - a.period || b.n - a.n);
+  console.log(`\n== ${family} ${subset.join('')}: circuit families of ${combos.length} pairings, levels to ${maxLevel}, circuits of ${minLen}+ segments ==`);
+  console.log(`${rows.length} families. Columns: first level born, levels, period, length growth per period and dimension, pairings that have it, example lengths.`);
+  for (const r of rows) {
+    const ex = [...r.byCombo.entries()][0];
+    const lens = [...ex[1].entries()].sort((a, b) => a[0] - b[0]).map(([k, v]) => `${k}:${Math.max(...v.map((x) => x.len))}`).join(' ');
+    console.log(`${String(r.first).padStart(3)}  ${r.levels.join(',').padEnd(18)} p=${String(r.period).padEnd(2)} x${(r.growth ?? 0).toFixed(1).padStart(6)} d=${(r.dim ?? 0).toFixed(2)}  ${String(r.n).padStart(4)} pairings  ${r.type}:${r.word}  e.g. ${ex[0]} ${lens}`);
+  }
+}
+
+function gcd(a: number, b: number): number { return b === 0 ? a : gcd(b, a % b); }
+
 // ---------------------------------------------------------------------------
 // CLI
 // ---------------------------------------------------------------------------
@@ -720,6 +835,7 @@ if (process.argv[1]?.endsWith('deep-orbit.ts')) {
   const cmp = args.includes('--compare');
   const near = args.includes('--near');
   const like = args.includes('--like');
+  const fam = args.includes('--families');
   const rest = args.filter((a) => !a.startsWith('--'));
   const [familyArg, levelsArg, ...shares] = rest;
   const family = familyArg as TileFamilyId;
@@ -729,7 +845,11 @@ if (process.argv[1]?.endsWith('deep-orbit.ts')) {
     process.exit(2);
   }
   const items = expandShares(family, shares);
-  if (near) {
+  if (fam) {
+    const rule = items[0].subset.join('');
+    if (items.some((it) => it.subset.join('') !== rule)) throw new Error('--families needs combinations of one rule');
+    families(family, items[0].subset, items.map((it) => it.combo), maxLevel);
+  } else if (near) {
     for (const { subset, combo } of items) nearest(family, subset, combo, maxLevel);
   } else if (like) {
     for (const { subset, combo } of items) lookalikes(family, subset, combo, maxLevel);

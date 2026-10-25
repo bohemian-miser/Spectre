@@ -91,6 +91,14 @@ export const SITE_NAV: readonly NavItem[] = Object.freeze([
     blurb: 'Walk a strand by hand and see which joins the labels permit, which the tiling uses.',
   },
   {
+    id: 'transducer',
+    label: 'Neighbour machine',
+    short: 'Neighbours',
+    entry: 'transducer.html',
+    status: 'ready',
+    blurb: 'Tatham’s addresses and transducer for the hexagons, stepped by hand, then our strands run on it.',
+  },
+  {
     id: 'lattice',
     label: 'Flow lattice',
     short: 'Lattice',
