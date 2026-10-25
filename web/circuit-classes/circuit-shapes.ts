@@ -235,6 +235,11 @@ export class CircuitShapes {
     else for (let q = s.length - 1; q >= 0; q--) enter(s[q], true);
   }
 
+  /** The children of a level-n supertile of `type`: their types and slots, in child order. */
+  childTypes(n: number, type: string): { type: string; pos: number }[] {
+    return (buildSystem(this.family, n)[type] as MetaNode).children.map((ch) => ({ type: ch.node.type, pos: ch.pos }));
+  }
+
   /** The longest arc through a level-n supertile of `type` (an open strand), drawn down to level `stop`, with its end points. */
   longestArc(n: number, type: string, stop: number): { length: number; pts: Pt[] } {
     const L = this.levels[n][type];
