@@ -36,6 +36,7 @@ export type { PanZoomProps, PanZoomApi } from './PanZoom';
 export { CircuitLayer } from './CircuitLayer';
 export type { CircuitLayerProps } from './CircuitLayer';
 export { CentreLayer } from './CentreLayer';
+export { JoinPicker } from './JoinPicker';
 export type { CentreLayerProps } from './CentreLayer';
 export { FlowLayer } from './FlowLayer';
 export type { FlowLayerProps } from './FlowLayer';

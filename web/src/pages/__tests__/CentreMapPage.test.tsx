@@ -1,0 +1,69 @@
+// @vitest-environment jsdom
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import CentreMapPage from '../CentreMapPage';
+
+describe('CentreMapPage', () => {
+  beforeEach(() => {
+    // jsdom has no canvas; the heatmap and thumbnails just need somewhere to draw.
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation((() => ({
+      createImageData: (w: number, h: number) => ({ data: new Uint8ClampedArray(w * h * 4), width: w, height: h }),
+      putImageData: () => {},
+    })) as unknown as typeof HTMLCanvasElement.prototype.getContext);
+    if (typeof globalThis.ImageData === 'undefined') {
+      (globalThis as unknown as { ImageData: unknown }).ImageData = class {
+        constructor(public data: Uint8ClampedArray, public width: number, public height: number) {}
+      };
+    }
+  });
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+  });
+
+  it('compares all 270 Spectre pairings, lays them out, and searches them', async () => {
+    render(<CentreMapPage />);
+    fireEvent.change(screen.getByTestId('centremap-level'), { target: { value: '4' } });
+    const start = screen.getByTestId('centremap-start');
+    expect(start.textContent).toBe('Compare 270 pairings');
+    fireEvent.click(start);
+    await waitFor(() => expect(screen.getByTestId('centremap-summary')).toBeTruthy(), { timeout: 60000 });
+    expect(screen.getByTestId('centremap-summary').textContent).toMatch(/^270 pairings at level 4/);
+
+    const dots = screen.getByTestId('centremap-umap').querySelectorAll('circle');
+    expect(dots).toHaveLength(270);
+    // Hovering a dot names its pairing.
+    fireEvent.mouseEnter(dots[0]);
+    expect(screen.getByTestId('centremap-hover').textContent).toMatch(/^\d+ · [0-9a-z]{10}$/);
+
+    // Rule plus wildcard pattern.
+    fireEvent.change(screen.getByTestId('centremap-rule'), { target: { value: '0356' } });
+    expect(screen.getByTestId('centremap-matches').textContent).toBe('8 of 270 match');
+    fireEvent.change(screen.getByTestId('centremap-pattern'), { target: { value: '1' } });
+    expect(screen.getByTestId('centremap-matches').textContent).toBe('4 of 270 match');
+    fireEvent.change(screen.getByTestId('centremap-rule'), { target: { value: '' } });
+    fireEvent.change(screen.getByTestId('centremap-pattern'), { target: { value: '' } });
+    expect(screen.getByTestId('centremap-matches').textContent).toBe('Showing all');
+
+    // A join: Theta, its edges 9 and 10 are both class 0, so only rules with class 0 can match.
+    fireEvent.click(screen.getByLabelText('Next tile'));
+    expect(screen.getByTestId('join-picker-type').textContent).toBe('Theta');
+    const edges = screen.getByTestId('join-picker').querySelectorAll('.join-picker-edge');
+    const classOf = (i: number) => edges[i].getAttribute('data-major');
+    const zeros = [...edges].map((_, i) => i).filter((i) => classOf(i) === '0');
+    const threes = [...edges].map((_, i) => i).filter((i) => classOf(i) === '3');
+    fireEvent.click(edges[zeros[0]]);
+    fireEvent.click(edges[threes[0]]);
+    expect(screen.getByTestId('join-picker-joins').textContent).toMatch(/Theta [03]–[03]/);
+    const m = screen.getByTestId('centremap-matches').textContent!.match(/^(\d+) of 270 match$/);
+    expect(m).not.toBeNull();
+    expect(Number(m![1])).toBeGreaterThan(0);
+    expect(Number(m![1])).toBeLessThan(270);
+
+    // Picking a dot opens it, with its closest pairings and an Explorer link.
+    fireEvent.click(dots[0]);
+    const sel = screen.getByTestId('centremap-selected');
+    expect(sel.querySelector('a')!.getAttribute('href')).toMatch(/#\/explorer\?v=1/);
+    expect(sel.querySelectorAll('figure').length).toBe(2 + 8);
+  }, 90000);
+});
