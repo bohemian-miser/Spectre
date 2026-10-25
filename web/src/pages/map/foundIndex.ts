@@ -18,8 +18,8 @@
 const MATCH = 1e-2;
 /** Grid cell size; a lookup needs a neighbour cell only when this close to an edge. */
 const CELL = 1;
-/** Cell keys are ix * ROW + iy (collisions only cost a distance check). */
-const ROW = 2 ** 26;
+/** Cells wrap at 2^16 a side so keys stay small integers (a collision only costs a distance check). */
+const cellKey = (ix: number, iy: number): number => ((ix & 0xffff) << 16) | (iy & 0xffff);
 
 export class FoundIndex<T> {
   private readonly cells = new Map<number, number[]>();
@@ -43,7 +43,7 @@ export class FoundIndex<T> {
     for (let i = 0; i + 1 < mids.length; i += 2) {
       const x = mids[i];
       const y = mids[i + 1];
-      const k = Math.floor(x / CELL) * ROW + Math.floor(y / CELL);
+      const k = cellKey(Math.floor(x / CELL), Math.floor(y / CELL));
       const at = this.xs.length;
       this.xs.push(x);
       this.ys.push(y);
@@ -68,9 +68,10 @@ export class FoundIndex<T> {
     const y1 = iy + 1 - fy < m ? iy + 1 : iy;
     for (let cx = x0; cx <= x1; cx++) {
       for (let cy = y0; cy <= y1; cy++) {
-        const l = this.cells.get(cx * ROW + cy);
+        const l = this.cells.get(cellKey(cx, cy));
         if (!l) continue;
-        for (const at of l) {
+        for (let j = 0; j < l.length; j++) {
+          const at = l[j];
           if (Math.abs(this.xs[at] - x) < MATCH && Math.abs(this.ys[at] - y) < MATCH) return this.slotOf[at];
         }
       }

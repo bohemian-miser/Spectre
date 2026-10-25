@@ -32,7 +32,6 @@ import {
   type ReactNode,
 } from 'react';
 import {
-  COS30,
   DEFAULT_FIND_CEILING,
   DEFAULT_FOUND_HOLD,
   type Rgb,
@@ -40,19 +39,10 @@ import {
   averageLeafArea,
   clampFindCeiling,
   clampFoundHold,
-  SIN30,
   circuitLengthRgb,
   circuitHueRgb,
   centreRadius,
-  isAggregateType,
-  pathLength,
-  pathSegments,
-  segmentKey,
-  tracePaths,
-  weldSegments,
   type Pt,
-  type StrandCurve,
-  type Segment,
   type TileFamilyId,
   type UnrootedQueryRequest,
   type UnrootedQueryResponse,
@@ -90,7 +80,8 @@ import {
   type TransitionIndex,
 } from './transitions';
 import { createQueryScheduler, type QueryScheduler } from './queryScheduler';
-import { FoundIndex } from './foundIndex';
+import { findTableOf, type FindPassResult, type FindTable } from './findPass';
+import { createFindClient, type FindClient } from '../../workers/findClient';
 import {
   advanceFollowCamera,
   createFollowCamera,
@@ -233,6 +224,14 @@ const CENTRE_TRACK_MAX = 4000;
  * that could silently lose a circuit that had genuinely been found, and how
  * much memory to spend on them is the reader's call — see `foundHold`.
  */
+
+/** One plain-data copy of each chord table, so a find worker is sent it once. */
+const findTables = new WeakMap<LeafChordTable, FindTable>();
+function findTableFor(table: LeafChordTable): FindTable {
+  let t = findTables.get(table);
+  if (!t) findTables.set(table, (t = findTableOf(table)));
+  return t;
+}
 
 /**
  * A found circuit's centre in ABSOLUTE world coordinates. Its geometry is
@@ -575,6 +574,8 @@ export interface InfiniteCanvasProps {
   readonly forceSyncClient?: boolean;
   /** Test seam: replaces `createMapRenderer`. */
   readonly rendererFactory?: (canvas: HTMLCanvasElement) => MapRenderer | null;
+  /** Test seam: replaces `createFindClient` (find-all's worker). */
+  readonly findClientFactory?: () => FindClient;
   readonly apiRef?: MutableRefObject<InfiniteCanvasApi | null>;
   /** Host class — MUST give the element a deterministic size. */
   readonly className?: string;
@@ -614,6 +615,7 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
     onStatusChange,
     forceSyncClient,
     rendererFactory,
+    findClientFactory,
     apiRef,
     className = 'map-viewport',
     ariaLabel = 'Infinite tiling map — drag to pan, wheel or pinch to zoom',
@@ -717,10 +719,22 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
   const foundRef = useRef<readonly TrailGeometry[]>([]);
   /** Identities of everything in `foundRef`, so a re-find is not a duplicate. */
   const foundKeysRef = useRef<Set<string>>(new Set());
-  /** Each found circuit's chord midpoints (world x, y pairs), for {@link FoundIndex}. */
-  const foundMidsRef = useRef(new WeakMap<TrailGeometry, Float64Array>());
-  /** Where the circuits in `list` lie, so a cut can leave them out; rebuilt when `list` is not `foundRef`. */
-  const foundIndexRef = useRef<{ list: readonly TrailGeometry[]; index: FoundIndex<TrailGeometry> } | null>(null);
+  /** The find pass's id for each found circuit. */
+  const foundIdRef = useRef(new WeakMap<TrailGeometry, number>());
+  /** Where find-all passes run (a worker, unless there is none); made on first use. */
+  const findClientRef = useRef<FindClient | null>(null);
+  /** The found list the pass's memory matches, or null when it must be told. */
+  const findSyncedRef = useRef<readonly TrailGeometry[] | null>(null);
+  /** A pass is running, and another cut arrived while it did. */
+  const findBusyRef = useRef(false);
+  const findPendingRef = useRef(false);
+  useEffect(
+    () => () => {
+      findClientRef.current?.dispose();
+      findClientRef.current = null;
+    },
+    [],
+  );
   const foundInfoRef = useRef({ found: 0, skipped: false, stale: false });
   const followRafRef = useRef(0);
   const followLastRef = useRef(0);
@@ -1289,6 +1303,13 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
       if (had) apply([], false);
       return;
     }
+    // One pass at a time; cuts that arrive meanwhile are folded into one more
+    // pass over the newest when it is done (a coarse one too, so a late
+    // result cannot outlive it).
+    if (findBusyRef.current) {
+      findPendingRef.current = true;
+      return;
+    }
     if (cut.cutLevel !== 0 || cut.truncated || cut.count > findCeilingRef.current) {
       // Too coarse to FIND circuits — but the ones already found are
       // world-anchored, so they can go on being drawn while the camera pulls
@@ -1302,171 +1323,132 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
       apply([], true);
       return;
     }
-    // Circuits found already are left out before welding: their chords are
-    // their own, so nothing else traces differently without them, and
-    // re-finding them was most of what a pass round familiar ground cost.
-    // Counting the chords seen says which of them this cut holds whole.
-    let held = foundIndexRef.current;
-    if (!held || held.list !== foundRef.current) {
-      const index = new FoundIndex<TrailGeometry>();
-      for (const g of foundRef.current) {
-        const mids = foundMidsRef.current.get(g);
-        if (mids) index.add(g, mids);
+    // The pass remembers what it has found, so it leaves those chords out
+    // before welding; it is told what is still held whenever that is no
+    // longer just everything it has handed back.
+    const list = foundRef.current;
+    const keep = findSyncedRef.current === list ? undefined : list.flatMap((g) => foundIdRef.current.get(g) ?? []);
+    findSyncedRef.current = list;
+
+    const finish = (res: FindPassResult): void => {
+      if (foundRef.current !== list || chordsRef.current !== table || !findOnRef.current) {
+        // Cleared, re-ruled or switched off while the pass ran: its finds
+        // belong to a picture that is gone. Start the next one afresh.
+        findSyncedRef.current = null;
+        return;
       }
-      held = { list: foundRef.current, index };
-      foundIndexRef.current = held;
-    }
-    const known = held.index;
-    const knownSeen = new Int32Array(known.circuits);
-    const segs: Segment[] = [];
-    const auxAt: number[] = [];
-    // Curved strands: each chord's world curve handles, by segment index.
-    const ctrls: StrandCurve[] = [];
-    for (let i = 0; i < cut.count; i++) {
-      const tb = cut.type[i];
-      if (isAggregateType(tb)) continue;
-      const local = table.segments[tb];
-      if (!local || local.length === 0) continue;
-      const code = cut.code[i];
-      const rot = code & 15;
-      const mir = (code & 16) !== 0 ? -1 : 1;
-      const co = COS30[rot];
-      const si = SIN30[rot];
-      const px = cut.pos[i * 2] + cut.origin.x;
-      const py = cut.pos[i * 2 + 1] + cut.origin.y;
-      const localCtrls = table.controls?.[tb];
-      for (let s = 0; s < local.length; s++) {
-        const seg = local[s];
-        const [a, b] = seg;
-        const wa = { x: co * mir * a.x - si * a.y + px, y: si * mir * a.x + co * a.y + py };
-        const wb = { x: co * mir * b.x - si * b.y + px, y: si * mir * b.x + co * b.y + py };
-        const slot = known.find((wa.x + wb.x) / 2, (wa.y + wb.y) / 2);
-        if (slot >= 0) {
-          knownSeen[slot]++;
-          continue;
+      const byId = new Map<number, TrailGeometry>();
+      for (const g of list) {
+        const id = foundIdRef.current.get(g);
+        if (id !== undefined) byId.set(id, g);
+      }
+      const fresh: TrailGeometry[] = res.fresh.map((l) => {
+        const rgb = circuitRgb(l.tileLength);
+        const geom: TrailGeometry = {
+          tileLength: l.tileLength,
+          color: [rgb[0] / 255, rgb[1] / 255, rgb[2] / 255],
+          origin: l.origin,
+          xy: l.xy,
+          arc: l.arc,
+          pointCount: l.pointCount,
+          totalLength: l.totalLength,
+          version: 1,
+        };
+        foundIdRef.current.set(geom, l.id);
+        return geom;
+      });
+      // Found before and whole in this cut: what tracing them again would
+      // have given, without the work.
+      const seenWhole = res.seenWhole.flatMap((id) => byId.get(id) ?? []);
+      let geoms = [...seenWhole, ...fresh];
+      // What this cut can see, by identity — which is also the set that must
+      // survive any trimming below.
+      const here = new Set(geoms.map(circuitKey));
+      // The pass now remembers `list` plus everything fresh; anything else
+      // the list ends up as has to be told to it next time.
+      let synced = false;
+
+      if (persistFoundRef.current) {
+        // "Keep them" means KEEP them: a circuit found here stays found when the
+        // camera moves on and this cut no longer contains it. Without the merge
+        // the set is only ever what is on screen right now, so coming back to a
+        // leaf cut silently threw away everything found anywhere else.
+        const merged = [...list];
+        // Self-healing: the keys are only consulted here, so a run with the
+        // toggle OFF (which replaces the list wholesale) can leave them stale.
+        // Rebuilding on the mismatch keeps that from suppressing a real find.
+        if (foundKeysRef.current.size !== list.length) {
+          foundKeysRef.current = new Set(list.map(circuitKey));
         }
-        if (table.aux?.has(seg)) auxAt.push(segs.length);
-        const c = localCtrls?.[s];
-        if (c) {
-          ctrls[segs.length] = {
-            c1: { x: co * mir * c.c1.x - si * c.c1.y + px, y: si * mir * c.c1.x + co * c.c1.y + py },
-            c2: { x: co * mir * c.c2.x - si * c.c2.y + px, y: si * mir * c.c2.x + co * c.c2.y + py },
-          };
+        const keys = foundKeysRef.current;
+        for (const g of fresh) {
+          const key = circuitKey(g);
+          if (keys.has(key)) continue;
+          keys.add(key);
+          merged.push(g);
         }
-        segs.push([wa, wb]);
+        geoms = merged;
+        synced = merged.length === list.length + fresh.length;
       }
-    }
-    const welded = weldSegments(segs);
-    const { circuits } = tracePaths(welded);
-    const ctrlByKey = new Map<string, StrandCurve>();
-    ctrls.forEach((c, k) => ctrlByKey.set(segmentKey(welded[k]), c));
-    // Links that do not count towards length (a hexagon rule drawn on
-    // Spectres), so a circuit keeps its hexagon colour.
-    const auxKeys = new Set(auxAt.map((k) => segmentKey(welded[k])));
-    const lengthOf = (path: (typeof circuits)[number]): number =>
-      auxKeys.size
-        ? pathLength(path) - pathSegments(path).filter((sg) => auxKeys.has(segmentKey(sg))).length
-        : pathLength(path);
-    let geoms: TrailGeometry[] = [];
-    for (const path of circuits) {
-      const pts = path.points;
-      const n = pts.length;
-      if (n < 3) continue;
-      const ring = [...pts, pts[0]];
-      const arcs = [0];
-      for (let i = 1; i <= n; i++) arcs.push(arcs[i - 1] + Math.hypot(ring[i].x - ring[i - 1].x, ring[i].y - ring[i - 1].y));
-      const total = arcs[n];
-      const run = curveRun(
-        ring,
-        (k) => (ctrlByKey.size ? (ctrlByKey.get(segmentKey([ring[k], ring[k + 1]])) ?? null) : null),
-        (i) => arcs[i],
-      );
-      const tileLength = lengthOf(path);
-      const rgb = circuitRgb(tileLength);
-      const geom: TrailGeometry = {
-        tileLength,
-        color: [rgb[0] / 255, rgb[1] / 255, rgb[2] / 255],
-        origin: cut.origin,
-        ...packRun(run, cut.origin),
-        totalLength: total,
-        version: 1,
-      };
-      const mids = new Float64Array(2 * n);
-      for (let i = 0; i < n; i++) {
-        mids[2 * i] = (ring[i].x + ring[i + 1].x) / 2;
-        mids[2 * i + 1] = (ring[i].y + ring[i + 1].y) / 2;
-      }
-      foundMidsRef.current.set(geom, mids);
-      geoms.push(geom);
-    }
-    const fresh = geoms;
-    // Found before and whole in this cut: what tracing them again would have
-    // given, without the work.
-    const seenWhole: TrailGeometry[] = [];
-    for (let k = 0; k < known.circuits; k++) if (knownSeen[k] === known.sizes[k]) seenWhole.push(known.items[k]);
-    geoms = [...seenWhole, ...fresh];
-    // What this cut can see, by identity — which is also the set that must
-    // survive any trimming below.
-    const here = new Set(geoms.map(circuitKey));
 
-    if (persistFoundRef.current) {
-      // "Keep them" means KEEP them: a circuit found here stays found when the
-      // camera moves on and this cut no longer contains it. Without the merge
-      // the set is only ever what is on screen right now, so coming back to a
-      // leaf cut silently threw away everything found anywhere else.
-      const merged = [...foundRef.current];
-      // Self-healing: the keys are only consulted here, so a run with the
-      // toggle OFF (which replaces the list wholesale) can leave them stale.
-      // Rebuilding on the mismatch keeps that from suppressing a real find.
-      if (foundKeysRef.current.size !== foundRef.current.length) {
-        foundKeysRef.current = new Set(foundRef.current.map(circuitKey));
-      }
-      const keys = foundKeysRef.current;
-      const added: TrailGeometry[] = [];
-      for (const g of fresh) {
-        const key = circuitKey(g);
-        if (keys.has(key)) continue;
-        keys.add(key);
-        merged.push(g);
-        added.push(g);
-      }
-      geoms = merged;
-      // The index already holds everything that was there: only the new
-      // finds need adding, not the whole set again.
-      for (const g of added) known.add(g, foundMidsRef.current.get(g)!);
-      held.list = merged;
-    }
+      const hold = foundHoldRef.current;
+      if (hold > 0 && geoms.length > hold) {
+        // Trimming by length was a bug: it always kept the longest, so once the
+        // accumulated set filled up, every short circuit found afterwards was
+        // evicted the moment it arrived — including ones in plain view. Nothing
+        // on screen may be dropped, and what IS dropped goes by distance from
+        // the camera, which has nothing to do with a circuit's size.
+        const cam = camRef.current;
+        const near = (g: TrailGeometry): number => {
+          const c = circuitCentre(g);
+          return (c.x - cam.cx) ** 2 + (c.y - cam.cy) ** 2;
+        };
+        const onScreen: TrailGeometry[] = [];
+        const rest: TrailGeometry[] = [];
+        for (const g of geoms) (here.has(circuitKey(g)) ? onScreen : rest).push(g);
 
-    const hold = foundHoldRef.current;
-    if (hold > 0 && geoms.length > hold) {
-      // Trimming by length was a bug: it always kept the longest, so once the
-      // accumulated set filled up, every short circuit found afterwards was
-      // evicted the moment it arrived — including ones in plain view. Nothing
-      // on screen may be dropped, and what IS dropped goes by distance from
-      // the camera, which has nothing to do with a circuit's size.
-      const cam = camRef.current;
-      const near = (g: TrailGeometry): number => {
-        const c = circuitCentre(g);
-        return (c.x - cam.cx) ** 2 + (c.y - cam.cy) ** 2;
-      };
-      const onScreen: TrailGeometry[] = [];
-      const rest: TrailGeometry[] = [];
-      for (const g of geoms) (here.has(circuitKey(g)) ? onScreen : rest).push(g);
-
-      if (onScreen.length >= hold) {
-        // One cut alone over the cap: keep what is nearest the middle of the
-        // view, still nothing to do with length.
-        geoms = onScreen.sort((a, b) => near(a) - near(b)).slice(0, hold);
-      } else {
-        rest.sort((a, b) => near(a) - near(b));
-        geoms = [...onScreen, ...rest.slice(0, hold - onScreen.length)];
+        if (onScreen.length >= hold) {
+          // One cut alone over the cap: keep what is nearest the middle of the
+          // view, still nothing to do with length.
+          geoms = onScreen.sort((a, b) => near(a) - near(b)).slice(0, hold);
+        } else {
+          rest.sort((a, b) => near(a) - near(b));
+          geoms = [...onScreen, ...rest.slice(0, hold - onScreen.length)];
+        }
+        // Whatever was dropped must be forgettable again, or it could never come
+        // back once the camera returns to it.
+        foundKeysRef.current = new Set(geoms.map(circuitKey));
+        synced = false;
       }
-      // Whatever was dropped must be forgettable again, or it could never come
-      // back once the camera returns to it.
-      foundKeysRef.current = new Set(geoms.map(circuitKey));
+      apply(geoms, false);
+      findSyncedRef.current = synced ? geoms : null;
+    };
+
+    const client = (findClientRef.current ??= findClientFactory?.() ?? createFindClient({ forceSync: forceSyncClient }));
+    const out = client.pass(cut, findTableFor(table), keep);
+    if (!(out instanceof Promise)) {
+      finish(out);
+      return;
     }
-    apply(geoms, false);
-  }, [syncOverlays, publishTrace, scheduleDraw]);
+    findBusyRef.current = true;
+    const done = (): void => {
+      findBusyRef.current = false;
+      if (!findPendingRef.current) return;
+      findPendingRef.current = false;
+      recomputeFoundRef.current?.();
+    };
+    out.then(
+      (res) => {
+        finish(res);
+        done();
+      },
+      (err: unknown) => {
+        findSyncedRef.current = null;
+        publish({ error: err instanceof Error ? err.message : String(err) });
+        done();
+      },
+    );
+  }, [syncOverlays, publishTrace, scheduleDraw, publish, forceSyncClient, findClientFactory]);
   const recomputeFoundRef = useRef(recomputeFound);
   recomputeFoundRef.current = recomputeFound;
 
