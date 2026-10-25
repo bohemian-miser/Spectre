@@ -199,6 +199,21 @@ line, mixed, open), meant as a first read; the table is the result.
 
 ## Open ends
 
+* **A catalogue of circuit types.** `--families` is a first cut: each born
+  circuit's *word* (the cyclic order of child slots it runs through, with
+  back-and-forth wiggles between two children collapsed), matched across
+  levels and pairings. On hexagon `023468` it already separates the
+  triangles (the word visiting children 0, 1, 7, 3, 4, 6 and never 2 or 5,
+  every type, every other level) from the late family above, whose circuits
+  are *side circuits*: each lives along the shared side of two neighbouring
+  children and encloses no child, and the same 402-segment circuit recurs at
+  levels 6 and 7, so it is anchored to a pair of level-5 supertiles rather
+  than to the supertile it is born in. The word is not yet scale-invariant:
+  three-child wiggles survive the collapse and a side circuit's birth level
+  overstates its scale. The invariant to build next is topological: the
+  smallest cluster of supertiles containing the circuit, which of its
+  children the circuit passes through and which it encloses.
+
 * **The limit of the closed share.** Carrying the generations' lengths as
   exact functions of the level (they are born in every type with the same
   length, so a linear recurrence on the boundary states should exist, as for
