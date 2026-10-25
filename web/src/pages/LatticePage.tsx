@@ -6,7 +6,7 @@
  * lines per edge as its flow needs. The maths lives in core/flowLattice.ts.
  */
 
-import { useMemo, useState, type KeyboardEvent } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import {
   applyMatching,
   combine,
@@ -87,6 +87,32 @@ function slicePoint(model: FlowModel, axes: readonly [number, number], flat: boo
   return null;
 }
 
+/**
+ * Keep an element from shrinking while its text changes under it, so whatever
+ * sits below doesn't jump each time a flow turns valid or invalid. It may
+ * still grow; the floor resets when `resetKey` or the element's width changes.
+ */
+function useNoShrink<T extends HTMLElement>(resetKey: string) {
+  const ref = useRef<T>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    el.style.minHeight = '';
+    let width = el.offsetWidth;
+    const ro = new ResizeObserver(() => {
+      if (el.offsetWidth !== width) {
+        width = el.offsetWidth;
+        el.style.minHeight = '';
+      }
+      const h = Math.ceil(el.getBoundingClientRect().height);
+      if (h > (parseFloat(el.style.minHeight) || 0)) el.style.minHeight = `${h}px`;
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [resetKey]);
+  return ref;
+}
+
 function firstFlow(m: FlowModel): number[] {
   return vecAt(m, startAxes(m), 1, 0);
 }
@@ -135,6 +161,7 @@ export default function LatticePage(): JSX.Element {
     setCol(0);
     setComboIdx({});
   };
+  const panelsRef = useNoShrink<HTMLDivElement>(`${mode}|${zeroEither}|${level}`);
   const flat = model.basis.length < 2;
   const sel = slicePoint(model, axes, flat, x);
   const combos: ComboTable = useMemo(
@@ -230,7 +257,7 @@ export default function LatticePage(): JSX.Element {
         </label>
       </div>
 
-      <div className="lattice-panels">
+      <div className="lattice-panels" ref={panelsRef}>
         <section className="lattice-panel" aria-labelledby="lattice-plot-h">
           <h2 id="lattice-plot-h">Lattice slice</h2>
           <LatticePlot
@@ -592,14 +619,18 @@ function CircuitPatch(props: {
           )),
         )}
       </svg>
-      {strandCount > 0 && unbalanced === 0 && (
-        <p className="lattice-turns" data-testid="lattice-turns">
+      {/* Always laid out, hidden when it doesn't apply, so the page doesn't jump as the flow turns valid. */}
+      {(() => {
+        const shown = strandCount > 0 && unbalanced === 0;
+        return (
+        <p className={`lattice-turns${shown ? '' : ' is-hidden'}`} data-testid="lattice-turns" aria-hidden={!shown}>
           <span className="lattice-swatch is-cw" /> {turns.count.cw} clockwise loop{turns.count.cw === 1 ? '' : 's'}
           <span className="lattice-swatch is-ccw" /> {turns.count.ccw} anticlockwise
           <span className="lattice-swatch is-open" /> {turns.count.open} running off the edge
           {model.zeroEitherWay ? ' or meeting head-on across class 0' : ''}
         </p>
-      )}
+        );
+      })()}
       <p className="muted">
         {unbalanced > 0
           ? `${unbalanced} of ${tiles.length} tiles don't balance (tinted): their strand ends are shown as dots, filled where flow leaves and hollow where it enters.`

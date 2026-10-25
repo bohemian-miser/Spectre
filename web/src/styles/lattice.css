@@ -623,3 +623,13 @@
   white-space: nowrap;
   font-size: 12px;
 }
+.lattice-turns.is-hidden {
+  visibility: hidden;
+}
+/* The Net column's text changes width as flows change ("0", "+1 ±1"); a fixed
+   width keeps every other column from being re-shared on each edit. */
+.lattice-editor thead th:last-child,
+.lattice-editor tr > td:last-child {
+  width: 8.5em;
+  min-width: 8.5em;
+}
