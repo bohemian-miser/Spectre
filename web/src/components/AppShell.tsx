@@ -8,11 +8,11 @@
  * reachable by flipping one field in `lib/siteNav.ts`.
  *
  * The shell is presentational only — no state, no data fetching — so pages stay
- * independently renderable in tests. On narrow screens the nav row scrolls
- * sideways, so the current page's link is scrolled into view on mount.
+ * independently renderable in tests. The only state is layout: the links that
+ * do not fit on the row move into a "More" dropdown at its end.
  */
 
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import {
   PAPER_TITLE,
   PAPER_URL,
@@ -33,6 +33,90 @@ export interface AppShellProps {
   readonly className?: string;
 }
 
+type NavEntry = (typeof SITE_NAV)[number];
+
+function NavLabel({ item }: { item: NavEntry }): JSX.Element {
+  return (
+    <>
+      <span className="long">{item.label}</span>
+      <span className="short">{item.short}</span>
+      {item.status === 'planned' && <em>soon</em>}
+    </>
+  );
+}
+
+function NavEntryLink(props: {
+  item: NavEntry;
+  base: string;
+  current: string | null;
+}): JSX.Element {
+  const { item, base, current } = props;
+  if (item.status !== 'ready') {
+    return (
+      <span
+        className="site-nav-link is-planned"
+        title={`${item.blurb} (coming soon)`}
+        aria-disabled="true"
+        data-nav-id={item.id}
+      >
+        <NavLabel item={item} />
+      </span>
+    );
+  }
+  return (
+    <a
+      className={['site-nav-link', current === item.id ? 'is-active' : ''].filter(Boolean).join(' ')}
+      href={navHref(item, base)}
+      title={item.blurb}
+      aria-current={current === item.id ? 'page' : undefined}
+      data-nav-id={item.id}
+    >
+      <NavLabel item={item} />
+    </a>
+  );
+}
+
+/**
+ * How many nav entries fit on the row, leaving room for the "More" button when
+ * any do not. Widths come from an invisible copy of the row (`measureRef`), so
+ * entries already moved into the menu can still be measured. Without
+ * ResizeObserver (jsdom) everything stays on the row.
+ */
+function useNavFit(
+  navRef: RefObject<HTMLElement>,
+  measureRef: RefObject<HTMLUListElement>,
+): number {
+  const [fits, setFits] = useState(SITE_NAV.length);
+
+  useLayoutEffect(() => {
+    const nav = navRef.current;
+    const measure = measureRef.current;
+    if (!nav || !measure || typeof ResizeObserver === 'undefined') return;
+    const fit = () => {
+      const items = [...measure.children] as HTMLElement[];
+      const more = items.pop();
+      const gap = parseFloat(getComputedStyle(measure).columnGap) || 0;
+      const avail = nav.clientWidth;
+      const widths = items.map((i) => i.offsetWidth);
+      if (widths.reduce((a, w) => a + w + gap, -gap) <= avail) {
+        setFits(widths.length);
+        return;
+      }
+      let used = more?.offsetWidth ?? 0;
+      let n = 0;
+      while (n < widths.length && used + gap + widths[n] <= avail) used += gap + widths[n++];
+      setFits(n);
+    };
+    fit();
+    const ro = new ResizeObserver(fit);
+    ro.observe(nav);
+    ro.observe(measure);
+    return () => ro.disconnect();
+  }, [navRef, measureRef]);
+
+  return fits;
+}
+
 function defaultBase(): string {
   // `import.meta.env` is defined by Vite (and by vitest's vite pipeline).
   const env = (import.meta as unknown as { env?: { BASE_URL?: string } }).env;
@@ -44,13 +128,30 @@ export function AppShell(props: AppShellProps): JSX.Element {
   const current =
     active ?? (typeof window !== 'undefined' ? activeNavId(window.location.pathname) : null);
   const navRef = useRef<HTMLElement>(null);
+  const measureRef = useRef<HTMLUListElement>(null);
+  const moreRef = useRef<HTMLLIElement>(null);
+  const fits = useNavFit(navRef, measureRef);
+  const [open, setOpen] = useState(false);
+  const shown = SITE_NAV.slice(0, fits);
+  const overflow = SITE_NAV.slice(fits);
+  const overflowActive = overflow.some((i) => i.id === current);
 
+  // Close the menu on a click outside it or on Escape.
   useEffect(() => {
-    const nav = navRef.current;
-    const link = nav?.querySelector<HTMLElement>('.is-active');
-    if (!nav || !link || nav.scrollWidth <= nav.clientWidth) return;
-    nav.scrollLeft = link.offsetLeft - (nav.clientWidth - link.offsetWidth) / 2;
-  }, [current]);
+    if (!open) return;
+    const onDown = (e: PointerEvent) => {
+      if (!moreRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('pointerdown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('pointerdown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
 
   return (
     <div className={['site', wide ? 'is-wide' : '', className ?? ''].filter(Boolean).join(' ')}>
@@ -70,37 +171,52 @@ export function AppShell(props: AppShellProps): JSX.Element {
 
         <nav className="site-nav" aria-label="Primary" ref={navRef}>
           <ul>
-            {SITE_NAV.map((item) =>
-              item.status === 'ready' ? (
-                <li key={item.id}>
-                  <a
-                    className={['site-nav-link', current === item.id ? 'is-active' : '']
-                      .filter(Boolean)
-                      .join(' ')}
-                    href={navHref(item, base)}
-                    title={item.blurb}
-                    aria-current={current === item.id ? 'page' : undefined}
-                    data-nav-id={item.id}
-                  >
-                    <span className="long">{item.label}</span>
-                    <span className="short">{item.short}</span>
-                  </a>
-                </li>
-              ) : (
-                <li key={item.id}>
-                  <span
-                    className="site-nav-link is-planned"
-                    title={`${item.blurb} (coming soon)`}
-                    aria-disabled="true"
-                    data-nav-id={item.id}
-                  >
-                    <span className="long">{item.label}</span>
-                    <span className="short">{item.short}</span>
-                    <em>soon</em>
-                  </span>
-                </li>
-              ),
+            {shown.map((item) => (
+              <li key={item.id}>
+                <NavEntryLink item={item} base={base} current={current} />
+              </li>
+            ))}
+            {overflow.length > 0 && (
+              <li className="site-more" ref={moreRef}>
+                <button
+                  type="button"
+                  className={['site-nav-link', overflowActive ? 'is-active' : '']
+                    .filter(Boolean)
+                    .join(' ')}
+                  aria-haspopup="true"
+                  aria-expanded={open}
+                  onClick={() => setOpen((o) => !o)}
+                >
+                  More
+                  <svg viewBox="0 0 12 12" width="10" height="10" aria-hidden="true">
+                    <path d="M2 4l4 4 4-4" fill="none" stroke="currentColor" strokeWidth="1.6" />
+                  </svg>
+                </button>
+                <ul className="site-more-menu" hidden={!open}>
+                  {overflow.map((item) => (
+                    <li key={item.id}>
+                      <NavEntryLink item={item} base={base} current={current} />
+                    </li>
+                  ))}
+                </ul>
+              </li>
             )}
+          </ul>
+          {/* Invisible copy of the full row, measured to decide what fits. */}
+          <ul className="site-nav-measure" ref={measureRef} aria-hidden="true">
+            {SITE_NAV.map((item) => (
+              <li key={item.id}>
+                <span className="site-nav-link">
+                  <NavLabel item={item} />
+                </span>
+              </li>
+            ))}
+            <li>
+              <span className="site-nav-link">
+                More
+                <svg viewBox="0 0 12 12" width="10" height="10" />
+              </span>
+            </li>
           </ul>
         </nav>
 

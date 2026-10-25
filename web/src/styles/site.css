@@ -40,19 +40,14 @@ body,
   color: var(--accent);
 }
 
-/* One row, like the sister site: the links never wrap. When even the short
-   labels do not fit (phones), the row scrolls sideways instead. */
+/* One row, like the sister site: the links never wrap. Whatever does not fit
+   moves into the "More" dropdown at the end of the row (AppShell useNavFit). */
 .site-nav {
-  position: relative; /* offsetParent for scrolling the active link into view */
+  position: relative;
   flex: 1 1 auto;
   min-width: 0;
-  overflow-x: auto;
-  scrollbar-width: none;
 }
-.site-nav::-webkit-scrollbar {
-  display: none;
-}
-.site-nav ul {
+.site-nav > ul {
   display: flex;
   align-items: center;
   gap: 4px;
@@ -70,6 +65,10 @@ body,
   color: var(--text);
   text-decoration: none;
   white-space: nowrap;
+  border: 0;
+  background: none;
+  font: inherit;
+  cursor: pointer;
 }
 .site-nav-link:hover {
   background: var(--panel-2);
@@ -96,6 +95,49 @@ body,
   padding: 1px 5px;
 }
 .site-nav-link .short {
+  display: none;
+}
+
+.site-nav-measure {
+  position: absolute;
+  top: 0;
+  left: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.site-more {
+  position: relative;
+}
+.site-more-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 180px;
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+}
+.site-more-menu[hidden] {
+  display: none;
+}
+.site-more-menu .site-nav-link {
+  display: flex;
+  border-radius: calc(var(--radius) - 2px);
+}
+/* The menu has room for the full names whatever the row is using. */
+.site-more-menu .site-nav-link .long {
+  display: inline;
+}
+.site-more-menu .site-nav-link .short {
   display: none;
 }
 
@@ -128,7 +170,8 @@ body,
   .site-brand-name {
     display: none;
   }
-  .site-nav ul {
+  .site-nav > ul,
+  .site-nav-measure {
     gap: 0;
   }
   .site-nav-link {
