@@ -2,36 +2,96 @@
    stages can restyle without touching component internals. */
 
 :root {
-  --bg: #14161a;
-  --panel: #1e2127;
-  --panel-2: #262a32;
-  --text: #e7e9ee;
-  --muted: #9aa2b1;
-  --line: #363b45;
-  --accent: #6ea8fe;
-  --warn: #ffcc55;
-  --ok: #7ddb8f;
+  /* Palette, type and control styling shared with the sister site,
+     aperiodic-circuits (bohemian-miser/aperiodic-circuits, src/styles.css):
+     warm paper in light mode, slate in dark, teal accent. */
+  --bg: #f6f4ef;
+  --panel: #ffffff;
+  --panel-2: #efece5;
+  --text: #1d2430;
+  --muted: #7a8494;
+  --line: #e2ddd2;
+  --accent: #2f7d6d;
+  --accent-ink: #ffffff;
+  --warn: #b7791f;
+  --ok: #2f7d4f;
+  --danger: #d1343a;
+  --canvas-bg: #fbfaf7;
   --radius: 8px;
-  color-scheme: dark;
+  --mono: ui-monospace, 'SF Mono', Menlo, monospace;
+  color-scheme: light;
 }
 
-@media (prefers-color-scheme: light) {
+@media (prefers-color-scheme: dark) {
   :root {
-    --bg: #f7f8fa;
-    --panel: #ffffff;
-    --panel-2: #eef1f6;
-    --text: #171a1f;
-    --muted: #5b6472;
-    --line: #d5dae2;
-    color-scheme: light;
+    --bg: #12161c;
+    --panel: #1a2029;
+    --panel-2: #222a35;
+    --text: #e6e9ee;
+    --muted: #8892a3;
+    --line: #2c3440;
+    --accent: #58b39e;
+    --accent-ink: #0d1512;
+    --warn: #ffcc55;
+    --ok: #6cd08f;
+    --danger: #ff6b6b;
+    --canvas-bg: #0f1318;
+    color-scheme: dark;
   }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
 }
 
 body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font: 14px/1.5 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font: 14px/1.45 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+a {
+  color: var(--accent);
+}
+
+/* Base controls. Wrapped in :where() so they carry no specificity: any
+   component's own class rule still wins over these defaults. */
+:where(select, input, textarea, button) {
+  font: inherit;
+  color: var(--text);
+}
+:where(button) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+  cursor: pointer;
+  white-space: nowrap;
+}
+:where(button:hover:not(:disabled)) {
+  border-color: var(--muted);
+}
+:where(button:disabled) {
+  opacity: 0.5;
+  cursor: default;
+}
+:where(button.primary) {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+:where(input[type='range'], input[type='checkbox'], input[type='radio']) {
+  accent-color: var(--accent);
+}
+:where(code, kbd, samp) {
+  font-family: var(--mono);
 }
 
 /* --- PanZoom ------------------------------------------------------------ */
@@ -40,8 +100,7 @@ body {
   width: 100%;
   height: 100%;
   cursor: grab;
-  background: var(--panel);
-  border-radius: var(--radius);
+  background: var(--canvas-bg);
 }
 .panzoom.is-panning {
   cursor: grabbing;
@@ -54,14 +113,17 @@ body {
   gap: 4px;
 }
 .panzoom-controls button {
-  width: 30px;
-  height: 30px;
+  min-width: 32px;
+  height: 32px;
+  padding: 0 8px;
   border-radius: 6px;
   border: 1px solid var(--line);
-  background: var(--panel-2);
+  background: var(--panel);
   color: var(--text);
   cursor: pointer;
-  font-size: 15px;
+}
+.panzoom-controls button:hover {
+  border-color: var(--muted);
 }
 
 /* --- TileView ----------------------------------------------------------- */
@@ -191,17 +253,40 @@ body {
 
 /* --- Controls ----------------------------------------------------------- */
 
+/* A fieldset is a sidebar section: no box, a hairline between sections and
+   a small caps heading, as in aperiodic-circuits' sidebar. The legend floats
+   so it sits inside the section like an ordinary heading. */
 fieldset {
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 8px 10px;
-  margin: 0 0 10px;
+  min-width: 0;
+  border: none;
+  border-bottom: 1px solid var(--line);
+  padding: 12px 0;
+  margin: 0;
+}
+fieldset:last-of-type {
+  border-bottom: none;
 }
 legend {
+  float: left;
+  width: 100%;
+  padding: 0;
+  margin: 4px 0 10px;
   color: var(--muted);
   font-size: 12px;
+  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.08em;
+}
+legend + * {
+  clear: both;
+}
+fieldset fieldset {
+  border: none;
+  padding: 4px 0 0;
+}
+fieldset fieldset legend {
+  margin: 4px 0 6px;
+  font-size: 11px;
 }
 .control-row {
   display: flex;
@@ -216,7 +301,7 @@ legend {
   justify-content: flex-start;
 }
 .control-row > span {
-  color: var(--muted);
+  font-size: 13px;
 }
 /* Keep a label and its ⓘ on one line rather than letting the icon wrap. */
 .control-row > span:has(.info-tip) {
@@ -226,16 +311,15 @@ legend {
 }
 select,
 input[type='number'],
-input[type='text'] {
-  background: var(--panel-2);
+input[type='text'],
+input[type='search'],
+textarea {
+  background: var(--bg);
   color: var(--text);
   border: 1px solid var(--line);
   border-radius: 6px;
-  padding: 4px 6px;
+  padding: 6px 8px;
   max-width: 100%;
-}
-button {
-  font: inherit;
 }
 
 .edge-legend-chips {
@@ -247,17 +331,22 @@ button {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 3px 8px;
+  padding: 3px 9px;
   border-radius: 999px;
   border: 1px solid var(--line);
-  background: var(--panel-2);
-  color: var(--muted);
+  background: transparent;
+  color: var(--text);
+  font-family: var(--mono);
+  font-weight: 600;
   cursor: pointer;
 }
+.edge-chip:hover {
+  border-color: var(--muted);
+}
 .edge-chip.is-on {
-  color: var(--text);
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 18%, var(--panel-2));
+  border-color: var(--text);
+  background: var(--text);
+  color: var(--panel);
 }
 .edge-chip.is-highlighted {
   outline: 2px solid var(--accent);
@@ -299,6 +388,7 @@ button {
 .matching-controls button {
   width: 22px;
   height: 22px;
+  padding: 0;
   border-radius: 5px;
   border: 1px solid var(--line);
   background: var(--panel-2);
@@ -396,10 +486,10 @@ button {
   gap: 6px;
 }
 .share-panel button {
-  padding: 5px 8px;
+  padding: 6px 12px;
   border-radius: 6px;
   border: 1px solid var(--line);
-  background: var(--panel-2);
+  background: var(--bg);
   color: var(--text);
   cursor: pointer;
 }
@@ -413,7 +503,7 @@ button {
   color: var(--muted);
 }
 .error {
-  color: #ff6b6b;
+  color: var(--danger);
 }
 
 /* Seam-contract slider: track spans the whole seam, notches mark the vertices

@@ -7,6 +7,10 @@ body,
   height: 100%;
 }
 
+:root {
+  --site-header-h: 50px;
+}
+
 .site {
   display: flex;
   flex-direction: column;
@@ -16,6 +20,8 @@ body,
 .site-header {
   display: flex;
   align-items: center;
+  height: var(--site-header-h);
+  flex-shrink: 0;
   gap: 24px;
   padding: 8px 18px;
   border-bottom: 1px solid var(--line);
@@ -189,6 +195,12 @@ body,
   width: min(720px, 100%);
   margin: 0 auto;
   padding: 24px 16px;
+}
+
+/* App pages (the explorer) fill the window under the bar, as the
+   aperiodic-circuits explorer does; the footer would only add a scroll. */
+.site.is-app .site-footer {
+  display: none;
 }
 
 .site-footer {

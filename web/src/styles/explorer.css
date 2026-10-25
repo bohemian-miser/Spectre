@@ -4,32 +4,31 @@
   flex: 1 1 auto;
   min-height: 0;
   display: grid;
-  grid-template-columns: 340px minmax(0, 1fr);
-  gap: 12px;
-  padding: 12px;
+  grid-template-columns: 360px minmax(0, 1fr);
 }
 
+/* The sidebar is a full-height panel with its own scroll, sections divided by
+   hairlines (see fieldset in widgets.css) — the aperiodic-circuits layout. */
 .explorer-sidebar {
   min-width: 0;
-  max-height: calc(100vh - 120px);
+  height: calc(100dvh - var(--site-header-h));
   overflow: auto;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding-right: 4px;
+  padding: 4px 16px 24px;
+  border-right: 1px solid var(--line);
+  background: var(--panel);
 }
 
 .explorer-viewport {
   position: relative;
-  /* Deterministic height (mirrors the sidebar cap): the viewport must never
+  /* Deterministic height (mirrors the sidebar): the viewport must never
      size itself from its own canvas, or resize feedback loops the layout. */
-  height: calc(100vh - 120px);
+  height: calc(100dvh - var(--site-header-h));
   min-height: 420px;
   min-width: 0;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
   overflow: hidden;
-  background: var(--panel);
+  background: var(--canvas-bg);
   color: var(--text);
 }
 .explorer-viewport .panzoom {
@@ -55,17 +54,18 @@
   gap: 4px;
 }
 .mode-switch button {
-  padding: 4px 9px;
-  border-radius: var(--radius);
+  padding: 6px 12px;
+  border-radius: 6px;
   border: 1px solid var(--line);
-  background: var(--panel-2);
+  background: var(--bg);
   color: var(--text);
   cursor: pointer;
   font: inherit;
 }
 .mode-switch button.is-active {
-  border-color: var(--accent);
-  color: var(--accent);
+  border-color: var(--text);
+  background: var(--text);
+  color: var(--panel);
 }
 .mode-switch button:disabled {
   opacity: 0.45;
@@ -87,7 +87,7 @@
   opacity: 0.6;
 }
 .map-hud-error {
-  color: #ffb4b4;
+  color: var(--danger);
 }
 
 /* Mobile: the sidebar becomes a scrollable sheet under the viewport. */
@@ -96,8 +96,10 @@
     grid-template-columns: minmax(0, 1fr);
   }
   .explorer-sidebar {
-    max-height: none;
+    height: auto;
     order: 2;
+    border-right: none;
+    border-top: 1px solid var(--line);
   }
   .explorer-viewport {
     order: 1;
@@ -112,11 +114,12 @@
   gap: 6px;
 }
 .level-stepper button {
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
+  padding: 0;
   border-radius: 5px;
   border: 1px solid var(--line);
-  background: var(--panel-2);
+  background: var(--bg);
   color: var(--text);
   cursor: pointer;
 }
@@ -147,27 +150,25 @@
   margin-bottom: 8px;
 }
 .tool-row button {
-  padding: 4px 9px;
-  border-radius: var(--radius);
+  padding: 6px 12px;
+  border-radius: 6px;
   border: 1px solid var(--line);
-  background: var(--panel-2);
+  background: var(--bg);
   color: var(--text);
   cursor: pointer;
 }
 .tool-row button.is-active {
-  border-color: var(--accent);
-  color: var(--accent);
+  border-color: var(--text);
+  background: var(--text);
+  color: var(--panel);
 }
 
 .explorer-advanced {
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 8px 10px;
-  background: var(--panel);
+  padding: 12px 0;
 }
 .explorer-advanced summary {
   cursor: pointer;
-  font-weight: 600;
+  font-size: 13px;
 }
 .contract-row {
   display: flex;
