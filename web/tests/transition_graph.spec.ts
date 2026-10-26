@@ -106,7 +106,7 @@ test('hovering an edge reads out that direction, and only that one', async ({ pa
 });
 
 test('both panels are switchable, and say so in the link', async ({ page }) => {
-  await chase(page, `#/explorer?v=1&md=infinite&${RULE}&fp=8&tg=1`);
+  await chase(page, `#/explorer?v=1&md=infinite&${RULE}&fp=8&tg=1&tk=1`);
   await expect(page.getByTestId('transition-graph')).toBeVisible({ timeout: 30000 });
   await expect(page.getByTestId('trace-ticker')).toBeVisible();
 
@@ -115,7 +115,7 @@ test('both panels are switchable, and say so in the link', async ({ page }) => {
   await page.getByTestId('show-ticker').uncheck();
   await expect(page.getByTestId('trace-ticker')).toHaveCount(0);
 
-  await expect.poll(() => page.evaluate(() => window.location.hash)).toContain('tk=0');
+  await expect.poll(() => page.evaluate(() => window.location.hash)).not.toContain('tk=1');
   expect(await page.evaluate(() => window.location.hash)).not.toContain('tg=1');
 });
 

@@ -280,18 +280,21 @@
   stroke-width: 0.06;
 }
 .xmap__slot {
-  font-size: 0.6px;
+  font-size: 0.55px;
   font-weight: 700;
   fill: #111;
   text-anchor: middle;
   dominant-baseline: middle;
 }
 .xmap__type {
-  font-size: 0.38px;
+  font-size: 0.26px;
   font-weight: 400;
+  fill: #111;
+  text-anchor: middle;
+  dominant-baseline: middle;
 }
 .xmap__edge {
-  font-size: 0.26px;
+  font-size: 0.24px;
   fill: #222;
   text-anchor: middle;
   dominant-baseline: middle;
@@ -399,7 +402,7 @@
 .td__graph .edgelabel {
   font-size: 11px;
 }
-.td__graph .edgelabel .writes {
+.td__graph .edgelabel.writes {
   fill: #ff7a59;
 }
 .td__state {
@@ -413,6 +416,83 @@
 }
 @media (max-width: 800px) {
   .td__anim {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Explore: the world built by crossing edges. */
+.td__explore {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(260px, 1fr);
+  gap: 1rem;
+  align-items: start;
+}
+.td__svg--world {
+  max-height: 60vh;
+  min-height: 320px;
+}
+.td__tile.is-ghost {
+  opacity: 0.18;
+  pointer-events: none;
+}
+.td__tile.is-revealed {
+  opacity: 0.95;
+}
+.td__edge.is-entry line {
+  stroke: #8fd694;
+  stroke-width: 0.16;
+}
+.td__side p {
+  margin: 0 0 0.6rem;
+}
+.td__pending {
+  border: 1px solid #ffd166;
+  border-radius: 8px;
+  padding: 0.6rem 0.8rem;
+  margin-bottom: 0.8rem;
+}
+.td__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+.td__chip.is-active {
+  border-color: var(--accent, #6ea8fe);
+  background: color-mix(in srgb, var(--accent, #6ea8fe) 18%, transparent);
+}
+.td__steps {
+  padding-left: 1.3rem;
+  line-height: 1.5;
+  font-size: 0.95rem;
+}
+.td__steps li {
+  margin: 0.25rem 0;
+}
+.td__steps li::marker {
+  font-weight: 700;
+  color: var(--accent, #6ea8fe);
+}
+.td__gallery--rules {
+  gap: 1rem;
+}
+.xmap.is-used .xmap__svg {
+  border-color: var(--accent, #6ea8fe);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent, #6ea8fe) 35%, transparent);
+}
+.xmap__badge circle {
+  fill: var(--accent, #6ea8fe);
+  stroke: #fff;
+  stroke-width: 0.05;
+}
+.xmap__badge text {
+  font-size: 0.3px;
+  font-weight: 700;
+  fill: #fff;
+  text-anchor: middle;
+  dominant-baseline: middle;
+}
+@media (max-width: 900px) {
+  .td__explore {
     grid-template-columns: 1fr;
   }
 }

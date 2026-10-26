@@ -34,9 +34,9 @@ describe('combinatorial coordinates', () => {
     const a = addressFromId('Gamma', '3.7.0');
     expect(a.leaf).toBe('Pi'); // Gamma[3] = Theta, Theta[7] = Gamma, Gamma[0] = Pi
     expect(idOf(a)).toBe('3.7.0');
-    expect(formatAddress(a)).toBe('P 0G 7J 3G');
-    expect(parseAddress('P 0G 7J 3G')).toEqual(a);
-    expect(parseAddress('P 2G')).toBeNull(); // Gamma has no child 2
+    expect(formatAddress(a)).toBe('Pi, slot 0 of Gamma, slot 7 of Theta, slot 3 of Gamma');
+    expect(parseAddress('Pi, slot 0 of Gamma, slot 7 of Theta, slot 3 of Gamma')).toEqual(a);
+    expect(parseAddress('Pi, slot 2 of Gamma')).toBeNull(); // Gamma has no child 2
   });
 
   for (const root of ['Delta', 'Gamma'] as HexType[]) {
