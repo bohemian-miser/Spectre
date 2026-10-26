@@ -278,6 +278,23 @@ if (process.argv[1]?.endsWith('edge-machine.ts')) {
     const K1 = Number(process.argv[pi + 1]);
     console.log(`classes of the level-${K} residuals missing from the level-${K1} machine, by refinement depth:`);
     for (const r of predicts(tb, levels, K1, K)) console.log(`  d=${r.d}: level-${K1} classes ${r.small}, level-${K} classes ${r.big}, new ones ${r.missing} (plus ${r.missingTop} among the top two levels)`);
+  } else if (process.argv.includes('--overlap')) {
+    const ti = process.argv.indexOf('--top');
+    const res = residualGraph(tb, levels, K, ti >= 0 ? [process.argv[ti + 1]] : TYPES);
+    console.log(`${res.length} residuals`);
+    const { sigs } = refine(res, 2);
+    for (const d of [1, 2]) {
+      console.log(`depth ${d}: shared classes between piece levels (rows m, columns m'), levels ${d + 2}..${K - 2}`);
+      const ms: number[] = [];
+      for (let m = d + 2; m <= K - 2; m++) ms.push(m);
+      const union = new Set<string>();
+      const sets = ms.map((m) => new Set(res.map((r, i) => (r.m === m ? sigs[d][i] : null)).filter((x) => x !== null)));
+      console.log(`        ${ms.map((m) => `m=${m}`.padStart(6)).join('')}`);
+      sets.forEach((A, a) => {
+        for (const x of A) union.add(x);
+        console.log(`  m=${ms[a]} ${sets.map((B) => String([...A].filter((x) => B.has(x)).length).padStart(6)).join('')}   (${A.size}; all levels to here ${union.size})`);
+      });
+    }
   } else if (process.argv.includes('--period')) {
     const res = residualGraph(tb, levels, K);
     const { sigs } = refine(res, 5);
@@ -329,83 +346,98 @@ export interface Residual {
  * top supertile), with its transitions. Residuals are identified by their
  * edge types and the partial map itself, so two equal residuals have equal
  * transitions wherever they occur.
+ *
+ * Every piece is a contiguous run of the top supertile's crossings (a child
+ * edge's crossings appear in its parent edge as one reversed block), so the
+ * pieces are found as intervals, level by level, without visiting crossings.
  */
 export function residualGraph(tb: Tables, levels: Level[], K: number, types: readonly string[] = TYPES): Residual[] {
   const out: Residual[] = [];
   const ids = new Map<string, number>();
+  const edgeName = (t: string, e: number) => `${t}.${e}`;
   for (const T of types) {
     const top = levels[K - 1];
-    const n = top.partner[T].length;
     const partner = top.partner[T];
+    const n = partner.length;
+    // Pieces per depth: start (in top order), length, type, edge, reversed, digit.
+    interface Piece { start: number; len: number; type: string; e: number; rev: boolean; digit: number }
+    let pieces: Piece[] = [];
+    {
+      let off = 0;
+      top.counts[T].forEach((c, j) => {
+        pieces.push({ start: off, len: c, type: T, e: j, rev: false, digit: j });
+        off += c;
+      });
+    }
     const pid: Int32Array[] = [];
-    const ptype: string[][] = [];
     const pos: Int32Array[] = [];
     const dig: Int32Array[] = [];
-    let curType = new Array<string>(n).fill(T);
-    let curE = new Int32Array(n);
-    let curQ = new Int32Array(n);
-    let curId = new Int32Array(n);
-    for (let x = 0; x < n; x++) {
-      const { j, p } = edgeOf(levels, K, T, x);
-      curE[x] = j;
-      curQ[x] = p;
-      curId[x] = j;
-    }
-    pid.push(curId.slice());
-    ptype.push(curType.map((t, x) => `${t}.${curE[x]}`));
-    pos.push(curQ.slice());
-    dig.push(curE.slice());
-    for (let r = 1; r < K; r++) {
-      const k = K - r + 1;
-      const nT = new Array<string>(n);
-      const nE = new Int32Array(n);
-      const nQ = new Int32Array(n);
-      const nId = new Int32Array(n);
-      const nD = new Int32Array(n);
-      const pieceIds = new Map<number, number>();
-      for (let x = 0; x < n; x++) {
-        const d = descend(tb, levels, k, curType[x], curE[x], curQ[x]);
-        nT[x] = d.type;
-        nE[x] = d.e;
-        nQ[x] = d.q;
-        nD[x] = d.i;
-        const key = curId[x] * 64 + d.i;
-        let id = pieceIds.get(key);
-        if (id === undefined) pieceIds.set(key, (id = pieceIds.size));
-        nId[x] = id;
+    const ptype: string[][] = [];
+    for (let r = 0; r < K; r++) {
+      const k = K - r; // level of these pieces
+      const id = new Int32Array(n);
+      const q = new Int32Array(n);
+      const dg = new Int32Array(n);
+      const names: string[] = [];
+      pieces.forEach((pc, i) => {
+        names.push(edgeName(pc.type, pc.e));
+        id.fill(i, pc.start, pc.start + pc.len);
+        dg.fill(pc.digit, pc.start, pc.start + pc.len);
+        for (let t = 0; t < pc.len; t++) q[pc.start + t] = pc.rev ? pc.len - 1 - t : t;
+      });
+      pid.push(id);
+      pos.push(q);
+      dig.push(dg);
+      ptype.push(names);
+      if (k === 1) break;
+      const prev = levels[k - 2].counts;
+      const next: Piece[] = [];
+      for (const pc of pieces) {
+        // In the piece's own order the parts of B are consecutive, each reversed relative to the piece.
+        const arc = tb.B[pc.type][pc.e];
+        let off = 0;
+        const parts = arc.map(({ s, e }, i) => {
+          const type = tb.rules[pc.type][s];
+          const len = prev[type][e];
+          const part = { ownStart: off, len, type, e, digit: i };
+          off += len;
+          return part;
+        });
+        for (const part of parts) {
+          // Own coordinate u in [ownStart, ownStart+len) maps to top position start + (rev ? pc.len-1-u : u).
+          const start = pc.rev ? pc.start + pc.len - (part.ownStart + part.len) : pc.start + part.ownStart;
+          // The child's own order runs backwards along its parent's, so it is reversed relative to top order unless the parent was.
+          next.push({ start, len: part.len, type: part.type, e: part.e, rev: !pc.rev, digit: part.digit });
+        }
       }
-      curType = nT;
-      curE = nE;
-      curQ = nQ;
-      curId = nId;
-      pid.push(nId);
-      ptype.push(nT.map((t, x) => `${t}.${nE[x]}`));
-      pos.push(nQ);
-      dig.push(nD);
+      pieces = next;
     }
-    // Residual of every (u, v) pair at every depth, deepest first so children exist.
-    const resAt: Map<number, number>[] = Array.from({ length: K }, () => new Map());
-    for (let r = K - 1; r >= 0; r--) {
+    const depth = pid.length;
+    const resAt: Map<number, number>[] = Array.from({ length: depth }, () => new Map());
+    for (let r = depth - 1; r >= 0; r--) {
       const m = K - r;
       const groups = new Map<number, number[]>();
-      const size = new Map<number, number>();
       for (let x = 0; x < n; x++) {
-        size.set(pid[r][x], (size.get(pid[r][x]) ?? 0) + 1);
         const key = pid[r][x] * 4194304 + pid[r][partner[x]];
         (groups.get(key) ?? groups.set(key, []).get(key)!).push(x);
       }
+      const sizes = new Map<number, number>();
+      for (let x = 0; x < n; x++) sizes.set(pid[r][x], (sizes.get(pid[r][x]) ?? 0) + 1);
       for (const [key, xs] of groups) {
         const x0 = xs[0];
         const y0 = partner[x0];
-        const map = new Int32Array(size.get(pid[r][x0])!).fill(-1);
+        const map = new Int32Array(sizes.get(pid[r][x0])!).fill(-1);
         for (const x of xs) map[pos[r][x]] = pos[r][partner[x]];
-        const sig = `${m}|${ptype[r][x0]}>${ptype[r][y0]}|${mapHash(map)}`;
+        const from = ptype[r][pid[r][x0]];
+        const to = ptype[r][pid[r][y0]];
+        const h = mapHash(map);
+        const sig = `${m}|${from}>${to}|${h}`;
         let id = ids.get(sig);
         if (id === undefined) {
           id = out.length;
           ids.set(sig, id);
           const next: [number, number, number][] = [];
-          if (r + 1 < K) {
+          if (r + 1 < depth) {
             const seen = new Set<number>();
             for (const x of xs) {
               const ck = pid[r + 1][x] * 4194304 + pid[r + 1][partner[x]];
@@ -413,9 +445,9 @@ export function residualGraph(tb: Tables, levels: Level[], K: number, types: rea
               seen.add(ck);
               next.push([dig[r + 1][x], dig[r + 1][partner[x]], resAt[r + 1].get(ck)!]);
             }
-            next.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+            next.sort((p1, p2) => p1[0] - p2[0] || p1[1] - p2[1]);
           }
-          out.push({ m, from: ptype[r][x0], to: ptype[r][y0], hash: mapHash(map), next });
+          out.push({ m, from, to, hash: h, next });
         }
         resAt[r].set(key, id);
       }
