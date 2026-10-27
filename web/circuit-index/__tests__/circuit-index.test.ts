@@ -1,0 +1,141 @@
+/**
+ * The circuit index against independent sources: the board tracer against
+ * `walkStrand` and against the walk on every tiling at once; the word keys
+ * against brute force; the placed-tile key against moving the tiles.
+ */
+import { describe, expect, it } from 'vitest';
+
+import { addressFromId, walkStrand, zMul, type ZAffine } from '../../src/core';
+import { longestCircuit, matchingByType, pairingTable, patternOf } from '../../src/pages/walker/walk';
+import { addressOf, board, indexOf, traceAll } from '../board';
+import { collect, measure } from '../circuits';
+import { enumerateCircuits } from '../every-tiling';
+import { canonicalWord, circuitKey, leastRotation, placedKey, placedOf, reverseWord, wordOrder } from '../keys';
+import { encode, fitCorners, levenshtein } from '../sides';
+
+const triangle = patternOf([0, 2, 3, 4, 6, 8], '111000100');
+
+describe('boards', () => {
+  it('numbers tiles so that index and address agree', () => {
+    const b = board('Sigma', 3);
+    for (let i = 0; i < b.n; i++) expect(indexOf(b, addressOf(b, i))).toBe(i);
+  });
+
+  it('glues each edge to the edge that glues back', () => {
+    const b = board('Delta', 4);
+    for (let k = 0; k < b.across.length; k++) if (b.across[k] >= 0) expect(b.across[b.across[k]]).toBe(k);
+  });
+
+  it('traces the longest circuit walkStrand finds, at the same length', () => {
+    const best = longestCircuit(triangle, 'Delta', 4)!;
+    const traced = traceAll(board('Delta', 4), pairingTable(triangle)).filter((s) => s.kind === 'circuit');
+    expect(Math.max(...traced.map((s) => s.tiles.length))).toBe(best.length);
+    const w = walkStrand([0, 2, 3, 4, 6, 8], Object.fromEntries(matchingByType(triangle)), { address: addressFromId('Delta', best.id), entry: best.edge });
+    expect(w.states).toHaveLength(best.length);
+  });
+});
+
+describe('every circuit of a combination', () => {
+  it.each([['15', '000010010', 3], ['023468', '111000100', 3], ['023468', '000100000', 3]] as const)(
+    '%s-%s to level %i: the same circuits as the walk on every tiling, born at the same level',
+    (rule, combo, level) => {
+      const sub = [...rule].map(Number);
+      const p = patternOf(sub, combo);
+      const walked = enumerateCircuits(p, pairingTable(p), { maxLevel: level, maxLength: 10000, maxCircuits: 1e9, maxWorlds: 1e7 });
+      const traced = collect(sub, combo, level, 1e9);
+      const byKey = (cs: readonly { key: string; level: number }[]) => new Map(cs.map((c) => [c.key, c.level]));
+      expect(byKey(walked.circuits)).toEqual(byKey(traced.circuits));
+      expect(traced.circuits.length).toBeGreaterThan(0);
+    },
+  );
+});
+
+describe('word keys', () => {
+  const words = Array.from({ length: 200 }, (_, s) => {
+    let x = s * 7919 + 13;
+    const n = 1 + (s % 17);
+    return Array.from({ length: n }, () => { x = (x * 1103515245 + 12345) % 2147483648; return ['Pi01', 'Psi45', 'Xi10', 'Delta23'][x % (2 + (s % 3))]; });
+  });
+
+  it('finds the least rotation', () => {
+    for (const w of words) {
+      const all = w.map((_, i) => [...w.slice(i), ...w.slice(0, i)].join('|')).sort();
+      const k = leastRotation(w);
+      expect([...w.slice(k), ...w.slice(0, k)].join('|')).toBe(all[0]);
+    }
+  });
+
+  it('gives one key to every rotation and both directions', () => {
+    for (const w of words) {
+      const key = circuitKey(w);
+      for (let i = 0; i < w.length; i++) {
+        const r = [...w.slice(i), ...w.slice(0, i)];
+        expect(circuitKey(r)).toBe(key);
+        expect(circuitKey(reverseWord(r))).toBe(key);
+      }
+    }
+  });
+
+  it('counts how often a word repeats', () => {
+    for (const w of words) {
+      const n = w.length;
+      let order = 1;
+      for (let r = n; r > 1; r--) if (n % r === 0 && w.every((l, i) => l === w[(i + n / r) % n])) { order = r; break; }
+      expect(wordOrder(w)).toBe(order);
+    }
+  });
+
+  it('maps canonical positions back to the walked word', () => {
+    for (const w of words) {
+      const c = canonicalWord(w);
+      const read = c.reversed ? reverseWord(w) : w;
+      expect([...read.slice(c.offset), ...read.slice(0, c.offset)]).toEqual(c.word);
+    }
+  });
+});
+
+describe('placed tiles', () => {
+  it('gives the same key after a turn, a mirror and a shift', () => {
+    const tiles = collect([0, 2, 3, 4, 6, 8], '111000100', 4).circuits.at(-1)!.tiles.map(placedOf);
+    const key = placedKey(tiles);
+    const moves: ZAffine[] = [{ k: 5, m: 0, t: [3, -1, 2, 7] }, { k: 2, m: 1, t: [0, 4, 0, -9] }];
+    for (const G of moves) expect(placedKey(tiles.map((p) => ({ type: p.type, T: zMul(G, p.T) })))).toBe(key);
+    expect(placedKey(tiles.slice(1))).not.toBe(key);
+  });
+
+  it('gives a circuit the same tiles, corners and corner key in every supertile that holds it, read from any tile', () => {
+    const { circuits } = collect([0, 2, 3, 4, 6, 8], '111000100', 4, 1e9);
+    const table = pairingTable(triangle);
+    for (const root of ['Delta', 'Psi', 'Gamma'] as const) {
+      const b = board(root, 4);
+      for (const s of traceAll(b, table)) {
+        if (s.kind !== 'circuit') continue;
+        const tiles = Array.from(s.tiles, (t) => addressOf(b, t));
+        const word = tiles.map((a, i) => `${a.leaf}${s.entries[i]}${s.exits[i]}`);
+        const f = circuits.find((c) => c.key === circuitKey(word))!;
+        const [m, here] = [measure(f), measure({ ...f, tiles, word })];
+        expect([here.tilesId, here.cornerId, here.corners.corners]).toEqual([m.tilesId, m.cornerId, m.corners.corners]);
+      }
+    }
+  });
+});
+
+describe('sides', () => {
+  it('measures edit distance', () => {
+    const [a, b, c, d] = encode([['k', 'i', 't', 't', 'e', 'n'], ['s', 'i', 't', 't', 'i', 'n', 'g'], [], ['s']]);
+    expect(levenshtein(a, b)).toBe(3);
+    expect(levenshtein(a, c)).toBe(6);
+    expect(levenshtein(c, d)).toBe(1);
+  });
+
+  it('puts the corners of points along a triangle at its vertices', () => {
+    const V = [{ x: 0, y: 0 }, { x: 30, y: 0 }, { x: 15, y: 26 }];
+    const pts = V.flatMap((a, i) => {
+      const b = V[(i + 1) % 3];
+      return Array.from({ length: 10 }, (_, t) => ({ x: a.x + ((b.x - a.x) * t) / 10, y: a.y + ((b.y - a.y) * t) / 10 }));
+    });
+    // Start the walk part way along a side so the corners are not at 0, n/3, 2n/3 by accident.
+    const rolled = [...pts.slice(4), ...pts.slice(0, 4)];
+    expect(fitCorners(rolled, 3).corners).toEqual([6, 16, 26]);
+  });
+});
