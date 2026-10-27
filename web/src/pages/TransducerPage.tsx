@@ -22,7 +22,7 @@ import {
 import { tileColor } from '../lib/palette';
 import { ExpansionMap, type MapMark } from './transducer/ExpansionMap';
 import { nearest, orientationPath, supertileEdges, type BoundaryEdge } from './transducer/board';
-import { WallView } from './transducer/WallView';
+import { HierarchyBuilder } from './transducer/HierarchyBuilder';
 import { MAX_LEVEL, initialBoard, parentOptions, prefixId, reduce, type World } from './transducer/world';
 import '../styles/transducer.css';
 
@@ -450,22 +450,23 @@ export function TransducerPage(): JSX.Element {
         </p>
       </section>
 
-      <section id="wall" className="td__section">
-        <h2>3. A wall, level by level</h2>
+      <section id="hierarchy" className="td__section">
+        <h2>3. Building the hierarchy</h2>
         <p>
-          Edge 0 of a Gamma in slot 7 of a Gamma is again edge 0 of the bigger Gamma, so the crossing climbs one more
-          level for every Gamma put on top. Below, n Gammas are nested, each in slot 7 of the next. The blue outlines
-          are those supertiles, levels 1 to n; all of them run along the crossed edge (circled). A few more parents are
-          put on top until the crossing lands, and the tile across it is found. The orange outlines are that tile's
-          supertiles at the same levels. The red line is where the two level-n supertiles meet: the wall, so far.
-          Frame picks the level the view fits, from the two tiles up to level n.
+          Pick a tile and an edge. While the edge is on the outside of everything placed so far, what is across it is
+          not known; a parent puts all of it inside a bigger supertile. Hover over a parent to see it on the board and
+          click to keep it. Each level has its own colour, for the tiles that joined at that level and for that
+          supertile's outline. When the crossing lands, the tile across the edge appears in its own colour, its side
+          is grey up to the supertile both sides share, its supertiles are dashed, and the dark line is where the two
+          sides touch.
         </p>
         <p>
-          Press + and the wall gets longer, and the far side gains one level. The table lists both slot paths. Every
-          row of the far side but the top agrees with the machine's answer for the Gamma repeated for ever; the top row
-          is bent by the parents put on top to close the patch, and it moves up with n.
+          Edge 0 of a Gamma is the wall: choose the Gamma again and again and the edge stays outside each time. Every
+          chain tried stays in the tree of choices; click a node there to go back to it and try another branch. With
+          the board focused, the arrow keys move through the parents, Enter keeps one, Backspace goes back a level and
+          0 to 5 pick the edge.
         </p>
-        <WallView />
+        <HierarchyBuilder />
       </section>
 
       <section id="pattern" className="td__section">

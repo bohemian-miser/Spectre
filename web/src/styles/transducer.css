@@ -545,95 +545,178 @@
   font-size: 0.78em;
   color: var(--fg-muted, #9aa4b2);
 }
-.wall__n {
+.hb {
+  outline: none;
+}
+.hb:focus-visible {
+  box-shadow: 0 0 0 2px var(--accent, #6ea8fe);
+  border-radius: 8px;
+}
+.hb__edges,
+.hb__fit {
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
+  flex-wrap: wrap;
+  gap: 0.2rem;
 }
-.wall__body {
+.td__chip.is-active {
+  background: var(--accent, #6ea8fe);
+  color: #fff;
+}
+.hb__body {
   display: grid;
   grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
   gap: 1rem;
   align-items: start;
+  margin-top: 0.6rem;
 }
 @media (max-width: 900px) {
-  .wall__body {
+  .hb__body {
     grid-template-columns: minmax(0, 1fr);
   }
 }
-.wall__svg {
+.hb__svg {
   width: 100%;
-  max-height: 70vh;
+  height: min(70vh, 640px);
   border: 1px solid var(--rule, #2a3140);
   border-radius: 8px;
   background: var(--panel, #11151c);
 }
-.wall__tile {
-  stroke: var(--panel, #11151c);
+.hb__band {
+  fill-opacity: 0.22;
+  stroke: #fff;
   stroke-width: 0.05;
 }
-.wall__tile.is-near {
-  fill: rgba(47, 111, 219, 0.28);
+.hb__band.is-far {
+  fill-opacity: 0.75;
 }
-.wall__tile.is-far {
-  fill: rgba(224, 120, 47, 0.28);
+.hb__band.is-fresh {
+  fill-opacity: 0.1;
 }
-.wall__key {
+.hb__key {
+  stroke: #1b2230;
   stroke-width: 0.05;
 }
-.wall__outline {
+.hb__outline {
+  fill: none;
   stroke-linecap: round;
   pointer-events: none;
 }
-.wall__wall {
-  stroke: #e5484d;
-  stroke-linecap: round;
-  pointer-events: none;
+.hb__outline.is-fresh {
+  stroke-dasharray: 6 4;
+  opacity: 0.8;
 }
-.wall__crossed {
+.hb__outline.is-far {
+  stroke-dasharray: 5 4;
+}
+.hb__wall,
+.hb__crossed {
+  fill: none;
   stroke: #1b2230;
   stroke-linecap: round;
   pointer-events: none;
 }
-.wall__legend span {
-  margin-left: 0.6rem;
-}
-.wall__legend span:first-child {
-  margin-left: 0;
-}
-.wall__legend-wall {
-  color: #e5484d;
-}
-.wall__legend-crossed {
-  color: #1b2230;
-}
-.wall__ring {
+.hb__ring {
   fill: none;
   stroke: #1b2230;
   stroke-width: 2;
   stroke-dasharray: 4 3;
   pointer-events: none;
 }
-.wall__fit {
-  display: inline-flex;
+.hb__side {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.hb__status {
+  margin: 0;
+}
+.hb__options {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
+  gap: 0.4rem;
+}
+.hb__options > p {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+.hb__option {
+  display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 0.3rem;
+  gap: 0.5rem;
+  font: inherit;
+  text-align: left;
+  padding: 0.3rem 0.5rem;
+  border-radius: 8px;
+  border: 1px solid var(--rule, #2a3140);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
 }
-.wall__fit button.is-on {
-  background: var(--accent, #6ea8fe);
-  color: #fff;
+.hb__option.is-active {
+  border-color: var(--accent, #6ea8fe);
+  box-shadow: 0 0 0 1px var(--accent, #6ea8fe);
 }
-.wall__key {
+.hb__option.lands .hb__option-note {
+  color: #0ca678;
+  font-weight: 600;
+}
+.hb__thumb {
+  width: 52px;
+  height: 52px;
+  flex: none;
+}
+.hb__option-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+.hb__option-note {
+  font-size: 0.8em;
+  color: var(--fg-muted, #9aa4b2);
+}
+.hb__tree-title {
+  margin: 1rem 0 0.3rem;
+}
+.hb__tree-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--rule, #2a3140);
+  border-radius: 8px;
+  padding: 0.4rem 0;
+}
+.hb__tree {
+  display: block;
+  font-size: 12px;
+}
+.hb__tree-row {
+  font-size: 11px;
+  font-weight: 600;
+}
+.hb__tree-edge {
+  stroke: #9aa4b2;
+  stroke-width: 1.5;
+}
+.hb__tree-node {
+  cursor: pointer;
+}
+.hb__tree-node circle {
   stroke: #1b2230;
+  stroke-width: 1;
 }
-.wall__table tr.is-bent td {
-  color: var(--fg-muted, #9aa4b2);
+.hb__tree-node.is-current circle {
+  stroke: #1b2230;
+  stroke-width: 3;
 }
-.wall__table tr.is-bent td:nth-child(3) {
-  color: #e0782f;
+.hb__tree-node:hover circle {
+  stroke: var(--accent, #6ea8fe);
 }
-.wall__closing td {
-  font-size: 0.85rem;
-  color: var(--fg-muted, #9aa4b2);
+.hb__tree-label {
+  fill: currentColor;
+}
+.hb__tree-node.is-current .hb__tree-label {
+  font-weight: 700;
+}
+.hb__tree-land {
+  fill: #0ca678;
+  font-weight: 600;
 }
