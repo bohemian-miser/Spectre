@@ -80,6 +80,22 @@ export function WalkerPage(): JSX.Element {
     let w = initialWalk(l?.start ?? 'Delta');
     if (l?.find && l.edge !== null) w = reduceWalk(w, { type: 'place', world: { root: 'Delta', level: l.find.level, startId: l.find.id }, edge: l.edge });
     else if (l && l.edge !== null) w = reduceWalk(w, { type: 'startEdge', edge: l.edge });
+    // choose-by-supertile mode: walk the same steps again, taking the same supertiles when asked
+    if (l && l.edge !== null && l.steps) {
+      const p: Pattern = { subset: l.subset, matching: normalizeMatchingVector('hex', l.subset, l.matching) };
+      let g = 0;
+      for (let guard = 0; w.steps.length < l.steps && guard < l.steps + l.grows.length + 2; guard++) {
+        if (w.waiting) {
+          const link = l.grows[g++];
+          if (!link) break;
+          w = reduceWalk(w, { type: 'grow', parent: link.parent, slot: link.slot });
+        } else {
+          const next = reduceWalk(w, { type: 'step', pattern: p });
+          if (next === w) break;
+          w = next;
+        }
+      }
+    }
     return w;
   });
   const { board, steps, waiting, closed, startEdge } = walk;
@@ -210,9 +226,11 @@ export function WalkerPage(): JSX.Element {
       choices: walked.choices,
       current: walked.current,
       whole: walked.whole,
+      grows: addressFromId(world.root, world.startId).path.slice(seed.find?.level ?? 0),
+      steps: steps.length,
     });
     window.history.replaceState(null, '', `${window.location.pathname}?${q}`);
-  }, [pattern, mode, startType, seed, walked]);
+  }, [pattern, mode, startType, seed, walked, world, steps.length]);
 
   useEffect(() => {
     const onKey = (ev: KeyboardEvent): void => {
@@ -299,12 +317,12 @@ export function WalkerPage(): JSX.Element {
       <section className="td__board">
         <h2>3. The walk</h2>
         <div className="wk__modes" role="tablist">
-          <button type="button" role="tab" aria-selected={mode === 'landings'} className={`td__chip${mode === 'landings' ? ' is-active' : ''}`} onClick={() => setMode('landings')} data-testid="wk-mode-landings">Choose where it lands</button>
-          <button type="button" role="tab" aria-selected={mode === 'ancestors'} className={`td__chip${mode === 'ancestors' ? ' is-active' : ''}`} onClick={() => setMode('ancestors')} data-testid="wk-mode-ancestors">Choose each ancestor</button>
+          <button type="button" role="tab" aria-selected={mode === 'landings'} className={`td__chip${mode === 'landings' ? ' is-active' : ''}`} onClick={() => setMode('landings')} data-testid="wk-mode-landings">Choose by next tile</button>
+          <button type="button" role="tab" aria-selected={mode === 'ancestors'} className={`td__chip${mode === 'ancestors' ? ' is-active' : ''}`} onClick={() => setMode('ancestors')} data-testid="wk-mode-ancestors">Choose by supertile</button>
           <span className="td__hint">
             {mode === 'landings'
-              ? 'Every ancestor stack is followed at once; the walk only stops where they disagree about where the strand lands.'
-              : 'Each time the strand leaves the supertile built so far, pick its parent.'}
+              ? 'Every stack of supertiles is followed at once; the walk only stops where they disagree about the next tile, and you choose the tile.'
+              : 'Each time the strand leaves the supertile built so far, choose the supertile it sits in.'}
           </span>
         </div>
         {mode === 'landings' ? (

@@ -1,9 +1,10 @@
 /**
  * The choices of a walk as a git-style tree, top down. Each row is a
  * landing: a hexagon in the tile's colour named inside, and lined up beside
- * it nine slots, one per tile type, filled for the supertile flavours
- * (ancestor types at the level that decides the fork) that lead to it, with
- * a number where more than one slot of that supertile type does. Rows
+ * it one box per ancestor position (supertile type and slot) at the level
+ * that decides the fork, filled where that position can lead here. A
+ * position can lead to more than one landing at a fork (something higher up
+ * decides between them); its box is then filled on each of those rows. Rows
  * offered at the same fork sit close together. The path being walked runs
  * straight down the first lane; the other
  * landings at each fork branch off into lanes of their own, hollow until
@@ -26,7 +27,7 @@ const PAD = HEX_W / 2 + 3;
 const THREAD = 1.5;
 const SLOT = 11;
 /** Room above the first row for the slot headings. */
-const TOP = 12;
+const TOP = 20;
 
 interface TreeRow {
   readonly key: string;
@@ -171,12 +172,22 @@ export function ChoiceTree({ pw, mode, onGoto, onChooseAt, onHoverOption }: Choi
   const height = (ys[ys.length - 1] ?? 0) + HEX_H / 2 + 3;
   // the flavour slots: one per tile type, at the same place on every row
   const slotsX = gw + 8;
-  const width = slotsX + HEX_TYPES.length * (SLOT + 2) + 46;
+  // one column per ancestor position (type and slot) any row uses, grouped by type
+  const cols = [...new Set(rows.flatMap((r) => r.option?.cells ?? []))]
+    .map((c) => ({ c, t: c.replace(/\d+$/, '') as HexType, s: Number(/\d+$/.exec(c)![0]) }))
+    .sort((a, b) => HEX_TYPES.indexOf(a.t) - HEX_TYPES.indexOf(b.t) || a.s - b.s);
+  // a small gap between one type's columns and the next
+  const group = cols.map((_, k) => cols.slice(0, k + 1).filter((c, i) => i === 0 || c.t !== cols[i - 1].t).length - 1);
+  const colX = (k: number): number => slotsX + k * (SLOT + 1) + group[k] * 4;
+  const width = slotsX + cols.length * (SLOT + 1) + (group[group.length - 1] ?? 0) * 4 + 46;
 
   return (
     <svg className="wk-tree" width={width} height={height} viewBox={`0 0 ${width} ${height}`} data-testid="wk-tree">
-      {HEX_TYPES.map((t, k) => (
-        <text key={t} x={slotsX + k * (SLOT + 2) + SLOT / 2} y={9} className="wk-tree__slothead" textAnchor="middle">{t.slice(0, 2)}</text>
+      {cols.map((col, k) => (
+        <g key={col.c}>
+          {(k === 0 || cols[k - 1].t !== col.t) && <text x={colX(k)} y={7} className="wk-tree__slothead">{col.t.slice(0, 2)}</text>}
+          <text x={colX(k) + SLOT / 2} y={16} className="wk-tree__slothead" textAnchor="middle">{col.s}</text>
+        </g>
       ))}
       {rows.map((r, i) => {
         if (r.parent === null) return null;
@@ -223,19 +234,17 @@ export function ChoiceTree({ pw, mode, onGoto, onChooseAt, onHoverOption }: Choi
             {r.current && <polygon points={hexPts(cx, cy, HEX_W / 2 + 4)} className="wk-tree__halo" />}
             <polygon points={hexPts(cx, cy, HEX_W / 2)} fill={untaken ? 'var(--panel, #fff)' : fill} stroke={untaken ? (type ? fill : '#8a93a3') : '#1b2230'} strokeWidth={untaken ? 2 : 1.2} className="wk-tree__hex" />
             <text x={cx} y={cy} className="wk-tree__name" textAnchor="middle" dominantBaseline="central">{text}</text>
-            {r.option && HEX_TYPES.map((t, k) => {
-              const at = r.option!.deciders.indexOf(t);
-              const many = at >= 0 ? r.option!.slotsPer[at] ?? 1 : 0;
-              const sx = slotsX + k * (SLOT + 2);
+            {r.option && cols.map((col, k) => {
+              const on = r.option!.cells.includes(col.c);
+              const sx = colX(k);
               return (
-                <g key={t}>
+                <g key={col.c}>
                   <rect x={sx} y={cy - SLOT / 2} width={SLOT} height={SLOT} rx={2}
-                    fill={at >= 0 ? tileColor(t) : 'none'} className={at >= 0 ? 'wk-tree__slot is-on' : 'wk-tree__slot'} />
-                  {many > 1 && <text x={sx + SLOT / 2} y={cy + 0.5} className="wk-tree__slotn" textAnchor="middle" dominantBaseline="central">{many}</text>}
+                    fill={on ? tileColor(col.t) : 'none'} className={on ? 'wk-tree__slot is-on' : 'wk-tree__slot'} />
                 </g>
               );
             })}
-            {r.option && <text x={slotsX + HEX_TYPES.length * (SLOT + 2) + 4} y={cy} className="wk-tree__n" dominantBaseline="central">{compact(r.option.stacks)}</text>}
+            {r.option && <text x={width - 42} y={cy} className="wk-tree__n" dominantBaseline="central">{compact(r.option.stacks)}</text>}
             {r.kind === 'end' && <text x={slotsX} y={cy} className="wk-tree__endtext" dominantBaseline="central">{r.label}</text>}
           </g>
         );

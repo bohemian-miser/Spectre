@@ -107,6 +107,8 @@ export interface ForkOption {
   readonly deciders: readonly HexType[];
   /** Per decider, how many of its slots at that level lead here. */
   readonly slotsPer: readonly number[];
+  /** The ancestor positions at that level that lead here: type and slot, as `Delta1`. */
+  readonly cells: readonly string[];
 }
 
 /** Where the walk from a node next stopped: the step, the tile and edge it left by, and every landing offered. */
@@ -159,6 +161,7 @@ export function forkOf(wk: Walker, stage: Stage): Fork {
         }
         return slots.size;
       }),
+      cells: level === null ? [] : [...new Set(stage.pending[i].worlds.flatMap((w) => (w.chain[level!] ? [`${w.chain[level!].parent}${w.chain[level!].slot}`] : [])))],
     })),
   };
 }

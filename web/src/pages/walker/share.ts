@@ -7,9 +7,11 @@
  *   r=023468 &m=0.0.0.1.0.0.0.0.0 &s=Delta &e=4
  *   &f=4:0.4.0.1        start on this tile of a level-4 Delta instead of a bare tile
  *   &t=0-Phi5_1-Psi4    choice i+1 is landing Phi 5 taken at node 0, …
- *   &c=2 &w=1 &mode=a   current node, whole tree open, choose-each-ancestor mode
+ *   &c=2 &w=1           current node, whole tree open
+ *   &mode=a &g=Gamma0.Delta3 &n=40
+ *                       choose-by-supertile mode: the supertiles chosen, bottom up, and the steps walked
  */
-import { HEX_TYPES, type HexType } from '../../core';
+import { HEX_TYPES, childType, type HexType, type Link } from '../../core';
 
 export interface Choice { readonly parent: number; readonly key: string }
 
@@ -24,6 +26,9 @@ export interface WalkerLink {
   readonly choices: readonly Choice[];
   readonly current: number;
   readonly whole: boolean;
+  /** Choose-by-supertile mode: the supertiles chosen above the start, bottom up, and how many steps were walked. */
+  readonly grows: readonly Link[];
+  readonly steps: number;
 }
 
 /** `Phi 5` -> `Phi5`, `closes` -> `c`, `open` -> `o`. */
@@ -48,6 +53,10 @@ export function encodeLink(l: WalkerLink): string {
     q.set('c', String(l.current));
   }
   if (l.whole) q.set('w', '1');
+  if (l.mode === 'ancestors') {
+    if (l.grows.length) q.set('g', l.grows.map((g) => `${g.parent}${g.slot}`).join('.'));
+    if (l.steps) q.set('n', String(l.steps));
+  }
   return q.toString();
 }
 
@@ -72,6 +81,15 @@ export function decodeLink(search: string): WalkerLink | null {
     choices.push({ parent: Number(mm[1]), key });
   }
   const c = Number(q.get('c') ?? 0);
+  // each supertile must hold the one below it in that slot
+  const grows: Link[] = [];
+  for (const part of (q.get('g') ?? '').split('.').filter(Boolean)) {
+    const mm = /^([A-Za-z]+)([0-7])$/.exec(part);
+    const parent = mm?.[1] as HexType | undefined;
+    if (!mm || !parent || !HEX_TYPES.includes(parent)) break;
+    grows.push({ parent, slot: Number(mm[2]) });
+  }
+  const n = Number(q.get('n') ?? 0);
   return {
     subset: [...r].map(Number),
     matching,
@@ -82,5 +100,7 @@ export function decodeLink(search: string): WalkerLink | null {
     choices,
     current: Number.isInteger(c) && c >= 0 && c <= choices.length ? c : choices.length,
     whole: q.get('w') === '1',
+    grows: grows.filter((g) => childType(g.parent, g.slot) !== null),
+    steps: Number.isInteger(n) && n > 0 ? n : 0,
   };
 }
