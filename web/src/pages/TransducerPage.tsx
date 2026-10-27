@@ -11,30 +11,27 @@
  * and the substitution tables; the picture is drawn so the answers can be
  * checked against it, never read.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useState } from 'react';
 
 import {
   HEX_TYPES, addressFromId, addressOfSymbols, buildSystem, childType, chordPairing, comboToMatchingIndices,
-  flatten, formatAddress, hexTransducer, idOf, inv, leafOrder, leafPts, mul, neighbour, parseSym, runPeriodic,
+  flatten, formatAddress, hexTransducer, idOf, inv, leafOrder, leafPts, mul, parseSym, runPeriodic,
   runTransducer, slotsOfType, sym, transPt, validEdgeSubsets,
-  type Address, type Affine, type DfaItem, type HexType, type Neighbour, type Sym, type TileTypeId, type TraceStep, type Transducer,
+  type Address, type Affine, type DfaItem, type HexType, type Sym, type TileTypeId, type TraceStep, type Transducer,
 } from '../core';
 import { tileColor } from '../lib/palette';
 import { ExpansionMap, type MapMark } from './transducer/ExpansionMap';
+import { nearest, orientationPath, supertileEdges, type BoundaryEdge } from './transducer/board';
+import { MAX_LEVEL, initialBoard, parentOptions, prefixId, reduce, type World } from './transducer/world';
 import '../styles/transducer.css';
 
 const FAMILY = 'hex' as const;
-const MAX_LEVEL = 6;
+/** Most tiles drawn faintly for a consulted supertile or a previewed parent. */
+const FAINT_CAP = 1500;
+/** Faint tiles nearest the action that also get an orientation flag. */
+const FLAG_CAP = 300;
 
-interface World {
-  /** the root supertile: type and level */
-  readonly root: HexType;
-  readonly level: number;
-  /** slot path of the tile the view is centred on, in the root */
-  readonly startId: string;
-}
-
-interface Placed { readonly id: string; readonly type: HexType; readonly xform: Affine; readonly address: Address }
+interface Placed { readonly id: string; readonly type: HexType; readonly xform: Affine }
 
 /** Every tile of the root, placed relative to the start tile (which sits at the origin). */
 function place(world: World): Map<string, Placed> {
@@ -43,20 +40,26 @@ function place(world: World): Map<string, Placed> {
   if (!start) throw new Error(`start tile ${world.startId} is not in the root`);
   const toStart = inv(start.xform);
   const out = new Map<string, Placed>();
-  for (const i of insts) out.set(i.id, { id: i.id, type: i.type as HexType, xform: mul(toStart, i.xform), address: addressFromId(world.root, i.id) });
+  for (const i of insts) out.set(i.id, { id: i.id, type: i.type as HexType, xform: mul(toStart, i.xform) });
   return out;
 }
 
-const prefixId = (slot: number, id: string): string => (id === '' ? String(slot) : `${slot}.${id}`);
-
-/** The parents a root of this type can have: (parent type, slot) with that type in the slot. */
-function parentOptions(type: HexType): { parent: HexType; slot: number }[] {
-  const out: { parent: HexType; slot: number }[] = [];
-  for (const P of HEX_TYPES) for (let s = 0; s < 8; s++) if (childType(P, s) === type) out.push({ parent: P, slot: s });
-  return out;
+/** The last few placed worlds, so that choosing the parent being previewed reuses the preview's layout. */
+const placeCache = new Map<string, Map<string, Placed>>();
+function placeCached(world: World): Map<string, Placed> {
+  const key = `${world.root}|${world.level}|${world.startId}`;
+  let hit = placeCache.get(key);
+  if (hit) { placeCache.delete(key); placeCache.set(key, hit); return hit; }
+  hit = place(world);
+  placeCache.set(key, hit);
+  while (placeCache.size > 4) placeCache.delete(placeCache.keys().next().value!);
+  return hit;
 }
 
-interface Lookup { readonly from: string; readonly edge: number; readonly result: Neighbour }
+/** Placed tiles with their slot paths, for the few that are drawn or looked up. */
+const withAddress = (world: World, tiles: readonly Placed[]): (Placed & { address: Address })[] =>
+  tiles.map((t) => ({ ...t, address: addressFromId(world.root, t.id) }));
+
 
 /** Marks for the rules under the picture, one numbered step per lookup. */
 function marksOf(trace: readonly TraceStep[]): { byType: Map<HexType, MapMark[]>; steps: { n: number; rule: HexType | null; text: string }[] } {
@@ -105,73 +108,22 @@ function symText(s: Sym, first: boolean): string {
 
 export function TransducerPage(): JSX.Element {
   const [startType, setStartType] = useState<HexType>('Pi');
-  const [world, setWorld] = useState<World>({ root: 'Pi', level: 0, startId: '' });
-  const [revealed, setRevealed] = useState<Set<string>>(() => new Set(['']));
-  const [selected, setSelected] = useState<string>('');
-  /** the edge the selected tile was entered through, if it was reached by a crossing */
-  const [entry, setEntry] = useState<number | null>(null);
-  const [lookup, setLookup] = useState<Lookup | null>(null);
-  const [pending, setPending] = useState<{ from: string; edge: number } | null>(null);
-  const [trail, setTrail] = useState<string[]>([]);
+  const [board, dispatch] = useReducer(reduce, 'Pi' as HexType, initialBoard);
+  const { world, revealed, selected, entry, lookup, pending, trail, previewIdx } = board;
 
-  const placed = useMemo(() => place(world), [world]);
+  const placed = useMemo(() => placeCached(world), [world]);
+  const selAddress = useMemo(() => addressFromId(world.root, selected), [world.root, selected]);
+  const options = useMemo(() => parentOptions(board), [board.world, board.pending]); // eslint-disable-line react-hooks/exhaustive-deps
   const sel = placed.get(selected) ?? placed.get(world.startId)!;
   const base = leafPts(FAMILY, 'Delta');
   const ptsOf = (p: Placed): { x: number; y: number }[] => base.map((q) => transPt(p.xform, q));
 
   const reset = useCallback((type: HexType) => {
     setStartType(type);
-    setWorld({ root: type, level: 0, startId: '' });
-    setRevealed(new Set(['']));
-    setSelected('');
-    setEntry(null);
-    setLookup(null);
-    setPending(null);
-    setTrail([]);
+    dispatch({ type: 'reset', start: type });
   }, []);
-
-  /** Cross edge e of the selected tile: reveal the neighbour or ask for a parent. */
-  const cross = useCallback((e: number, fromId = selected) => {
-    const from = placed.get(fromId);
-    if (!from) return;
-    const res = neighbour(from.address, e);
-    setLookup({ from: fromId, edge: e, result: res });
-    if (res.ok) {
-      const id = idOf(res.address);
-      setRevealed((r) => new Set([...r, id]));
-      setTrail((t) => [...t, fromId]);
-      setSelected(id);
-      setEntry(res.edge);
-      setPending(null);
-    } else {
-      setPending({ from: fromId, edge: e });
-    }
-  }, [placed, selected]);
-
-  /** Give the root a parent: every slot path gains a link, the view stays where it is, and the pending crossing is retried. */
-  const growWorld = useCallback((parent: HexType, slot: number) => {
-    if (world.level >= MAX_LEVEL) return;
-    const next: World = { root: parent, level: world.level + 1, startId: prefixId(slot, world.startId) };
-    setWorld(next);
-    setRevealed((r) => new Set([...r].map((id) => prefixId(slot, id))));
-    setTrail((t) => t.map((id) => prefixId(slot, id)));
-    const from = prefixId(slot, pending?.from ?? selected);
-    setSelected(from);
-    setLookup(null);
-    if (pending) {
-      const e = pending.edge;
-      setPending(null);
-      // retry on the next render, once `placed` reflects the new root
-      setRetry({ from, edge: e });
-    }
-  }, [world, pending, selected]);
-  const [retry, setRetry] = useState<{ from: string; edge: number } | null>(null);
-  useEffect(() => {
-    if (!retry || !placed.has(retry.from)) return;
-    const { from, edge } = retry;
-    setRetry(null);
-    cross(edge, from);
-  }, [retry, placed, cross]);
+  const cross = useCallback((edge: number) => dispatch({ type: 'cross', edge }), []);
+  const growWorld = useCallback((parent: HexType, slot: number) => dispatch({ type: 'grow', parent, slot }), []);
 
   // --- a rule and a combination --------------------------------------------
   const rules = useMemo(() => validEdgeSubsets(FAMILY).filter((r) => r.edges.length > 0), []);
@@ -194,42 +146,76 @@ export function TransducerPage(): JSX.Element {
     const onKey = (ev: KeyboardEvent): void => {
       if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
       const tag = (ev.target as HTMLElement | null)?.tagName;
-      if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
-      if (ev.key >= '0' && ev.key <= '5') cross(Number(ev.key));
-      else if (ev.key === 'Enter') strandStep();
+      // Text fields keep every key. A dropdown or a button keeps the keys it acts on itself
+      // (arrows change a dropdown; Enter and Space press a button); edge numbers always cross.
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+      const isDigit = ev.key >= '0' && ev.key <= '5' && ev.key.length === 1;
+      if (tag === 'SELECT' && !isDigit) return;
+      if (tag === 'BUTTON' && (ev.key === 'Enter' || ev.key === ' ')) return;
+      if (isDigit) { ev.preventDefault(); cross(Number(ev.key)); }
+      else if (pending && (ev.key === 'ArrowRight' || ev.key === 'ArrowDown')) { ev.preventDefault(); dispatch({ type: 'previewStep', delta: 1 }); }
+      else if (pending && (ev.key === 'ArrowLeft' || ev.key === 'ArrowUp')) { ev.preventDefault(); dispatch({ type: 'previewStep', delta: -1 }); }
+      else if (ev.key === 'Enter') {
+        if (pending && options[previewIdx]) growWorld(options[previewIdx].parent, options[previewIdx].slot);
+        else strandStep();
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [cross, strandStep]);
+  }, [cross, strandStep, pending, options, previewIdx, growWorld]);
 
   // --- what the picture shows ----------------------------------------------
   const marks = useMemo(() => marksOf(lookup?.result.trace ?? []), [lookup]);
   /** The supertiles the last lookup consulted: the ancestor at the crossing level and its neighbour, drawn as ghosts. */
   const ghosts = useMemo(() => {
     const out = new Set<string>();
-    if (!lookup) return out;
+    // while a crossing waits for a parent, the preview draws the root and more
+    if (!lookup || pending) return out;
     const k = lookup.result.ok ? lookup.result.level : lookup.result.level;
     const prefix = (id: string, levelsUp: number): string => id.split('.').filter(Boolean).slice(0, Math.max(0, id.split('.').filter(Boolean).length - levelsUp)).join('.');
     const roots = [prefix(lookup.from, k)];
     if (lookup.result.ok) roots.push(prefix(idOf(lookup.result.address), k));
-    for (const id of placed.keys()) for (const r of roots) if (r === '' || id === r || id.startsWith(r + '.')) out.add(id);
+    const inside: Placed[] = [];
+    for (const p of placed.values()) if (roots.some((r) => r === '' || p.id === r || p.id.startsWith(r + '.'))) inside.push(p);
+    const focus = transPt(placed.get(lookup.from)?.xform ?? placed.get(world.startId)!.xform, { x: 0.5, y: 0.866 });
+    for (const p of nearest(inside, focus, FAINT_CAP)) out.add(p.id);
     return out;
-  }, [lookup, placed]);
+  }, [lookup, placed, world.startId, pending]);
+
+  /** The world as it would be with the previewed parent, and where the waiting crossing would land in it. */
+  const preview = useMemo(() => {
+    const o = pending ? options[previewIdx] : undefined;
+    if (!pending || !o || world.level >= MAX_LEVEL) return null;
+    const pw: World = { root: o.parent, level: world.level + 1, startId: prefixId(o.slot, world.startId) };
+    const pplaced = placeCached(pw);
+    const from = pplaced.get(prefixId(o.slot, pending.from));
+    const shown = new Set([...revealed].map((id) => prefixId(o.slot, id)));
+    const candidates = [...pplaced.values()].filter((p) => !shown.has(p.id));
+    const tiles = nearest(candidates, transPt(from?.xform ?? pplaced.get(pw.startId)!.xform, { x: 0.5, y: 0.866 }), FAINT_CAP);
+    const landing = o.landing;
+    if (landing && !tiles.some((t) => t.id === landing) && pplaced.get(landing)) tiles.push(pplaced.get(landing)!);
+    return { option: o, world: pw, tiles, landing, edges: supertileEdges(withAddress(pw, tiles), leafPts(FAMILY, 'Delta'), pw.level) };
+  }, [pending, options, previewIdx, world, revealed]);
   const drawn = useMemo(() => {
     const ids = new Set<string>([...revealed, ...ghosts]);
     const list = [...ids].map((id) => placed.get(id)).filter((p): p is Placed => !!p);
     let minX = -2, minY = -2, maxX = 2, maxY = 2;
-    for (const p of list) for (const q of ptsOf(p)) { minX = Math.min(minX, q.x); minY = Math.min(minY, q.y); maxX = Math.max(maxX, q.x); maxY = Math.max(maxY, q.y); }
+    for (const p of [...list, ...(preview?.tiles ?? [])]) for (const q of ptsOf(p)) { minX = Math.min(minX, q.x); minY = Math.min(minY, q.y); maxX = Math.max(maxX, q.x); maxY = Math.max(maxY, q.y); }
     const pad = 1;
-    return { list, viewBox: `${minX - pad} ${minY - pad} ${maxX - minX + 2 * pad} ${maxY - minY + 2 * pad}` };
+    const edges: BoundaryEdge[] = supertileEdges(withAddress(world, list), base, world.level);
+    // every revealed tile is flagged; of the faint ones, the nearest to the selected tile
+    const focus = transPt(placed.get(selected)?.xform ?? placed.get(world.startId)!.xform, { x: 0.5, y: 0.866 });
+    const faint = list.filter((p) => !revealed.has(p.id));
+    const flagged = [...list.filter((p) => revealed.has(p.id)), ...nearest(faint, focus, FLAG_CAP)];
+    return { list, edges, flagged, viewBox: `${minX - pad} ${minY - pad} ${maxX - minX + 2 * pad} ${maxY - minY + 2 * pad}` };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [revealed, ghosts, placed]);
+  }, [revealed, ghosts, placed, preview, world.level, world.startId, selected]);
+  const edgeWidth = (level: number): number => [0, 0.05, 0.09, 0.13, 0.16, 0.19, 0.22][Math.min(level, 6)];
   const neighbourId = lookup?.result.ok ? idOf(lookup.result.address) : null;
-  const options = useMemo(() => parentOptions(world.root), [world.root]);
 
   // --- the machine ---------------------------------------------------------
   const tr = useMemo(() => hexTransducer(), []);
-  const run = useMemo(() => (lookup ? runTransducer(tr, placed.get(lookup.from)?.address ?? sel.address, lookup.edge) : null), [tr, lookup, placed, sel]);
+  const run = useMemo(() => (lookup ? runTransducer(tr, addressFromId(world.root, lookup.from), lookup.edge) : null), [tr, lookup, world.root]);
   const finalState = run && run.steps.length ? run.steps[run.steps.length - 1].to : tr.start;
   const maxPending = useMemo(() => Math.max(...tr.states.flatMap((s) => s.items.map((i) => i.pending.length))), [tr]);
   const [wallPrefix, setWallPrefix] = useState('Psi:1');
@@ -277,7 +263,7 @@ export function TransducerPage(): JSX.Element {
       <section className="td__board">
         <div className="td__controls">
           <label>Start with a
-            <select value={startType} onChange={(e) => reset(e.target.value as HexType)} data-testid="td-start">
+            <select value={startType} onChange={(e) => { reset(e.target.value as HexType); e.currentTarget.blur(); }} data-testid="td-start">
               {HEX_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
             </select>
           </label>
@@ -285,7 +271,16 @@ export function TransducerPage(): JSX.Element {
           <span className="td__hint">Keys 0 to 5 cross an edge of the selected tile; click a drawn tile to select it. Enter follows the strand (section 3).</span>
         </div>
         <div className="td__explore">
-          <svg className="td__svg td__svg--world" viewBox={drawn.viewBox} data-testid="td-svg" data-drawn={drawn.list.length} data-revealed={revealed.size}>
+          <svg className="td__svg td__svg--world" viewBox={drawn.viewBox} data-testid="td-svg" data-drawn={drawn.list.length} data-revealed={revealed.size} data-preview={preview?.tiles.length ?? 0} data-boundaries={drawn.edges.length}>
+            {preview && preview.tiles.map((p, i) => (
+              <g key={`pv-${p.id}`} className={`td__preview${p.id === preview.landing ? ' is-landing' : ''}`} data-preview-id={p.id}>
+                <polygon points={ptsOf(p).map((q) => `${q.x},${q.y}`).join(' ')} fill={tileColor(p.type)} />
+                {(i < FLAG_CAP || p.id === preview.landing) && <path d={orientationPath(p.xform)} className="td__flag" />}
+              </g>
+            ))}
+            {preview && preview.edges.map((b) => (
+              <line key={`pb-${b.key}`} className="td__boundary is-preview" data-level={Math.min(b.level, 3)} x1={b.x1} y1={b.y1} x2={b.x2} y2={b.y2} strokeWidth={edgeWidth(b.level)} />
+            ))}
             {drawn.list.map((p) => {
               const pts = ptsOf(p);
               const isSel = p.id === sel.id;
@@ -298,12 +293,16 @@ export function TransducerPage(): JSX.Element {
                   className={`td__tile${isGhost ? ' is-ghost' : ' is-revealed'}${isSel ? ' is-selected' : ''}${isNb ? ' is-neighbour' : ''}`}
                   points={pts.map((q) => `${q.x},${q.y}`).join(' ')}
                   fill={tileColor(p.type)}
-                  onClick={() => { if (!isGhost) { setSelected(p.id); setEntry(null); } }}
+                  onClick={() => { if (!isGhost) dispatch({ type: 'select', id: p.id }); }}
                 >
-                  <title>{p.id || '(root)'}: {formatAddress(p.address)}</title>
+                  <title>{p.id || '(root)'}</title>
                 </polygon>
               );
             })}
+            {drawn.flagged.map((p) => <path key={`f-${p.id}`} d={orientationPath(p.xform)} className={`td__flag${revealed.has(p.id) ? '' : ' is-ghost'}`} />)}
+            {drawn.edges.map((b) => (
+              <line key={`b-${b.key}`} className="td__boundary" data-level={Math.min(b.level, 3)} x1={b.x1} y1={b.y1} x2={b.x2} y2={b.y2} strokeWidth={edgeWidth(b.level)} />
+            ))}
             {trail.length > 0 && <polyline className="td__trail" points={trailLine} />}
             {selPts.map((p, e) => {
               const q = selPts[(e + 1) % 6];
@@ -319,10 +318,11 @@ export function TransducerPage(): JSX.Element {
           <div className="td__side">
             <p>
               Selected: <strong data-testid="td-id">{sel.id || '(the root itself)'}</strong><br />
-              <span data-testid="td-address">{formatAddress(sel.address)}</span>
+              <span data-testid="td-address">{formatAddress(selAddress)}</span>
             </p>
-            <p className="td__hint">
+            <p className="td__hint" data-testid="td-world">
               World: a level-{world.level} {world.root}, {placed.size} tiles, {revealed.size} revealed.
+              {world.level > 0 && <> Dark lines are supertile boundaries, thicker for higher levels; the flag in each tile points at its edge 0, with the barb on the edge-1 side.</>}
             </p>
             {pending && (
               <div className="td__pending" data-testid="td-pending">
@@ -330,12 +330,34 @@ export function TransducerPage(): JSX.Element {
                   Edge {pending.edge} of {pending.from || 'this tile'} leaves the root. Give the level-{world.level} {world.root} a parent:
                 </p>
                 <div className="td__chips">
-                  {options.map((o) => (
-                    <button key={`${o.parent}-${o.slot}`} type="button" className="td__chip" onClick={() => growWorld(o.parent, o.slot)} disabled={world.level >= MAX_LEVEL} data-testid={`td-parent-${o.parent}-${o.slot}`}>
+                  {options.map((o, i) => (
+                    <button
+                      key={`${o.parent}-${o.slot}`}
+                      type="button"
+                      className={`td__chip${i === previewIdx ? ' is-active' : ''}`}
+                      onClick={(e) => { growWorld(o.parent, o.slot); e.currentTarget.blur(); }}
+                      onMouseEnter={() => dispatch({ type: 'preview', idx: i })}
+                      onFocus={() => dispatch({ type: 'preview', idx: i })}
+                      disabled={world.level >= MAX_LEVEL}
+                      data-testid={`td-parent-${o.parent}-${o.slot}`}
+                    >
                       slot {o.slot} of a {o.parent}
+                      <span className="td__chip-note">{o.landing ? ' lands' : o.needs ? ` +${o.needs - 1} more` : ' never'}</span>
                     </button>
                   ))}
                 </div>
+                {preview && (
+                  <p className="td__hint" data-testid="td-preview">
+                    Shown faintly: slot {preview.option.slot} of a {preview.option.parent} ({previewIdx + 1} of {options.length}).{' '}
+                    {preview.landing
+                      ? <>The crossing would land on {preview.landing}, a {preview.option.landingType}, outlined.</>
+                      : preview.option.needs
+                        ? <>The crossing would still leave the root; the quickest chain from here needs {preview.option.needs - 1} more {preview.option.needs - 1 === 1 ? 'parent' : 'parents'}.</>
+                        : <>No chain of parents within level {MAX_LEVEL} lands this crossing from here.</>}
+                    {preview.option.repeats && <> This parent puts the {world.root} inside another {world.root}; choosing it every time keeps the edge on the outside at every level, the corner of an infinitely large supertile.</>}
+                    {' '}Arrow keys cycle, Enter or a click chooses.
+                  </p>
+                )}
                 {world.level >= MAX_LEVEL && <p className="td__hint">The world is capped at level {MAX_LEVEL} on this page.</p>}
               </div>
             )}
@@ -448,7 +470,7 @@ export function TransducerPage(): JSX.Element {
         </div>
         <p>
           The selected {sel.type} has crossings on edges{' '}
-          {seams.length ? seams.map((s, i) => <button key={s.edge} type="button" className={`td__chip${entry === s.edge ? ' is-active' : ''}`} onClick={() => setEntry(s.edge)} data-testid={`td-seam-${s.edge}`}>{s.edge}{pairing[i] >= 0 ? ` ↔ ${seams[pairing[i]].edge}` : ''}</button>) : 'none under this rule'}.
+          {seams.length ? seams.map((s, i) => <button key={s.edge} type="button" className={`td__chip${entry === s.edge ? ' is-active' : ''}`} onClick={() => dispatch({ type: 'entry', edge: s.edge })} data-testid={`td-seam-${s.edge}`}>{s.edge}{pairing[i] >= 0 ? ` ↔ ${seams[pairing[i]].edge}` : ''}</button>) : 'none under this rule'}.
           {seams.length ? ' Each chip shows the edge it is joined to; click one to say the strand entered there.' : ''}
         </p>
         <div className="td__controls">
