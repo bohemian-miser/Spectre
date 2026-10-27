@@ -31,6 +31,7 @@ import { comboOdometer } from '../../lib/comboOdometer';
 import { edgeClassColor } from '../../lib/palette';
 import { basisCoords, oddLeaves, parityBasis, xorGroup } from '../../lib/parityBasis';
 import { TileGlyph } from '../TileGlyph';
+import '../../styles/quickbar.css';
 
 export interface QuickBarProps {
   readonly family: TileFamilyId;

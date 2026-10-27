@@ -1,0 +1,150 @@
+/* HexBoard: the hexagon board shared by the slot-path pages. */
+
+.hb {
+  width: 100%;
+  height: min(70vh, 760px);
+  display: block;
+  border: 1px solid var(--rule, #2a3140);
+  border-radius: 8px;
+  background: var(--panel-2, #efece5);
+  cursor: grab;
+  touch-action: none;
+}
+.hb.is-panning {
+  cursor: grabbing;
+}
+.hb__tile {
+  stroke: var(--panel, #ffffff);
+  stroke-width: 0.05;
+}
+.hb__tile.is-solid {
+  opacity: 0.95;
+  stroke: var(--text, #1d2430);
+  stroke-width: 0.03;
+}
+.hb__tile.is-faint {
+  opacity: 0.3;
+}
+.hb__tile.is-preview {
+  opacity: 0.4;
+  stroke: var(--text, #1d2430);
+  stroke-dasharray: 0.15 0.12;
+  stroke-width: 0.03;
+}
+.hb__tile.is-landing {
+  opacity: 0.95;
+  stroke: var(--text, #1d2430);
+  stroke-dasharray: none;
+  stroke-width: 0.14;
+}
+.hb__boundary {
+  stroke: var(--text, #1d2430);
+  stroke-linecap: round;
+  opacity: 0.7;
+}
+.hb__boundary.is-preview {
+  opacity: 0.35;
+  stroke-dasharray: 0.3 0.2;
+}
+.hb__chords {
+  fill: none;
+  stroke: var(--text, #1d2430);
+  stroke-width: 0.035;
+  opacity: 0.45;
+  pointer-events: none;
+}
+.hb__chords.is-faint,
+.hb__chords.is-preview {
+  opacity: 0.22;
+}
+.hb__flag {
+  fill: none;
+  stroke: var(--text, #1d2430);
+  stroke-width: 0.035;
+  opacity: 0.55;
+  pointer-events: none;
+}
+.hb__flag.is-faint,
+.hb__flag.is-preview {
+  opacity: 0.25;
+}
+.hb__strand {
+  fill: none;
+  stroke: var(--text, #1d2430);
+  stroke-width: 0.13;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+.hb__strand.is-pending {
+  stroke-dasharray: 0.2 0.15;
+  opacity: 0.7;
+}
+.hb__focus-outline {
+  fill: none;
+  stroke: var(--text, #1d2430);
+  stroke-width: 0.1;
+  pointer-events: none;
+}
+.hb__edge-no {
+  font-size: 0.32px;
+  font-weight: 700;
+  fill: var(--text, #1d2430);
+  stroke: var(--panel, #ffffff);
+  stroke-width: 0.08px;
+  paint-order: stroke;
+  pointer-events: none;
+}
+.hb__edge-no.is-entry {
+  fill: #1c7ed6;
+  font-size: 0.4px;
+}
+.hb__edge-no.is-exit {
+  fill: #e8590c;
+  font-size: 0.4px;
+}
+.hb__mark {
+  pointer-events: none;
+}
+.hb__mark.is-odd {
+  fill: #e03131;
+}
+.hb__mark.is-match {
+  fill: #f08c00;
+}
+.hb__mark.is-corner {
+  fill: none;
+  stroke: var(--text, #1d2430);
+  stroke-width: 0.25;
+}
+.hb__mark.is-start {
+  fill: none;
+  stroke: #2f9e44;
+  stroke-width: 0.18;
+}
+
+.hb__mark.is-hover {
+  fill: none;
+  stroke: #7048e8;
+  stroke-width: 0.2;
+}
+.hb-wrap {
+  position: relative;
+}
+.hb-fit {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  display: flex;
+  gap: 0.25rem;
+}
+.hb-fit button {
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 0.15rem 0.5rem;
+  border: 1px solid var(--rule, #2a3140);
+  border-radius: 6px;
+  background: var(--panel, #fff);
+  color: inherit;
+  cursor: pointer;
+}

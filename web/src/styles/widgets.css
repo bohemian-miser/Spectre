@@ -847,3 +847,18 @@ textarea {
   stroke-width: 1px;
   vector-effect: non-scaling-stroke;
 }
+
+/* TileGlyph (components/TileGlyph.tsx), used on several pages. */
+.tile-glyph-body {
+  fill: var(--panel);
+  stroke: var(--muted);
+}
+.tile-glyph-chord {
+  stroke: var(--text);
+}
+.tile-glyph-dot {
+  fill: var(--text);
+}
+.tile-glyph-dot.is-odd {
+  fill: var(--danger);
+}
