@@ -7,16 +7,13 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { addressFromId, comboToMatchingIndices, leafOrder, sideRuns, walkStrand, letter } from '../../../core';
+import { addressFromId, sideRuns, walkStrand, letter } from '../../../core';
 import { parentOptions } from '../../transducer/world';
-import { initialWalk, longestCircuit, reduceWalk, type Pattern } from '../walk';
+import { initialWalk, longestCircuit, matchingByType, patternOf, reduceWalk, type Pattern } from '../walk';
 
-const triangle: Pattern = { subset: [0, 2, 3, 4, 6, 8], combo: '000100000' };
+const triangle: Pattern = patternOf([0, 2, 3, 4, 6, 8], '000100000');
 
-function matchingOf(p: Pattern): Record<string, number> {
-  const idx = comboToMatchingIndices('hex', p.subset, p.combo);
-  return Object.fromEntries(leafOrder('hex').map((t, i) => [t, idx[i] ?? 0]));
-}
+const matchingOf = (p: Pattern): Record<string, number> => Object.fromEntries(matchingByType(p));
 
 describe('circuit walker', () => {
   it('closes the longest circuit of a level-4 Delta after as many tiles as walkStrand', () => {

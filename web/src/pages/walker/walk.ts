@@ -14,8 +14,16 @@ import { initialBoard, reduce, type Board, type World } from '../transducer/worl
 
 export interface Pattern {
   readonly subset: readonly number[];
-  readonly combo: string;
+  /** Matching index per type, in `leafOrder('hex')` order (as the Explorer's state holds it). */
+  readonly matching: readonly number[];
 }
+
+/** The pattern of a combination string. */
+export const patternOf = (subset: readonly number[], combo: string): Pattern => ({ subset, matching: comboToMatchingIndices('hex', subset, combo) });
+
+/** Matching index per type, by name. */
+export const matchingByType = (pattern: Pattern): Map<HexType, number> =>
+  new Map(leafOrder('hex').map((t, i) => [t as HexType, pattern.matching[i] ?? 0]));
 
 /** One strand step: the tile's type, the edges in and out, and the level where the crossing settled. */
 export interface StepRecord { readonly type: HexType; readonly entry: number; readonly exit: number; readonly height: number }
@@ -46,11 +54,10 @@ export function initialWalk(start: HexType): Walk {
 
 /** Per type, the partner of each edge carrying a crossing (edge -> edge). */
 export function pairingTable(pattern: Pattern): Map<HexType, Map<number, number>> {
-  const idx = comboToMatchingIndices('hex', pattern.subset, pattern.combo);
   const out = new Map<HexType, Map<number, number>>();
   leafOrder('hex').forEach((t, ti) => {
     const seams = slotsOfType('hex', t, pattern.subset);
-    const pairing = chordPairing('hex', t, pattern.subset, idx[ti] ?? 0);
+    const pairing = chordPairing('hex', t, pattern.subset, pattern.matching[ti] ?? 0);
     const m = new Map<number, number>();
     seams.forEach((s, k) => { if (pairing[k] >= 0) m.set(s.edge, seams[pairing[k]].edge); });
     out.set(t as HexType, m);
@@ -116,9 +123,7 @@ export interface FoundCircuit { readonly id: string; readonly edge: number; read
 
 /** The longest circuit of a level-n supertile of `root`, by walking a strand from every crossing. */
 export function longestCircuit(pattern: Pattern, root: HexType, level: number): FoundCircuit | null {
-  const idx = comboToMatchingIndices('hex', pattern.subset, pattern.combo);
-  const matching: Record<string, number> = {};
-  leafOrder('hex').forEach((t, i) => (matching[t] = idx[i] ?? 0));
+  const matching: Record<string, number> = Object.fromEntries(matchingByType(pattern));
   const seen = new Set<string>();
   let best: FoundCircuit | null = null;
   for (const inst of flatten(buildSystem('hex', level)[root] as MetaNode)) {
