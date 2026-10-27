@@ -10,9 +10,10 @@ import { useMemo } from 'react';
 
 import {
   buildSystem, edgeParts, flatten, leafPts, levelMirror, transPt,
-  type HexType,
+  type Affine, type HexType,
 } from '../../core';
 import { tileColor } from '../../lib/palette';
+import { orientationPath } from './board';
 
 export interface MapMark {
   /** the child edge being looked up */
@@ -38,7 +39,7 @@ export interface ExpansionMapProps {
 }
 
 interface Pt { x: number; y: number }
-interface Child { s: number; type: HexType; pts: Pt[]; c: Pt }
+interface Child { s: number; type: HexType; pts: Pt[]; c: Pt; xform: Affine }
 
 const ARC_COLOURS = ['#e36b6b', '#e0a53b', '#8fc24b', '#3bb7b0', '#5b8def', '#b06bd6'];
 
@@ -48,7 +49,7 @@ function layout(parent: HexType): { children: Child[]; viewBox: string } {
   const children: Child[] = insts.map((inst) => {
     const pts = base.map((p) => transPt(inst.xform, p));
     const c = { x: pts.reduce((a, p) => a + p.x, 0) / 6, y: pts.reduce((a, p) => a + p.y, 0) / 6 };
-    return { s: Number(inst.id), type: inst.type as HexType, pts, c };
+    return { s: Number(inst.id), type: inst.type as HexType, pts, c, xform: inst.xform };
   });
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (const ch of children) for (const p of ch.pts) { minX = Math.min(minX, p.x); minY = Math.min(minY, p.y); maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y); }
@@ -92,6 +93,7 @@ export function ExpansionMap({ parent, marks = [], size = 240, title, used = fal
         {children.map((ch) => (
           <polygon key={ch.s} points={ch.pts.map((p) => `${p.x},${p.y}`).join(' ')} fill={tileColor(ch.type)} className="xmap__child" />
         ))}
+        {children.map((ch) => <path key={`f${ch.s}`} d={orientationPath(ch.xform)} className="td__flag" />)}
         {arcs.map((arc, j) => {
           const active = activeEdges.has(j);
           return (
