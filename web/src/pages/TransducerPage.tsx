@@ -22,6 +22,7 @@ import {
 import { tileColor } from '../lib/palette';
 import { ExpansionMap, type MapMark } from './transducer/ExpansionMap';
 import { nearest, orientationPath, supertileEdges, type BoundaryEdge } from './transducer/board';
+import { WallView } from './transducer/WallView';
 import { MAX_LEVEL, initialBoard, parentOptions, prefixId, reduce, type World } from './transducer/world';
 import '../styles/transducer.css';
 
@@ -449,8 +450,26 @@ export function TransducerPage(): JSX.Element {
         </p>
       </section>
 
+      <section id="wall" className="td__section">
+        <h2>3. A wall, level by level</h2>
+        <p>
+          Edge 0 of a Gamma in slot 7 of a Gamma is again edge 0 of the bigger Gamma, so the crossing climbs one more
+          level for every Gamma put on top. Below, n Gammas are nested, each in slot 7 of the next. The blue outlines
+          are those supertiles, levels 1 to n; all of them run along the crossed edge (circled). A few more parents are
+          put on top until the crossing lands, and the tile across it is found. The orange outlines are that tile's
+          supertiles at the same levels. The red line is where the two level-n supertiles meet: the wall, so far.
+          Frame picks the level the view fits, from the two tiles up to level n.
+        </p>
+        <p>
+          Press + and the wall gets longer, and the far side gains one level. The table lists both slot paths. Every
+          row of the far side but the top agrees with the machine's answer for the Gamma repeated for ever; the top row
+          is bent by the parents put on top to close the patch, and it moves up with n.
+        </p>
+        <WallView />
+      </section>
+
       <section id="pattern" className="td__section">
-        <h2>3. A rule and a combination</h2>
+        <h2>4. A rule and a combination</h2>
         <p>
           A rule picks the classes that carry a crossing; a combination picks, in each tile, which crossing each one
           is joined to. A strand is: enter a tile at a crossing, go to its partner, cross that edge, repeat. Enter
