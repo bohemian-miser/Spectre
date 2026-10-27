@@ -243,3 +243,36 @@ the hierarchy:
 
     npx tsx circuit-classes/renormalize-lean.ts hex 01234568 241400332 10
     MAXPTS=900000 npx tsx circuit-classes/draw-giants.ts 01234568 241400332 9 1000 out.json
+
+## Strands as Turing machines
+
+`strand-machine.ts` writes a strand as a Turing machine whose tape is the
+tile's address (cell 0 the tile's type, cell k + 1 the link `Parent/slot` to
+the level-(k + 1) ancestor). One strand step is one sweep: pair the entry
+crossing in the tile, climb while the exit edge lies on the outside of each
+ancestor, rewrite the slot where it is glued inside, and climb back down. Of
+the 1142 rows for a hexagon rule, only the 34 to 54 at cell 0 come from the
+pairing; the rest are the substitution. A circuit is a run that comes back to
+its start configuration, and the highest cell it reads is the level where it
+closes.
+
+    npx tsx circuit-classes/strand-machine.ts 023468-000100000 6
+
+checks the machine against `walkStrand` and tabulates the circuits of a
+level-6 Delta by the highest cell read:
+
+| combination | height | circuits | longest (tiles) | machine steps |
+| --- | --- | --- | --- | --- |
+| 023468-000100000 | 2 | 15620 | 27 | 99 |
+| | 4 | 2126 | 513 | 2073 |
+| | 5 | 2006 | 75 | 309 |
+| | 6 | 1236 | 10215 | 42243 |
+| 01234568-241400332 | 4 | 5858 | 128 | 584 |
+| | 5 | 3002 | 12330 | 55800 |
+| | 6 | 1606 | 1158 | 5510 |
+
+The longest circuit per height is the busy-beaver function of the
+combination. Merging states that behave alike (Moore's partition refinement)
+leaves all 66 states of the full machine, so a shorter description of a
+family has to act on whole sweeps (the edge machine of `edge-machine.ts`),
+not on single rows.
