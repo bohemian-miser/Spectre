@@ -26,6 +26,7 @@ import { HEX_OUTLINE, nearest, placeWorld, supertileEdges, tileCentre, tilesArou
 import { tileColor } from '../lib/palette';
 import { MAX_LEVEL, parentOptions, prefixId, type World } from './transducer/world';
 import { LandingWalk } from './walker/LandingWalk';
+import { decodeLink, encodeLink, type Choice, type WalkerLink } from './walker/share';
 import { MachineView } from './walker/MachineView';
 import type { World as Stack } from './walker/possible';
 import { initialWalk, longestCircuit, matchingByType, pairingTable, patternOf, reduceWalk, type Pattern } from './walker/walk';
@@ -39,20 +40,64 @@ const PREVIEW_CAP = 700;
 const BOUNDARY_CAP = 3000;
 
 const DEFAULT = patternOf([0, 2, 3, 4, 6, 8], '000100000');
+const NO_CHOICES = { choices: [] as Choice[], current: 0, whole: false };
+
+/** The view in the URL this page was opened with, if any; a start tile that is not in its supertile is dropped. */
+function linkOnLoad(): (WalkerLink & { stacks?: Stack[] }) | null {
+  const link = typeof window === 'undefined' ? null : decodeLink(window.location.search);
+  if (!link?.find) return link;
+  try {
+    const a = addressFromId('Delta', link.find.id);
+    if (a.path.length !== link.find.level || link.edge === null) return { ...link, find: null };
+    return { ...link, start: a.leaf, stacks: [{ chain: a.path, at: a, entry: link.edge }] };
+  } catch {
+    return { ...link, find: null };
+  }
+}
 
 export function WalkerPage(): JSX.Element {
-  const [pattern, setPattern] = useState<Pattern>(DEFAULT);
-  const [startType, setStartType] = useState<HexType>('Delta');
-  const [findLevel, setFindLevel] = useState(4);
+  const [link] = useState(linkOnLoad);
+  const [pattern, setPattern] = useState<Pattern>(() => (link ? { subset: link.subset, matching: normalizeMatchingVector('hex', link.subset, link.matching) } : DEFAULT));
+  const [startType, setStartType] = useState<HexType>(link?.start ?? 'Delta');
+  const [findLevel, setFindLevel] = useState(link?.find?.level ?? 4);
   const [found, setFound] = useState<string | null>(null);
   const [previewing, setPreviewing] = useState(false);
   /** 'landings': walk every ancestor stack at once and choose only between landings; 'ancestors': choose each parent by hand. */
-  const [mode, setMode] = useState<'landings' | 'ancestors'>('landings');
-  const [seed, setSeed] = useState<{ edge: number | null; stacks?: Stack[]; n: number }>({ edge: null, n: 0 });
+  const [mode, setMode] = useState<'landings' | 'ancestors'>(link?.mode ?? 'landings');
+  const [seed, setSeed] = useState<{ edge: number | null; stacks?: Stack[]; find?: { level: number; id: string } | null; replay?: { choices: readonly Choice[]; current: number; whole: boolean }; n: number }>(() => ({
+    edge: link?.edge ?? null,
+    stacks: link?.stacks,
+    find: link?.find,
+    replay: link ? { choices: link.choices, current: link.current, whole: link.whole } : undefined,
+    n: 0,
+  }));
+  /** The landings walk's choices, current node and whole-tree switch, for the URL. */
+  const [walked, setWalked] = useState<{ choices: readonly Choice[]; current: number; whole: boolean }>(NO_CHOICES);
   const [hoverRun, setHoverRun] = useState<number | null>(null);
   const table = useMemo(() => pairingTable(pattern), [pattern]);
   const byType = useMemo(() => matchingByType(pattern), [pattern]);
-  const [walk, dispatch] = useReducer(reduceWalk, 'Delta' as HexType, initialWalk);
+  const [walk, dispatch] = useReducer(reduceWalk, link, (l) => {
+    let w = initialWalk(l?.start ?? 'Delta');
+    if (l?.find && l.edge !== null) w = reduceWalk(w, { type: 'place', world: { root: 'Delta', level: l.find.level, startId: l.find.id }, edge: l.edge });
+    else if (l && l.edge !== null) w = reduceWalk(w, { type: 'startEdge', edge: l.edge });
+    // choose-by-supertile mode: walk the same steps again, taking the same supertiles when asked
+    if (l && l.edge !== null && l.steps) {
+      const p: Pattern = { subset: l.subset, matching: normalizeMatchingVector('hex', l.subset, l.matching) };
+      let g = 0;
+      for (let guard = 0; w.steps.length < l.steps && guard < l.steps + l.grows.length + 2; guard++) {
+        if (w.waiting) {
+          const link = l.grows[g++];
+          if (!link) break;
+          w = reduceWalk(w, { type: 'grow', parent: link.parent, slot: link.slot });
+        } else {
+          const next = reduceWalk(w, { type: 'step', pattern: p });
+          if (next === w) break;
+          w = next;
+        }
+      }
+    }
+    return w;
+  });
   const { board, steps, waiting, closed, startEdge } = walk;
   const { world } = board;
 
@@ -66,6 +111,7 @@ export function WalkerPage(): JSX.Element {
     setStartType(t);
     setFound(null);
     setSeed((x) => ({ edge: null, n: x.n + 1 }));
+    setWalked(NO_CHOICES);
     dispatch({ type: 'reset', start: t });
   }, []);
   const setSubset = (subset: readonly number[]): void => {
@@ -161,11 +207,30 @@ export function WalkerPage(): JSX.Element {
     setFound(`Placed on the longest circuit inside a level-${findLevel} Delta: ${best.length} tiles, starting at ${best.id}.`);
     dispatch({ type: 'place', world: { root: 'Delta', level: findLevel, startId: best.id }, edge: best.edge });
     const a = addressFromId('Delta', best.id);
-    setSeed((x) => ({ edge: best.edge, stacks: [{ chain: a.path, at: a, entry: best.edge }], n: x.n + 1 }));
+    setSeed((x) => ({ edge: best.edge, stacks: [{ chain: a.path, at: a, entry: best.edge }], find: { level: findLevel, id: best.id }, n: x.n + 1 }));
+    setWalked(NO_CHOICES);
   };
   const heights = steps.map((s) => s.height);
   const maxHeight = Math.max(1, ...heights);
   const lastHeight = steps.length ? steps[steps.length - 1].height : null;
+
+  // the view in the URL, so it can be copied and opened elsewhere
+  useEffect(() => {
+    const q = encodeLink({
+      subset: pattern.subset,
+      matching: pattern.matching,
+      mode,
+      start: seed.stacks ? seed.stacks[0].at.leaf : startType,
+      edge: seed.edge,
+      find: seed.find ?? null,
+      choices: walked.choices,
+      current: walked.current,
+      whole: walked.whole,
+      grows: addressFromId(world.root, world.startId).path.slice(seed.find?.level ?? 0),
+      steps: steps.length,
+    });
+    window.history.replaceState(null, '', `${window.location.pathname}?${q}`);
+  }, [pattern, mode, startType, seed, walked, world, steps.length]);
 
   useEffect(() => {
     const onKey = (ev: KeyboardEvent): void => {
@@ -239,7 +304,7 @@ export function WalkerPage(): JSX.Element {
             <p data-testid="wk-start-edges">
               The strand comes into the {startType0} through edge{' '}
               {startSeams.map((s) => (
-                <button key={s.edge} type="button" className={`td__chip${startEdge === s.edge || seed.edge === s.edge ? ' is-active' : ''}`} onClick={() => { dispatch({ type: 'startEdge', edge: s.edge }); setSeed((x) => ({ edge: s.edge, n: x.n + 1 })); }} data-testid={`wk-edge-${s.edge}`}>
+                <button key={s.edge} type="button" className={`td__chip${startEdge === s.edge || seed.edge === s.edge ? ' is-active' : ''}`} onClick={() => { dispatch({ type: 'startEdge', edge: s.edge }); setSeed((x) => ({ edge: s.edge, n: x.n + 1 })); setWalked(NO_CHOICES); }} data-testid={`wk-edge-${s.edge}`}>
                   {s.edge} → {table.get(startType0)?.get(s.edge) ?? '–'}
                 </button>
               ))}
@@ -252,12 +317,12 @@ export function WalkerPage(): JSX.Element {
       <section className="td__board">
         <h2>3. The walk</h2>
         <div className="wk__modes" role="tablist">
-          <button type="button" role="tab" aria-selected={mode === 'landings'} className={`td__chip${mode === 'landings' ? ' is-active' : ''}`} onClick={() => setMode('landings')} data-testid="wk-mode-landings">Choose where it lands</button>
-          <button type="button" role="tab" aria-selected={mode === 'ancestors'} className={`td__chip${mode === 'ancestors' ? ' is-active' : ''}`} onClick={() => setMode('ancestors')} data-testid="wk-mode-ancestors">Choose each ancestor</button>
+          <button type="button" role="tab" aria-selected={mode === 'landings'} className={`td__chip${mode === 'landings' ? ' is-active' : ''}`} onClick={() => setMode('landings')} data-testid="wk-mode-landings">Choose by next tile</button>
+          <button type="button" role="tab" aria-selected={mode === 'ancestors'} className={`td__chip${mode === 'ancestors' ? ' is-active' : ''}`} onClick={() => setMode('ancestors')} data-testid="wk-mode-ancestors">Choose by supertile</button>
           <span className="td__hint">
             {mode === 'landings'
-              ? 'Every ancestor stack is followed at once; the walk only stops where they disagree about where the strand lands.'
-              : 'Each time the strand leaves the supertile built so far, pick its parent.'}
+              ? 'Every stack of supertiles is followed at once; the walk only stops where they disagree about the next tile, and you choose the tile.'
+              : 'Each time the strand leaves the supertile built so far, choose the supertile it sits in.'}
           </span>
         </div>
         {mode === 'landings' ? (
@@ -270,6 +335,8 @@ export function WalkerPage(): JSX.Element {
                 start={seed.stacks ? seed.stacks[0].at.leaf : startType0}
                 startEdge={seed.edge}
                 worlds={seed.stacks}
+                initial={seed.replay}
+                onState={(choices, current, whole) => setWalked({ choices, current, whole })}
               />
         ) : (
           <>

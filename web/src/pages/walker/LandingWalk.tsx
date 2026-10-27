@@ -5,14 +5,15 @@
  * hovering a landing shows a stack that lands there. Every choice made stays
  * in the tree of choices, and clicking one goes back to it.
  */
-import { useMemo, useReducer, useState } from 'react';
+import { useEffect, useMemo, useReducer, useState } from 'react';
 
 import { addressFromId, idOf, type HexType } from '../../core';
 import { HexBoard, type BoardStep, type BoardTile } from '../../components/HexBoard';
 import { HEX_OUTLINE, placeWorld, supertileEdges, tilesAround, type PlacedTile } from '../../lib/hexBoard';
 import { classLabel } from './landings';
-import { makeWalker, reducePossible, replay, startWalk, type Outcome, type PossibleWalk, type World } from './possible';
+import { choicesOf, makeWalker, reducePossible, replay, replayChoices, startWalk, type Outcome, type PossibleWalk, type World } from './possible';
 import { ChoiceTree } from './ChoiceTree';
+import type { Choice } from './share';
 import { SidesView, sideMarks, sidesOf } from './SidesView';
 import type { Pattern } from './walk';
 
@@ -43,13 +44,22 @@ export interface LandingWalkProps {
   readonly startEdge: number;
   /** Start from these stacks (a circuit found in a supertile) instead of the bare tile. */
   readonly worlds?: readonly World[];
+  /** Choices to make again on the way in (from a shared link), the node to show, and whether the whole tree is open. */
+  readonly initial?: { readonly choices: readonly Choice[]; readonly current: number; readonly whole: boolean };
+  /** Told the choices, the current node and whether the whole tree is open, whenever they change. */
+  readonly onState?: (choices: Choice[], current: number, whole: boolean) => void;
 }
 
-export function LandingWalk({ pattern, byType, start, startEdge, worlds }: LandingWalkProps): JSX.Element {
-  const [pw, dispatch] = useReducer(reducePossible, null, () => startWalk(makeWalker(pattern, start, startEdge, MAX_LEVEL), worlds));
+export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial, onState }: LandingWalkProps): JSX.Element {
+  const [pw, dispatch] = useReducer(reducePossible, null, () => {
+    const w = startWalk(makeWalker(pattern, start, startEdge, MAX_LEVEL), worlds);
+    // from a link: make its choices again and walk on to where it was
+    return initial ? replayChoices(w, initial.choices, initial.current) : w;
+  });
   const [hover, setHover] = useState<Outcome | null>(null);
   const [hoverRun, setHoverRun] = useState<number | null>(null);
-  const [whole, setWhole] = useState(false);
+  const [whole, setWhole] = useState(initial?.whole ?? false);
+  useEffect(() => { onState?.(choicesOf(pw), pw.current, whole); }, [pw, whole]); // eslint-disable-line react-hooks/exhaustive-deps
   const { stage } = pw;
   const n = stage.seen.length;
 

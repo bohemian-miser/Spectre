@@ -107,6 +107,8 @@ export interface ForkOption {
   readonly deciders: readonly HexType[];
   /** Per decider, how many of its slots at that level lead here. */
   readonly slotsPer: readonly number[];
+  /** The ancestor positions at that level that lead here: type and slot, as `Delta1`. */
+  readonly cells: readonly string[];
 }
 
 /** Where the walk from a node next stopped: the step, the tile and edge it left by, and every landing offered. */
@@ -159,6 +161,7 @@ export function forkOf(wk: Walker, stage: Stage): Fork {
         }
         return slots.size;
       }),
+      cells: level === null ? [] : [...new Set(stage.pending[i].worlds.flatMap((w) => (w.chain[level!] ? [`${w.chain[level!].parent}${w.chain[level!].slot}`] : [])))],
     })),
   };
 }
@@ -260,4 +263,23 @@ export function typesByLevel(worlds: readonly World[]): Map<HexType, number>[] {
     for (const w of worlds) if (w.chain[k]) m.set(w.chain[k].parent, (m.get(w.chain[k].parent) ?? 0) + 1);
     return m;
   });
+}
+
+/** The choices made, in the order they were made: each node's parent and the landing taken. */
+export const choicesOf = (pw: PossibleWalk): { parent: number; key: string }[] =>
+  pw.nodes.slice(1).map((n) => ({ parent: n.parent!, key: n.key! }));
+
+/**
+ * Makes the same choices again, in order, so the nodes get the same ids;
+ * then goes to `current`. A choice that is no longer on offer stops the replay.
+ */
+export function replayChoices(pw: PossibleWalk, choices: readonly { parent: number; key: string }[], current: number): PossibleWalk {
+  let w = pw;
+  for (const c of choices) {
+    if (!w.nodes[c.parent]) break;
+    const next = reducePossible(w, { type: 'chooseAt', id: c.parent, key: c.key });
+    if (next.nodes.length === w.nodes.length) break;
+    w = next;
+  }
+  return reducePossible(w.nodes[current] ? reducePossible(w, { type: 'goto', id: current }) : w, { type: 'run', cap: 100000 });
 }

@@ -7,10 +7,11 @@
  * would appear if a choice were made) is drawn faint underneath.
  *
  * The board's only state is its camera (wheel zooms about the cursor, drag
- * pans, Fit goes back to showing everything); pages place the tiles
+ * with a mouse or one finger pans, two fingers pinch-zoom about their
+ * midpoint, Fit goes back to showing everything); pages place the tiles
  * (`lib/hexBoard.ts`) and pass them in.
  */
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 
 import { addressFromId, typeAt, transPt, type Affine, type HexType } from '../core';
 import { tileColor } from '../lib/palette';
@@ -96,10 +97,12 @@ export function HexBoard(props: HexBoardProps): JSX.Element {
     const oy = (r.height - v.h * k) / 2;
     return { k, x: v.x + (clientX - r.left - ox) / k, y: v.y + (clientY - r.top - oy) / k };
   };
+  // several pointer moves can arrive before a render, so each one reads the view the last one set
+  const show = (v: typeof fit) => { vbRef.current = v; setView(v); };
   const zoom = (f: number, at?: { x: number; y: number }) => {
     const v = vbRef.current;
     const c = at ?? { x: v.x + v.w / 2, y: v.y + v.h / 2 };
-    setView({ x: c.x - (c.x - v.x) / f, y: c.y - (c.y - v.y) / f, w: v.w / f, h: v.h / f });
+    show({ x: c.x - (c.x - v.x) / f, y: c.y - (c.y - v.y) / f, w: v.w / f, h: v.h / f });
   };
   useEffect(() => {
     const el = svgRef.current;
@@ -109,12 +112,37 @@ export function HexBoard(props: HexBoardProps): JSX.Element {
       const p = frame(ev.clientX, ev.clientY);
       zoom(Math.exp(-ev.deltaY * 0.0015), p);
     };
+    // touch-action keeps the page from scrolling or zooming under the board; this covers browsers that ignore it on svg
+    const wrap = el.parentElement!;
+    const onTouch = (ev: TouchEvent): void => { if (ev.type === 'touchmove' || ev.touches.length > 1) ev.preventDefault(); };
+    const onGesture = (ev: Event): void => ev.preventDefault();
     el.addEventListener('wheel', onWheel, { passive: false });
-    return () => el.removeEventListener('wheel', onWheel);
+    wrap.addEventListener('touchstart', onTouch, { passive: false });
+    wrap.addEventListener('touchmove', onTouch, { passive: false });
+    wrap.addEventListener('gesturestart', onGesture);
+    return () => {
+      el.removeEventListener('wheel', onWheel);
+      wrap.removeEventListener('touchstart', onTouch);
+      wrap.removeEventListener('touchmove', onTouch);
+      wrap.removeEventListener('gesturestart', onGesture);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  const drag = useRef<{ x: number; y: number; v: typeof fit; k: number } | null>(null);
+  /** The pointers down on the board, by id, at their last client position. */
+  const pointers = useRef(new Map<number, { x: number; y: number }>());
+  /** Where the first pointer went down; until the gesture moves 4px or a second pointer lands, it is a tap. */
+  const press = useRef<{ x: number; y: number } | null>(null);
   const [panning, setPanning] = useState(false);
+  const startPanning = (el: SVGSVGElement) => {
+    press.current = null;
+    setPanning(true);
+    // every pointer of the gesture keeps reporting to the board, and the tile under a pan gets no click
+    for (const id of pointers.current.keys()) { try { el.setPointerCapture(id); } catch { /* pointer already gone */ } }
+  };
+  const release = (ev: ReactPointerEvent<SVGSVGElement>) => {
+    pointers.current.delete(ev.pointerId);
+    if (pointers.current.size === 0) { press.current = null; setPanning(false); }
+  };
   const viewBox = `${vb.x} ${vb.y} ${vb.w} ${vb.h}`;
 
   const strandD = (steps: readonly BoardStep[]): string => {
@@ -146,20 +174,40 @@ export function HexBoard(props: HexBoardProps): JSX.Element {
       data-tiles={tiles.length}
       data-solid={solid.length}
       onPointerDown={(ev) => {
-        if (ev.button !== 0) return;
-        drag.current = { x: ev.clientX, y: ev.clientY, v: vbRef.current, k: frame(ev.clientX, ev.clientY).k };
+        if (ev.pointerType === 'mouse' && ev.button !== 0) return;
+        // a primary pointer starts a new gesture: drop any pointer whose up landed off the board
+        if (ev.isPrimary) pointers.current.clear();
+        pointers.current.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+        if (pointers.current.size === 1) press.current = { x: ev.clientX, y: ev.clientY };
+        else startPanning(ev.currentTarget);
       }}
       onPointerMove={(ev) => {
-        const d = drag.current;
-        if (!d) return;
-        const dx = ev.clientX - d.x;
-        const dy = ev.clientY - d.y;
-        if (!panning && Math.hypot(dx, dy) < 4) return;
-        if (!panning) { setPanning(true); (ev.currentTarget as SVGSVGElement).setPointerCapture(ev.pointerId); }
-        setView({ ...d.v, x: d.v.x - dx / d.k, y: d.v.y - dy / d.k });
+        const p = pointers.current.get(ev.pointerId);
+        if (!p) return;
+        const s0 = press.current;
+        if (s0 && Math.hypot(ev.clientX - s0.x, ev.clientY - s0.y) < 4) return;
+        if (s0) startPanning(ev.currentTarget);
+        const q = [...pointers.current].find(([id]) => id !== ev.pointerId)?.[1];
+        const v = vbRef.current;
+        if (!q) {
+          // one pointer: the world point under it follows it
+          const { k } = frame(p.x, p.y);
+          show({ ...v, x: v.x - (ev.clientX - p.x) / k, y: v.y - (ev.clientY - p.y) / k });
+        } else {
+          // two: zoom by the change in their distance about the world point under their midpoint, which then follows the midpoint
+          const m0 = { x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 };
+          const m1 = { x: (ev.clientX + q.x) / 2, y: (ev.clientY + q.y) / 2 };
+          const d0 = Math.hypot(p.x - q.x, p.y - q.y);
+          const d1 = Math.hypot(ev.clientX - q.x, ev.clientY - q.y);
+          const f = d0 > 0 && d1 > 0 ? d1 / d0 : 1;
+          const c = frame(m0.x, m0.y);
+          const k = c.k * f;
+          show({ x: c.x - (c.x - v.x) / f - (m1.x - m0.x) / k, y: c.y - (c.y - v.y) / f - (m1.y - m0.y) / k, w: v.w / f, h: v.h / f });
+        }
+        pointers.current.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
       }}
-      onPointerUp={() => { drag.current = null; setPanning(false); }}
-      onPointerCancel={() => { drag.current = null; setPanning(false); }}
+      onPointerUp={release}
+      onPointerCancel={release}
     >
       {tints.length === 0 && tiles.map((t) => (
         <polygon
