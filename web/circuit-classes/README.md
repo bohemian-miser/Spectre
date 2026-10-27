@@ -280,19 +280,22 @@ not on single rows.
 ## The three sides of a triangle
 
 `triangle-sides.ts` writes a circuit as one letter per tile (type, entry
-edge, exit edge: `Phi45`), which does not change when the tile turns, splits
-the word of the longest circuit at each height into thirds, and compares
-them: where the thirds disagree, the tiles round each corner, and the
-120-degree turn that carries one third onto the next.
+edge, exit edge: `Phi45`), which does not change when the tile turns, cuts
+the word of the longest circuit at each height into thirds (`sideRuns` in
+`src/core/circuitSides.ts`, cutting where all three agree for longest), and
+compares them: where the thirds disagree, the tiles round each corner, and
+the 120-degree turn that carries one third onto the next. The Circuit walker
+page does the same for any circuit it closes and marks the result on the
+board.
 
     npx tsx circuit-classes/triangle-sides.ts 023468-000100000 6
 
 | height | tiles | side | positions that differ | runs | corner joins | tiles carried by the turn |
 | --- | --- | --- | --- | --- | --- | --- |
 | 2 | 27 | 9 | 4 | 2 | differ | 16 of 18 |
-| 4 | 513 | 171 | 10 | 1 | agree | 334 of 342 |
+| 4 | 513 | 171 | 10 | 1 | agree | 326 of 342 |
 | 5 | 75 | 25 | 0 | 0 | agree | 50 of 50 |
-| 6 | 10215 | 3405 | 72 | 9 | agree | 6756 of 6810 |
+| 6 | 10215 | 3405 | 72 | 9 | agree | 6702 of 6810 |
 
 From height 4 on, two thirds are identical and every run where the third
 differs is the same block walked backwards. Two blocks occur: the
@@ -300,3 +303,9 @@ differs is the same block walked backwards. Two blocks occur: the
 and the 4 tiles `Delta10 Gamma23 Sigma54 Phi01`. The corners of the height-4
 and height-6 circuits are the same nine tiles,
 `Phi54 Xi42 Pi45 Phi10 Delta45 Sigma01 Phi54 Psi45 Delta10`.
+
+The longest circuits of a level-4 and a level-6 Delta belong to a second
+lineage (441 and 8784 tiles) with the same structure: two equal sides, and
+on the third a 7-tile block `Psi54 Phi45 Sigma10 Delta54 Phi01 Xi52 Pi45`
+walked backwards (once at 441 tiles, six times with three 4-tile blocks at
+8784), and nine-tile corners that agree.

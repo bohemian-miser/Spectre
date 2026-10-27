@@ -20,34 +20,9 @@
  *
  * Usage: tsx triangle-sides.ts <rule-combo> <level>
  */
-import { buildSystem, flatten, slotsOfType, transPt, type LeafNode, type MetaNode, type Pt } from '../src/core';
+import { buildSystem, flatten, sideRuns, slotsOfType, transPt, type LeafNode, type MetaNode, type Pt } from '../src/core';
 import { addressFromId, type HexType } from '../src/core/transducer';
 import { leafIds, patternRows, run, strandMachine } from './strand-machine';
-
-export const reverseLetter = (w: string) => `${w.slice(0, -2)}${w[w.length - 1]}${w[w.length - 2]}`;
-
-export interface Run { readonly from: number; readonly to: number; readonly odd: number; readonly reversed: boolean }
-
-/** Where the thirds of `word` disagree; `odd` is the third that differs from the other two (-1 if all three differ). */
-export function sideRuns(word: readonly string[]): Run[] {
-  const S = word.length / 3;
-  const runs: Run[] = [];
-  for (let i = 0; i < S; i++) {
-    const [a, b, c] = [word[i], word[i + S], word[i + 2 * S]];
-    if (a === b && b === c) continue;
-    const odd = a === b ? 2 : a === c ? 1 : b === c ? 0 : -1;
-    const last = runs[runs.length - 1];
-    if (last && last.to === i - 1 && last.odd === odd) runs[runs.length - 1] = { ...last, to: i };
-    else runs.push({ from: i, to: i, odd, reversed: false });
-  }
-  return runs.map((r) => {
-    if (r.odd < 0) return r;
-    const ref = (r.odd + 1) % 3;
-    const block = (k: number) => word.slice(r.from + k * S, r.to + 1 + k * S);
-    const back = block(ref).map(reverseLetter).reverse();
-    return { ...r, reversed: back.every((w, i) => w === block(r.odd)[i]) };
-  });
-}
 
 if (process.argv[1]?.endsWith('triangle-sides.ts')) {
   const [spec, lvArg] = process.argv.slice(2);
@@ -74,18 +49,21 @@ if (process.argv[1]?.endsWith('triangle-sides.ts')) {
       if (r.end === 'circuit' && r.visited.length > (best.get(r.height)?.length ?? 0)) best.set(r.height, r.visited);
     }
   }
-  for (const [h, visited] of [...best].sort((x, y) => x[0] - y[0])) {
-    const N = visited.length;
+  for (const [h, walked] of [...best].sort((x, y) => x[0] - y[0])) {
+    const N = walked.length;
     if (N < 20 || N % 3) continue;
     const S = N / 3;
-    const word = visited.map((v) => {
+    const letters = walked.map((v) => {
       const [id, e] = v.split(' ');
       const t = addressFromId(root, id).leaf;
       return `${t}${e}${pattern.get(`A${e} ${t}`)!.next.slice(1)}`;
     });
+    // Cut where sideRuns cuts, so positions below count from there.
+    const { runs, offset } = sideRuns(letters);
+    const visited = [...walked.slice(offset), ...walked.slice(0, offset)];
+    const word = [...letters.slice(offset), ...letters.slice(0, offset)];
     const P = visited.map((v) => pos.get(v.split(' ')[0])!);
     const c = P.reduce((s, p) => ({ x: s.x + p.x / N, y: s.y + p.y / N }), { x: 0, y: 0 });
-    const runs = sideRuns(word);
     const differ = runs.reduce((s, r) => s + r.to - r.from + 1, 0);
     console.log(`height ${h}: ${N} tiles, sides of ${S}; ${differ} positions differ, in ${runs.length} runs`);
     for (const r of runs) {

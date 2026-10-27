@@ -99,6 +99,14 @@ export const SITE_NAV: readonly NavItem[] = Object.freeze([
     blurb: 'Cross an edge from a tile’s slot path alone, one lookup at a time, then walk a strand on the same machine.',
   },
   {
+    id: 'walker',
+    label: 'Circuit walker',
+    short: 'Walker',
+    entry: 'walker.html',
+    status: 'ready',
+    blurb: 'Walk a strand tile by tile, choose the ancestors it needs, and compare the three sides of the circuit it closes.',
+  },
+  {
     id: 'lattice',
     label: 'Flow lattice',
     short: 'Lattice',

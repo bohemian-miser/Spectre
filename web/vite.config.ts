@@ -31,6 +31,7 @@ export default defineConfig({
         supertiles: resolve(__dirname, 'supertiles.html'),
         machine: resolve(__dirname, 'machine.html'),
         transducer: resolve(__dirname, 'transducer.html'),
+        walker: resolve(__dirname, 'walker.html'),
         lattice: resolve(__dirname, 'lattice.html'),
         multiedge: resolve(__dirname, 'multiedge.html'),
         dimension: resolve(__dirname, 'dimension.html'),

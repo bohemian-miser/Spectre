@@ -26,6 +26,7 @@ describe('siteNav', () => {
       'supertiles',
       'machine',
       'transducer',
+      'walker',
       'lattice',
       'multiedge',
       'dimension',
@@ -36,7 +37,7 @@ describe('siteNav', () => {
     expect(new Set(SITE_NAV.map((i) => i.id)).size).toBe(SITE_NAV.length);
   });
 
-  it('ships all fourteen destinations', () => {
+  it('ships all fifteen destinations', () => {
     expect(readyNav().map((i) => i.id)).toEqual([
       'explorer',
       'tails',
@@ -46,6 +47,7 @@ describe('siteNav', () => {
       'supertiles',
       'machine',
       'transducer',
+      'walker',
       'lattice',
       'multiedge',
       'dimension',
