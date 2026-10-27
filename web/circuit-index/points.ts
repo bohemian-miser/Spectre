@@ -58,7 +58,7 @@ function strandsOf(combo: string): { strands: Strand[]; through: Int32Array } {
     const key = canonicalWord(word).word.join('');
     let m = measured.get(key);
     if (!m && s.tiles.length >= minLength) {
-      const f = measure({ key, word, tiles: Array.from(s.tiles, (t) => addressOf(b, t)) });
+      const f = measure({ key, word, tiles: Array.from(s.tiles, (t) => addressOf(b, t)) }, 3, 0);
       m = { corners: f.corners.corners, tilesId: f.tilesId };
       measured.set(key, m);
     }
