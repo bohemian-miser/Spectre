@@ -33,9 +33,9 @@
 }
 .hb__tile.is-landing {
   opacity: 0.95;
-  stroke: var(--text, #1d2430);
+  stroke: #e8590c;
   stroke-dasharray: none;
-  stroke-width: 0.14;
+  stroke-width: 0.2;
 }
 .hb__boundary {
   stroke: var(--text, #1d2430);

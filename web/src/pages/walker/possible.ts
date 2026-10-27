@@ -96,6 +96,26 @@ export interface Stage {
   readonly pending: readonly Outcome[];
 }
 
+/** One landing offered at a fork, with the bundle of stacks behind it. */
+export interface ForkOption {
+  readonly key: string;
+  readonly type: HexType | null;
+  readonly edge: number | null;
+  readonly stacks: number;
+  /** The level that tells the options apart (1 = parent), and this option's ancestor types there. */
+  readonly level: number | null;
+  readonly deciders: readonly HexType[];
+  /** Per decider, how many of its slots at that level lead here. */
+  readonly slotsPer: readonly number[];
+}
+
+/** Where the walk from a node next stopped: the step, the tile and edge it left by, and every landing offered. */
+export interface Fork {
+  readonly step: number;
+  readonly from: { readonly type: HexType; readonly exit: number };
+  readonly options: readonly ForkOption[];
+}
+
 /** A choice made: the stage after it. Node 0 is the start. */
 export interface ChoiceNode {
   readonly id: number;
@@ -104,6 +124,43 @@ export interface ChoiceNode {
   readonly key: string | null;
   readonly children: readonly number[];
   readonly stage: Stage;
+  /** The next choice reached from here, once it has been. */
+  readonly fork: Fork | null;
+}
+
+/**
+ * The options at a choice, each with the ancestor types that decide it: at
+ * the lowest level where the options' sets of types differ.
+ */
+export function forkOf(wk: Walker, stage: Stage): Fork {
+  const w = stage.worlds[0];
+  const sets = stage.pending.map((o) => typesByLevel(o.worlds).map((m) => new Set(m.keys())));
+  const depth = Math.max(0, ...sets.map((x) => x.length));
+  let level: number | null = null;
+  for (let k = 0; k < depth && level === null; k++) {
+    const keys = sets.map((x) => [...(x[k] ?? [])].sort().join(','));
+    if (new Set(keys).size > 1) level = k;
+  }
+  return {
+    step: stage.seen.length + 1,
+    from: { type: w.at.leaf, exit: wk.table.get(w.at.leaf)!.get(w.entry)! },
+    options: stage.pending.map((o, i) => ({
+      key: o.key,
+      type: o.type,
+      edge: o.edge,
+      stacks: o.worlds.length,
+      level: level === null ? null : level + 1,
+      deciders: level === null ? [] : HEX_TYPES.filter((t) => sets[i][level!]?.has(t)),
+      slotsPer: level === null ? [] : HEX_TYPES.filter((t) => sets[i][level!]?.has(t)).map((t) => {
+        const slots = new Set<number>();
+        for (const w of stage.pending[i].worlds) {
+          const l = w.chain[level!];
+          if (l && l.parent === t) slots.add(l.slot);
+        }
+        return slots.size;
+      }),
+    })),
+  };
 }
 
 export interface PossibleWalk {
@@ -133,14 +190,16 @@ export function advance(wk: Walker, stage: Stage): Stage {
 
 export function startWalk(wk: Walker, worlds?: readonly World[]): PossibleWalk {
   const stage: Stage = { worlds: worlds ?? initialWorlds(wk), seen: [], status: 'walking', pending: [] };
-  return { walker: wk, nodes: [{ id: 0, parent: null, key: null, children: [], stage }], current: 0, stage };
+  return { walker: wk, nodes: [{ id: 0, parent: null, key: null, children: [], stage, fork: null }], current: 0, stage };
 }
 
 export type PossibleAction =
   | { type: 'step' }
   | { type: 'run'; cap: number }
   | { type: 'choose'; key: string }
-  | { type: 'goto'; id: number };
+  | { type: 'goto'; id: number }
+  /** Go back to a node, walk on to its fork, and choose there. */
+  | { type: 'chooseAt'; id: number; key: string };
 
 export function reducePossible(pw: PossibleWalk, action: PossibleAction): PossibleWalk {
   const wk = pw.walker;
@@ -155,10 +214,18 @@ export function reducePossible(pw: PossibleWalk, action: PossibleAction): Possib
     case 'choose': {
       const o = pw.stage.pending.find((x) => x.key === action.key);
       if (pw.stage.status !== 'choice' || !o) return pw;
+      const here = pw.nodes[pw.current];
+      const again = here.children.find((c) => pw.nodes[c].key === o.key);
+      if (again !== undefined) return { ...pw, current: again, stage: pw.nodes[again].stage };
       const stage = apply(pw.stage, wk, o);
       const id = pw.nodes.length;
-      const nodes = pw.nodes.map((n) => (n.id === pw.current ? { ...n, children: [...n.children, id] } : n));
-      return { ...pw, nodes: [...nodes, { id, parent: pw.current, key: o.key, children: [], stage }], current: id, stage };
+      const fork = here.fork ?? forkOf(wk, pw.stage);
+      const nodes = pw.nodes.map((n) => (n.id === pw.current ? { ...n, fork, children: [...n.children, id] } : n));
+      return { ...pw, nodes: [...nodes, { id, parent: pw.current, key: o.key, children: [], stage, fork: null }], current: id, stage };
+    }
+    case 'chooseAt': {
+      const back = reducePossible(reducePossible(pw, { type: 'goto', id: action.id }), { type: 'run', cap: 100000 });
+      return reducePossible(back, { type: 'choose', key: action.key });
     }
     case 'goto': {
       const n = pw.nodes[action.id];
