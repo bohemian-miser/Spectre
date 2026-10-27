@@ -545,3 +545,95 @@
   font-size: 0.78em;
   color: var(--fg-muted, #9aa4b2);
 }
+.wall__n {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.wall__body {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: 1rem;
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .wall__body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.wall__svg {
+  width: 100%;
+  max-height: 70vh;
+  border: 1px solid var(--rule, #2a3140);
+  border-radius: 8px;
+  background: var(--panel, #11151c);
+}
+.wall__tile {
+  stroke: var(--panel, #11151c);
+  stroke-width: 0.05;
+}
+.wall__tile.is-near {
+  fill: rgba(47, 111, 219, 0.28);
+}
+.wall__tile.is-far {
+  fill: rgba(224, 120, 47, 0.28);
+}
+.wall__key {
+  stroke-width: 0.05;
+}
+.wall__outline {
+  stroke-linecap: round;
+  pointer-events: none;
+}
+.wall__wall {
+  stroke: #e5484d;
+  stroke-linecap: round;
+  pointer-events: none;
+}
+.wall__crossed {
+  stroke: #1b2230;
+  stroke-linecap: round;
+  pointer-events: none;
+}
+.wall__legend span {
+  margin-left: 0.6rem;
+}
+.wall__legend span:first-child {
+  margin-left: 0;
+}
+.wall__legend-wall {
+  color: #e5484d;
+}
+.wall__legend-crossed {
+  color: #1b2230;
+}
+.wall__ring {
+  fill: none;
+  stroke: #1b2230;
+  stroke-width: 2;
+  stroke-dasharray: 4 3;
+  pointer-events: none;
+}
+.wall__fit {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+.wall__fit button.is-on {
+  background: var(--accent, #6ea8fe);
+  color: #fff;
+}
+.wall__key {
+  stroke: #1b2230;
+}
+.wall__table tr.is-bent td {
+  color: var(--fg-muted, #9aa4b2);
+}
+.wall__table tr.is-bent td:nth-child(3) {
+  color: #e0782f;
+}
+.wall__closing td {
+  font-size: 0.85rem;
+  color: var(--fg-muted, #9aa4b2);
+}
