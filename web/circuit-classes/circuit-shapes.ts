@@ -49,6 +49,8 @@ export interface BornCircuit {
   readonly level: number;
   readonly type: TileTypeId;
   readonly length: number;
+  /** Child slots (positions) it passes through, in order of first visit. */
+  readonly slots: readonly number[];
   /** Child entries of the closing walk. */
   readonly steps: readonly number[];
 }
@@ -185,7 +187,14 @@ export class CircuitShapes {
             }
             if (i === i0) break;
           }
-          if (ok && len >= keepAtLeast) this.born.push({ level: n, type: t as TileTypeId, length: len, steps: walk });
+          if (ok && len >= keepAtLeast) {
+            const slots: number[] = [];
+            for (const w of walk) {
+              const pos = meta.children[ownerArr[w]].pos;
+              if (!slots.includes(pos)) slots.push(pos);
+            }
+            this.born.push({ level: n, type: t as TileTypeId, length: len, slots, steps: walk });
+          }
         }
         next[t] = {
           pts: outline.map((i) => world[i]),
@@ -204,7 +213,7 @@ export class CircuitShapes {
   }
 
   /** The points of the arc from outline crossing k of a level-n `type` (in frame `x`), drawn down to level `stop`. */
-  private arc(n: number, type: string, k: number, x: Affine, stop: number, out: Pt[]): void {
+  arc(n: number, type: string, k: number, x: Affine, stop: number, out: Pt[]): void {
     const L = this.levels[n][type];
     if (n <= stop) {
       out.push(transPt(x, L.pts[k]));
@@ -224,6 +233,22 @@ export class CircuitShapes {
     };
     if (fwd) for (const i of s) enter(i, false);
     else for (let q = s.length - 1; q >= 0; q--) enter(s[q], true);
+  }
+
+  /** The children of a level-n supertile of `type`: their types and slots, in child order. */
+  childTypes(n: number, type: string): { type: string; pos: number }[] {
+    return (buildSystem(this.family, n)[type] as MetaNode).children.map((ch) => ({ type: ch.node.type, pos: ch.pos }));
+  }
+
+  /** The longest arc through a level-n supertile of `type` (an open strand), drawn down to level `stop`, with its end points. */
+  longestArc(n: number, type: string, stop: number): { length: number; pts: Pt[] } {
+    const L = this.levels[n][type];
+    let best = 0;
+    for (let k = 1; k < L.arcLen.length; k++) if (L.arcLen[k] > L.arcLen[best]) best = k;
+    const out: Pt[] = [];
+    this.arc(n, type, best, [1, 0, 0, 0, 1, 0], stop, out);
+    out.push(L.pts[L.mate[best]]);
+    return { length: L.arcLen[best], pts: out };
   }
 
   /** A born circuit as a closed polyline in its supertile's frame, drawn down to level `stop`. */

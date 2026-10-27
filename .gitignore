@@ -19,3 +19,4 @@ node_modules/
 
 # Lean build artifacts
 lean/.lake/
+web/public/data/circuit-atlas/*.partial

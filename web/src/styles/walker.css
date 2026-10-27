@@ -1,0 +1,125 @@
+/* The circuit walker. Board, chips and controls come from transducer.css. */
+
+.wk__main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 15rem;
+  gap: 0.8rem;
+  align-items: start;
+}
+@media (max-width: 760px) {
+  .wk__main {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.wk__tile {
+  stroke: var(--panel, #11151c);
+  stroke-width: 0.06;
+  opacity: 0.8;
+}
+.wk__tile.is-start {
+  stroke: #9be89b;
+  stroke-width: 0.16;
+}
+.wk__tile.is-current {
+  stroke: #fff;
+  stroke-width: 0.14;
+  opacity: 1;
+}
+.wk__strand {
+  fill: none;
+  stroke: var(--text, #1d2430);
+  stroke-width: 0.14;
+  opacity: 0.8;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+
+.wk__tape {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-variant-numeric: tabular-nums;
+}
+.wk__cell {
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--rule, #2a3140);
+  border-radius: 6px;
+  font-size: 0.9rem;
+}
+.wk__lvl {
+  display: inline-block;
+  min-width: 4.2rem;
+  color: var(--fg-muted, #9aa4b2);
+  font-size: 0.8rem;
+}
+.wk__cell.is-unknown {
+  border-style: dashed;
+  color: var(--fg-muted, #9aa4b2);
+}
+.wk__cell.is-wanted {
+  border-color: #ffd166;
+  color: #ffd166;
+}
+.wk__cell.is-read {
+  background: rgba(110, 168, 254, 0.12);
+}
+.wk__cell.is-changed {
+  border-color: var(--accent, #6ea8fe);
+  background: rgba(110, 168, 254, 0.28);
+}
+.wk__cell.is-tile {
+  font-weight: 600;
+}
+
+.wk__heights {
+  width: 100%;
+  height: 90px;
+  border: 1px solid var(--rule, #2a3140);
+  border-radius: 6px;
+  background: var(--panel, #11151c);
+}
+.wk__heights rect {
+  fill: var(--accent, #6ea8fe);
+}
+
+.wk__table th {
+  text-align: left;
+  padding: 0.15rem 0.8rem 0.15rem 0;
+}
+.wk__row {
+  display: inline-block;
+  margin: 0.1rem 0.5rem 0.1rem 0;
+  padding: 0.05rem 0.4rem;
+  border: 1px solid var(--rule, #2a3140);
+  border-radius: 5px;
+  font-size: 0.85rem;
+}
+.wk__row.is-active {
+  border-color: #ffd166;
+  color: #ffd166;
+}
+
+.wk__mark {
+  pointer-events: none;
+}
+.wk__mark.is-odd {
+  fill: #e03131;
+}
+.wk__mark.is-match {
+  fill: #f08c00;
+}
+.wk__mark.is-corner {
+  fill: none;
+  stroke: var(--text, #1d2430);
+  stroke-width: 0.25;
+}
+.wk__swatch {
+  display: inline-block;
+  width: 0.8em;
+  height: 0.8em;
+  margin-right: 0.4em;
+  border-radius: 2px;
+  border: 1px solid var(--rule, #2a3140);
+  vertical-align: -0.05em;
+}

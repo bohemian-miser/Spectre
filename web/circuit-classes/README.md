@@ -232,3 +232,80 @@ any level of detail, without building the patch around it:
 writes the largest circuits born in a level-10 Delta (1.4 million tiles for
 this pairing) as closed polylines in the supertile's frame, each level-3 arc
 drawn as a chord. Drawn to level 0 a circuit has exactly one point per tile.
+
+## Deep levels and giants
+
+`renormalize-lean.ts` is the renormalisation in typed arrays, keeping only
+the previous level and summary statistics: level 10 of the hexagon all-edges
+rule (930 million tiles per supertile) in under two minutes. `draw-giants.ts`
+draws a combination's largest born circuits and its longest open strand from
+the hierarchy:
+
+    npx tsx circuit-classes/renormalize-lean.ts hex 01234568 241400332 10
+    MAXPTS=900000 npx tsx circuit-classes/draw-giants.ts 01234568 241400332 9 1000 out.json
+
+## Strands as Turing machines
+
+`strand-machine.ts` writes a strand as a Turing machine whose tape is the
+tile's address (cell 0 the tile's type, cell k + 1 the link `Parent/slot` to
+the level-(k + 1) ancestor). One strand step is one sweep: pair the entry
+crossing in the tile, climb while the exit edge lies on the outside of each
+ancestor, rewrite the slot where it is glued inside, and climb back down. Of
+the 1142 rows for a hexagon rule, only the 34 to 54 at cell 0 come from the
+pairing; the rest are the substitution. A circuit is a run that comes back to
+its start configuration, and the highest cell it reads is the level where it
+closes.
+
+    npx tsx circuit-classes/strand-machine.ts 023468-000100000 6
+
+checks the machine against `walkStrand` and tabulates the circuits of a
+level-6 Delta by the highest cell read:
+
+| combination | height | circuits | longest (tiles) | machine steps |
+| --- | --- | --- | --- | --- |
+| 023468-000100000 | 2 | 15620 | 27 | 99 |
+| | 4 | 2126 | 513 | 2073 |
+| | 5 | 2006 | 75 | 309 |
+| | 6 | 1236 | 10215 | 42243 |
+| 01234568-241400332 | 4 | 5858 | 128 | 584 |
+| | 5 | 3002 | 12330 | 55800 |
+| | 6 | 1606 | 1158 | 5510 |
+
+The longest circuit per height is the busy-beaver function of the
+combination. Merging states that behave alike (Moore's partition refinement)
+leaves all 66 states of the full machine, so a shorter description of a
+family has to act on whole sweeps (the edge machine of `edge-machine.ts`),
+not on single rows.
+
+## The three sides of a triangle
+
+`triangle-sides.ts` writes a circuit as one letter per tile (type, entry
+edge, exit edge: `Phi45`), which does not change when the tile turns, cuts
+the word of the longest circuit at each height into thirds (`sideRuns` in
+`src/core/circuitSides.ts`, cutting where all three agree for longest), and
+compares them: where the thirds disagree, the tiles round each corner, and
+the 120-degree turn that carries one third onto the next. The Circuit walker
+page does the same for any circuit it closes and marks the result on the
+board.
+
+    npx tsx circuit-classes/triangle-sides.ts 023468-000100000 6
+
+| height | tiles | side | positions that differ | runs | corner joins | tiles carried by the turn |
+| --- | --- | --- | --- | --- | --- | --- |
+| 2 | 27 | 9 | 4 | 2 | differ | 16 of 18 |
+| 4 | 513 | 171 | 10 | 1 | agree | 326 of 342 |
+| 5 | 75 | 25 | 0 | 0 | agree | 50 of 50 |
+| 6 | 10215 | 3405 | 72 | 9 | agree | 6702 of 6810 |
+
+From height 4 on, two thirds are identical and every run where the third
+differs is the same block walked backwards. Two blocks occur: the
+10 tiles `Psi54 Phi45 Sigma10 Delta54 Phi01 Xi53 Gamma54 Phi54 Xi42 Pi45`
+and the 4 tiles `Delta10 Gamma23 Sigma54 Phi01`. The corners of the height-4
+and height-6 circuits are the same nine tiles,
+`Phi54 Xi42 Pi45 Phi10 Delta45 Sigma01 Phi54 Psi45 Delta10`.
+
+The longest circuits of a level-4 and a level-6 Delta belong to a second
+lineage (441 and 8784 tiles) with the same structure: two equal sides, and
+on the third a 7-tile block `Psi54 Phi45 Sigma10 Delta54 Phi01 Xi52 Pi45`
+walked backwards (once at 441 tiles, six times with three 4-tile blocks at
+8784), and nine-tile corners that agree.
