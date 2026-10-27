@@ -25,7 +25,9 @@ import { HexBoard, type BoardMark, type BoardStep, type BoardTile } from '../com
 import { HEX_OUTLINE, nearest, placeWorld, supertileEdges, tileCentre, tilesAround, type PlacedTile } from '../lib/hexBoard';
 import { tileColor } from '../lib/palette';
 import { MAX_LEVEL, parentOptions, prefixId, type World } from './transducer/world';
+import { LandingWalk } from './walker/LandingWalk';
 import { MachineView } from './walker/MachineView';
+import type { World as Stack } from './walker/possible';
 import { initialWalk, longestCircuit, matchingByType, pairingTable, patternOf, reduceWalk, type Pattern } from './walker/walk';
 import '../styles/transducer.css';
 import '../styles/walker.css';
@@ -44,6 +46,9 @@ export function WalkerPage(): JSX.Element {
   const [findLevel, setFindLevel] = useState(4);
   const [found, setFound] = useState<string | null>(null);
   const [previewing, setPreviewing] = useState(false);
+  /** 'landings': walk every ancestor stack at once and choose only between landings; 'ancestors': choose each parent by hand. */
+  const [mode, setMode] = useState<'landings' | 'ancestors'>('landings');
+  const [seed, setSeed] = useState<{ edge: number | null; stacks?: Stack[]; n: number }>({ edge: null, n: 0 });
   const [hoverRun, setHoverRun] = useState<number | null>(null);
   const table = useMemo(() => pairingTable(pattern), [pattern]);
   const byType = useMemo(() => matchingByType(pattern), [pattern]);
@@ -57,7 +62,12 @@ export function WalkerPage(): JSX.Element {
     return `${import.meta.env.BASE_URL}#/explorer?${q.toString()}`;
   }, [pattern]);
 
-  const reset = useCallback((t: HexType): void => { setStartType(t); setFound(null); dispatch({ type: 'reset', start: t }); }, []);
+  const reset = useCallback((t: HexType): void => {
+    setStartType(t);
+    setFound(null);
+    setSeed((x) => ({ edge: null, n: x.n + 1 }));
+    dispatch({ type: 'reset', start: t });
+  }, []);
   const setSubset = (subset: readonly number[]): void => {
     setPattern((p) => ({ subset, matching: normalizeMatchingVector('hex', subset, p.matching) }));
     reset(startType);
@@ -150,6 +160,8 @@ export function WalkerPage(): JSX.Element {
     if (!best) { setFound(`No circuit closes inside a level-${findLevel} Delta with this pattern.`); return; }
     setFound(`Placed on the longest circuit inside a level-${findLevel} Delta: ${best.length} tiles, starting at ${best.id}.`);
     dispatch({ type: 'place', world: { root: 'Delta', level: findLevel, startId: best.id }, edge: best.edge });
+    const a = addressFromId('Delta', best.id);
+    setSeed((x) => ({ edge: best.edge, stacks: [{ chain: a.path, at: a, entry: best.edge }], n: x.n + 1 }));
   };
   const heights = steps.map((s) => s.height);
   const maxHeight = Math.max(1, ...heights);
@@ -158,7 +170,7 @@ export function WalkerPage(): JSX.Element {
   useEffect(() => {
     const onKey = (ev: KeyboardEvent): void => {
       const tag = (ev.target as HTMLElement | null)?.tagName;
-      if (ev.metaKey || ev.ctrlKey || ev.altKey || tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (mode !== 'ancestors' || ev.metaKey || ev.ctrlKey || ev.altKey || tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
       if (waiting && (ev.key === 'ArrowRight' || ev.key === 'ArrowDown')) { ev.preventDefault(); setPreviewing(true); dispatch({ type: 'previewStep', delta: 1 }); }
       else if (waiting && (ev.key === 'ArrowLeft' || ev.key === 'ArrowUp')) { ev.preventDefault(); setPreviewing(true); dispatch({ type: 'previewStep', delta: -1 }); }
       else if (ev.key === 'Enter' && tag !== 'BUTTON') {
@@ -170,7 +182,7 @@ export function WalkerPage(): JSX.Element {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [waiting, options, board.previewIdx, canStep, pattern]);
+  }, [mode, waiting, options, board.previewIdx, canStep, pattern]);
 
   return (
     <article className="td wk">
@@ -223,11 +235,11 @@ export function WalkerPage(): JSX.Element {
             <button type="button" onClick={place} data-testid="wk-find">Find it</button>
             {found && <span className="td__hint" data-testid="wk-found">{found}</span>}
           </div>
-          {steps.length === 0 && !waiting && (
+          {(mode === 'landings' || (steps.length === 0 && !waiting)) && (
             <p data-testid="wk-start-edges">
               The strand comes into the {startType0} through edge{' '}
               {startSeams.map((s) => (
-                <button key={s.edge} type="button" className={`td__chip${startEdge === s.edge ? ' is-active' : ''}`} onClick={() => dispatch({ type: 'startEdge', edge: s.edge })} data-testid={`wk-edge-${s.edge}`}>
+                <button key={s.edge} type="button" className={`td__chip${startEdge === s.edge || seed.edge === s.edge ? ' is-active' : ''}`} onClick={() => { dispatch({ type: 'startEdge', edge: s.edge }); setSeed((x) => ({ edge: s.edge, n: x.n + 1 })); }} data-testid={`wk-edge-${s.edge}`}>
                   {s.edge} → {table.get(startType0)?.get(s.edge) ?? '–'}
                 </button>
               ))}
@@ -239,6 +251,28 @@ export function WalkerPage(): JSX.Element {
 
       <section className="td__board">
         <h2>3. The walk</h2>
+        <div className="wk__modes" role="tablist">
+          <button type="button" role="tab" aria-selected={mode === 'landings'} className={`td__chip${mode === 'landings' ? ' is-active' : ''}`} onClick={() => setMode('landings')} data-testid="wk-mode-landings">Choose where it lands</button>
+          <button type="button" role="tab" aria-selected={mode === 'ancestors'} className={`td__chip${mode === 'ancestors' ? ' is-active' : ''}`} onClick={() => setMode('ancestors')} data-testid="wk-mode-ancestors">Choose each ancestor</button>
+          <span className="td__hint">
+            {mode === 'landings'
+              ? 'Every ancestor stack is followed at once; the walk only stops where they disagree about where the strand lands.'
+              : 'Each time the strand leaves the supertile built so far, pick its parent.'}
+          </span>
+        </div>
+        {mode === 'landings' ? (
+          seed.edge === null
+            ? <p className="td__hint">Choose the edge the strand comes in through, above.</p>
+            : <LandingWalk
+                key={`${seed.n}|${pattern.subset.join('')}|${pattern.matching.join('')}`}
+                pattern={pattern}
+                byType={byType}
+                start={seed.stacks ? seed.stacks[0].at.leaf : startType0}
+                startEdge={seed.edge}
+                worlds={seed.stacks}
+              />
+        ) : (
+          <>
         <div className="td__controls">
           <button type="button" onClick={() => dispatch({ type: 'step', pattern })} disabled={!canStep} data-testid="wk-step">
             Step
@@ -268,6 +302,7 @@ export function WalkerPage(): JSX.Element {
             boundaries={drawn.edges}
             previewBoundaries={preview?.edges ?? []}
             focus={{ xform: current.xform, type: curType, entry: board.entry }}
+            nest={{ root: world.root, level: world.level }}
             marks={marks}
             testId="wk-svg"
           />
@@ -331,6 +366,8 @@ export function WalkerPage(): JSX.Element {
             </p>
           </div>
         )}
+          </>
+        )}
       </section>
 
       <section className="td__section">
@@ -338,15 +375,15 @@ export function WalkerPage(): JSX.Element {
         <MachineView pattern={pattern} byType={byType} current={closed ? null : { type: curType, entry: board.entry }} />
       </section>
 
-      <section className="td__section">
+      {mode === 'ancestors' && <section className="td__section">
         <h2>How high each step reached</h2>
         <p>One bar per step: the level where its crossing settled.</p>
         <svg className="wk__heights" viewBox={`0 0 ${Math.max(1, heights.length)} ${maxHeight}`} preserveAspectRatio="none" data-testid="wk-heights" data-steps={heights.length}>
           {heights.map((h, i) => <rect key={i} x={i} y={maxHeight - h} width={1} height={h} />)}
         </svg>
-      </section>
+      </section>}
 
-      {closed && (
+      {mode === 'ancestors' && closed && (
         <section className="td__section" data-testid="wk-sides">
           <h2>Three sides</h2>
           {!sides ? (

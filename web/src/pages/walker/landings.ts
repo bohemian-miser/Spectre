@@ -24,6 +24,8 @@ export interface Landings {
   readonly landings: readonly Landing[];
   /** Stacks with `maxDepth` ancestors that have not settled yet. */
   readonly unsettled: number;
+  /** Those stacks themselves. */
+  readonly outside: readonly (readonly Link[])[];
 }
 
 const parentsOf = (t: HexType): Link[] => {
@@ -39,7 +41,7 @@ export function landings(type: HexType, edge: number, maxDepth: number): Landing
   const hit = cache.get(key);
   if (hit) return hit;
   const groups = new Map<string, { type: HexType; edge: number; stacks: Link[][] }>();
-  let unsettled = 0;
+  const outside: Link[][] = [];
   const grow = (path: Link[]): void => {
     const top = path.length ? path[path.length - 1].parent : type;
     for (const link of parentsOf(top)) {
@@ -50,14 +52,15 @@ export function landings(type: HexType, edge: number, maxDepth: number): Landing
         const g = groups.get(k) ?? groups.set(k, { type: nb.address.leaf, edge: nb.edge, stacks: [] }).get(k)!;
         g.stacks.push(p);
       } else if (p.length < maxDepth) grow(p);
-      else unsettled++;
+      else outside.push(p);
     }
   };
   grow([]);
   const out: Landings = {
     from: { type, edge },
     landings: [...groups.values()].sort((a, b) => b.stacks.length - a.stacks.length || HEX_TYPES.indexOf(a.type) - HEX_TYPES.indexOf(b.type) || a.edge - b.edge),
-    unsettled,
+    unsettled: outside.length,
+    outside,
   };
   cache.set(key, out);
   return out;
@@ -68,4 +71,14 @@ export function classLabel(type: HexType, edge: number): string {
   const l = edgeLabels('hex', type)[edge] ?? '';
   const m = /^(-?)(\d+)\.\d+([A-Z])$/.exec(l);
   return m ? `${m[1] === '-' ? '−' : '+'}${m[2]}${m[3]}` : l;
+}
+
+/** The ancestor types of each stack, bottom up, without repeats: what decides a landing. */
+export function decidingTypes(stacks: readonly (readonly Link[])[]): HexType[][] {
+  const seen = new Map<string, HexType[]>();
+  for (const s of stacks) {
+    const types = s.map((l) => l.parent);
+    seen.set(types.join(' '), types);
+  }
+  return [...seen.values()].sort((a, b) => a.length - b.length || a.join().localeCompare(b.join()));
 }

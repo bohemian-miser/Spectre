@@ -148,3 +148,13 @@
   color: inherit;
   cursor: pointer;
 }
+.hb__nest {
+  opacity: 0.32;
+  stroke: none;
+  pointer-events: none;
+}
+.hb-fit button.is-active {
+  border-color: var(--accent, #2f7d6d);
+  background: var(--accent, #2f7d6d);
+  color: var(--accent-ink, #fff);
+}

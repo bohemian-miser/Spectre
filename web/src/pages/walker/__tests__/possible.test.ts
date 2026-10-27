@@ -1,0 +1,53 @@
+/**
+ * The walk on every tiling at once, against `walkStrand` (the recursive
+ * algorithm on one full slot path): a walk started on one known stack closes
+ * with no choices after as many tiles as `walkStrand`; a walk started on a
+ * bare tile, choosing the commonest outcome each time, closes on a circuit
+ * that every surviving stack really has, of that length, seen the same way.
+ */
+import { describe, expect, it } from 'vitest';
+
+import { addressFromId, walkStrand, type HexType } from '../../../core';
+import { initialWorlds, makeWalker, reducePossible, replay, startWalk, type PossibleWalk } from '../possible';
+import { longestCircuit, matchingByType, patternOf } from '../walk';
+
+const triangle = patternOf([0, 2, 3, 4, 6, 8], '000100000');
+const matching = Object.fromEntries(matchingByType(triangle));
+
+function runChoosing(pw: PossibleWalk): PossibleWalk {
+  let w = reducePossible(pw, { type: 'run', cap: 5000 });
+  for (let i = 0; i < 100 && w.stage.status === 'choice'; i++) {
+    w = reducePossible(w, { type: 'choose', key: w.stage.pending[0].key });
+    w = reducePossible(w, { type: 'run', cap: 5000 });
+  }
+  return w;
+}
+
+describe('walking every tiling at once', () => {
+  it('closes a known circuit with no choices', () => {
+    const best = longestCircuit(triangle, 'Delta', 4)!;
+    const a = addressFromId('Delta', best.id);
+    const wk = makeWalker(triangle, a.leaf, best.edge, 5);
+    const pw = reducePossible(startWalk(wk, [{ chain: a.path, at: a, entry: best.edge }]), { type: 'run', cap: 5000 });
+    expect(pw.stage.status).toBe('closed');
+    expect(pw.nodes).toHaveLength(1);
+    expect(pw.stage.seen).toHaveLength(best.length);
+  });
+
+  it('from a bare tile, closes on a circuit every surviving stack has', () => {
+    for (const [start, edge] of [['Delta', 4], ['Phi', 4]] as const) {
+      const wk = makeWalker(triangle, start as HexType, edge, 5);
+      expect(initialWorlds(wk)).toHaveLength(1);
+      const pw = runChoosing(startWalk(wk));
+      expect(pw.stage.status).toBe('closed');
+      const n = pw.stage.seen.length;
+      for (const world of pw.stage.worlds.slice(0, 50)) {
+        const ref = walkStrand(triangle.subset, matching, { address: { leaf: start, path: world.chain }, entry: edge }, 100000);
+        expect(ref.end).toBe('circuit');
+        expect(ref.states).toHaveLength(n);
+        expect(ref.states.map((s) => `${s.address.leaf}${s.entry}`)).toEqual(pw.stage.seen.map((s) => `${s.type}${s.entry}`));
+        expect(replay(wk, world, n).at).toHaveLength(n + 1);
+      }
+    }
+  });
+});

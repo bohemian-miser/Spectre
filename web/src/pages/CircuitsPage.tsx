@@ -5,7 +5,7 @@
  * every strand leaving a supertile the same way, so they draw the same thing
  * at every larger scale). Each class is run up the substitution without
  * building any patch (`web/circuit-classes/circuit-atlas.ts`), which gives
- * every circuit born at every level to 9 or 10: its families (circuits that
+ * every circuit born at every level up to 9: its families (circuits that
  * run through the same children of the supertile they are born in), how fast
  * the biggest grow, the dimension that implies, and silhouettes of circuits
  * far too big to render tile by tile.
@@ -73,7 +73,7 @@ export default function CircuitsPage(): JSX.Element {
         <p className="muted">
           A first draft of a periodic table of circuits. A rule&rsquo;s pairings are sorted into <b>classes</b>: pairings that send every strand
           leaving a supertile the same way, so they draw the same picture at every larger scale and differ only by small loops. Each class is
-          then run up the substitution without building any patch, which finds every circuit born at every level up to 9 or 10, hundreds of
+          then run up the substitution without building any patch, which finds every circuit born at every level up to level 9, hundreds of
           millions of tiles. Its circuits fall into <b>families</b> (circuits running through the same children of the supertile they are born
           in), each reborn bigger every one or two levels. How fast the biggest grow gives a <b>dimension</b>: about 1.45 for the common
           triangle and bow-tie fractals, about 2 for circuits that fill the area they span. Silhouettes are drawn straight from the hierarchy,
