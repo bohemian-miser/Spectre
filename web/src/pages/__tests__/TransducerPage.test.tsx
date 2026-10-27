@@ -198,32 +198,49 @@ describe('TransducerPage', () => {
     expect(text(container, 'td-wall-result')).toContain('type:number');
   });
 
-  it('the wall view adds a level with + and lists one more row of both slot paths', () => {
+  it('the hierarchy builder previews a parent on hover, keeps it on click, and records every branch in the tree', () => {
     const { container } = render(<TransducerPage />);
-    const rows = (): number => container.querySelectorAll('[data-testid="wall-table"] tbody tr').length;
-    const svg = container.querySelector('[data-testid="wall-svg"]')!;
-    expect(text(container, 'wall-n')).toBe('2');
-    const before = rows();
-    const tiles = Number(svg.getAttribute('data-tiles'));
-    act(() => { fireEvent.click(container.querySelector('[data-testid="wall-more"]')!); });
-    expect(text(container, 'wall-n')).toBe('3');
-    expect(rows()).toBe(before + 1);
-    expect(Number(svg.getAttribute('data-tiles'))).toBeGreaterThan(tiles);
-    // the two key tiles carry orientation flags
-    expect(svg.querySelectorAll('path.td__flag')).toHaveLength(2);
-    // the frame follows n until a level is picked; picking one narrows the view
-    expect(svg.getAttribute('data-framed')).toBe('3');
-    const wide = svg.getAttribute('viewBox')!.split(' ').map(Number);
-    act(() => { fireEvent.click(container.querySelector('[data-testid="wall-fit-0"]')!); });
-    expect(svg.getAttribute('data-framed')).toBe('0');
-    const narrow = svg.getAttribute('viewBox')!.split(' ').map(Number);
-    expect(narrow[2]).toBeLessThan(wide[2]);
-    act(() => { fireEvent.change(container.querySelector('[data-testid="wall-preset"]')!, { target: { value: '2' } }); });
-    expect(text(container, 'wall-table')).toContain('slot 2 of a Psi');
-    act(() => { fireEvent.click(container.querySelector('[data-testid="wall-less"]')!); });
-    act(() => { fireEvent.click(container.querySelector('[data-testid="wall-less"]')!); });
-    expect(text(container, 'wall-n')).toBe('1');
-    expect((container.querySelector('[data-testid="wall-less"]') as HTMLButtonElement).disabled).toBe(true);
+    const q = (id: string): Element => container.querySelector(`[data-testid="${id}"]`)!;
+    const svg = (): Element => q('hb-svg');
+    expect(svg().getAttribute('data-level')).toBe('0');
+    // hovering the Gamma shows a level-1 world with the new level marked as a preview
+    act(() => { fireEvent.mouseEnter(q('hb-option-Gamma-7')); });
+    expect(svg().getAttribute('data-level')).toBe('1');
+    expect(svg().getAttribute('data-fresh')).toBe('0');
+    act(() => { fireEvent.mouseLeave(q('hb-options')); });
+    expect(svg().getAttribute('data-level')).toBe('0');
+    // three Gammas in a row: edge 0 stays outside
+    for (let i = 0; i < 3; i++) act(() => { fireEvent.click(q('hb-option-Gamma-7')); });
+    expect(svg().getAttribute('data-level')).toBe('3');
+    expect(svg().getAttribute('data-landed')).toBe('');
+    expect(text(container, 'hb-status')).toContain('still on the outside of the level-3 Gamma');
+    // the first option each time lands the crossing as soon as possible
+    while (svg().getAttribute('data-landed') === '') act(() => { fireEvent.click(container.querySelector('[data-testid^="hb-option-"]')!); });
+    expect(svg().getAttribute('data-landed')).toBe('Pi');
+    expect(text(container, 'hb-status')).toContain('a Pi, entered through its edge 3');
+    expect(container.querySelector('[data-testid="hb-options"]')).toBeNull();
+    expect(q('hb-tree').getAttribute('data-nodes')).toBe('6');
+    // back to the start and a different branch: the tree keeps both
+    act(() => { fireEvent.click(q('hb-node-0')); });
+    expect(svg().getAttribute('data-level')).toBe('0');
+    act(() => { fireEvent.click(container.querySelector('[data-testid^="hb-option-"]:not([data-testid="hb-option-Gamma-7"])')!); });
+    expect(q('hb-tree').getAttribute('data-nodes')).toBe('7');
+    // the frame buttons follow the levels
+    expect(container.querySelectorAll('[data-testid^="hb-fit-"]')).toHaveLength(Number(svg().getAttribute('data-level')) + 1);
+  });
+
+  it('keys typed in the builder stay in the builder', () => {
+    const { container } = render(<TransducerPage />);
+    const hb = container.querySelector('[data-testid="hb"]') as HTMLElement;
+    act(() => { hb.focus(); fireEvent.keyDown(hb, { key: '3' }); });
+    expect(container.querySelector('[data-testid="hb-edge-3"]')!.getAttribute('aria-pressed')).toBe('true');
+    expect(container.querySelector('[data-testid="td-pending"]')).toBeNull(); // the board above did not cross
+    act(() => { fireEvent.keyDown(hb, { key: 'ArrowRight' }); });
+    expect(container.querySelector('[data-testid="hb-svg"]')!.getAttribute('data-level')).toBe('1');
+    act(() => { fireEvent.keyDown(hb, { key: 'Enter' }); });
+    expect(container.querySelector('[data-testid="hb-tree"]')!.getAttribute('data-nodes')).toBe('2');
+    act(() => { fireEvent.keyDown(hb, { key: 'Backspace' }); });
+    expect(container.querySelector('[data-testid="hb-svg"]')!.getAttribute('data-level')).toBe('0');
   });
 
   it('Start again returns to a single tile of the chosen type', () => {

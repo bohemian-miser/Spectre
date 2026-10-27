@@ -101,26 +101,33 @@ function parentsNeeded(from: Address, edge: number, depth: number): number | nul
 }
 
 /**
- * The parents the root can have, ordered by how many parents the waiting
- * crossing needs along the quickest chain that starts with each one, so that
- * taking the first option every time lands the crossing as soon as possible.
- * Everything is computed on the slot path alone.
+ * The parents the top of `from` can have, ordered by how many parents a
+ * crossing of `edge` needs along the quickest chain that starts with each
+ * one, so that taking the first option every time lands the crossing as soon
+ * as possible. `room` is how many more parents may follow this one.
  */
-export function parentOptions(board: Board): ParentOption[] {
-  const { world, pending } = board;
-  const from = pending ? addressIn(world, pending.from) : null;
-  const room = Math.max(0, MAX_LEVEL - world.level - 1);
-  const canGrow = world.level < MAX_LEVEL;
-  const out: ParentOption[] = parentsOf(world.root).map(({ parent, slot }) => {
-    if (!from || !pending || !canGrow) return { parent, slot, landing: null, landingType: null, needs: null, repeats: parent === world.root };
+export function rankParents(from: Address, edge: number, room: number): ParentOption[] {
+  const top = from.path.length ? from.path[from.path.length - 1].parent : from.leaf;
+  const out: ParentOption[] = parentsOf(top).map(({ parent, slot }) => {
     const grown: Address = { leaf: from.leaf, path: [...from.path, { slot, parent }] };
-    const nb = neighbour(grown, pending.edge);
+    const nb = neighbour(grown, edge);
     if (nb.ok) return { parent, slot, landing: idOf(nb.address), landingType: nb.address.leaf, needs: 1, repeats: false };
-    const more = parentsNeeded(grown, pending.edge, Math.min(room, 3));
-    return { parent, slot, landing: null, landingType: null, needs: more === null ? null : more + 1, repeats: parent === world.root };
+    const more = parentsNeeded(grown, edge, Math.min(Math.max(0, room), 3));
+    return { parent, slot, landing: null, landingType: null, needs: more === null ? null : more + 1, repeats: parent === top };
   });
   const rank = (o: ParentOption): number => (o.needs === null ? 99 : o.needs) * 2 + (o.repeats ? 1 : 0);
   return out.map((o, i) => ({ o, i })).sort((a, b) => rank(a.o) - rank(b.o) || a.i - b.i).map((x) => x.o);
+}
+
+/** The parent options for the board's waiting crossing, as `rankParents` orders them. */
+export function parentOptions(board: Board): ParentOption[] {
+  const { world, pending } = board;
+  const from = pending ? addressIn(world, pending.from) : null;
+  if (!from || !pending || world.level >= MAX_LEVEL) {
+    const all = parentsOf(world.root).map(({ parent, slot }) => ({ parent, slot, landing: null, landingType: null, needs: null, repeats: parent === world.root }));
+    return [...all.filter((o) => !o.repeats), ...all.filter((o) => o.repeats)];
+  }
+  return rankParents(from, pending.edge, MAX_LEVEL - world.level - 1);
 }
 
 function crossIn(board: Board, edge: number, fromId: string): Board {
