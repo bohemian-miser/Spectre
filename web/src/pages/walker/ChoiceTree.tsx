@@ -4,7 +4,9 @@
  * it one box per ancestor position (supertile type and slot) at the level
  * that decides the fork, filled where that position can lead here. A
  * position can lead to more than one landing at a fork (something higher up
- * decides between them); its box is then filled on each of those rows. Rows
+ * decides between them); its box is then filled on each of those rows, with
+ * a dotted outline: that supertile at that slot does not by itself decide
+ * the landing. Rows
  * offered at the same fork sit close together. The path being walked runs
  * straight down the first lane; the other
  * landings at each fork branch off into lanes of their own, hollow until
@@ -35,6 +37,8 @@ interface TreeRow {
   readonly lane: number;
   readonly kind: 'start' | 'landing' | 'end';
   readonly option?: ForkOption;
+  /** Its positions that can also lead to another landing at the same fork. */
+  readonly shared?: readonly string[];
   readonly node?: number; // choice node reached, if taken
   readonly at?: number; // choice node whose fork offered it
   readonly step?: number;
@@ -46,6 +50,8 @@ interface TreeRow {
 }
 
 const compact = (n: number): string => (n < 1000 ? String(n) : n < 1e6 ? `${(n / 1000).toFixed(n < 1e4 ? 1 : 0)}k` : `${(n / 1e6).toFixed(1)}M`);
+/** The positions of `o` that another landing of the fork also has: choosing one of them does not decide the landing. */
+const sharedCells = (f: Fork, o: ForkOption): string[] => o.cells.filter((c) => f.options.some((x) => x !== o && x.cells.includes(c)));
 const levelWord = (k: number | null): string => (k === null ? '' : k === 1 ? 'parent' : k === 2 ? 'grandparent' : `level ${k}`);
 
 export interface ChoiceTreeProps {
@@ -112,7 +118,7 @@ export function ChoiceTree({ pw, mode, onGoto, onChooseAt, onHoverOption }: Choi
         const l = main ? lane : free(rowIndex);
         const me = out.length;
         out.push({
-          key: `${n.id}:${o.key}`, parent: rowIndex, lane: l, kind: 'landing', option: o, node: c, at: n.id, step: f.step,
+          key: `${n.id}:${o.key}`, parent: rowIndex, lane: l, kind: 'landing', option: o, shared: sharedCells(f, o), node: c, at: n.id, step: f.step,
           from: f.from, then: c !== undefined ? stretch(pw.nodes[c]) : '', onPath: main, current: c === pw.current,
           label: o.type ? `${o.type} ${o.edge}` : o.key === 'closes' ? 'closes' : 'open',
         });
@@ -143,7 +149,7 @@ export function ChoiceTree({ pw, mode, onGoto, onChooseAt, onHoverOption }: Choi
       const f = forkAt(pw.nodes[route[r - 1]])!;
       const o = f.options.find((x) => x.key === n.key)!;
       out.push({
-        key: `${route[r - 1]}:${o.key}`, parent: out.length - 1, lane: 0, kind: 'landing', option: o, node: n.id, at: route[r - 1], step: f.step,
+        key: `${route[r - 1]}:${o.key}`, parent: out.length - 1, lane: 0, kind: 'landing', option: o, shared: sharedCells(f, o), node: n.id, at: route[r - 1], step: f.step,
         from: f.from, then: stretch(n), onPath: true, current: n.id === pw.current, label: o.type ? `${o.type} ${o.edge}` : o.key,
       });
     }
@@ -152,7 +158,7 @@ export function ChoiceTree({ pw, mode, onGoto, onChooseAt, onHoverOption }: Choi
     const f = forkAt(cur);
     if (f) {
       f.options.forEach((o, i) => out.push({
-        key: `${cur.id}:${o.key}`, parent: here, lane: i, kind: 'landing', option: o, at: cur.id, step: f.step, from: f.from,
+        key: `${cur.id}:${o.key}`, parent: here, lane: i, kind: 'landing', option: o, shared: sharedCells(f, o), at: cur.id, step: f.step, from: f.from,
         onPath: false, current: false, label: o.type ? `${o.type} ${o.edge}` : o.key,
       }));
     } else {
@@ -236,12 +242,10 @@ export function ChoiceTree({ pw, mode, onGoto, onChooseAt, onHoverOption }: Choi
             <text x={cx} y={cy} className="wk-tree__name" textAnchor="middle" dominantBaseline="central">{text}</text>
             {r.option && cols.map((col, k) => {
               const on = r.option!.cells.includes(col.c);
-              const sx = colX(k);
+              const shared = on && !!r.shared?.includes(col.c);
               return (
-                <g key={col.c}>
-                  <rect x={sx} y={cy - SLOT / 2} width={SLOT} height={SLOT} rx={2}
-                    fill={on ? tileColor(col.t) : 'none'} className={on ? 'wk-tree__slot is-on' : 'wk-tree__slot'} />
-                </g>
+                <rect key={col.c} x={colX(k)} y={cy - SLOT / 2} width={SLOT} height={SLOT} rx={2}
+                  fill={on ? tileColor(col.t) : 'none'} className={`wk-tree__slot${on ? ' is-on' : ''}${shared ? ' is-shared' : ''}`} />
               );
             })}
             {r.option && <text x={width - 42} y={cy} className="wk-tree__n" dominantBaseline="central">{compact(r.option.stacks)}</text>}
