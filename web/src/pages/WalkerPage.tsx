@@ -302,6 +302,7 @@ export function WalkerPage(): JSX.Element {
             boundaries={drawn.edges}
             previewBoundaries={preview?.edges ?? []}
             focus={{ xform: current.xform, type: curType, entry: board.entry }}
+            nest={{ root: world.root, level: world.level }}
             marks={marks}
             testId="wk-svg"
           />

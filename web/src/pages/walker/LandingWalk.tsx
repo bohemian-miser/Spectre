@@ -7,9 +7,9 @@
  */
 import { useMemo, useReducer, useState } from 'react';
 
-import { idOf, type HexType } from '../../core';
+import { addressFromId, idOf, type HexType } from '../../core';
 import { HexBoard, type BoardStep, type BoardTile } from '../../components/HexBoard';
-import { placeWorld, tilesAround, type PlacedTile } from '../../lib/hexBoard';
+import { HEX_OUTLINE, placeWorld, supertileEdges, tilesAround, type PlacedTile } from '../../lib/hexBoard';
 import { tileColor } from '../../lib/palette';
 import { classLabel } from './landings';
 import { makeWalker, reducePossible, replay, startWalk, typesByLevel, type ChoiceNode, type Outcome, type PossibleWalk, type World } from './possible';
@@ -86,6 +86,10 @@ export function LandingWalk({ pattern, byType, start, startEdge, worlds }: Landi
     ...(landing ? [{ ...landing, tone: 'preview' as const, className: 'is-landing' }] : []),
   ];
   const xformOf = (id: string) => shown.placed.get(id)!.xform;
+  const boundaries = useMemo(
+    () => supertileEdges([...solid, ...faint].slice(0, 3000).map((t) => ({ ...t, address: addressFromId(shown.root, t.id) })), HEX_OUTLINE, shown.level),
+    [shown, solid.length, faint.length], // eslint-disable-line react-hooks/exhaustive-deps
+  );
   const strand: BoardStep[] = stage.seen.map((s, i) => ({ ...s, xform: xformOf(shown.ids[i]) }));
   const here = stage.worlds[0];
   const current = shown.placed.get(shown.ids[n]) ?? solid[solid.length - 1];
@@ -151,6 +155,8 @@ export function LandingWalk({ pattern, byType, start, startEdge, worlds }: Landi
           strand={strand}
           focus={current && !closed ? { xform: current.xform, type: here.at.leaf, entry: here.entry } : null}
           marks={marks}
+          boundaries={boundaries}
+          nest={{ root: shown.root, level: shown.level }}
           testId="wk-svg"
         />
         <div className="wk__tape" data-testid="wk-tape">
@@ -164,9 +170,9 @@ export function LandingWalk({ pattern, byType, start, startEdge, worlds }: Landi
           ))}
           <div className="wk__cell is-tile"><span className="wk__lvl">tile</span> <Swatch type={here.at.leaf} />{here.at.leaf}{closed ? '' : `, in through ${here.entry}`}</div>
           <p className="td__hint">
-            {stage.worlds.length} {stage.worlds.length === 1 ? 'stack' : 'stacks'} of ancestors agree with the walk so far{unread ? `; ${unread} of them have not needed every level shown` : ''}. A level with one type is settled.
+            {stage.worlds.length === 1 ? 'One stack of ancestors agrees' : `${stage.worlds.length} stacks of ancestors agree`} with the walk so far{unread ? `; ${unread} of them have not needed every level shown` : ''}. A level with one type is settled.
           </p>
-          <p className="td__hint">The board shows one of these stacks. The strand in black, every tile's pairing faint, the current tile's edge numbers (blue in, orange out), the start ringed green.</p>
+          <p className="td__hint">The board shows one of these stacks. The strand in black, every tile's pairing faint, the current tile's edge numbers (blue in, orange out), the start ringed green. Supertiles tints every supertile in its type's colour, level over level.</p>
         </div>
       </div>
 
