@@ -105,7 +105,8 @@ body,
 }
 
 .site-nav-measure {
-  position: absolute;
+  /* fixed, not absolute: a fixed box does not widen the page, so a phone does not zoom out to fit it */
+  position: fixed;
   top: 0;
   left: 0;
   visibility: hidden;
