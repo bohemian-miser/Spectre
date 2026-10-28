@@ -9,9 +9,8 @@ import { useEffect, useMemo, useReducer, useState } from 'react';
 
 import { addressFromId, idOf, type HexType } from '../../core';
 import { HexBoard, type BoardStep, type BoardTile } from '../../components/HexBoard';
-import { HEX_OUTLINE, placeWorld, supertileEdges, tilesAround, type PlacedTile } from '../../lib/hexBoard';
-import { classLabel } from './landings';
-import { choicesOf, makeWalker, reducePossible, replay, replayChoices, startWalk, type Outcome, type PossibleWalk, type World } from './possible';
+import { HEX_OUTLINE, placeNear, placeWorld, supertileEdges, tilesAround, type PlacedTile } from '../../lib/hexBoard';
+import { choicesOf, concreteChain, makeWalker, reducePossible, replay, replayChoices, startWalk, type Outcome, type PossibleWalk, type World } from './possible';
 import { ChoiceTree } from './ChoiceTree';
 import type { Choice } from './share';
 import { SidesView, sideMarks, sidesOf } from './SidesView';
@@ -25,16 +24,14 @@ const FAINT_CAP = 3000;
 function sceneOf(pw: PossibleWalk, w: World, steps: number) {
   const wk = pw.walker;
   const { at, levels } = replay(wk, w, steps);
-  const level = w.chain.length;
-  const root = level ? w.chain[level - 1].parent : wk.start;
-  const placed = placeWorld({ root, level, startId: idOf({ leaf: wk.start, path: w.chain }) });
-  return { placed, ids: at.map(idOf), levels, root, level };
-}
-
-export function outcomeText(o: Outcome, maxLevel: number): string {
-  if (o.key === 'closes') return 'closes the circuit';
-  if (o.key === 'open') return `still on the outside of a level-${maxLevel} supertile`;
-  return `lands on a ${o.type}, through its edge ${o.edge} (${classLabel(o.type!, o.edge!)})`;
+  // a stack across a seam is shown closed in the fewest parents that bring its sides together
+  const chain = concreteChain(w);
+  const level = chain.length;
+  const root = level ? chain[level - 1].parent : wk.start;
+  const ids = at.map(idOf);
+  const world = { root, level, startId: idOf({ leaf: wk.start, path: chain }) };
+  const placed = level <= MAX_LEVEL ? placeWorld(world) : placeNear(world, ids);
+  return { placed, ids, levels, root, level };
 }
 
 export interface LandingWalkProps {
@@ -105,7 +102,7 @@ export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial
           {stage.status === 'closed'
             ? `A circuit of ${n} tiles, after ${choicesMade} ${choicesMade === 1 ? 'choice' : 'choices'}. It is the same circuit for all ${stage.worlds.length} ancestor stacks left.`
             : stage.status === 'open'
-              ? `The strand is still on the outside of a level-${MAX_LEVEL} supertile after ${n} tiles.`
+              ? `After ${n} tiles the strand climbs above a level-${pw.walker.topLevel} supertile.`
               : stage.status === 'choice'
                 ? `Step ${n + 1}: the ${stage.worlds.length} ancestor stacks still possible disagree about where the strand lands. Choose on the right.`
                 : stage.status === 'stuck'

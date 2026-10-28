@@ -218,13 +218,13 @@ export function ChoiceTree({ pw, mode, onGoto, onChooseAt, onHoverOption }: Choi
         const type = r.kind === 'start' ? pw.walker.start : r.option?.type ?? null;
         const fill = type ? tileColor(type) : 'var(--panel, #fff)';
         const cx = x(r.lane), cy = y(i);
-        const text = r.kind === 'end' ? (r.label.startsWith('circuit') ? '✓' : '…') : type ? type.slice(0, 3) : r.option?.key === 'closes' ? '✓' : 'wall';
+        const text = r.kind === 'end' ? (r.label.startsWith('circuit') ? '✓' : '…') : type ? type.slice(0, 3) : r.option?.key === 'closes' ? '✓' : 'open';
         const click = (): void => {
           if (untaken) onChooseAt(r.at!, r.option!.key);
           else if (r.node !== undefined) onGoto(r.node);
         };
         const title = r.option && r.from
-          ? `Step ${r.step}: out of a ${r.from.type} through ${r.from.exit}, ${r.option.type ? `lands on a ${r.option.type} through its edge ${r.option.edge}` : r.option.key === 'closes' ? 'closes the circuit' : 'goes on along a wall'}, in ${r.option.stacks.toLocaleString('en-US')} stacks${r.option.deciders.length ? `, decided by the ${levelWord(r.option.level)}: ${r.option.deciders.join(', ')}` : ''}.${r.then ? ` Then ${r.then}.` : ''}${untaken ? ' Click to take it.' : ''}`
+          ? `Step ${r.step}: out of a ${r.from.type} through ${r.from.exit}, ${r.option.type ? `lands on a ${r.option.type} through its edge ${r.option.edge}` : r.option.key === 'closes' ? 'closes the circuit' : `climbs above level ${pw.walker.topLevel}`}, in ${r.option.stacks.toLocaleString('en-US')} stacks${r.option.deciders.length ? `, decided by the ${levelWord(r.option.level)}: ${r.option.deciders.join(', ')}` : ''}.${r.then ? ` Then ${r.then}.` : ''}${untaken ? ' Click to take it.' : ''}`
           : r.label;
         return (
           <g

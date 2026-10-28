@@ -11,22 +11,34 @@
  * stops at a choice, and choosing a group keeps only its worlds.
  *
  * Stacks are extended only when a step needs it, so two stacks that differ
- * above every level the walk has read are never told apart.
+ * above every level the walk has read are never told apart. Above
+ * `maxLevel` a stack is not extended to cross: a crossing that leaves its
+ * root goes over a seam (`core/seam.ts`) into each live supertile that can
+ * sit across, one world each, and the walk goes on on the far side. The seam
+ * moves up a level only when the walk reads above it, keeping the pairs that
+ * still fit; a world whose two sides meet in a common ancestor is an ordinary
+ * stack again.
  */
-import { HEX_TYPES, childType, neighbour, type Address, type HexType, type Link } from '../../core';
+import {
+  HEX_TYPES, across, childType, climbOut, comeDown, growPair, meetingOf, neighbour, pairAlive,
+  type Address, type HexType, type Link, type Pair,
+} from '../../core';
 import type { Pattern } from './walk';
 import { pairingTable } from './walk';
 
 export interface World {
   /** The start tile's ancestors, bottom up. */
   readonly chain: readonly Link[];
-  /** The current tile, in the same root. */
+  /** The current tile: in the same root, or with `far`, in the supertile across the seam. */
   readonly at: Address;
   readonly entry: number;
+  /** The root's edge glued to the far supertile's, when the stack is two supertiles across a seam. */
+  readonly seam?: Pair;
+  readonly far?: boolean;
 }
 
 export interface Outcome {
-  /** `Psi 5`, `closes`, or `open` (still leaving at the level cap). */
+  /** `Psi 5`, `closes`, or `open` (still leaving at `topLevel`). */
   readonly key: string;
   readonly type: HexType | null;
   readonly edge: number | null;
@@ -47,13 +59,19 @@ const sameAddress = (a: Address, b: Address): boolean =>
 export interface Walker {
   readonly start: HexType;
   readonly startEdge: number;
+  /** Stacks are extended to cross up to this level; above it, crossings go over a seam. */
   readonly maxLevel: number;
+  /** A seam moves up to this level at most; a crossing that needs more is `open`. */
+  readonly topLevel: number;
   readonly table: Map<HexType, Map<number, number>>;
 }
 
-export const makeWalker = (pattern: Pattern, start: HexType, startEdge: number, maxLevel: number): Walker => ({
-  start, startEdge, maxLevel, table: pairingTable(pattern),
+export const makeWalker = (pattern: Pattern, start: HexType, startEdge: number, maxLevel: number, topLevel = maxLevel + 10): Walker => ({
+  start, startEdge, maxLevel, topLevel, table: pairingTable(pattern),
 });
+
+/** The world's tile one level up, on its side of the seam: the near side takes the link, the far side its own. */
+const raise = (a: Address, link: Link): Address => ({ leaf: a.leaf, path: [...a.path, link] });
 
 /** Every world after one step, grouped by what is seen. */
 export function stepAll(wk: Walker, worlds: readonly World[]): Outcome[] {
@@ -61,19 +79,37 @@ export function stepAll(wk: Walker, worlds: readonly World[]): Outcome[] {
   const add = (key: string, type: HexType | null, edge: number | null, w: World): void => {
     (groups.get(key) ?? groups.set(key, { type, edge, worlds: [] }).get(key)!).worlds.push(w);
   };
+  const isHome = (w: World): boolean => !w.far && sameAddress(w.at, { leaf: wk.start, path: w.chain }) && w.entry === wk.startEdge;
+  const land = (w: World): void => (isHome(w) ? add('closes', null, null, w) : add(`${w.at.leaf} ${w.entry}`, w.at.leaf, w.entry, w));
   const go = (w: World): void => {
     const exit = wk.table.get(w.at.leaf)?.get(w.entry);
     if (exit === undefined) return;
     const nb = neighbour(w.at, exit);
-    if (nb.ok) {
-      const next: World = { chain: w.chain, at: nb.address, entry: nb.edge };
-      const home = sameAddress(nb.address, { leaf: wk.start, path: w.chain }) && nb.edge === wk.startEdge;
-      if (home) add('closes', null, null, next);
-      else add(`${nb.address.leaf} ${nb.edge}`, nb.address.leaf, nb.edge, next);
+    if (nb.ok) { land({ ...w, at: nb.address, entry: nb.edge }); return; }
+    if (w.seam) {
+      const climb = climbOut(w.at, exit)!;
+      if (climb.edge === (w.far ? w.seam.jj : w.seam.j)) {
+        // back over the seam
+        const down = w.far ? comeDown(w.seam.near, w.seam.j, climb) : comeDown(w.seam.far, w.seam.jj, climb);
+        if (down) land({ ...w, at: down.address, entry: down.edge, far: !w.far });
+        return;
+      }
+      if (w.chain.length >= wk.topLevel) { add('open', null, null, w); return; }
+      // the walk reads above the seam: move it up a level, keeping the pairs that fit
+      for (const link of parentsOf(topOf(w, wk.start))) {
+        for (const g of growPair(w.seam, link)) {
+          const chain = [...w.chain, link];
+          if (g.kind === 'meet') go({ chain, at: raise(w.at, w.far ? { slot: g.farSlot, parent: link.parent } : link), entry: w.entry });
+          else if (pairAlive(g.pair)) go({ chain, at: raise(w.at, w.far ? g.farLink : link), entry: w.entry, seam: g.pair, far: w.far });
+        }
+      }
       return;
     }
-    if (w.chain.length >= wk.maxLevel) { add('open', null, null, w); return; }
-    for (const link of parentsOf(topOf(w, wk.start))) go({ chain: [...w.chain, link], at: { leaf: w.at.leaf, path: [...w.at.path, link] }, entry: w.entry });
+    if (w.chain.length >= wk.maxLevel) {
+      for (const o of across(w.at, exit)) land({ chain: w.chain, at: o.address, entry: o.edge, seam: o.pair, far: true });
+      return;
+    }
+    for (const link of parentsOf(topOf(w, wk.start))) go({ chain: [...w.chain, link], at: raise(w.at, link), entry: w.entry });
   };
   for (const w of worlds) go(w);
   return [...groups.entries()]
@@ -239,7 +275,7 @@ export function reducePossible(pw: PossibleWalk, action: PossibleAction): Possib
 
 /** The tiles a world's strand visits (its addresses, in its own root) and the level each crossing settled at. */
 export function replay(wk: Walker, world: World, steps: number): { at: Address[]; levels: number[] } {
-  let at: Address = { leaf: wk.start, path: [...world.chain] };
+  let at: Address = { leaf: wk.start, path: [...concreteChain(world)] };
   let entry = wk.startEdge;
   const out: Address[] = [at];
   const levels: number[] = [];
@@ -253,6 +289,13 @@ export function replay(wk: Walker, world: World, steps: number): { at: Address[]
     levels.push(nb.level);
   }
   return { at: out, levels };
+}
+
+/** The world's stack, with a seam closed by the fewest parents that bring its two sides into a common ancestor. */
+export function concreteChain(w: World): readonly Link[] {
+  if (!w.seam) return w.chain;
+  const m = meetingOf(w.seam);
+  return m ? [...w.chain, ...m.links] : w.chain;
 }
 
 /** Per level above the start tile, the ancestor types still possible across the worlds. */
@@ -271,15 +314,25 @@ export const choicesOf = (pw: PossibleWalk): { parent: number; key: string }[] =
 
 /**
  * Makes the same choices again, in order, so the nodes get the same ids;
- * then goes to `current`. A choice that is no longer on offer stops the replay.
+ * then goes to `current`. A choice no longer on offer is dropped with the
+ * choices made below it, and the ids after it close up.
  */
 export function replayChoices(pw: PossibleWalk, choices: readonly { parent: number; key: string }[], current: number): PossibleWalk {
   let w = pw;
-  for (const c of choices) {
-    if (!w.nodes[c.parent]) break;
-    const next = reducePossible(w, { type: 'chooseAt', id: c.parent, key: c.key });
-    if (next.nodes.length === w.nodes.length) break;
+  // old node id -> new node id, for the nodes made again
+  const ids = new Map<number, number>([[0, 0]]);
+  choices.forEach((c, i) => {
+    const parent = ids.get(c.parent);
+    if (parent === undefined) return;
+    const next = reducePossible(w, { type: 'chooseAt', id: parent, key: c.key });
+    const made = next.nodes[next.current];
+    if (made.parent !== parent || made.key !== c.key) return;
     w = next;
-  }
-  return reducePossible(w.nodes[current] ? reducePossible(w, { type: 'goto', id: current }) : w, { type: 'run', cap: 100000 });
+    ids.set(i + 1, made.id);
+  });
+  // the current node, or its nearest ancestor made again
+  let at: number | undefined = current;
+  while (at !== undefined && at > 0 && !ids.has(at)) at = at <= choices.length ? choices[at - 1].parent : undefined;
+  const here = ids.get(at ?? 0) ?? 0;
+  return reducePossible(reducePossible(w, { type: 'goto', id: here }), { type: 'run', cap: 100000 });
 }

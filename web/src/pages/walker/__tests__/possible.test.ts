@@ -4,11 +4,13 @@
  * with no choices after as many tiles as `walkStrand`; a walk started on a
  * bare tile, choosing the commonest outcome each time, closes on a circuit
  * that every surviving stack really has, of that length, seen the same way.
+ * Stacks that went over a seam above level 5 are checked the same way, in
+ * the fewest parents that close the seam.
  */
 import { describe, expect, it } from 'vitest';
 
 import { addressFromId, walkStrand, type HexType } from '../../../core';
-import { initialWorlds, makeWalker, reducePossible, replay, startWalk, type PossibleWalk } from '../possible';
+import { concreteChain, initialWorlds, makeWalker, reducePossible, replay, startWalk, type PossibleWalk } from '../possible';
 import { longestCircuit, matchingByType, patternOf } from '../walk';
 
 const triangle = patternOf([0, 2, 3, 4, 6, 8], '000100000');
@@ -42,12 +44,25 @@ describe('walking every tiling at once', () => {
       expect(pw.stage.status).toBe('closed');
       const n = pw.stage.seen.length;
       for (const world of pw.stage.worlds.slice(0, 50)) {
-        const ref = walkStrand(triangle.subset, matching, { address: { leaf: start, path: world.chain }, entry: edge }, 100000);
+        const ref = walkStrand(triangle.subset, matching, { address: { leaf: start, path: [...concreteChain(world)] }, entry: edge }, 100000);
         expect(ref.end).toBe('circuit');
         expect(ref.states).toHaveLength(n);
         expect(ref.states.map((s) => `${s.address.leaf}${s.entry}`)).toEqual(pw.stage.seen.map((s) => `${s.type}${s.entry}`));
         expect(replay(wk, world, n).at).toHaveLength(n + 1);
       }
+    }
+  });
+
+  it('goes on over a seam above level 5, and the circuit is real in the stacks that did', () => {
+    const wk = makeWalker(triangle, 'Delta', 0, 5);
+    const pw = runChoosing(startWalk(wk));
+    expect(pw.stage.status).toBe('closed');
+    const seamed = pw.stage.worlds.filter((w) => w.seam);
+    expect(seamed.length).toBeGreaterThan(0);
+    for (const world of seamed.slice(0, 50)) {
+      const ref = walkStrand(triangle.subset, matching, { address: { leaf: 'Delta', path: [...concreteChain(world)] }, entry: 0 }, 100000);
+      expect(ref.end).toBe('circuit');
+      expect(ref.states.map((s) => `${s.address.leaf}${s.entry}`)).toEqual(pw.stage.seen.map((s) => `${s.type}${s.entry}`));
     }
   });
 });
