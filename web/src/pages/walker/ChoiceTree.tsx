@@ -224,7 +224,7 @@ export function ChoiceTree({ pw, mode, onGoto, onChooseAt, onHoverOption }: Choi
           else if (r.node !== undefined) onGoto(r.node);
         };
         const title = r.option && r.from
-          ? `Step ${r.step}: out of a ${r.from.type} through ${r.from.exit}, ${r.option.type ? `lands on a ${r.option.type} through its edge ${r.option.edge}` : r.option.key === 'closes' ? 'closes the circuit' : `climbs above level ${pw.walker.topLevel}`}, in ${r.option.stacks.toLocaleString('en-US')} stacks${r.option.deciders.length ? `, decided by the ${levelWord(r.option.level)}: ${r.option.deciders.join(', ')}` : ''}.${r.then ? ` Then ${r.then}.` : ''}${untaken ? ' Click to take it.' : ''}`
+          ? `Step ${r.step}: out of a ${r.from.type} through ${r.from.exit}, ${r.option.type ? `lands on a ${r.option.type} through its edge ${r.option.edge}` : r.option.key === 'closes' ? 'closes the circuit' : `leaves a level-${pw.walker.maxLevel} supertile`}, in ${r.option.stacks.toLocaleString('en-US')} stacks${r.option.deciders.length ? `, decided by the ${levelWord(r.option.level)}: ${r.option.deciders.join(', ')}` : ''}.${r.then ? ` Then ${r.then}.` : ''}${untaken ? ' Click to take it.' : ''}`
           : r.label;
         return (
           <g

@@ -119,8 +119,8 @@ export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial
             const elsewhere = c.tiles.filter((t) => (landed ? t.tile !== landed : !stage.pending.some((o) => o.key === t.tile)));
             return (
               <li key={c.step} className={c.unforced ? 'is-odd' : ''}>
-                Step {c.step}: {c.stacks.toLocaleString('en-US')} {c.stacks === 1 ? 'stack meets' : 'stacks meet'} a second wall (still climbing at
-                level {pw.walker.topLevel}) and {c.stacks === 1 ? 'stops' : 'stop'}; across it,{' '}
+                Step {c.step}: {c.stacks.toLocaleString('en-US')} {c.stacks === 1 ? 'stack meets' : 'stacks meet'} a second wall that goes on
+                for ever and {c.stacks === 1 ? 'stops' : 'stop'}; across it,{' '}
                 {c.tiles.length === 1 && c.tiles[0].stacks === c.stacks
                   ? `${c.tiles[0].tile} in all of them`
                   : c.tiles.map((t) => `${t.tile} in ${t.stacks.toLocaleString('en-US')}`).join(', ') || 'no tile is forced'}

@@ -71,6 +71,15 @@
 .hb__flag.is-preview {
   opacity: 0.25;
 }
+.hb__strand-casing {
+  fill: none;
+  stroke: var(--panel, #ffffff);
+  stroke-width: 0.27;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.9;
+  pointer-events: none;
+}
 .hb__strand {
   fill: none;
   stroke: var(--text, #1d2430);

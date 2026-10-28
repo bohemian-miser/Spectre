@@ -65,7 +65,7 @@ export function enumerateCircuits(pattern: Pattern, table: Map<HexType, Map<numb
   let live: Branch[] = [];
   for (const t of HEX_TYPES) {
     for (const edge of table.get(t)?.keys() ?? []) {
-      const wk = makeWalker(pattern, t, edge, opts.maxLevel, opts.maxLevel);
+      const wk = makeWalker(pattern, t, edge, opts.maxLevel, false);
       live.push({ wk, worlds: initialWorlds(wk), word: [] });
     }
   }
