@@ -12,7 +12,7 @@
  * - segments: for the circuits that are not triangles, the k whose equal
  *   parts are closest.
  */
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
 
 const [dir, scoreArg = '0.1'] = process.argv.slice(2);
 const near = Number(scoreArg);
@@ -92,6 +92,8 @@ out.push(table(['circuit', 'length', 'order', 'arm score', 'best k', 'score'], r
 
 // Corner triples as tiles of one patch (points.ts).
 for (const f of readdirSync(dir).filter((x) => /^points\.\d+\.csv$/.test(x))) {
+  // Listings past a few hundred MB do not fit in one string; those are summarised in points.L.md.
+  if (statSync(`${dir}/${f}`).size > 2 ** 28) { out.push(`## Corner triples on one patch (${f})`, '', `Too large to read here; see ${f.replace('.csv', '.md')}.`, ''); continue; }
   const [head, ...lines] = readFileSync(`${dir}/${f}`, 'utf8').split('\n').filter(Boolean);
   const cols = head.split(',');
   const pts = lines.map((l) => Object.fromEntries(l.split(',').map((v, i) => [cols[i], v])));
