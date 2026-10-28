@@ -58,9 +58,9 @@ export default function CornersPage(props: { forceSync?: boolean }): JSX.Element
   const base = import.meta.env.BASE_URL;
   const [index, setIndex] = useState<CornerIndex | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [combo, setCombo] = useState(DEFAULT_COMBO);
+  const [combo, setCombo] = useState(() => fromHash()?.combo ?? DEFAULT_COMBO);
   const [circuits, setCircuits] = useState<Circuit[] | null>(null);
-  const [pick, setPick] = useState<number | null>(null);
+  const [pick, setPick] = useState<number | null>(() => fromHash()?.index ?? null);
   const [walkKs, setWalkKs] = useState<number[]>([3, 6, 9]);
   const [slotOf, setSlotOf] = useState<ReadonlyMap<number, number>>(new Map([[3, 1], [6, 2], [9, 3]]));
   const [addK, setAddK] = useState('12');
@@ -101,6 +101,10 @@ export default function CornersPage(props: { forceSync?: boolean }): JSX.Element
   }, [base, combo]);
 
   const circuit = circuits && pick !== null ? circuits[pick] : null;
+  // The address names the circuit shown (#c=combo-index), so a link opens it.
+  useEffect(() => {
+    if (circuit && pick !== null) window.history.replaceState(null, '', `#c=${combo}-${pick}`);
+  }, [circuit, combo, pick]);
   const starts = useMemo(() => (circuit ? evenStarts(circuit.loop.n, WALK_STARTS) : []), [circuit]);
   const generations = useMemo(
     () => (circuits && circuit ? circuits.map((c, i) => ({ c, i })).filter(({ c }) => sameFamily(c, circuit)).sort((a, b) => a.c.level - b.c.level) : []),
@@ -242,7 +246,7 @@ export default function CornersPage(props: { forceSync?: boolean }): JSX.Element
         <>
           <p className="corners-note" data-testid="corners-caption">
             Family {familyLabel(circuit)} of combination <span className="mono">{combo}</span>: {nf(circuit.length)} tiles, born in a level-{circuit.level}{' '}
-            {circuit.type} supertile, radius of gyration {circuit.rg.toFixed(1)}.
+            {circuit.type} supertile, radius of gyration {circuit.rg.toFixed(1)}. <a href={`${base}shapes.html#c=${combo}-${pick}`}>Nearest shapes</a>.
           </p>
 
           <section aria-labelledby="corners-walk-h">
@@ -497,6 +501,13 @@ export default function CornersPage(props: { forceSync?: boolean }): JSX.Element
       )}
     </article>
   );
+}
+
+/** The circuit named in the address, #c=combo-index. */
+function fromHash(): { combo: string; index: number } | null {
+  if (typeof window === 'undefined') return null;
+  const m = /c=([0-9a-z]+)-(\d+)/.exec(window.location.hash);
+  return m ? { combo: m[1], index: Number(m[2]) } : null;
 }
 
 /** The highest-level circuit of a family, or the first circuit if the class has none. */

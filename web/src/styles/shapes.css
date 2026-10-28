@@ -1,0 +1,199 @@
+/* Shapes page. Shell tokens come from widgets.css; group colours below
+   (a fixed categorical order, stepped separately for the dark surface). */
+
+.shapes-page {
+  --g1: #2a78d6;
+  --g2: #eb6834;
+  --g3: #1baf7a;
+  --g4: #eda100;
+  --g5: #e87ba4;
+  --g6: #008300;
+  --g7: #6250d6;
+  --g8: #e34948;
+  display: grid;
+  gap: 20px;
+  padding-bottom: 48px;
+}
+@media (prefers-color-scheme: dark) {
+  .shapes-page {
+    --g1: #3987e5;
+    --g2: #d95926;
+    --g3: #199e70;
+    --g4: #c98500;
+    --g5: #d55181;
+    --g6: #008300;
+    --g7: #9085e9;
+    --g8: #e66767;
+  }
+}
+.shapes-page h1 {
+  margin: 0 0 6px;
+}
+.shapes-page h2 {
+  font-size: 17px;
+  margin: 0;
+}
+.shapes-page section {
+  display: grid;
+  gap: 10px;
+}
+.shapes-note {
+  font-size: 12px;
+  color: var(--muted);
+  max-width: 82ch;
+  margin: 0;
+}
+.shapes-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 10px 20px;
+}
+.shapes-controls label {
+  display: grid;
+  gap: 3px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.shapes-controls .shapes-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text);
+}
+.shapes-mapwrap {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--canvas-bg);
+  overflow: hidden;
+}
+.shapes-map,
+.shapes-count,
+.shapes-overlay {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.shapes-count {
+  max-width: 620px;
+}
+.shapes-count text {
+  fill: var(--muted);
+  font: 10px var(--mono);
+}
+.shapes-overlay {
+  max-width: 340px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--canvas-bg);
+}
+.shapes-row {
+  display: grid;
+  grid-template-columns: minmax(0, 340px) minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+@media (max-width: 820px) {
+  .shapes-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.shapes-panel {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.shapes-tablewrap {
+  overflow-x: auto;
+  min-width: 0;
+}
+.shapes-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.shapes-table th,
+.shapes-table td {
+  padding: 3px 8px;
+  text-align: right;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--line);
+}
+.shapes-table th {
+  color: var(--muted);
+  font-weight: 600;
+}
+.shapes-table td {
+  font-family: var(--mono);
+}
+.shapes-table th:first-child,
+.shapes-table td:first-child {
+  text-align: left;
+}
+.shapes-table td:first-child {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.shapes-table tbody tr {
+  cursor: pointer;
+}
+.shapes-table tbody tr:hover td,
+.shapes-table tr.is-on td {
+  background: var(--panel-2);
+}
+.shapes-glyph {
+  display: block;
+  flex: none;
+}
+.shapes-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 12px;
+}
+.shapes-group {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+  align-content: start;
+  min-width: 0;
+}
+.shapes-group.is-on {
+  border-color: var(--accent);
+}
+.shapes-group-head {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+.shapes-group-head > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.shapes-group-head i {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-right: 6px;
+}
+.shapes-members {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.shapes-members button {
+  padding: 2px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: var(--canvas-bg);
+  cursor: pointer;
+}
+.shapes-members button[aria-pressed='true'] {
+  border-color: var(--accent);
+}

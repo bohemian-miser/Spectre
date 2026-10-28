@@ -155,6 +155,14 @@ export const SITE_NAV: readonly NavItem[] = Object.freeze([
     blurb: 'How many sides a circuit has: corners walked round it, fitted polygons, and its Fourier series as epicycles.',
   },
   {
+    id: 'shapes',
+    label: 'Shapes',
+    short: 'Shapes',
+    entry: 'shapes.html',
+    status: 'ready',
+    blurb: 'Every circuit grouped by shape: Fourier terms compared over turn, start and mirror, clustered and mapped.',
+  },
+  {
     id: 'legacy',
     label: 'Legacy p5 app',
     short: 'Legacy',

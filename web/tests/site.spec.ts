@@ -88,3 +88,11 @@ test('the Corners page fits a circuit’s polygons and draws its spectrum', asyn
   await expect(page.locator('[data-testid="corners-symmetry"] title').nth(1)).toHaveText('3-fold: 100.00%');
   await expect(page.locator('[data-testid="corners-epicycles"]')).toBeVisible();
 });
+
+test('the Shapes page groups the circuits and finds a circuit’s twins', async ({ page }) => {
+  await page.goto('shapes.html#c=000100000-5');
+  await expect(page.locator('[data-testid="shapes-summary"]')).toHaveText(/^177 circuits in \d+ groups/, { timeout: 90000 });
+  await expect(page.locator('[data-testid="shapes-selected"]')).toContainText('25,356 tiles');
+  // Its nearest shape is the same knobbly triangle in another family or level.
+  await expect(page.locator('[data-testid="shapes-nearest"] tbody tr').first()).toContainText('0.00');
+});
