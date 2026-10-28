@@ -118,6 +118,8 @@ describe('the walk with bundles kept as merged graphs', () => {
       const byKey = (cs: readonly { key: string; level: number }[]) => new Map(cs.map((c) => [c.key, c.level]));
       expect(byKey(onGraph.circuits)).toEqual(byKey(onBoards.circuits));
     },
+    // The 023468 case walks open strands to 10,000 tiles: about 4 s here, longer on CI.
+    60_000,
   );
 });
 
