@@ -2,11 +2,13 @@
  * The landings of an edge against geometry: in a level-4 Delta laid out by
  * the substitution's placements, the tile actually across each edge (the one
  * sharing that edge's midpoint) and the edge it shares are among the landings
- * listed for that tile type and edge.
+ * listed for that tile type and edge. A stack still on the outline at level
+ * 4 lands across the seam on the tile `neighbour()` finds once some parents
+ * close that seam.
  */
 import { describe, expect, it } from 'vitest';
 
-import { edgeClass, transPt } from '../../../core';
+import { HEX_TYPES, across, edgeClass, meetingOf, neighbour, slotsOfType, transPt, type TileTypeId } from '../../../core';
 import { HEX_OUTLINE, placeWorld } from '../../../lib/hexBoard';
 import { classLabel, landings } from '../landings';
 
@@ -35,6 +37,22 @@ describe('landings', () => {
       }
     }
     expect(checked).toBeGreaterThan(10000);
+  });
+
+  it('land the stacks still on the outline across the seam, on the tile neighbour() finds once the seam is closed', () => {
+    let checked = 0;
+    for (const t of HEX_TYPES) for (const seam of slotsOfType('hex', t as TileTypeId, [0, 2, 3, 4, 6, 8])) {
+      const l = landings(t, seam.edge, 4);
+      expect(l.acrossSeam.reduce((n, x) => n + x.stacks.length, 0) + l.unforced.reduce((n, x) => n + x.stacks.length, 0)).toBe(l.outside.length);
+      for (const x of l.acrossSeam) for (const stack of x.stacks) {
+        for (const o of across({ leaf: t, path: stack }, seam.edge)) {
+          const nb = neighbour({ leaf: t, path: [...stack, ...meetingOf(o.pair)!.links] }, seam.edge);
+          expect(nb.ok && nb.address.leaf === x.type && nb.edge === x.edge).toBe(true);
+        }
+        checked++;
+      }
+    }
+    expect(checked).toBeGreaterThan(100);
   });
 
   it('writes class labels signed', () => {

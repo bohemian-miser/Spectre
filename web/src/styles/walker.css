@@ -287,25 +287,10 @@
 .wk__exit-head {
   margin: 0.2rem 0;
 }
-.wk__landings {
-  list-style: none;
-  margin: 0 0 0.4rem 0.6rem;
-  padding: 0;
-}
-.wk__landing {
-  padding: 0.25rem 0.5rem;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  cursor: default;
-  line-height: 1.5;
-}
 .wk__landing:hover,
 .wk__landing.is-active {
-  border-color: var(--accent, #2f7d6d);
   background: var(--panel, #fff);
-}
-.wk__when {
-  color: var(--muted, #6b7280);
+  outline: 1px solid var(--accent, #2f7d6d);
 }
 .wk__exitdraw {
   position: sticky;
@@ -480,4 +465,41 @@
 }
 .wk__circuits tbody tr:hover {
   background: var(--panel-2, #efece5);
+}
+
+.wk__landtable {
+  border-collapse: collapse;
+  font-size: 0.82rem;
+  margin: 0.2rem 0 0.6rem;
+}
+.wk__landtable th,
+.wk__landtable td {
+  padding: 0.1rem 0.5rem 0.1rem 0;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--rule, #2a3140);
+}
+.wk__landtable th {
+  font-weight: 600;
+  color: var(--muted, #6b7280);
+}
+.wk__landtable tbody tr {
+  cursor: pointer;
+}
+.wk__chip {
+  display: inline-block;
+  min-width: 1.4em;
+  margin: 0 0.15em 0.1em 0;
+  padding: 0 0.15em;
+  border-radius: 3px;
+  font-size: 0.72rem;
+  text-align: center;
+  color: #1b2230;
+}
+.wk__chip.is-not {
+  text-decoration: line-through;
+  opacity: 0.7;
+}
+.wk__odd {
+  color: #c92a2a;
 }
