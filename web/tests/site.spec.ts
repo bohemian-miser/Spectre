@@ -89,6 +89,17 @@ test('the Corners page fits a circuit’s polygons and draws its spectrum', asyn
   await expect(page.locator('[data-testid="corners-epicycles"]')).toBeVisible();
 });
 
+test('two circuits compared on the Corners page: a copy two levels up turns back onto the first', async ({ page }) => {
+  await page.goto('corners.html#c=000100000-13');
+  const gap = page.locator('[data-testid="corners-compare-gap"]');
+  // B starts as the same family two levels up, near 4 + √15 = 7.873 times the radius of gyration.
+  await expect(gap).toContainText(/B has 25,356 tiles to A’s 1,272 and a radius of gyration 7\.8\d+ times A’s\.$/, { timeout: 60000 });
+  await page.locator('[data-testid="corners-compare-turn"]').fill('90');
+  await expect(gap).toHaveText(/^Gap (1|0\.[5-9])\d*/);
+  await page.locator('[data-testid="corners-compare-best"]').click();
+  await expect(gap).toHaveText(/^Gap (0\.0\d\d) radii of gyration at this turn and start; the best fit is \1,/, { timeout: 5000 });
+});
+
 test('the Shapes page groups the circuits and finds a circuit’s twins', async ({ page }) => {
   await page.goto('shapes.html#c=000100000-14');
   await expect(page.locator('[data-testid="shapes-summary"]')).toHaveText(/^327 circuits in \d+ groups/, { timeout: 90000 });

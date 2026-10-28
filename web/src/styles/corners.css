@@ -269,3 +269,25 @@
   border-radius: 3px 3px 0 0;
   background: var(--accent);
 }
+.corners-compare {
+  display: grid;
+  gap: 10px;
+}
+.corners-compare-charts {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.corners-compare-overlay {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--canvas-bg);
+}
+.corners-controls .corners-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.corners-compare input[type='range'] {
+  width: 220px;
+}

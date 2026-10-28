@@ -21,6 +21,7 @@ import { ErrorChart, OutlineView, SidesBars, SpectrumChart, SymmetryBars, WalkCh
 import { createCornersClient } from './corners/cornersClient';
 import type { TileTypeId } from '../core';
 import { familyLabel, loadClass, loadIndex, RULE, type Circuit, type CornerIndex } from './corners/data';
+import { Compare } from './corners/Compare';
 import { Epicycles } from './corners/Epicycles';
 import { Survey } from './corners/Survey';
 import { explorerCircuitHref } from './shapes/explorerLink';
@@ -112,6 +113,18 @@ export default function CornersPage(props: { forceSync?: boolean }): JSX.Element
     () => (circuits && circuit ? circuits.map((c, i) => ({ c, i })).filter(({ c }) => sameFamily(c, circuit)).sort((a, b) => a.c.level - b.c.level) : []),
     [circuits, circuit],
   );
+
+  // B for the comparison: the same family two levels up (a copy 4 + √15 times the size), else two down, else another generation, else the next circuit.
+  const compareWith = useMemo(() => {
+    if (!circuits || !circuit || pick === null) return null;
+    const other = generations.filter(({ i }) => i !== pick);
+    const at = (dl: number) => {
+      const here = other.filter(({ c }) => c.level === circuit.level + dl);
+      return here.find(({ c }) => c.family === circuit.family) ?? here[0];
+    };
+    const g = at(2) ?? at(-2) ?? other[other.length - 1];
+    return { combo, index: g ? g.i : (pick + 1) % circuits.length };
+  }, [circuits, circuit, pick, generations, combo]);
 
   // A new circuit drops every job still running for the old one.
   useEffect(() => {
@@ -500,6 +513,18 @@ export default function CornersPage(props: { forceSync?: boolean }): JSX.Element
             )}
           </section>
         </>
+      )}
+
+      {index && circuit && circuits && compareWith && (
+        <section aria-labelledby="corners-compare-h">
+          <h2 id="corners-compare-h">Two circuits compared</h2>
+          <p className="corners-note">
+            B laid over A, each about its centroid over its radius of gyration, so a copy at another size has the same terms. Turning B adds the same angle to the
+            phase of every term; starting it k tiles on adds 2π f k / L to term f. The best fit is the turn, start and mirror image that leave the least rms gap
+            between the outlines. B starts as the same family two levels up when the class has it.
+          </p>
+          <Compare base={base} index={index} a={circuit} aLabel={`${combo} ${familyLabel(circuit)} L${circuit.level}`} combo={combo} circuits={circuits} initial={compareWith} />
+        </section>
       )}
 
       {index && (
