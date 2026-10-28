@@ -44,12 +44,12 @@ describe('every stack the walk on every tiling carries', () => {
     let checked = 0;
     for (const [start, edge] of [['Psi', 0], ['Delta', [...(table.get('Delta')?.keys() ?? [])][0]]] as const) {
       if (edge === undefined) continue;
-      const wk = makeWalker(p, start, edge, 3);
+      const wk = makeWalker(p, start, edge, 3, 3);
       let live: World[][] = [initialWorlds(wk)];
       for (let step = 0; step < 12 && live.length; step++) {
         const next: World[][] = [];
         for (const worlds of live) {
-          for (const o of stepAll(wk, worlds)) {
+          for (const o of stepAll(wk, worlds).outcomes) {
             if (o.key === 'open') continue;
             for (const w of o.worlds) {
               // The stack w.chain, with the strand having stepped from `before` to `w.at`.

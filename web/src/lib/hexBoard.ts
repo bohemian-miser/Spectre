@@ -26,8 +26,8 @@ export interface BoardWorld {
   readonly startId: string;
 }
 
-/** The placement of the tile at slot path `id` inside the world's root. */
-export function xformInRoot(world: BoardWorld, id: string): Affine {
+/** The node at slot path `id` inside the world's root, and its placement. */
+function nodeAt(world: BoardWorld, id: string): { node: TileNode; x: Affine } {
   let node: TileNode = buildSystem('hex', world.level)[world.root];
   let x: Affine = [1, 0, 0, 0, 1, 0];
   for (const s of id === '' ? [] : id.split('.').map(Number)) {
@@ -36,8 +36,11 @@ export function xformInRoot(world: BoardWorld, id: string): Affine {
     x = mul(x, ch.xform);
     node = ch.node;
   }
-  return x;
+  return { node, x };
 }
+
+/** The placement of the tile at slot path `id` inside the world's root. */
+export const xformInRoot = (world: BoardWorld, id: string): Affine => nodeAt(world, id).x;
 
 export interface PlacedTile { readonly id: string; readonly type: HexType; readonly xform: Affine }
 
@@ -60,6 +63,28 @@ export function placeWorld(world: BoardWorld): Map<string, PlacedTile> {
   for (const i of insts) out.set(i.id, { id: i.id, type: i.type as HexType, xform: mul(toStart, i.xform) });
   placeCache.set(key, out);
   while (placeCache.size > 4) placeCache.delete(placeCache.keys().next().value!);
+  return out;
+}
+
+/**
+ * For a root too large to place whole: the tiles of each given tile's
+ * level-`depth` ancestor, placed relative to the start tile.
+ */
+export function placeNear(world: BoardWorld, ids: readonly string[], depth = 3): Map<string, PlacedTile> {
+  const toStart = inv(nodeAt(world, world.startId).x);
+  const out = new Map<string, PlacedTile>();
+  const done = new Set<string>();
+  for (const id of ids) {
+    const slots = id === '' ? [] : id.split('.');
+    const pre = slots.slice(0, Math.max(0, slots.length - depth)).join('.');
+    if (done.has(pre)) continue;
+    done.add(pre);
+    const { node, x } = nodeAt(world, pre);
+    for (const i of flatten(node, mul(toStart, x))) {
+      const full = pre === '' ? i.id : i.id === '' ? pre : `${pre}.${i.id}`;
+      out.set(full, { id: full, type: i.type as HexType, xform: i.xform });
+    }
+  }
   return out;
 }
 

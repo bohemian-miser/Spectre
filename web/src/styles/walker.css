@@ -411,3 +411,14 @@
   fill: #1b2230;
   pointer-events: none;
 }
+
+.wk__corners {
+  margin: 0.2rem 0 0.4rem;
+  padding-left: 1.1rem;
+  font-size: 0.85rem;
+  color: var(--muted, #6b7280);
+}
+.wk__corners .is-odd {
+  color: #c92a2a;
+  font-weight: 600;
+}

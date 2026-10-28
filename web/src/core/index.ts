@@ -36,4 +36,5 @@ export * from './faultLines';
 export * from './centreMap';
 export * from './pairingSearch';
 export * from './transducer';
+export * from './seam';
 export * from './circuitSides';
