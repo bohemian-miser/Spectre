@@ -16,7 +16,7 @@ import { familyLabel, loadClass, loadIndex, RULE, type Circuit, type CircuitMeta
 import { centroid, radiusOfGyration, type Loop } from './corners/measure';
 import { ComboPicker, type ComboChoice } from './shapes/ComboPicker';
 import { createComboClient } from './shapes/comboCircuits';
-import { align, cut, meanShape, medoid, outline, separation, type Alignment } from './shapes/descriptor';
+import { align, aligned, cut, meanShape, medoid, outline, separation, type Alignment } from './shapes/descriptor';
 import { explorerCircuitHref, parseShapesTarget } from './shapes/explorerLink';
 import { EpicyclesOf, Rebuild, SeparationChart, TermGaps, TermsChart, loopFromTerms } from './shapes/FourierPanel';
 import { createShapesClient, type ShapesResult } from './shapes/shapesClient';
@@ -275,11 +275,18 @@ export default function ShapesPage(props: { forceSync?: boolean }): JSX.Element 
   const singles = members.filter((m) => m.length === 1).flat();
   const multi = members.map((m, g) => ({ m, g })).filter(({ m }) => m.length > 1);
   const selAl = ready && sel && other !== null ? align(ready.terms[selected], ready.terms[other], mirror) : null;
+  // How the selected circuit is turned to face its group's middle member, as its glyph is.
+  const selFacing = useMemo(() => {
+    if (!ready || !groups || selected < 0) return null;
+    const c = centres[groups[selected]];
+    return c === selected ? null : align(ready.terms[c], ready.terms[selected], mirror);
+  }, [ready, groups, centres, selected, mirror]);
   const selExplorer = sel ? explorerHref(base, sel) : null;
   const epicycleLoop = useMemo(() => {
     if (!sel || !groups) return null;
-    return epicycleOf === 'group' ? loopFromTerms(meanTerms[groups[selected]]) : sel.circuit.loop;
-  }, [sel, groups, epicycleOf, meanTerms, selected]);
+    // The group's mean is already turned onto its middle member; the circuit is turned the same way.
+    return epicycleOf === 'group' ? loopFromTerms(meanTerms[groups[selected]]) : { xy: placed(sel.circuit.loop.xy, selFacing), n: sel.circuit.loop.n };
+  }, [sel, groups, epicycleOf, meanTerms, selected, selFacing]);
 
   return (
     <article className="shapes-page">
@@ -439,7 +446,7 @@ export default function ShapesPage(props: { forceSync?: boolean }): JSX.Element 
                 {sel && (
                   <div className="shapes-row">
                     <div className="shapes-panel">
-                      <Overlay a={sel} b={other !== null ? entries[other] : null} al={selAl} />
+                      <Overlay a={sel} b={other !== null ? entries[other] : null} al={selAl} facing={selFacing} />
                       <p className="shapes-note" data-testid="shapes-selected">
                         <b>{label(sel)}</b>, {nf(sel.circuit.length)} tiles, born in a level-{sel.circuit.level} {sel.circuit.type} supertile
                         {sel.added ? '' : `, ${sel.kind} class ${sel.pattern}`}.{' '}
@@ -510,7 +517,7 @@ export default function ShapesPage(props: { forceSync?: boolean }): JSX.Element 
                   <div className="shapes-row">
                     <div className="shapes-panel">
                       <h3>Rebuilt from its terms</h3>
-                      <Rebuild terms={ready.terms[selected]} shape={sel.shape} />
+                      <Rebuild terms={selFacing ? aligned(ready.terms[selected], selFacing) : ready.terms[selected]} shape={placed(sel.shape, selFacing)} />
                     </div>
                     <div className="shapes-panel">
                       <h3>
@@ -648,11 +655,12 @@ function ShapeMap(props: {
   );
 }
 
-function Overlay(props: { a: Entry; b: Entry | null; al: Alignment | null }): JSX.Element {
-  const { a, b, al } = props;
-  const pa = a.shape;
+function Overlay(props: { a: Entry; b: Entry | null; al: Alignment | null; facing: Alignment | null }): JSX.Element {
+  const { a, b, al, facing } = props;
+  // Turned the way its group's glyphs face, and b laid over it turned with it.
+  const pa = placed(a.shape, facing);
   // The start does not move a drawn outline; the turn and mirror do.
-  const pb = b && al ? placed(b.shape, al) : null;
+  const pb = b && al ? placed(placed(b.shape, al), facing) : null;
   const reach = Math.max(reachOf(pa), pb ? reachOf(pb) : 0);
   const size = 320;
   return (
