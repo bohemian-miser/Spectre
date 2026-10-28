@@ -7,10 +7,12 @@
  * the first ancestor inside which the edge is glued. Every such stack, up to
  * `maxDepth` ancestors, is run through `neighbour()`; stacks that settle are
  * grouped by the tile type and edge they land on. Stacks still on the outside
- * at `maxDepth` are counted as unsettled (the edge runs along the outline of
- * every ancestor so far).
+ * at `maxDepth` (the edge runs along the outline of every ancestor so far)
+ * land across a seam: each live supertile that can sit across names a tile
+ * (`core/seam.ts`), and where they all name the same one the stack lands
+ * there.
  */
-import { HEX_TYPES, childType, edgeLabels, neighbour, type HexType, type Link } from '../../core';
+import { HEX_TYPES, across, childType, edgeLabels, neighbour, type HexType, type Link } from '../../core';
 
 export interface Landing {
   readonly type: HexType;
@@ -26,6 +28,10 @@ export interface Landings {
   readonly unsettled: number;
   /** Those stacks themselves. */
   readonly outside: readonly (readonly Link[])[];
+  /** The outside stacks by the tile across the seam, where every supertile across names the same one. */
+  readonly acrossSeam: readonly Landing[];
+  /** Outside stacks where the supertiles across name different tiles, with the tiles they name. */
+  readonly unforced: readonly { readonly tiles: readonly string[]; readonly stacks: readonly (readonly Link[])[] }[];
 }
 
 const parentsOf = (t: HexType): Link[] => {
@@ -56,11 +62,28 @@ export function landings(type: HexType, edge: number, maxDepth: number): Landing
     }
   };
   grow([]);
+  const seam = new Map<string, { type: HexType; edge: number; stacks: Link[][] }>();
+  const unforced = new Map<string, { tiles: string[]; stacks: Link[][] }>();
+  for (const p of outside) {
+    const offers = across({ leaf: type, path: p }, edge);
+    const tiles = [...new Set(offers.map((o) => `${o.address.leaf} ${o.edge}`))].sort();
+    if (tiles.length === 1) {
+      const o = offers[0];
+      const k = `${o.address.leaf}|${o.edge}`;
+      (seam.get(k) ?? seam.set(k, { type: o.address.leaf, edge: o.edge, stacks: [] }).get(k)!).stacks.push(p);
+    } else {
+      const k = tiles.join(',');
+      (unforced.get(k) ?? unforced.set(k, { tiles, stacks: [] }).get(k)!).stacks.push(p);
+    }
+  }
+  const order = (a: Landing, b: Landing): number => b.stacks.length - a.stacks.length || HEX_TYPES.indexOf(a.type) - HEX_TYPES.indexOf(b.type) || a.edge - b.edge;
   const out: Landings = {
     from: { type, edge },
-    landings: [...groups.values()].sort((a, b) => b.stacks.length - a.stacks.length || HEX_TYPES.indexOf(a.type) - HEX_TYPES.indexOf(b.type) || a.edge - b.edge),
+    landings: [...groups.values()].sort(order),
     unsettled: outside.length,
     outside,
+    acrossSeam: [...seam.values()].sort(order),
+    unforced: [...unforced.values()],
   };
   cache.set(key, out);
   return out;

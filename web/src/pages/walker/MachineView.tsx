@@ -1,9 +1,9 @@
 /**
  * The machine, twice. First the pattern as a table: per tile type, its pairs
  * of edges `(a, b)`, the pair in use marked. Then, for one tile type, where
- * each exit lands: one row per tile type and edge across, saying which
- * ancestors decide it, and on hover a drawing of one such ancestor with the
- * two tiles in it.
+ * each exit lands: a table per exit, a row per tile across and the level
+ * whose supertile the edge goes inside (or a seam above them all), with the
+ * ancestor types that send it there; on hover a drawing of one such stack.
  *
  * Edges are named two ways. The position is 0 to 5 round the hexagon,
  * counted from the flag; the class number is what has to match: an edge of
@@ -17,7 +17,7 @@ import { TileGlyph } from '../../components/TileGlyph';
 import { HEX_CENTRE, HEX_OUTLINE, orientationPath, pairingD } from '../../lib/hexBoard';
 import { tileColor } from '../../lib/palette';
 import { sceneOf } from '../transducer/hierarchy';
-import { classLabel, decidingTypes, landings } from './landings';
+import { classLabel, landings } from './landings';
 import type { Pattern } from './walk';
 
 const IDENT: [number, number, number, number, number, number] = [1, 0, 0, 0, 1, 0];
@@ -87,37 +87,50 @@ function StackDrawing({ start, edge, stack }: { start: HexType; edge: number; st
   );
 }
 
-const orList = (xs: readonly string[]): string => (xs.length < 2 ? xs.join('') : `${xs.slice(0, -1).join(', ')} or ${xs[xs.length - 1]}`);
+const Chip = ({ type, not }: { type: HexType; not?: boolean }): JSX.Element => <span className={`wk__chip${not ? ' is-not' : ''}`} style={{ background: tileColor(type) }} title={not ? `not a ${type}` : type}>{type.slice(0, 2)}</span>;
 
-const levelName = (j: number): string => (j === 1 ? 'its parent' : j === 2 ? 'its grandparent' : `its level-${j} ancestor`);
+const orTiles = (xs: readonly string[]): string => xs.map((t) => `a ${t.replace(' ', ', edge ')}`).join(' or ');
 
 /**
- * Which ancestors send an exit to a landing, in words. Stacks are grouped by
- * the level at which the edge first goes inside; within a group only the
- * levels that narrow it down are named (a level where every type that occurs
- * for this exit at all can occur is left out).
+ * One exit's landings as a table: a row per tile landed on and level whose
+ * supertile the edge goes inside, and per ancestor level the types that send
+ * it there. A level where every type the exit meets there does is `any`.
  */
-function whenText(r: { type: HexType | null; deciders: readonly HexType[][] }, all: readonly (readonly HexType[])[]): string {
-  if (!r.type) return `within ${DEPTH} ancestors: the edge stays on the outline of every one, for example in ${chainText(r.deciders[0])}.`;
-  const occurring = (k: number, j: number): Set<HexType> => new Set(all.filter((c) => c.length === k).map((c) => c[j]));
-  const byLength = new Map<number, HexType[][]>();
-  for (const c of r.deciders) (byLength.get(c.length) ?? byLength.set(c.length, []).get(c.length)!).push(c);
-  const parts = [...byLength].sort((a, b) => a[0] - b[0]).map(([k, cs]) => {
-    const named: string[] = [];
-    for (let j = 0; j < k; j++) {
-      const here = new Set(cs.map((c) => c[j]));
-      const all = occurring(k, j);
-      if (here.size === all.size) continue;
-      const missing = [...all].filter((t) => !here.has(t));
-      named.push(here.size > missing.length
-        ? `${levelName(j + 1)} is anything but ${orList(missing.map((t) => `a ${t}`))}`
-        : `${levelName(j + 1)} is ${orList([...here].map((t) => `a ${t}`))}`);
-    }
-    const where = k === 1 ? 'inside its parent' : `first inside its level-${k} ancestor`;
-    return named.length ? `${where}, when ${named.join(' and ')}` : `${where}, whatever the ancestors`;
-  });
-  if (parts.length === 1 && parts[0] === 'inside its parent, whatever the ancestors') return `whatever supertile it is in: the edge is inside its parent.`;
-  return `: the edge is ${parts.join('; or ')}.`;
+function ExitTable({ rows, exit, active, onHover, onPin }: { rows: readonly Row[]; exit: number; active: string | null; onHover: (r: Row | null) => void; onPin: (r: Row) => void }): JSX.Element {
+  const any = Array.from({ length: DEPTH }, (_, j) => new Set(rows.flatMap((r) => r.levels[j])));
+  return (
+    <table className="wk__landtable" data-testid={`wk-exit-${exit}`}>
+      <thead>
+        <tr>
+          <th>Lands on</th>
+          <th>Inside</th>
+          {Array.from({ length: DEPTH }, (_, j) => <th key={j}>{j === 0 ? 'Parent' : j === 1 ? 'Grandparent' : `Level ${j + 1}`}</th>)}
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r) => (
+          <tr
+            key={r.key}
+            className={`wk__landing${active === r.key ? ' is-active' : ''}`}
+            onMouseEnter={() => onHover(r)}
+            onMouseLeave={() => onHover(null)}
+            onClick={() => onPin(r)}
+            data-testid={`wk-land-${exit}-${r.key}`}
+          >
+            <td>{r.type ? <><Swatch type={r.type} /><strong>{r.type}</strong> {r.edge}</> : <strong className="wk__odd">{orTiles(r.tiles ?? [])}</strong>}</td>
+            <td>{insideText(r.inside)}</td>
+            {r.levels.map((ts, j) => (
+              <td key={j}>
+                {ts.length === 0 ? '' : ts.length === any[j].size ? <span className="td__hint">any</span> : ts.length > any[j].size / 2
+                  ? <><span className="td__hint">not </span>{HEX_TYPES.filter((t) => any[j].has(t) && !ts.includes(t)).map((t) => <Chip key={t} type={t} not />)}</>
+                  : ts.map((t) => <Chip key={t} type={t} />)}
+              </td>
+            ))}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
 }
 
 /** "a Theta", "a Gamma in a Delta". */
@@ -133,12 +146,23 @@ export interface MachineViewProps {
 interface Row {
   readonly exit: number;
   readonly key: string;
-  /** null: still on the outside after DEPTH ancestors. */
+  /** The tile landed on; null where the supertiles across name different tiles. */
   readonly type: HexType | null;
   readonly edge: number | null;
-  readonly deciders: readonly HexType[][];
+  /** The level whose supertile the edge goes inside, or 'seam': on the outline of all DEPTH, across a seam above. */
+  readonly inside: number | 'seam';
+  /** Per level 1..DEPTH, the ancestor types of the stacks that land here (empty above `inside`). */
+  readonly levels: readonly (readonly HexType[])[];
+  /** Where the supertiles across name different tiles: those tiles. */
+  readonly tiles?: readonly string[];
   readonly example: readonly Link[];
 }
+
+/** Per level 1..DEPTH, the ancestor types the stacks pass through. */
+const typesPerLevel = (stacks: readonly (readonly Link[])[]): HexType[][] =>
+  Array.from({ length: DEPTH }, (_, j) => HEX_TYPES.filter((t) => stacks.some((s) => s[j]?.parent === t)));
+
+const insideText = (k: number | 'seam'): string => (k === 'seam' ? `across a seam above level ${DEPTH}` : k === 1 ? 'its parent' : k === 2 ? 'its grandparent' : `its level-${k} ancestor`);
 
 export function MachineView({ pattern, byType, current }: MachineViewProps): JSX.Element {
   const [pinned, setPinned] = useState<HexType | null>(null);
@@ -151,8 +175,19 @@ export function MachineView({ pattern, byType, current }: MachineViewProps): JSX
     const out = new Map<number, Row[]>();
     for (const e of [...new Set(pairs.flat())]) {
       const l = landings(shown, e, DEPTH);
-      const rows: Row[] = l.landings.map((x) => ({ exit: e, key: `${x.type}${x.edge}`, type: x.type, edge: x.edge, deciders: decidingTypes(x.stacks), example: x.stacks[0] }));
-      if (l.outside.length) rows.push({ exit: e, key: 'outside', type: null, edge: null, deciders: decidingTypes(l.outside), example: l.outside[0] });
+      const rows: Row[] = [];
+      for (const x of l.landings) {
+        for (let k = 1; k <= DEPTH; k++) {
+          const stacks = x.stacks.filter((st) => st.length === k);
+          if (stacks.length) rows.push({ exit: e, key: `${x.type}${x.edge}@${k}`, type: x.type, edge: x.edge, inside: k, levels: typesPerLevel(stacks), example: stacks[0] });
+        }
+      }
+      for (const x of l.acrossSeam) rows.push({ exit: e, key: `${x.type}${x.edge}@seam`, type: x.type, edge: x.edge, inside: 'seam', levels: typesPerLevel(x.stacks), example: x.stacks[0] });
+      for (const u of l.unforced) rows.push({ exit: e, key: `${u.tiles.join()}@seam`, type: null, edge: null, inside: 'seam', levels: typesPerLevel(u.stacks), tiles: u.tiles, example: u.stacks[0] });
+      // each tile's rows together, in the order the tiles first appear
+      const first = new Map<string, number>();
+      rows.forEach((r, i) => { const t = `${r.type}${r.edge}`; if (!first.has(t)) first.set(t, i); });
+      rows.sort((a, b) => first.get(`${a.type}${a.edge}`)! - first.get(`${b.type}${b.edge}`)!);
       out.set(e, rows);
     }
     return out;
@@ -220,21 +255,13 @@ export function MachineView({ pattern, byType, current }: MachineViewProps): JSX
               {[b, a].map((exit) => (
                 <div key={exit} className="wk__exit">
                   <p className="wk__exit-head">Out through {exit} <span className="td__mono">{classLabel(shown, exit)}</span>:</p>
-                  <ul className="wk__landings" data-testid={`wk-exit-${exit}`}>
-                    {(rowsByExit.get(exit) ?? []).map((r) => (
-                      <li
-                        key={r.key}
-                        className={`wk__landing${detail?.exit === exit && detail.key === r.key ? ' is-active' : ''}`}
-                        onMouseEnter={() => setHoverRow(r)}
-                        onMouseLeave={() => setHoverRow(null)}
-                        onClick={() => setPinRow(r)}
-                        data-testid={`wk-land-${exit}-${r.key}`}
-                      >
-                        {r.type ? <><Swatch type={r.type} /><strong>{r.type}</strong>, edge {r.edge} <span className="td__mono">{classLabel(r.type, r.edge!)}</span></> : <strong>Never lands</strong>}
-                        <span className="wk__when"> {whenText(r, (rowsByExit.get(exit) ?? []).flatMap((x) => x.deciders))}</span>
-                      </li>
-                    ))}
-                  </ul>
+                  <ExitTable
+                    rows={rowsByExit.get(exit) ?? []}
+                    exit={exit}
+                    active={detail?.exit === exit ? detail.key : null}
+                    onHover={setHoverRow}
+                    onPin={setPinRow}
+                  />
                 </div>
               ))}
             </div>
@@ -245,9 +272,9 @@ export function MachineView({ pattern, byType, current }: MachineViewProps): JSX
             <>
               <StackDrawing start={shown} edge={detail.exit} stack={detail.example} />
               <p className="td__hint">
-                {detail.type
+                {detail.inside !== 'seam'
                   ? `The ${shown} (blue) in ${chainText(detail.example.map((l) => l.parent))}. Its edge ${detail.exit} (black) is inside the ${detail.example[detail.example.length - 1].parent}, and the tile across is a ${detail.type} (orange).`
-                  : `The ${shown} (blue) in ${chainText(detail.example.map((l) => l.parent))}: its edge ${detail.exit} (black) is still on the outside.`}
+                  : `The ${shown} (blue) in ${chainText(detail.example.map((l) => l.parent))}: its edge ${detail.exit} (black) is on the outline of all ${DEPTH}. ${detail.type ? `Every supertile that can sit across it holds a ${detail.type} there, entered by edge ${detail.edge}.` : `The supertiles that can sit across it hold ${orTiles(detail.tiles ?? [])} there.`}`}
                 {' '}Lines mark each level's supertile.
               </p>
             </>
