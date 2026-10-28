@@ -30,6 +30,8 @@ export interface Found {
   copies: number;
   /** Where each copy sits: its board and tiles, and how its walk is turned into the canonical word. */
   readonly at: Copy[];
+  /** The copies one level higher (filled when `collect` is asked for them). */
+  readonly next: Copy[];
 }
 
 export interface Copy { readonly board: Board; readonly tiles: Int32Array; readonly offset: number; readonly reversed: boolean }
@@ -43,7 +45,11 @@ export interface Collected {
   readonly longestOpen: number;
 }
 
-export function collect(subset: readonly number[], combo: string, maxLevel: number, maxCircuits = 1000, maxLength = 10000): Collected {
+/**
+ * With `withNext`, each circuit also gets its copies one level above its own,
+ * tracing one more level past the last for the circuits born there.
+ */
+export function collect(subset: readonly number[], combo: string, maxLevel: number, maxCircuits = 1000, maxLength = 10000, withNext = false): Collected {
   const table = pairingTable(patternOf(subset, combo));
   const found = new Map<string, Found>();
   let open = 0;
@@ -65,8 +71,22 @@ export function collect(subset: readonly number[], combo: string, maxLevel: numb
         const key = can.word.join('');
         const copy: Copy = { board: b, tiles: s.tiles, offset: can.offset, reversed: can.reversed };
         const f = found.get(key);
-        if (!f) found.set(key, { key, word, tiles: Array.from(s.tiles, (t) => addressOf(b, t)), level: L, roots: [root], copies: 1, at: [copy] });
+        if (!f) found.set(key, { key, word, tiles: Array.from(s.tiles, (t) => addressOf(b, t)), level: L, roots: [root], copies: 1, at: [copy], next: [] });
         else if (f.level === L) { if (!f.roots.includes(root)) f.roots.push(root); f.copies++; f.at.push(copy); }
+        else if (f.level === L - 1 && withNext) f.next.push(copy);
+      }
+    }
+  }
+  if (withNext) {
+    // One level more, for the circuits born at the last level traced.
+    const last = [...found.values()].filter((f) => f.level === level);
+    const wanted = new Map(last.map((f) => [f.key, f]));
+    for (const root of HEX_TYPES) {
+      const b = board(root, level + 1);
+      for (const s of traceAll(b, table, maxLength)) {
+        if (s.kind === 'open') continue;
+        const can = canonicalWord(Array.from(s.tiles, (t, i) => tileLetter(typeOf(b, t), s.entries[i], s.exits[i])));
+        wanted.get(can.word.join(''))?.next.push({ board: b, tiles: s.tiles, offset: can.offset, reversed: can.reversed });
       }
     }
   }
