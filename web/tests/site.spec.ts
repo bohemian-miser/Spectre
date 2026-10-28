@@ -90,8 +90,8 @@ test('the Corners page fits a circuit’s polygons and draws its spectrum', asyn
 });
 
 test('the Shapes page groups the circuits and finds a circuit’s twins', async ({ page }) => {
-  await page.goto('shapes.html#c=000100000-5');
-  await expect(page.locator('[data-testid="shapes-summary"]')).toHaveText(/^177 circuits in \d+ groups/, { timeout: 90000 });
+  await page.goto('shapes.html#c=000100000-14');
+  await expect(page.locator('[data-testid="shapes-summary"]')).toHaveText(/^327 circuits in \d+ groups/, { timeout: 90000 });
   await expect(page.locator('[data-testid="shapes-selected"]')).toContainText('25,356 tiles');
   // Its nearest shape is the same knobbly triangle in another family or level.
   await expect(page.locator('[data-testid="shapes-nearest"] tbody tr').first()).toContainText('0.00');
@@ -100,7 +100,7 @@ test('the Shapes page groups the circuits and finds a circuit’s twins', async 
 test.describe('on a screen of pixel ratio 2', () => {
   test.use({ deviceScaleFactor: 2 });
   test('the Shapes page’s epicycles keep their size', async ({ page }) => {
-    await page.goto('shapes.html#c=000100000-5');
+    await page.goto('shapes.html#c=000100000-14');
     const epi = page.locator('[data-testid="corners-epicycles"]');
     await expect(epi).toBeVisible({ timeout: 90000 });
     await page.waitForTimeout(500);
@@ -110,12 +110,17 @@ test.describe('on a screen of pixel ratio 2', () => {
   });
 });
 
-test('a circuit opens in the Explorer’s infinite view and the trace closes on it', async ({ page }) => {
-  // 000100000's [147] circuit at level 7: 1,272 tiles whose chords add up to 1,161.34 hexagon edges.
-  await page.goto('corners.html#c=000100000-3');
+test('a circuit opens in the Explorer’s infinite view, the trace closes on it, and it opens back on the Shapes page', async ({ page }) => {
+  test.setTimeout(150000);
+  // 000100000's family [13] circuit born at level 6: 1,272 tiles whose chords add up to 1,161.34 hexagon edges.
+  await page.goto('corners.html#c=000100000-13');
   await expect(page.locator('[data-testid="corners-caption"]')).toContainText('1,272 tiles', { timeout: 20000 });
   const href = await page.locator('[data-testid="corners-explorer"]').getAttribute('href');
   expect(href).toMatch(/md=infinite/);
   await page.goto(href!.replace(/^\/Spectre\//, ''));
   await expect(page.getByText(/traced: 1,161 edges long — closed circuit/)).toBeVisible({ timeout: 60000 });
+  const back = page.locator('[data-testid="inf-shapes"]');
+  await expect(back).toHaveText('1,272 tiles: open on the Shapes page');
+  await back.click();
+  await expect(page.locator('[data-testid="shapes-selected"]')).toContainText('1,272 tiles', { timeout: 90000 });
 });

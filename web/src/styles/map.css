@@ -618,3 +618,10 @@
 .map-centres {
   pointer-events: none;
 }
+
+/* A link in the HUD takes clicks though the HUD lets them through to the canvas. */
+.map-hud a {
+  pointer-events: auto;
+  color: #cfeee6;
+  text-decoration: underline;
+}

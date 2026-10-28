@@ -10,14 +10,14 @@
  * view (`shapes/explorerLink.ts`).
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { TileTypeId } from '../core';
 import { familyLabel, loadClass, loadIndex, RULE, type Circuit, type CircuitMeta, type CornerIndex } from './corners/data';
 import { centroid, radiusOfGyration, type Loop } from './corners/measure';
 import { ComboPicker, type ComboChoice } from './shapes/ComboPicker';
 import { createComboClient } from './shapes/comboCircuits';
 import { align, cut, meanShape, medoid, outline, separation, type Alignment } from './shapes/descriptor';
-import { explorerCircuitHref } from './shapes/explorerLink';
+import { explorerCircuitHref, parseShapesTarget } from './shapes/explorerLink';
 import { EpicyclesOf, Rebuild, SeparationChart, TermGaps, TermsChart, loopFromTerms } from './shapes/FourierPanel';
 import { createShapesClient, type ShapesResult } from './shapes/shapesClient';
 import '../styles/shapes.css';
@@ -174,11 +174,16 @@ export default function ShapesPage(props: { forceSync?: boolean }): JSX.Element 
     setSelectedKey(entries.find((e) => e.key === m?.[1])?.key ?? entries[0].key);
   }, [entries, selectedKey]);
 
-  const add = async (c: ComboChoice) => {
+  /**
+   * Compute a combination's circuits and put them on the page in place of any
+   * it had; select the one of `tiles` tiles when asked, else the biggest.
+   * Resolves to whether there was such a circuit.
+   */
+  const add = async (c: ComboChoice, tiles?: number): Promise<boolean> => {
     setBusy(true);
     setAddNote(null);
+    const rule = c.subset.join('');
     try {
-      const rule = c.subset.join('');
       const circuits = await combos.run({ family: 'hex', subset: c.subset, combo: c.combo, level: c.level });
       const fresh = circuits.map<Entry>((circuit, i) => ({
         key: `${rule}.${c.combo}.L${c.level}-${i}`,
@@ -191,17 +196,40 @@ export default function ShapesPage(props: { forceSync?: boolean }): JSX.Element 
         circuit,
         shape: normalised(circuit),
       }));
-      setAdded((prev) => [...prev.filter((e) => !fresh.some((f) => f.key === e.key)), ...fresh]);
-      if (fresh.length) {
-        setSelectedKey(fresh[fresh.length - 1].key);
-        setAddNote(`Added ${rule} · ${c.combo}: ${fresh.length} circuit${fresh.length === 1 ? '' : 's'}, selected below.`);
-      } else setAddNote(`${rule} · ${c.combo} has no circuit of 400 tiles or more by level ${c.level}; nothing added.`);
+      setAdded((prev) => [...prev.filter((e) => e.rule !== rule || e.combo !== c.combo), ...fresh]);
+      const pick = tiles === undefined ? fresh.reduce<Entry | null>((b, e) => (!b || e.circuit.length > b.circuit.length ? e : b), null) : (fresh.find((e) => e.circuit.length === tiles) ?? null);
+      const count = `${fresh.length} circuit${fresh.length === 1 ? '' : 's'} born by level ${c.level}`;
+      if (pick) setSelectedKey(pick.key);
+      if (tiles !== undefined) setAddNote(pick ? `${rule} · ${c.combo}: ${count}; its ${nf(tiles)}-tile circuit is selected.` : `${rule} · ${c.combo}: ${count}, none of ${nf(tiles)} tiles.`);
+      else setAddNote(fresh.length ? `Added ${rule} · ${c.combo}: ${count}; the biggest is selected.` : `${rule} · ${c.combo} has no circuit by level ${c.level}; nothing added.`);
+      return pick !== null;
     } catch (e) {
-      setAddNote(`${c.subset.join('')} · ${c.combo} could not be computed (${e instanceof Error ? e.message : String(e)}).`);
+      setAddNote(`${rule} · ${c.combo} could not be computed (${e instanceof Error ? e.message : String(e)}).`);
+      return false;
     } finally {
       setBusy(false);
     }
   };
+
+  // A circuit named by the Explorer (#t=rule.combo.tiles): one of the stored
+  // circuits when it is there, else its combination computed to level 8, then 9.
+  const target = useMemo(() => parseShapesTarget(window.location.hash), []);
+  const targetDone = useRef(false);
+  useEffect(() => {
+    if (!target || !atlas || targetDone.current) return;
+    targetDone.current = true;
+    const hit = atlas.find((e) => e.rule === target.rule && e.combo === target.combo && e.circuit.length === target.tiles);
+    if (hit) {
+      setSelectedKey(hit.key);
+      return;
+    }
+    void (async () => {
+      const subset = [...target.rule].map(Number);
+      if (!(await add({ subset, combo: target.combo, level: 8 }, target.tiles))) await add({ subset, combo: target.combo, level: 9 }, target.tiles);
+    })();
+    // `add` is recreated each render; the target is handled once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [target, atlas]);
 
   const n = entries?.length ?? 0;
   const ready = result && result.terms.length === n ? result : null;
@@ -269,8 +297,8 @@ export default function ShapesPage(props: { forceSync?: boolean }): JSX.Element 
       <section aria-labelledby="shapes-add-h">
         <h2 id="shapes-add-h">Circuits</h2>
         <p className="shapes-note">
-          A combination’s circuits are computed here: the renormalisation to the level chosen, then the biggest circuit of each of its four biggest families at its
-          last three generations, 400 tiles or more. Level 8 takes a few seconds.
+          A combination’s circuits are computed here: the renormalisation to the level chosen, then every distinct circuit born by that level, in every family
+          and generation. Level 8 takes a few seconds, level 9 about half a minute. A circuit traced in the Explorer opens here from the Explorer’s readout.
         </p>
         <ComboPicker busy={busy} onAdd={add} />
         {addNote && (
@@ -341,166 +369,174 @@ export default function ShapesPage(props: { forceSync?: boolean }): JSX.Element 
 
       {ready && entries && groups && shown && (
         <>
-          <section aria-labelledby="shapes-map-h">
-            <h2 id="shapes-map-h">Map</h2>
-            <p className="shapes-note">
-              Circuits placed so their distances on the page match their gaps as nearly as two dimensions allow (classical multidimensional scaling); each is
-              drawn turned to face its group’s middle member. The eight largest groups are coloured; circuits added here are ringed. Click one to select it.
-            </p>
-            <ShapeMap entries={entries} shown={shown} layout={ready.layout} groups={groups} selected={selected} onPick={(i) => setSelectedKey(entries[i].key)} />
-          </section>
+          <div className="shapes-split">
+            <div className="shapes-browse">
+              <section aria-labelledby="shapes-map-h">
+                <h2 id="shapes-map-h">Map</h2>
+                <p className="shapes-note">
+                  Circuits placed so their distances on the page match their gaps as nearly as two dimensions allow (classical multidimensional scaling); each is
+                  drawn turned to face its group’s middle member. The eight largest groups are coloured; circuits added here are ringed. Click one to select it.
+                </p>
+                <ShapeMap entries={entries} shown={shown} layout={ready.layout} groups={groups} selected={selected} onPick={(i) => setSelectedKey(entries[i].key)} />
+              </section>
 
-          <section aria-labelledby="shapes-selected-h">
-            <h2 id="shapes-selected-h">Nearest shapes</h2>
-            {sel && (
-              <div className="shapes-row">
-                <div className="shapes-panel">
-                  <Overlay a={sel} b={other !== null ? entries[other] : null} al={selAl} />
-                  <p className="shapes-note" data-testid="shapes-selected">
-                    <b>{label(sel)}</b>, {nf(sel.circuit.length)} tiles, born in a level-{sel.circuit.level} {sel.circuit.type} supertile
-                    {sel.added ? '' : `, ${sel.kind} class ${sel.pattern}`}.{' '}
-                    {selExplorer && (
-                      <>
-                        <a href={selExplorer} data-testid="shapes-explorer">
-                          Open in the Explorer
-                        </a>{' '}
-                        (infinite view, tracing it).{' '}
-                      </>
-                    )}
-                    {!sel.added && <a href={`${base}corners.html#c=${sel.key}`}>Open on the Corners page</a>}
-                    {other !== null && (
-                      <>
-                        {' '}
-                        Laid over it: {label(entries[other])}, gap {ready.gaps[selected * n + other].toFixed(3)}.
-                      </>
-                    )}
-                  </p>
-                </div>
-                <div className="shapes-tablewrap">
-                  <table className="shapes-table" data-testid="shapes-nearest">
-                    <thead>
-                      <tr>
-                        <th>circuit</th>
-                        <th>tiles</th>
-                        <th>gap</th>
-                        <th>mirrored</th>
-                        <th>group</th>
-                        <th />
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {nearest.map((j) => {
-                        const al = align(ready.terms[selected], ready.terms[j], mirror);
-                        const href = explorerHref(base, entries[j]);
-                        return (
-                          <tr key={j} className={j === other ? 'is-on' : undefined} onClick={() => setCompareKey(entries[j].key)} onDoubleClick={() => setSelectedKey(entries[j].key)}>
-                            <td>
-                              <Glyph pts={shown[j]} size={26} colour={colourOf(groups[j])} label={label(entries[j])} /> {label(entries[j])}
-                            </td>
-                            <td>{nf(entries[j].circuit.length)}</td>
-                            <td>{ready.gaps[selected * n + j].toFixed(3)}</td>
-                            <td>{al.mirror ? 'yes' : ''}</td>
-                            <td>{groups[j] === groups[selected] ? 'same' : groups[j] + 1}</td>
-                            <td>{href && <a href={href} onClick={(e) => e.stopPropagation()}>Explorer</a>}</td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                  <p className="shapes-note">Click a row to lay it over the selected circuit and compare their terms below; double-click to select it.</p>
-                </div>
-              </div>
-            )}
-          </section>
 
-          {sel && (
-            <section aria-labelledby="shapes-fourier-h">
-              <h2 id="shapes-fourier-h">Fourier terms</h2>
-              <p className="shapes-note">
-                The selected circuit’s terms c<sub>f</sub>, f turns per lap, turned and restarted so the circle term and the largest other term are real and
-                positive, which makes phases comparable between circuits. Sizes are in radii of gyration and their squares add to 1. The harmonics a third of a turn
-                allows (f = 1 mod 3) are in the accent colour; a three-fold circuit has no others.
-              </p>
-              <TermsChart terms={ready.terms[selected]} testId="shapes-terms-chart" />
-              <div className="shapes-row">
-                <div className="shapes-panel">
-                  <h3>Rebuilt from its terms</h3>
-                  <Rebuild terms={ready.terms[selected]} shape={sel.shape} />
-                </div>
-                <div className="shapes-panel">
-                  <h3>
-                    Epicycles of{' '}
-                    <select value={epicycleOf} onChange={(e) => setEpicycleOf(e.target.value as 'circuit' | 'group')} data-testid="shapes-epicycles-of">
-                      <option value="circuit">this circuit</option>
-                      <option value="group">its group’s mean shape</option>
-                    </select>
-                  </h3>
-                  {epicycleLoop && <EpicyclesOf key={`${selectedKey}/${epicycleOf}/${F}`} loop={epicycleLoop} />}
-                </div>
-              </div>
-              {other !== null && selAl && (
-                <>
-                  <h3>
-                    Term by term against {label(entries[other])}
-                    {selAl.mirror ? ' (mirrored)' : ''}
-                  </h3>
-                  <TermGaps a={ready.terms[selected]} b={ready.terms[other]} al={selAl} />
-                </>
-              )}
-            </section>
-          )}
-
-          <section aria-labelledby="shapes-groups-h">
-            <h2 id="shapes-groups-h">Groups</h2>
-            <p className="shapes-note">
-              Each group’s mean shape (its members’ terms averaged after turning each onto the middle member) and its members. The first chart shows how many
-              groups each threshold gives; flat stretches are thresholds the grouping does not depend on. The second shows which terms tell the groups apart: for
-              each harmonic, how much its size varies between groups of two or more against within them, with the five strongest labelled.
-            </p>
-            <GroupCount counts={counts} threshold={threshold} />
-            {scores && <SeparationChart scores={scores} F={F} />}
-            <div className="shapes-groups" data-testid="shapes-groups">
-              {multi.map(({ m, g }) => (
-                <div key={g} className={`shapes-group${selected >= 0 && groups[selected] === g ? ' is-on' : ''}`}>
-                  <div className="shapes-group-head">
-                    <Glyph pts={means[g]} size={92} colour={colourOf(g)} width={1.6} label={`Mean shape of group ${g + 1}`} />
-                    <div>
-                      <b>
-                        <i style={{ background: colourOf(g) }} />
-                        Group {g + 1}
-                      </b>
-                      <span className="shapes-note">{m.length} circuits</span>
-                      <span className="shapes-note">{familiesOf(m, entries)}</span>
+              <section aria-labelledby="shapes-groups-h">
+                <h2 id="shapes-groups-h">Groups</h2>
+                <p className="shapes-note">
+                  Each group’s mean shape (its members’ terms averaged after turning each onto the middle member) and its members. The first chart shows how many
+                  groups each threshold gives; flat stretches are thresholds the grouping does not depend on. The second shows which terms tell the groups apart: for
+                  each harmonic, how much its size varies between groups of two or more against within them, with the five strongest labelled.
+                </p>
+                <GroupCount counts={counts} threshold={threshold} />
+                {scores && <SeparationChart scores={scores} F={F} />}
+                <div className="shapes-groups" data-testid="shapes-groups">
+                  {multi.map(({ m, g }) => (
+                    <div key={g} className={`shapes-group${selected >= 0 && groups[selected] === g ? ' is-on' : ''}`}>
+                      <div className="shapes-group-head">
+                        <Glyph pts={means[g]} size={92} colour={colourOf(g)} width={1.6} label={`Mean shape of group ${g + 1}`} />
+                        <div>
+                          <b>
+                            <i style={{ background: colourOf(g) }} />
+                            Group {g + 1}
+                          </b>
+                          <span className="shapes-note">{m.length} circuits</span>
+                          <span className="shapes-note">{familiesOf(m, entries)}</span>
+                        </div>
+                      </div>
+                      <div className="shapes-members">
+                        {m.map((i) => (
+                          <button key={i} type="button" title={`${label(entries[i])} · ${nf(entries[i].circuit.length)} tiles`} onClick={() => setSelectedKey(entries[i].key)} aria-pressed={i === selected}>
+                            <Glyph pts={shown[i]} size={34} label={label(entries[i])} />
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                  <div className="shapes-members">
-                    {m.map((i) => (
-                      <button key={i} type="button" title={`${label(entries[i])} · ${nf(entries[i].circuit.length)} tiles`} onClick={() => setSelectedKey(entries[i].key)} aria-pressed={i === selected}>
-                        <Glyph pts={shown[i]} size={34} label={label(entries[i])} />
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ))}
-              {singles.length > 0 && (
-                <div className="shapes-group">
-                  <div className="shapes-group-head">
-                    <div>
-                      <b>Alone</b>
-                      <span className="shapes-note">{singles.length} circuits with no other within the threshold</span>
+                  ))}
+                  {singles.length > 0 && (
+                    <div className="shapes-group">
+                      <div className="shapes-group-head">
+                        <div>
+                          <b>Alone</b>
+                          <span className="shapes-note">{singles.length} circuits with no other within the threshold</span>
+                        </div>
+                      </div>
+                      <div className="shapes-members">
+                        {singles.map((i) => (
+                          <button key={i} type="button" title={`${label(entries[i])} · ${nf(entries[i].circuit.length)} tiles`} onClick={() => setSelectedKey(entries[i].key)} aria-pressed={i === selected}>
+                            <Glyph pts={shown[i]} size={34} label={label(entries[i])} />
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                  <div className="shapes-members">
-                    {singles.map((i) => (
-                      <button key={i} type="button" title={`${label(entries[i])} · ${nf(entries[i].circuit.length)} tiles`} onClick={() => setSelectedKey(entries[i].key)} aria-pressed={i === selected}>
-                        <Glyph pts={shown[i]} size={34} label={label(entries[i])} />
-                      </button>
-                    ))}
-                  </div>
+                  )}
                 </div>
-              )}
+              </section>
             </div>
-          </section>
+            <aside className="shapes-focus" aria-label="The selected circuit" data-testid="shapes-focus">
+              <section aria-labelledby="shapes-selected-h">
+                <h2 id="shapes-selected-h">Selected circuit</h2>
+                {sel && (
+                  <div className="shapes-row">
+                    <div className="shapes-panel">
+                      <Overlay a={sel} b={other !== null ? entries[other] : null} al={selAl} />
+                      <p className="shapes-note" data-testid="shapes-selected">
+                        <b>{label(sel)}</b>, {nf(sel.circuit.length)} tiles, born in a level-{sel.circuit.level} {sel.circuit.type} supertile
+                        {sel.added ? '' : `, ${sel.kind} class ${sel.pattern}`}.{' '}
+                        {selExplorer && (
+                          <>
+                            <a href={selExplorer} data-testid="shapes-explorer">
+                              Open in the Explorer
+                            </a>{' '}
+                            (infinite view, tracing it).{' '}
+                          </>
+                        )}
+                        {!sel.added && <a href={`${base}corners.html#c=${sel.key}`}>Open on the Corners page</a>}
+                        {other !== null && (
+                          <>
+                            {' '}
+                            Laid over it: {label(entries[other])}, gap {ready.gaps[selected * n + other].toFixed(3)}.
+                          </>
+                        )}
+                      </p>
+                    </div>
+                    <div className="shapes-tablewrap">
+                      <table className="shapes-table" data-testid="shapes-nearest">
+                        <thead>
+                          <tr>
+                            <th>circuit</th>
+                            <th>tiles</th>
+                            <th>gap</th>
+                            <th>mirrored</th>
+                            <th>group</th>
+                            <th />
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {nearest.map((j) => {
+                            const al = align(ready.terms[selected], ready.terms[j], mirror);
+                            const href = explorerHref(base, entries[j]);
+                            return (
+                              <tr key={j} className={j === other ? 'is-on' : undefined} onClick={() => setCompareKey(entries[j].key)} onDoubleClick={() => setSelectedKey(entries[j].key)}>
+                                <td>
+                                  <Glyph pts={shown[j]} size={26} colour={colourOf(groups[j])} label={label(entries[j])} /> {label(entries[j])}
+                                </td>
+                                <td>{nf(entries[j].circuit.length)}</td>
+                                <td>{ready.gaps[selected * n + j].toFixed(3)}</td>
+                                <td>{al.mirror ? 'yes' : ''}</td>
+                                <td>{groups[j] === groups[selected] ? 'same' : groups[j] + 1}</td>
+                                <td>{href && <a href={href} onClick={(e) => e.stopPropagation()}>Explorer</a>}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                      <p className="shapes-note">Click a row to lay it over the selected circuit and compare their terms below; double-click to select it.</p>
+                    </div>
+                  </div>
+                )}
+              </section>
+
+
+              {sel && (
+                <section aria-labelledby="shapes-fourier-h">
+                  <h2 id="shapes-fourier-h">Fourier terms</h2>
+                  <p className="shapes-note">
+                    The selected circuit’s terms c<sub>f</sub>, f turns per lap, turned and restarted so the circle term and the largest other term are real and
+                    positive, which makes phases comparable between circuits. Sizes are in radii of gyration and their squares add to 1. The harmonics a third of a turn
+                    allows (f = 1 mod 3) are in the accent colour; a three-fold circuit has no others.
+                  </p>
+                  <TermsChart terms={ready.terms[selected]} testId="shapes-terms-chart" />
+                  <div className="shapes-row">
+                    <div className="shapes-panel">
+                      <h3>Rebuilt from its terms</h3>
+                      <Rebuild terms={ready.terms[selected]} shape={sel.shape} />
+                    </div>
+                    <div className="shapes-panel">
+                      <h3>
+                        Epicycles of{' '}
+                        <select value={epicycleOf} onChange={(e) => setEpicycleOf(e.target.value as 'circuit' | 'group')} data-testid="shapes-epicycles-of">
+                          <option value="circuit">this circuit</option>
+                          <option value="group">its group’s mean shape</option>
+                        </select>
+                      </h3>
+                      {epicycleLoop && <EpicyclesOf key={`${selectedKey}/${epicycleOf}/${F}`} loop={epicycleLoop} />}
+                    </div>
+                  </div>
+                  {other !== null && selAl && (
+                    <>
+                      <h3>
+                        Term by term against {label(entries[other])}
+                        {selAl.mirror ? ' (mirrored)' : ''}
+                      </h3>
+                      <TermGaps a={ready.terms[selected]} b={ready.terms[other]} al={selAl} />
+                    </>
+                  )}
+                </section>
+              )}
+
+            </aside>
+          </div>
         </>
       )}
       {index && <p className="shapes-note">Corners page circuits: rule {index.rule} on the hexagons, tile positions from {index.generated}.</p>}
@@ -512,7 +548,8 @@ function familiesOf(m: readonly number[], entries: readonly Entry[]): string {
   const fams = new Map<string, number>();
   const combos = new Set<string>();
   for (const i of m) {
-    const f = familyLabel(entries[i].circuit);
+    // Each circuit's own family; the selected circuit's note lists the others it is born in.
+    const f = `[${entries[i].circuit.family}]`;
     fams.set(f, (fams.get(f) ?? 0) + 1);
     combos.add(entries[i].combo);
   }

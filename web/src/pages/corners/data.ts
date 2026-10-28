@@ -1,7 +1,7 @@
 /**
- * The Corners page's circuits: per class of a rule, the biggest circuit of
- * each family at its last few generations, as tile positions sampled evenly
- * by tile count. Written by `web/circuit-classes/corner-paths.ts` to
+ * The Corners and Shapes pages' circuits: per class of a rule, every
+ * distinct circuit born up to the level stored, as tile positions sampled
+ * evenly by tile count. Written by `web/circuit-classes/corner-paths.ts` to
  * `public/data/corners/<family>-<rule>/` (an index plus one file per class).
  */
 

@@ -1,7 +1,7 @@
 /**
- * The Corners page's data: for each class of a rule (from the circuit atlas),
- * the biggest circuit of each family at each of its last few generations, as
- * tile positions sampled evenly by tile count.
+ * The Corners and Shapes pages' data: for each class of a rule (from the
+ * circuit atlas), every distinct circuit born up to the level given
+ * (`distinctCircuits`), as tile positions sampled evenly by tile count.
  *
  * A circuit of L tiles is sampled at tiles round(j L / N), j = 0..N-1, with
  * N = 4320 (or every tile when L is smaller). 4320 = 2^5 3^3 5 divides by 2,
@@ -20,12 +20,9 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { TileFamilyId } from '../src/core';
-import { CircuitShapes, familyCircuits, mergeTwins, tileLoop } from '../src/pages/shapes/circuitShapes';
+import { CircuitShapes, distinctCircuits } from '../src/pages/shapes/circuitShapes';
 
 export const SAMPLES = 4320;
-const MIN_LENGTH = 400;
-const FAMILIES = 4;
-const GENERATIONS = 3;
 
 interface AtlasClassLite {
   readonly representative: string;
@@ -36,7 +33,7 @@ interface AtlasClassLite {
 
 export interface CornerCircuit {
   readonly family: string;
-  /** Other families whose biggest circuit at this level is the same shape. */
+  /** Other families with a circuit of the same length and radius of gyration. */
   readonly aliases: readonly string[];
   readonly level: number;
   readonly type: string;
@@ -72,15 +69,11 @@ function encode(xy: Float64Array, n: number): { box: [number, number, number]; p
 }
 
 function classCircuits(family: TileFamilyId, subset: readonly number[], combo: string, maxLevel: number): CornerCircuit[] {
-  const cs = new CircuitShapes(family, subset, [...combo].map((ch) => parseInt(ch, 36)), maxLevel, MIN_LENGTH);
-  const all = familyCircuits(cs, FAMILIES, GENERATIONS).map((f) => {
-    const loop = tileLoop(cs.shape(f.circuit, 0), SAMPLES);
-    return { ...f, loop, rg: loop.rg };
-  });
-  return mergeTwins(all).map((f) => {
+  const cs = new CircuitShapes(family, subset, [...combo].map((ch) => parseInt(ch, 36)), maxLevel, 1, true);
+  return distinctCircuits(cs, SAMPLES).map((f) => {
     const { path, chord } = cs.firstTile(f.circuit);
     const first = { path: path.map((p) => [p.type, p.pos] as [string, number]), chord: chord.flatMap((p) => [+p.x.toFixed(6), +p.y.toFixed(6)]) };
-    return { family: f.family, aliases: f.aliases, level: f.level, type: f.type, length: f.length, rg: f.rg, samples: f.loop.n, ...encode(f.loop.xy, f.loop.n), first };
+    return { family: f.family, aliases: f.aliases, level: f.level, type: f.type, length: f.length, rg: f.loop.rg, samples: f.loop.n, ...encode(f.loop.xy, f.loop.n), first };
   });
 }
 

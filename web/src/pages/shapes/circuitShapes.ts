@@ -63,11 +63,16 @@ export interface BornCircuit {
   readonly steps: readonly number[];
 }
 
+/** A born circuit's family: the child slots it runs through, sorted. */
+export const familyOf = (c: BornCircuit): string => [...new Set(c.slots)].sort((x, y) => x - y).join('');
+
 const key = (p: Pt) => `${Math.round(p.x * 64)},${Math.round(p.y * 64)}`;
 
 export class CircuitShapes {
   readonly levels: Record<string, Layer>[] = [];
   readonly born: BornCircuit[] = [];
+  /** With `onePerLength`: where each family, level and length sits in `born`. */
+  private readonly bornAt = new Map<string, number>();
 
   constructor(
     readonly family: TileFamilyId,
@@ -76,6 +81,8 @@ export class CircuitShapes {
     readonly maxLevel: number,
     /** Keep the walks of circuits born at least this long. */
     keepAtLeast = 50,
+    /** Keep one walk per family, level and length (a Delta's when there is one) rather than one per supertile type. */
+    readonly onePerLength = false,
   ) {
     const sel = new Set(subset);
     const options = ruleOptions(family, subset);
@@ -201,7 +208,14 @@ export class CircuitShapes {
               const pos = meta.children[ownerArr[w]].pos;
               if (!slots.includes(pos)) slots.push(pos);
             }
-            this.born.push({ level: n, type: t as TileTypeId, length: len, slots, steps: walk });
+            const c: BornCircuit = { level: n, type: t as TileTypeId, length: len, slots, steps: walk };
+            if (!onePerLength) this.born.push(c);
+            else {
+              const at = `${familyOf(c)}/${n}/${len}`;
+              const i = this.bornAt.get(at);
+              if (i === undefined) this.bornAt.set(at, this.born.push(c) - 1);
+              else if (t === 'Delta') this.born[i] = c;
+            }
           }
         }
         next[t] = {
@@ -309,61 +323,6 @@ export class CircuitShapes {
 }
 
 
-export interface FamilyCircuit {
-  /** Child slots it runs through, sorted: the family. */
-  readonly family: string;
-  readonly level: number;
-  readonly type: TileTypeId;
-  readonly length: number;
-  readonly circuit: BornCircuit;
-}
-
-/**
- * The biggest circuit of each family (set of child slots) at each level, the
- * Delta on a tie, for the `families` biggest families and their last
- * `generations` levels.
- */
-export function familyCircuits(cs: CircuitShapes, families = 4, generations = 3): FamilyCircuit[] {
-  const best = new Map<string, Map<number, BornCircuit>>();
-  for (const c of cs.born) {
-    const key = [...new Set(c.slots)].sort((x, y) => x - y).join('');
-    const byLevel = best.get(key) ?? best.set(key, new Map()).get(key)!;
-    const m = byLevel.get(c.level);
-    if (!m || c.length > m.length || (c.length === m.length && c.type === 'Delta' && m.type !== 'Delta')) byLevel.set(c.level, c);
-  }
-  return [...best]
-    .map(([slots, byLevel]) => ({ slots, byLevel, top: Math.max(...[...byLevel.values()].map((c) => c.length)) }))
-    .sort((a, b) => b.top - a.top)
-    .slice(0, families)
-    .flatMap((f) =>
-      [...f.byLevel.keys()]
-        .sort((a, b) => a - b)
-        .slice(-generations)
-        .map((level) => {
-          const c = f.byLevel.get(level)!;
-          return { family: f.slots, level, type: c.type as TileTypeId, length: c.length, circuit: c };
-        }),
-    );
-}
-
-/**
- * Keep each circuit once: the same level, length and radius of gyration is
- * the same circuit, biggest in several families (or born in several
- * supertile types); the others' families become its aliases.
- */
-export function mergeTwins<T extends { readonly family: string; readonly level: number; readonly length: number; readonly rg: number }>(
-  list: readonly T[],
-): (T & { readonly aliases: string[] })[] {
-  const out: (T & { aliases: string[] })[] = [];
-  for (const c of list) {
-    const twin = out.find((o) => o.level === c.level && o.length === c.length && Math.abs(o.rg - c.rg) < 1e-6 * c.rg);
-    if (twin) {
-      if (twin.family !== c.family && !twin.aliases.includes(c.family)) twin.aliases.push(c.family);
-    } else out.push({ ...c, aliases: [] });
-  }
-  return out;
-}
-
 export interface TileLoop {
   /** Tile positions (chord midpoints), anticlockwise, `samples` of them evenly spaced by tile count. */
   readonly xy: Float64Array;
@@ -407,4 +366,40 @@ export function tileLoop(crossings: readonly Pt[], samples: number): TileLoop {
     xy[2 * j + 1] = my[t];
   }
   return { xy, n, rg: Math.sqrt(s / L) };
+}
+
+export interface DistinctCircuit {
+  /** Child slots it runs through, sorted. */
+  readonly family: string;
+  /** Other families with a circuit of the same length and radius of gyration. */
+  readonly aliases: string[];
+  readonly level: number;
+  readonly type: TileTypeId;
+  readonly length: number;
+  readonly circuit: BornCircuit;
+  readonly loop: TileLoop;
+}
+
+/**
+ * Every distinct circuit born up to the renormalisation's last level: each
+ * family's circuits of each length at each level, as tile loops, with the same
+ * length and radius of gyration kept once at its lowest level (the others'
+ * families become its aliases). Ordered by family, the family with the
+ * biggest circuit first, then by level and length.
+ */
+export function distinctCircuits(cs: CircuitShapes, samples: number): DistinctCircuit[] {
+  const top = new Map<string, number>();
+  for (const c of cs.born) top.set(familyOf(c), Math.max(top.get(familyOf(c)) ?? 0, c.length));
+  const order = [...cs.born].sort((a, b) => a.level - b.level || b.length - a.length);
+  const out: DistinctCircuit[] = [];
+  for (const c of order) {
+    const loop = tileLoop(cs.shape(c, 0), samples);
+    const family = familyOf(c);
+    const twin = out.find((o) => o.length === c.length && Math.abs(o.loop.rg - loop.rg) <= 1e-6 * loop.rg);
+    if (twin) {
+      if (twin.family !== family && !twin.aliases.includes(family)) twin.aliases.push(family);
+    } else out.push({ family, aliases: [], level: c.level, type: c.type, length: c.length, circuit: c, loop });
+  }
+  const rank = (f: string) => -(top.get(f) ?? 0);
+  return out.sort((a, b) => rank(a.family) - rank(b.family) || a.family.localeCompare(b.family) || a.level - b.level || b.length - a.length);
 }

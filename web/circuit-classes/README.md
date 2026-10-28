@@ -237,9 +237,11 @@ drawn as a chord. Drawn to level 0 a circuit has exactly one point per tile.
 
 `chord-fit.ts` cuts a circuit into k runs of equal tile count from every
 start tile and sums each tile's distance to its run's chord.
-`corner-paths.ts` writes the Corners page's data: for every class of a rule,
-the biggest circuit of each family at its last three generations, as 4320
-tile positions evenly spaced by tile count, with the tile it enters first
+`corner-paths.ts` writes the Corners and Shapes pages' data: for every class
+of a rule, every distinct circuit born up to the level given (one per length
+and radius of gyration, at its lowest level, with the other families it is
+born in as aliases), as up to 4320 tile positions evenly spaced by tile
+count, with the tile it enters first
 (the slots down from its supertile and its chord there, which the Explorer
 link uses):
 

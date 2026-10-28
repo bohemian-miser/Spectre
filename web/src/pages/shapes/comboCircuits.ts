@@ -1,15 +1,15 @@
 /**
  * The circuits of any combination of a hexagon rule, computed here rather
  * than loaded: the renormalisation (`circuitShapes.ts`) up to a level, then
- * the biggest circuit of each family at its last three generations, as tile
- * loops with their first tiles (for the Explorer link). Runs in a worker
+ * every distinct circuit born by then, as tile loops with their first tiles
+ * (for the Explorer link). Runs in a worker
  * (`combo.worker.ts`) with a main-thread fallback.
  */
 
 import type { TileFamilyId } from '../../core';
 import { SAMPLES, type CircuitMeta } from '../corners/data';
 import type { Loop } from '../corners/measure';
-import { CircuitShapes, familyCircuits, mergeTwins, tileLoop } from './circuitShapes';
+import { CircuitShapes, distinctCircuits } from './circuitShapes';
 
 export interface ComboJob {
   readonly family: TileFamilyId;
@@ -20,16 +20,9 @@ export interface ComboJob {
 
 export type ComboCircuit = CircuitMeta & { readonly loop: Loop };
 
-/** Circuits shorter than this are left out, as in the stored data. */
-const MIN_LENGTH = 400;
-
 export function comboCircuits(job: ComboJob): ComboCircuit[] {
-  const cs = new CircuitShapes(job.family, job.subset, [...job.combo].map((ch) => parseInt(ch, 36)), job.level, MIN_LENGTH);
-  const all = familyCircuits(cs).map((f) => {
-    const loop = tileLoop(cs.shape(f.circuit, 0), SAMPLES);
-    return { ...f, loop, rg: loop.rg };
-  });
-  return mergeTwins(all).map(({ loop, ...f }) => {
+  const cs = new CircuitShapes(job.family, job.subset, [...job.combo].map((ch) => parseInt(ch, 36)), job.level, 1, true);
+  return distinctCircuits(cs, SAMPLES).map(({ loop, ...f }) => {
     const { path, chord } = cs.firstTile(f.circuit);
     return {
       family: f.family,
@@ -37,7 +30,7 @@ export function comboCircuits(job: ComboJob): ComboCircuit[] {
       level: f.level,
       type: f.type,
       length: f.length,
-      rg: f.rg,
+      rg: loop.rg,
       samples: loop.n,
       box: [0, 0, 1] as const,
       first: { path: path.map((p) => [p.type, p.pos] as [string, number]), chord: chord.flatMap((p) => [p.x, p.y]) },
