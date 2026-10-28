@@ -7,7 +7,7 @@
  */
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 
-import { addressFromId, idOf, type HexType } from '../../core';
+import { addressFromId, idOf, mul, type Affine, type HexType } from '../../core';
 import { HexBoard, type BoardStep, type BoardTile } from '../../components/HexBoard';
 import { HEX_OUTLINE, placeNear, placeWorld, strandPathD, supertileEdges, tileCentre, tilePoints, tilesAround, type PlacedTile } from '../../lib/hexBoard';
 import { tileColor } from '../../lib/palette';
@@ -26,7 +26,7 @@ const RUN_CAP = 20000;
 const FAINT_CAP = 3000;
 
 /** Where a stack puts the strand's tiles, placed relative to the start tile. */
-function sceneOf(pw: PossibleWalk, w: World, steps: number) {
+function sceneOf(pw: PossibleWalk, w: World, steps: number, frame?: Affine) {
   const wk = pw.walker;
   const { at, levels } = replay(wk, w, steps);
   // a stack across a seam is shown closed in the fewest parents that bring its sides together
@@ -36,7 +36,19 @@ function sceneOf(pw: PossibleWalk, w: World, steps: number) {
   const ids = at.map(idOf);
   const world = { root, level, startId: idOf({ leaf: wk.start, path: chain }) };
   const placed = level <= MAX_LEVEL ? placeWorld(world) : placeNear(world, ids);
-  return { placed, ids, levels, root, level };
+  return { placed: frame ? framed(placed, frame) : placed, ids, levels, root, level };
+}
+
+/** The tiles turned by `frame`, the start tile's placement on the board. The last few are cached. */
+const framedCache = new Map<Map<string, PlacedTile>, { frame: Affine; out: Map<string, PlacedTile> }>();
+function framed(placed: Map<string, PlacedTile>, frame: Affine): Map<string, PlacedTile> {
+  const hit = framedCache.get(placed);
+  if (hit && hit.frame === frame) return hit.out;
+  const out = new Map<string, PlacedTile>();
+  for (const [id, t] of placed) out.set(id, { ...t, xform: mul(frame, t.xform) });
+  framedCache.set(placed, { frame, out });
+  while (framedCache.size > 4) framedCache.delete(framedCache.keys().next().value!);
+  return out;
 }
 
 /**
@@ -44,11 +56,11 @@ function sceneOf(pw: PossibleWalk, w: World, steps: number) {
  * tiles in their colours and the strand through their centres, to the
  * node's fork or to where its branch ends.
  */
-function CircuitPeek({ pw, subset, id, landing, text, x, y }: { pw: PossibleWalk; subset: readonly number[]; id: number; landing?: string; text?: string; x: number; y: number }): JSX.Element | null {
+function CircuitPeek({ pw, subset, frame, id, landing, text, x, y }: { pw: PossibleWalk; subset: readonly number[]; frame?: Affine; id: number; landing?: string; text?: string; x: number; y: number }): JSX.Element | null {
   const drawn = useMemo(() => {
     // a landing not yet taken is taken here, on the side, without adding it to the tree
     const st = landing ? stageAfter(pw, id, landing, RUN_CAP) : stageAhead(pw, id, RUN_CAP);
-    const g = sceneOf(pw, st.worlds[0], st.seen.length);
+    const g = sceneOf(pw, st.worlds[0], st.seen.length, frame);
     const ids = g.ids.slice(0, st.seen.length + 1).filter((t) => g.placed.has(t));
     const tiles = [...new Set(ids)].map((t) => g.placed.get(t)!);
     const pts = ids.map((t) => tileCentre(g.placed.get(t)!.xform));
@@ -56,7 +68,7 @@ function CircuitPeek({ pw, subset, id, landing, text, x, y }: { pw: PossibleWalk
     const box = { x: Math.min(...xs) - 1.2, y: Math.min(...ys) - 1.2, w: Math.max(...xs) - Math.min(...xs) + 2.4, h: Math.max(...ys) - Math.min(...ys) + 2.4 };
     const strand = strandPathD(st.seen.flatMap((s, i) => (g.placed.has(g.ids[i]) ? [{ ...s, xform: g.placed.get(g.ids[i])!.xform }] : [])), subset);
     return { st, tiles, pts, box, strand };
-  }, [pw, id, landing, subset]);
+  }, [pw, id, landing, subset, frame]);
   const { st, tiles, pts, box, strand } = drawn;
   const size = 220;
   // above and to the right of the pointer, clear of the rows under it; below only where there is no room above
@@ -130,10 +142,20 @@ export interface LandingWalkProps {
   /** A circuit to walk again on the way in: at each fork, the landing it goes to. */
   readonly follow?: readonly Seen[];
   /** Asked to walk a closed circuit again from another of its tiles: its tiles from there. */
-  readonly onRestart?: (word: Seen[]) => void;
+  readonly onRestart?: (word: Seen[], carry: Carry) => void;
+  /** Carried over from the walk this one restarts: the board's turn and the display switches. */
+  readonly carry?: Carry;
 }
 
-export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial, onState, follow, onRestart }: LandingWalkProps): JSX.Element {
+/** What a restart keeps: the start tile's placement on the board, so the circuit stays put, and the display switches. */
+export interface Carry {
+  readonly frame: Affine;
+  readonly dots: boolean;
+  readonly decisions: boolean;
+  readonly view: 'off' | 'split' | 'full';
+}
+
+export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial, onState, follow, onRestart, carry }: LandingWalkProps): JSX.Element {
   const [pw, dispatch] = useReducer(reducePossible, null, () => {
     const w = startWalk(makeWalker(pattern, start, startEdge, MAX_LEVEL), worlds);
     // from a link: make its choices again and walk on to where it was
@@ -143,12 +165,12 @@ export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial
   const [hover, setHover] = useState<Outcome | null>(null);
   const [hoverRun, setHoverRun] = useState<number | null>(null);
   // the whole tree: off, beside the board, or across the page
-  const [view, setView] = useState<'off' | 'split' | 'full'>(initial?.whole ? 'split' : 'off');
+  const [view, setView] = useState<'off' | 'split' | 'full'>(carry?.view ?? (initial?.whole ? 'split' : 'off'));
   const whole = view !== 'off';
   const [limits, setLimits] = useState<Limits>({ forks: 60, tiles: 1000 });
   const [exploring, setExploring] = useState(false);
-  const [showDots, setShowDots] = useState(true);
-  const [showDecisions, setShowDecisions] = useState(false);
+  const [showDots, setShowDots] = useState(carry?.dots ?? true);
+  const [showDecisions, setShowDecisions] = useState(carry?.decisions ?? false);
   const [debugOpen, setDebugOpen] = useState(false);
   // per landing at the current fork, the circuits found a few choices ahead, worked out in the background
   const [ahead, setAhead] = useState<{ at: string; by: ReadonlyMap<string, Ahead> } | null>(null);
@@ -204,8 +226,8 @@ export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial
   // The board: one stack still possible, or while a landing is hovered, a stack that lands there.
   const shown = useMemo(() => {
     const w = hover ? hover.worlds[0] : stage.worlds[0];
-    return sceneOf(pw, w, hover ? n + 1 : n);
-  }, [pw, hover, stage, n]);
+    return sceneOf(pw, w, hover ? n + 1 : n, carry?.frame);
+  }, [pw, hover, stage, n, carry]);
   const walked = shown.ids.slice(0, n + 1);
   const solid = [...new Set(walked)].map((id) => shown.placed.get(id)).filter((p): p is PlacedTile => !!p);
   const landing = hover && hover.key !== 'closes' && hover.key !== 'open' ? shown.placed.get(shown.ids[n + 1]) : undefined;
@@ -244,6 +266,8 @@ export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial
   const current = shown.placed.get(shown.ids[n]) ?? solid[solid.length - 1];
 
   const closed = stage.status === 'closed';
+  // the circuit from its k-th tile: that tile becomes the start, placed where it is drawn now, so the board does not turn
+  const restart = (k: number, back = false): void => onRestart?.(rotateWord(stage.seen, k, back), { frame: xformOf(shown.ids[k % n]), dots: showDots, decisions: showDecisions, view });
   const sides = useMemo(() => (closed ? sidesOf(stage.seen, shown.ids, xformOf) : null), [closed, stage.seen, shown]); // eslint-disable-line react-hooks/exhaustive-deps
   const marks = [
     ...(showDots ? sideMarks(sides, hoverRun, xformOf) : []),
@@ -365,9 +389,9 @@ export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial
       {closed && onRestart && (
         <div className="wk__restart" data-testid="wk-restart">
           <span className="td__hint">The same circuit, walked again from</span>
-          <button type="button" className="td__chip" onClick={() => onRestart(rotateWord(stage.seen, n - 1))} data-testid="wk-restart-prev">◀ the tile before</button>
-          <button type="button" className="td__chip" onClick={() => onRestart(rotateWord(stage.seen, 1))} data-testid="wk-restart-next">the next tile ▶</button>
-          <button type="button" className="td__chip" onClick={() => onRestart(rotateWord(stage.seen, 0, true))} data-testid="wk-restart-back">this tile, the other way round</button>
+          <button type="button" className="td__chip" onClick={() => restart(n - 1)} data-testid="wk-restart-prev">◀ the tile before</button>
+          <button type="button" className="td__chip" onClick={() => restart(1)} data-testid="wk-restart-next">the next tile ▶</button>
+          <button type="button" className="td__chip" onClick={() => restart(0, true)} data-testid="wk-restart-back">this tile, the other way round</button>
         </div>
       )}
 
@@ -448,7 +472,7 @@ export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial
         </div>
       )}
 
-      {peek && <CircuitPeek pw={pw} subset={pattern.subset} id={peek.id} landing={peek.landing} text={peek.text} x={peek.x} y={peek.y} />}
+      {peek && <CircuitPeek pw={pw} subset={pattern.subset} frame={carry?.frame} id={peek.id} landing={peek.landing} text={peek.text} x={peek.x} y={peek.y} />}
 
       <section className="td__section">
         <h3>How high each step reached</h3>
