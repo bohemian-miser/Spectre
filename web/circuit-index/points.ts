@@ -16,7 +16,7 @@
  * id, or `open`), its length, whether the triple is that strand's own corner
  * triple, and its tile set.
  */
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { comboDigitsFromIndex, comboOptionCounts, letter } from '../src/core';
 import { idOf } from '../src/core/transducer';
 import { pairingTable, patternOf } from '../src/pages/walker/walk';
@@ -58,7 +58,7 @@ function strandsOf(combo: string): { strands: Strand[]; through: Int32Array } {
     const key = canonicalWord(word).word.join('');
     let m = measured.get(key);
     if (!m && s.tiles.length >= minLength) {
-      const f = measure({ key, word, tiles: Array.from(s.tiles, (t) => addressOf(b, t)) });
+      const f = measure({ key, word, tiles: Array.from(s.tiles, (t) => addressOf(b, t)) }, 3, 0);
       m = { corners: f.corners.corners, tilesId: f.tilesId };
       measured.set(key, m);
     }
@@ -76,8 +76,14 @@ for (const combo of combos) {
 console.error(`${triples.size} corner triples from ${combos.length} combinations`);
 
 // Pass 2: per combination, the strands through all three tiles of each triple.
-const rows: string[] = ['triple,combo,strand,length,own_corners,tiles_id'];
+mkdirSync(`${outArg}/${rule}`, { recursive: true });
+const out = `${outArg}/${rule}/points.${level}.csv`;
+writeFileSync(out, 'triple,combo,strand,length,own_corners,tiles_id\n');
+const ids = new Map<string, string>();
+const tripleIds = (triple: string): string => ids.get(triple) ?? ids.set(triple, triple.split(' ').map((t) => idOf(addressOf(b, Number(t)))).join(' ')).get(triple)!;
+let total = 0;
 for (const combo of combos) {
+  const rows: string[] = [];
   const { strands, through } = strandsOf(combo);
   for (const triple of triples.keys()) {
     const [a, c, d] = triple.split(' ').map(Number);
@@ -85,10 +91,10 @@ for (const combo of combos) {
     const common = at(a).filter((k) => at(c).includes(k) && at(d).includes(k));
     for (const k of common) {
       const s = strands[k];
-      rows.push([[a, c, d].map((t) => idOf(addressOf(b, t))).join(' '), combo, s.id, s.length, s.triple === triple ? 1 : 0, s.tilesId].join(','));
+      rows.push([tripleIds(triple), combo, s.id, s.length, s.triple === triple ? 1 : 0, s.tilesId].join(','));
     }
   }
+  if (rows.length) appendFileSync(out, `${rows.join('\n')}\n`);
+  total += rows.length;
 }
-mkdirSync(`${outArg}/${rule}`, { recursive: true });
-writeFileSync(`${outArg}/${rule}/points.${level}.csv`, `${rows.join('\n')}\n`);
-console.error(`${rows.length - 1} rows`);
+console.error(`${total} rows`);

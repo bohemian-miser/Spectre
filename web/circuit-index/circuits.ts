@@ -81,6 +81,7 @@ export function canonical(c: Pick<Found, 'word' | 'tiles'>): { word: string[]; t
   return { word: can.word, tiles: [...tiles.slice(can.offset), ...tiles.slice(0, can.offset)] };
 }
 
+/** `maxK` below 2 skips the equal-part profile. */
 export function measure(c: Pick<Found, 'key' | 'word' | 'tiles'>, k = 3, maxK = 12): Measured {
   const { word, tiles } = canonical(c);
   const n = word.length;
