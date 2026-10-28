@@ -57,12 +57,6 @@ export function mirrored(t: Terms): Terms {
   return { F: t.F, c };
 }
 
-function norm2(t: Terms): number {
-  let s = 0;
-  for (let i = 0; i < t.c.length; i++) s += t.c[i] * t.c[i];
-  return s;
-}
-
 /** In-place radix-2 FFT, e^{-2 pi i k j / n}. */
 function fft(re: Float64Array, im: Float64Array): void {
   const n = re.length;
@@ -109,28 +103,59 @@ export interface Alignment {
   readonly theta: number;
 }
 
-/** X(s) = sum_f a_f conj(b_f) e^{-2 pi i f s}. */
+/** X(s) = sum_f a_f conj(b_f) e^{-2 pi i f s}, the powers of e^{-2 pi i s} by repeated multiplication from f = -F. */
 function cross(a: Terms, b: Terms, s: number): { re: number; im: number } {
+  const F = a.F;
+  const ur = Math.cos(-2 * Math.PI * s);
+  const ui = Math.sin(-2 * Math.PI * s);
+  let wr = Math.cos(2 * Math.PI * F * s);
+  let wi = Math.sin(2 * Math.PI * F * s);
   let re = 0;
   let im = 0;
+  for (let f = -F; f <= F; f++) {
+    const i = 2 * (f + F);
+    const pr = a.c[i] * b.c[i] + a.c[i + 1] * b.c[i + 1];
+    const pi = a.c[i + 1] * b.c[i] - a.c[i] * b.c[i + 1];
+    re += pr * wr - pi * wi;
+    im += pr * wi + pi * wr;
+    const t = wr * ur - wi * ui;
+    wi = wr * ui + wi * ur;
+    wr = t;
+  }
+  return { re, im };
+}
+
+/** X(s) and its first two derivatives in s, each power of e^{-2 pi i s} from its own cosine and sine. */
+function crossDerivatives(a: Terms, b: Terms, s: number): { x: { re: number; im: number }; dx: { re: number; im: number }; ddx: { re: number; im: number } } {
+  const x = { re: 0, im: 0 };
+  const dx = { re: 0, im: 0 };
+  const ddx = { re: 0, im: 0 };
   for (let f = -a.F; f <= a.F; f++) {
     const i = 2 * (f + a.F);
     const pr = a.c[i] * b.c[i] + a.c[i + 1] * b.c[i + 1];
     const pi = a.c[i + 1] * b.c[i] - a.c[i] * b.c[i + 1];
     const t = -2 * Math.PI * f * s;
-    const ct = Math.cos(t);
-    const st = Math.sin(t);
-    re += pr * ct - pi * st;
-    im += pr * st + pi * ct;
+    const re = pr * Math.cos(t) - pi * Math.sin(t);
+    const im = pr * Math.sin(t) + pi * Math.cos(t);
+    // d/ds multiplies a term by -2 pi i f.
+    const k = -2 * Math.PI * f;
+    x.re += re;
+    x.im += im;
+    dx.re -= k * im;
+    dx.im += k * re;
+    ddx.re -= k * k * re;
+    ddx.im -= k * k * im;
   }
-  return { re, im };
+  return { x, dx, ddx };
 }
 
 /**
  * The start s and turn that bring b closest to a. sum_f |a_f - e^{i theta}
  * e^{2 pi i f s} b_f|^2 = |a|^2 + |b|^2 - 2 Re(e^{-i theta} X(s)), least at
  * theta = arg X(s) with s maximising |X(s)|: X on a grid of starts by one
- * FFT, then the best grid point refined by golden-section search.
+ * FFT, the best grid point refined by golden-section search, then two
+ * Newton steps on d|X|^2/ds = 0, where the maximum is too flat for the
+ * search alone.
  */
 function alignOne(a: Terms, b: Terms): { gap: number; s: number; theta: number } {
   const F = a.F;
@@ -158,7 +183,7 @@ function alignOne(a: Terms, b: Terms): { gap: number; s: number; theta: number }
   let x2 = lo + phi * (hi - lo);
   let f1 = mag(x1);
   let f2 = mag(x2);
-  for (let it = 0; it < 40; it++) {
+  for (let it = 0; it < 24; it++) {
     if (f1 < f2) {
       lo = x1;
       x1 = x2;
@@ -173,10 +198,27 @@ function alignOne(a: Terms, b: Terms): { gap: number; s: number; theta: number }
       f1 = mag(x1);
     }
   }
-  const s = (((lo + hi) / 2) % 1 + 1) % 1;
+  // Two Newton steps on d|X|^2/ds = 0 pin the flat maximum down to rounding.
+  let s = (lo + hi) / 2;
+  for (let it = 0; it < 2; it++) {
+    const d = crossDerivatives(a, b, s);
+    const g = d.x.re * d.dx.re + d.x.im * d.dx.im;
+    const h = d.dx.re * d.dx.re + d.dx.im * d.dx.im + d.x.re * d.ddx.re + d.x.im * d.ddx.im;
+    if (h < 0 && Math.abs(g / h) < 1 / G) s -= g / h;
+  }
+  s = ((s % 1) + 1) % 1;
   const x = cross(a, b, s);
-  const gap2 = norm2(a) + norm2(b) - 2 * Math.hypot(x.re, x.im);
-  return { gap: Math.sqrt(Math.max(0, gap2)), s, theta: Math.atan2(x.im, x.re) };
+  const theta = Math.atan2(x.im, x.re);
+  // The gap summed term by term, which keeps its digits when a and b nearly agree.
+  let gap2 = 0;
+  for (let f = -F; f <= F; f++) {
+    const i = 2 * (f + F);
+    const t = theta + 2 * Math.PI * f * s;
+    const c = Math.cos(t);
+    const sn = Math.sin(t);
+    gap2 += (a.c[i] - (c * b.c[i] - sn * b.c[i + 1])) ** 2 + (a.c[i + 1] - (sn * b.c[i] + c * b.c[i + 1])) ** 2;
+  }
+  return { gap: Math.sqrt(gap2), s, theta };
 }
 
 export function align(a: Terms, b: Terms, allowMirror: boolean): Alignment {

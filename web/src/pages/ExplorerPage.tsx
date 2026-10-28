@@ -55,6 +55,8 @@ import {
   hasMultiStrands,
   circuitLengthRgb,
   formatCounts,
+  matchingIndicesToCombo,
+  normalizeMatching,
 } from '../core';
 import {
   CentreLayer,
@@ -132,6 +134,7 @@ import { recordingLabel, useCanvasRecording } from './map/useRecording';
 import { ViewportTools } from './map/ViewportTools';
 import { TraceTicker } from './map/TraceTicker';
 import { TransitionGraph } from './map/TransitionGraph';
+import { shapesCircuitHref } from './shapes/explorerLink';
 import type { GraphSelection } from './map/transitions';
 import { DEFAULT_LINE_COLOR, LIGHT_LINE_COLOR } from './map/webglRenderer';
 import '../styles/map.css';
@@ -299,6 +302,14 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
    * Mystic's strands are matched to the hexagon's by seam, one per seam.
    */
   const multiOnSpectres = asSpectres && hasMultiStrands(state.contracts);
+  // A closed trace on the hexagons opens on the Shapes page, which computes
+  // every hexagon combination's circuits.
+  const shapesHref = useMemo(() => {
+    if (family !== 'hex' || asSpectres || !state.subset.length) return null;
+    const subset = [...state.subset].sort((a, b) => a - b);
+    const combo = matchingIndicesToCombo('hex', subset, normalizeMatching('hex', subset, state.matching, state.contracts), state.contracts);
+    return combo === null ? null : (tiles: number) => shapesCircuitHref(import.meta.env.BASE_URL, subset.join(''), combo, tiles);
+  }, [family, asSpectres, state.subset, state.matching, state.contracts]);
   const linesOn = hasFlag(state, FLAG.LINES) && !multiOnSpectres;
   const centresOn = hasFlag(state, FLAG.CENTRES) && !multiOnSpectres;
   /** Strands are traced for either: centres still show with circuit lines off. */
@@ -1693,6 +1704,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
               leafNames={leafOrder(drawFamily)}
               leafCss={leafCss}
               tileArea={averageLeafArea(drawFamily)}
+              shapesHref={shapesHref}
               tickerOn={tickerOn}
               transitionsOn={transitionsOn}
               hlScreen={hlScreen}
@@ -1928,6 +1940,8 @@ function InfiniteHud(props: {
   readonly leafCss: readonly string[];
   /** Mean leaf area of the family (`averageLeafArea`) for the depth readout. */
   readonly tileArea: number;
+  /** The Shapes page on a closed circuit of this many tiles, when the rule is one it takes. */
+  readonly shapesHref: ((tiles: number) => string) | null;
   readonly tickerOn: boolean;
   readonly transitionsOn: boolean;
   readonly hlScreen: boolean;
@@ -1937,7 +1951,7 @@ function InfiniteHud(props: {
   onSelect(selection: GraphSelection | null): void;
   onChainLength(length: number | null): void;
 }): JSX.Element {
-  const { subscribeRef, linesOn, traceOn, followOn, fillsOn, leafNames, leafCss, tileArea } = props;
+  const { subscribeRef, linesOn, traceOn, followOn, fillsOn, leafNames, leafCss, tileArea, shapesHref } = props;
   const { tickerOn, transitionsOn, hlScreen, hlPath } = props;
   const { onToggleHlScreen, onToggleHlPath, onSelect, onChainLength } = props;
   const [status, setStatus] = useState<InfiniteCanvasStatus | null>(null);
@@ -2002,6 +2016,12 @@ function InfiniteHud(props: {
               ? 'traced: tap a strand'
               : 'traced: off'}
         </span>
+        {trace?.active && trace.status === 'closed' && shapesHref ? (
+          // A press here is the link's, not a pan or a tap on the tiling (the host captures the pointer).
+          <a href={shapesHref(trace.steps)} onPointerDown={(e) => e.stopPropagation()} data-testid="inf-shapes">
+            {trace.steps.toLocaleString('en-US')} tiles: open on the Shapes page
+          </a>
+        ) : null}
         {trace && trace.circuits > 0 ? (
           <span data-testid="inf-circuits">
             {trace.circuits} kept

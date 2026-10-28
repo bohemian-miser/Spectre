@@ -12,7 +12,7 @@ export interface ComboChoice {
   readonly level: number;
 }
 
-const LEVELS = [6, 7, 8];
+const LEVELS = [6, 7, 8, 9];
 
 export function ComboPicker(props: { busy: boolean; onAdd: (c: ComboChoice) => void }): JSX.Element {
   const rules = useMemo(() => validEdgeSubsets('hex').filter((r) => r.edges.length > 0), []);

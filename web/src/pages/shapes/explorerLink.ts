@@ -72,3 +72,14 @@ export function explorerCircuitHref(base: string, link: CircuitLink): string {
   });
   return `${base.endsWith('/') ? base : `${base}/`}#/explorer?${q.toString()}`;
 }
+
+/** The Shapes page on a combination's circuit of this many tiles, as the Explorer's trace closes on it. */
+export function shapesCircuitHref(base: string, rule: string, combo: string, tiles: number): string {
+  return `${base.endsWith('/') ? base : `${base}/`}shapes.html#t=${rule}.${combo}.${tiles}`;
+}
+
+/** The rule, combination and tile count a Shapes link names (`#t=023468.140000001.14679`). */
+export function parseShapesTarget(hash: string): { rule: string; combo: string; tiles: number } | null {
+  const m = /t=(\d+)\.([0-9a-z]+)\.(\d+)/.exec(hash);
+  return m ? { rule: m[1], combo: m[2], tiles: Number(m[3]) } : null;
+}
