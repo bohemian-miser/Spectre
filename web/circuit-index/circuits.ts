@@ -7,10 +7,10 @@
  * at that level. Collection stops after the level at which `maxCircuits` is
  * passed.
  */
-import { HEX_TYPES, letter, zToPt, type Address, type HexType } from '../src/core';
+import { HEX_TYPES, zToPt, type Address, type HexType } from '../src/core';
 import { pairingTable, patternOf } from '../src/pages/walker/walk';
 import { addressOf, board, traceAll, typeOf } from './board';
-import { canonicalWord, centre6, placedKey, placedOf, shortId, wordOrder } from './keys';
+import { canonicalWord, centre6, placedKey, placedOf, shortId, tileLetter, wordOrder } from './keys';
 import { armDistances, encode, fitCorners, segmentProfile, type Arms, type CornerFit, type Segments } from './sides';
 
 export interface Found {
@@ -49,7 +49,7 @@ export function collect(subset: readonly number[], combo: string, maxLevel: numb
           if (root === 'Delta') { open++; longestOpen = Math.max(longestOpen, s.tiles.length); }
           continue;
         }
-        const word = Array.from(s.tiles, (t, i) => letter(typeOf(b, t), s.entries[i], s.exits[i]));
+        const word = Array.from(s.tiles, (t, i) => tileLetter(typeOf(b, t), s.entries[i], s.exits[i]));
         const key = canonicalWord(word).word.join('');
         const f = found.get(key);
         if (!f) found.set(key, { key, word, tiles: Array.from(s.tiles, (t) => addressOf(b, t)), level: L, roots: [root], copies: 1 });
@@ -92,7 +92,7 @@ export function measure(c: Pick<Found, 'key' | 'word' | 'tiles'>, k = 3, maxK = 
   const ks: number[] = [];
   for (let j = 2; j * j <= n && j <= maxK; j++) ks.push(j);
   return {
-    id: shortId(c.key),
+    id: c.key,
     length: n,
     order: wordOrder(word),
     corners,

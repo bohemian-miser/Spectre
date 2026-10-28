@@ -15,10 +15,10 @@
  * ancestors fit in `maxLevel` levels. Circuits are told apart by
  * `circuitKey` (the word read round the circuit, from any tile, either way).
  */
-import { HEX_TYPES, letter, type Address, type HexType } from '../src/core';
+import { HEX_TYPES, type Address, type HexType } from '../src/core';
 import { makeWalker, replay, stepAll, initialWorlds, type Walker, type World } from '../src/pages/walker/possible';
 import type { Pattern } from '../src/pages/walker/walk';
-import { circuitKey } from './keys';
+import { circuitKey, tileLetter } from './keys';
 
 export interface EnumerateOptions {
   /** Most ancestors a stack may grow to. */
@@ -77,7 +77,7 @@ export function enumerateCircuits(pattern: Pattern, table: Map<HexType, Map<numb
     const next: Branch[] = [];
     for (const b of live) {
       const w0 = b.worlds[0];
-      const step = letter(w0.at.leaf, w0.entry, b.wk.table.get(w0.at.leaf)!.get(w0.entry)!);
+      const step = tileLetter(w0.at.leaf, w0.entry, b.wk.table.get(w0.at.leaf)!.get(w0.entry)!);
       const outs = stepAll(b.wk, b.worlds).outcomes;
       outs.forEach((o, i) => {
         if (o.key === 'open') { open++; return; }

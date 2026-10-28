@@ -37,6 +37,7 @@ export default defineConfig({
         dimension: resolve(__dirname, 'dimension.html'),
         centremap: resolve(__dirname, 'centremap.html'),
         circuits: resolve(__dirname, 'circuits.html'),
+        corners: resolve(__dirname, 'corners.html'),
         legacy: resolve(__dirname, 'legacy.html'),
         widgets: resolve(__dirname, 'widgets.html'),
       },
