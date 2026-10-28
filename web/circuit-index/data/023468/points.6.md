@@ -1,12 +1,6 @@
-# Corner triples on one level-6 Delta supertile, rule 023468
+# Corner triples on one patch (points.6.csv)
 
-From `points.ts 023468 6 20` (every combination traced on the same patch;
-circuits of 20 tiles or more). The full listing, one row per strand through
-a triple, is 21,642,457 rows (1.5 GB) and is not committed; rerun to get it.
-
-208,719 triples. For each: how many circuits have it as their own corners,
-how many other circuits pass through all three tiles, and whether an open
-strand does.
+21,642,457 rows, one per strand through a triple; 208,719 triples.
 
 | own corners of | other circuits through it | open strand through it | triples |
 |---|---|---|---|
