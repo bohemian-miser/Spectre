@@ -5,10 +5,11 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { HEX_TYPES, addressFromId, walkStrand, zMul, type ZAffine } from '../../src/core';
+import { HEX_TYPES, addressFromId, childType, walkStrand, zMul, type ZAffine } from '../../src/core';
 import { longestCircuit, matchingByType, pairingTable, patternOf } from '../../src/pages/walker/walk';
 import { addressOf, board, indexOf, traceAll } from '../board';
 import { collect, copyTile, cornerChains, measure } from '../circuits';
+import { cornerKeys } from '../corner-key';
 import { enumerateCircuits } from '../every-tiling';
 import { initialWorlds, makeWalker, stepAll, type World } from '../../src/pages/walker/possible';
 import { idOf } from '../../src/core/transducer';
@@ -237,6 +238,74 @@ describe('corner chains', () => {
       }
       expect(checked).toBeGreaterThan(20);
     },
+  );
+});
+
+describe('corner keys', () => {
+  const PREFIX = new Map(HEX_TYPES.map((t) => [TYPE_PREFIX[t], t]));
+  /** Every chain a written key spells, with `*` spelling every chain the substitution rules allow, up to `level` links. */
+  function spell(key: string, level: number): Set<string> {
+    const [main, ...defs] = key.split(' ');
+    const named = new Map(defs.map((d) => [d.slice(0, d.indexOf('=')), d.slice(d.indexOf('=') + 1)]));
+    const out = new Set<string>();
+    const up = (type: string, d: number, chain: string): void => {
+      if (d === 0) { out.add(chain); return; }
+      const t = PREFIX.get(type.replace(/^\d/, ''))!;
+      for (const P of HEX_TYPES) for (let sl = 0; sl < 8; sl++) if (childType(P, sl) === t) up(`${sl}${TYPE_PREFIX[P]}`, d - 1, `${chain}<${sl}${TYPE_PREFIX[P]}`);
+    };
+    // Read one expression from position i; `k` is chains taken so far as [chain, last token, links read].
+    const read = (src: string, prefixes: [string, string, number][]): [string, string, number][] => {
+      let rest = src;
+      let cur = prefixes;
+      while (rest.length) {
+        if (rest[0] === '<') { rest = rest.slice(1); continue; }
+        if (rest[0] === '*') { for (const [c, last, n] of cur) up(last, level - n, c); return []; }
+        if (rest[0] === '@') { const m = /^@\d+/.exec(rest)![0]; return read(named.get(m)! + rest.slice(m.length), cur); }
+        if (rest[0] === '{') {
+          let depth = 0, i = 0;
+          const parts: string[] = [];
+          let start = 1;
+          for (; i < rest.length; i++) {
+            if (rest[i] === '{') depth++;
+            else if (rest[i] === '}') { depth--; if (depth === 0) { parts.push(rest.slice(start, i)); break; } }
+            else if (rest[i] === '|' && depth === 1) { parts.push(rest.slice(start, i)); start = i + 1; }
+          }
+          return parts.flatMap((part) => read(part + rest.slice(i + 1), cur));
+        }
+        const m = /^(\[[^\]]*\]|[0-9]?[A-Z][a-z]?)/.exec(rest)![0];
+        const toks = m.startsWith('[') ? m.slice(1, -1).split('/') : [m];
+        cur = cur.flatMap(([c, , n]) => toks.map((t) => [c ? `${c}<${t}` : t, t, c ? n + 1 : 0] as [string, string, number]));
+        rest = rest.slice(m.length);
+      }
+      for (const [c] of cur) out.add(c);
+      return [];
+    };
+    read(main, [['', '', 0]]);
+    return out;
+  }
+
+  it.each([['15', '000000010', 4], ['15', '000010000', 4], ['023468', '000100000', 5]] as const)(
+    '%s-%s to level %i: each key spells exactly the corner chains of the copies, whatever order the copies come in',
+    (rule, combo, level) => {
+      const { circuits } = collect([...rule].map(Number), combo, level, 1e9);
+      let checked = 0;
+      for (const f of circuits) {
+        const corners = measure(f, 3, 0).corners.corners;
+        const keys = cornerKeys(f.word, corners, f.at);
+        expect(cornerKeys(f.word, corners, [...f.at].reverse())).toEqual(keys);
+        const period = f.word.length / wordOrder(canonicalWord(f.word).word);
+        corners.forEach((p, j) => {
+          const chains = new Set(f.at.flatMap((c) => corners.filter((q) => (q - p) % period === 0).map((q) => {
+            const a = addressOf(c.board, copyTile(c, q));
+            return [TYPE_PREFIX[a.leaf], ...a.path.map((l) => `${l.slot}${TYPE_PREFIX[l.parent]}`)].join('<');
+          })));
+          expect(spell(keys[j], f.level)).toEqual(chains);
+          checked++;
+        });
+      }
+      expect(checked).toBeGreaterThan(20);
+    },
+    60_000,
   );
 });
 

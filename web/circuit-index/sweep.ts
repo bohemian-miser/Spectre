@@ -13,6 +13,7 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { comboOptionCounts, comboDigitsFromIndex } from '../src/core';
 import { collect, cornerChains, measure } from './circuits';
+import { cornerKeys } from './corner-key';
 
 const [rule, lvArg, outArg = 'circuit-index/data', shardArg = '0', nArg = '1', list] = process.argv.slice(2);
 const subset = [...rule].map(Number);
@@ -23,7 +24,7 @@ const K = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
 
 export const CIRCUIT_COLUMNS = [
   'rule', 'combo', 'circuit', 'level', 'roots', 'copies', 'length', 'order',
-  'corners', 'corner_letters', 'corner_chains', 'fit',
+  'corners', 'corner_letters', 'corner_chains', 'corner_keys', 'fit',
   'arm_lengths', 'arm_distances', 'arm_score', ...K.map((k) => `seg${k}`),
 ];
 
@@ -56,7 +57,7 @@ for (const combo of combos) {
     const m = measure(f);
     rows.push([
       rule, combo, m.id, f.level, f.roots.join(' '), f.copies, m.length, m.order,
-      m.corners.corners.join(' '), m.cornerLetters.join(' '), [...cornerChains(f, m.corners.corners)].sort().join(' '), m.corners.fit.toFixed(4),
+      m.corners.corners.join(' '), m.cornerLetters.join(' '), [...cornerChains(f, m.corners.corners)].sort().join(' '), [...cornerKeys(f.word, m.corners.corners, f.at)].sort().join(' ; '), m.corners.fit.toFixed(4),
       m.arms.lengths.join(' '), m.arms.distances.join(' '), m.arms.score.toFixed(4),
       ...K.map((k) => m.segments.find((s) => s.k === k)?.score.toFixed(4) ?? ''),
     ].join(','));
