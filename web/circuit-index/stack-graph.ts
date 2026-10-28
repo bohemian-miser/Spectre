@@ -275,6 +275,9 @@ export function worldsOf(b: Bundle): World[] {
   return out;
 }
 
+/** Sizes of the shared tables. */
+export const stats = (): Record<string, number> => ({ nodes: nodes.length, steps: stepMemo.size, unions: unionMemo.size, pairs: pairs.length });
+
 /** Drop the step memo (it is keyed by graph node, which stays valid; this only frees memory). */
 export function forgetSteps(): void { stepMemo.clear(); }
 

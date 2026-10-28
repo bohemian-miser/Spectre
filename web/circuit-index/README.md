@@ -73,6 +73,14 @@ The walk from a bare Phi entered by edge 1, rule `023468`, combination
 The tests compare it with the list walk world by world for eight steps from
 every start, and its circuits with the boards'.
 
+Its cost is the number of branches, not their size. Every start tile and
+entry edge begins a walk, and an open strand is walked again from every
+position on it that sees a different word ahead, each branch until it leaves
+the stack or reaches `maxLength`. For `023468-111000100` at 5 levels, after
+750 rounds 10,022 branches are still live and the shared tables hold 2.5
+million nodes; the boards trace each strand once. The sweep runs on the
+boards, and the merged walk is their check to level 4.
+
 ## Keys
 
 | key | what it identifies |
