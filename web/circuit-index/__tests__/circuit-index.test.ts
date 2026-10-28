@@ -10,7 +10,9 @@ import { longestCircuit, matchingByType, pairingTable, patternOf } from '../../s
 import { addressOf, board, indexOf, traceAll } from '../board';
 import { collect, measure } from '../circuits';
 import { enumerateCircuits } from '../every-tiling';
-import { canonicalWord, circuitKey, leastRotation, placedKey, placedOf, reverseWord, wordOrder } from '../keys';
+import { initialWorlds, makeWalker, stepAll, type World } from '../../src/pages/walker/possible';
+import { idOf } from '../../src/core/transducer';
+import { canonicalWord, circuitKey, leastRotation, placedKey, placedOf, reverseWord, tileLetter, wordOrder } from '../keys';
 import { encode, fitCorners, levenshtein } from '../sides';
 
 const triangle = patternOf([0, 2, 3, 4, 6, 8], '111000100');
@@ -35,8 +37,43 @@ describe('boards', () => {
   });
 });
 
+describe('every stack the walk on every tiling carries', () => {
+  it.each([['15', '000000000'], ['023468', '111000100']] as const)('%s-%s: is a tile of a board, and steps where that tile does', (rule, combo) => {
+    const p = patternOf([...rule].map(Number), combo);
+    const table = pairingTable(p);
+    let checked = 0;
+    for (const [start, edge] of [['Psi', 0], ['Delta', [...(table.get('Delta')?.keys() ?? [])][0]]] as const) {
+      if (edge === undefined) continue;
+      const wk = makeWalker(p, start, edge, 3);
+      let live: World[][] = [initialWorlds(wk)];
+      for (let step = 0; step < 12 && live.length; step++) {
+        const next: World[][] = [];
+        for (const worlds of live) {
+          for (const o of stepAll(wk, worlds)) {
+            if (o.key === 'open') continue;
+            for (const w of o.worlds) {
+              // The stack w.chain, with the strand having stepped from `before` to `w.at`.
+              const before = [...worlds].sort((x, y) => y.chain.length - x.chain.length).find((x) => x.chain.length <= w.chain.length && x.chain.every((l, i) => l.slot === w.chain[i].slot && l.parent === w.chain[i].parent))!;
+              const b = board(w.chain.length ? w.chain[w.chain.length - 1].parent : start, w.chain.length);
+              const from = indexOf(b, { leaf: before.at.leaf, path: [...before.at.path, ...w.chain.slice(before.chain.length)] });
+              const exit = wk.table.get(before.at.leaf)!.get(before.entry)!;
+              const to = b.across[6 * from + exit];
+              expect(idOf(addressOf(b, (to / 6) | 0))).toBe(idOf(w.at));
+              expect(to % 6).toBe(w.entry);
+              checked++;
+            }
+            if (o.key !== 'closes') next.push([...o.worlds]);
+          }
+        }
+        live = next;
+      }
+    }
+    expect(checked).toBeGreaterThan(100);
+  });
+});
+
 describe('every circuit of a combination', () => {
-  it.each([['15', '000010010', 3], ['023468', '111000100', 3], ['023468', '000100000', 3]] as const)(
+  it.each([['15', '000010010', 4], ['023468', '111000100', 3], ['023468', '000100000', 3]] as const)(
     '%s-%s to level %i: the same circuits as the walk on every tiling, born at the same level',
     (rule, combo, level) => {
       const sub = [...rule].map(Number);
@@ -111,7 +148,7 @@ describe('placed tiles', () => {
       for (const s of traceAll(b, table)) {
         if (s.kind !== 'circuit') continue;
         const tiles = Array.from(s.tiles, (t) => addressOf(b, t));
-        const word = tiles.map((a, i) => `${a.leaf}${s.entries[i]}${s.exits[i]}`);
+        const word = tiles.map((a, i) => tileLetter(a.leaf, s.entries[i], s.exits[i]));
         const f = circuits.find((c) => c.key === circuitKey(word))!;
         const [m, here] = [measure(f), measure({ ...f, tiles, word })];
         expect([here.tilesId, here.cornerId, here.corners.corners]).toEqual([m.tilesId, m.cornerId, m.corners.corners]);

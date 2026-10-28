@@ -2,6 +2,10 @@
  * Keys for circuits, tile sets and corner triples, independent of where the
  * circuit sits in the plane and of where it is read from.
  *
+ * A circuit's letters are compact: the shortest prefix of the type's name
+ * that no other type shares, then the entry and exit edge indices
+ * (`D23` is Delta entered by edge 2, left by edge 3; `Ph50`, `Ps01`).
+ *
  * - `circuitKey`: the word read round the circuit from its least starting
  *   tile, in the direction that reads least. Two circuits have the same key
  *   exactly when one is the other moved: the letters say how each tile is
@@ -20,6 +24,14 @@ import {
   reverseLetter, zAdd, zApply, zConj, zKey, zLeafPts, zMul, zRot, zSupertileTransforms,
   Z_IDENT, type Address, type HexType, type ZAffine, type ZVec,
 } from '../src/core';
+
+/** Shortest prefix of each type's name that no other type shares. */
+export const TYPE_PREFIX: Readonly<Record<HexType, string>> = {
+  Gamma: 'G', Delta: 'D', Theta: 'T', Lambda: 'L', Xi: 'X', Pi: 'Pi', Sigma: 'S', Phi: 'Ph', Psi: 'Ps',
+};
+
+/** A circuit tile's letter: type prefix, entry edge, exit edge. */
+export const tileLetter = (type: HexType, entry: number, exit: number): string => `${TYPE_PREFIX[type]}${entry}${exit}`;
 
 /** Index of the least rotation of `s` (Booth's algorithm). */
 export function leastRotation(s: readonly string[]): number {
@@ -61,7 +73,7 @@ export function canonicalWord(w: readonly string[]): { word: string[]; reversed:
 
 export const circuitKey = (w: readonly string[]): string => canonicalWord(w).word.join('');
 
-/** A short id for a key, for tables. */
+/** A short id for a tile-set or corner key, for tables. */
 export const shortId = (key: string): string => createHash('sha1').update(key).digest('hex').slice(0, 12);
 
 /** How many times the word repeats round the circuit (its rotational order as a word). */

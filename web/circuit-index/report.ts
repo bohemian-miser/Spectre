@@ -35,6 +35,8 @@ const table = (head: readonly string[], body: readonly (readonly (string | numbe
   [`| ${head.join(' | ')} |`, `|${head.map(() => '---').join('|')}|`, ...body.map((r) => `| ${r.join(' | ')} |`)].join('\n');
 
 const byCircuit = group(rows, (r) => r.circuit);
+/** A circuit's word, cut to its first 40 characters for a table. */
+const show = (id: string): string => (id.length > 40 ? `${id.slice(0, 40)}…` : id);
 const one = (id: string): Row => byCircuit.get(id)![0];
 const kind = (r: Row): string => {
   if (Number(r.order) % 3 === 0) return 'exact';
@@ -63,7 +65,7 @@ out.push('## Circuits made by more than one combination', '');
 const shared = [...byCircuit].filter(([, rs]) => rs.length > 1 && Number(rs[0].length) >= 10)
   .sort((a, b) => Number(b[1][0].length) - Number(a[1][0].length));
 out.push(table(['circuit', 'length', 'level', 'combinations', 'kind', 'arm score'], shared.slice(0, 40).map(([id, rs]) =>
-  [id, rs[0].length, rs[0].level, rs.length, kind(rs[0]), rs[0].arm_score])), '');
+  [show(id), rs[0].length, rs[0].level, rs.length, kind(rs[0]), rs[0].arm_score])), '');
 
 // Corner triples.
 out.push('## Corner triples held by more than one circuit', '');
@@ -85,7 +87,7 @@ const K = Object.keys(rest[0] ?? {}).filter((c) => c.startsWith('seg'));
 const bestK = (r: Row): [string, number] => K.filter((k) => r[k] !== '').map((k) => [k.slice(3), Number(r[k])] as [string, number]).sort((a, b) => a[1] - b[1])[0] ?? ['', NaN];
 out.push(table(['circuit', 'length', 'order', 'arm score', 'best k', 'score'], rest.sort((a, b) => Number(b.length) - Number(a.length)).slice(0, 40).map((r) => {
   const [k, s] = bestK(r);
-  return [r.circuit, r.length, r.order, r.arm_score, k, s.toFixed(3)];
+  return [show(r.circuit), r.length, r.order, r.arm_score, k, s.toFixed(3)];
 })), '');
 
 // Corner triples as tiles of one patch (points.ts).

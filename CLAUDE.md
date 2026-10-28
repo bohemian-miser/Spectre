@@ -7,7 +7,10 @@ else's idea, credit the source with one link and write the rest in these
 terms; never adopt their notation.
 
 - Tile types by name: Gamma, Delta, Theta, Lambda, Xi, Pi, Sigma, Phi, Psi
-  (Gamma1 and Gamma2 on the Spectre). Never single letters.
+  (Gamma1 and Gamma2 on the Spectre). Never single letters, except in a
+  circuit's word used as a data key (`web/circuit-index/`): there a tile is
+  the shortest prefix of its type's name no other type shares, then its
+  entry and exit edge indices (`D23`, `Ph50`, `Ps01`).
 - A **supertile** at a **level**; its **children** sit in numbered **slots**
   (0 to 7); a type's **substitution rule** lists the child type per slot.
 - A tile's position is its **slot path** from the root, written `1.7.0`, the

@@ -17,12 +17,12 @@
  * triple, and its tile set.
  */
 import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
-import { comboDigitsFromIndex, comboOptionCounts, letter } from '../src/core';
+import { comboDigitsFromIndex, comboOptionCounts } from '../src/core';
 import { idOf } from '../src/core/transducer';
 import { pairingTable, patternOf } from '../src/pages/walker/walk';
 import { addressOf, board, traceAll, typeOf, type Traced } from './board';
 import { measure } from './circuits';
-import { canonicalWord, shortId } from './keys';
+import { canonicalWord, tileLetter } from './keys';
 
 const [rule, lvArg = '6', minArg = '20', outArg = 'circuit-index/data'] = process.argv.slice(2);
 const subset = [...rule].map(Number);
@@ -37,7 +37,7 @@ interface Strand { readonly id: string; readonly length: number; readonly tilesI
 
 /** Corner positions and tile key per circuit, measured once. */
 const measured = new Map<string, { corners: readonly number[]; tilesId: string }>();
-const wordOf = (s: Traced): string[] => Array.from(s.tiles, (t, i) => letter(typeOf(b, t), s.entries[i], s.exits[i]));
+const wordOf = (s: Traced): string[] => Array.from(s.tiles, (t, i) => tileLetter(typeOf(b, t), s.entries[i], s.exits[i]));
 
 /** Board tile at canonical position p of a circuit. */
 function tileAt(s: Traced, p: number): number {
@@ -63,7 +63,7 @@ function strandsOf(combo: string): { strands: Strand[]; through: Int32Array } {
       measured.set(key, m);
     }
     const triple = m ? m.corners.map((p) => tileAt(s, p)).sort((x, y) => x - y).join(' ') : null;
-    strands.push({ id: shortId(key), length: s.tiles.length, tilesId: m?.tilesId ?? '', triple });
+    strands.push({ id: key, length: s.tiles.length, tilesId: m?.tilesId ?? '', triple });
   });
   return { strands, through };
 }
