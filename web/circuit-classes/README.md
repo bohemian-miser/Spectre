@@ -233,6 +233,19 @@ writes the largest circuits born in a level-10 Delta (1.4 million tiles for
 this pairing) as closed polylines in the supertile's frame, each level-3 arc
 drawn as a chord. Drawn to level 0 a circuit has exactly one point per tile.
 
+## Corners
+
+`chord-fit.ts` cuts a circuit into k runs of equal tile count from every
+start tile and sums each tile's distance to its run's chord.
+`corner-paths.ts` writes the Corners page's data: for every class of a rule,
+the biggest circuit of each family at its last three generations, as 4320
+tile positions evenly spaced by tile count:
+
+    npx tsx circuit-classes/corner-paths.ts hex 023468 9 public/data/corners/hex-023468
+    npx tsx circuit-classes/corner-paths.ts index hex 023468 public/data/corners/hex-023468
+
+The page (`corners.html`) computes everything else from those positions.
+
 ## Deep levels and giants
 
 `renormalize-lean.ts` is the renormalisation in typed arrays, keeping only

@@ -79,3 +79,12 @@ test('the quick bar under the field steps pairings, opens tiles and sets strands
   await expect(page.getByTestId('quick-strands-5')).toHaveText('×2');
   await expect(page.getByTestId('quick-tail-free')).toHaveClass(/bad/);
 });
+
+test('the Corners page fits a circuit’s polygons and draws its spectrum', async ({ page }) => {
+  await page.goto('corners.html');
+  await expect(page.locator('[data-testid="corners-caption"]')).toContainText('25,356 tiles', { timeout: 20000 });
+  // Family [147]'s knobbly triangle: nine sides, three long and six short.
+  await expect(page.locator('[data-testid="corners-chosen"]')).toHaveText(/^Chosen: 9 sides\./, { timeout: 60000 });
+  await expect(page.locator('[data-testid="corners-symmetry"] title').nth(1)).toHaveText('3-fold: 100.00%');
+  await expect(page.locator('[data-testid="corners-epicycles"]')).toBeVisible();
+});
