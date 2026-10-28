@@ -4,7 +4,8 @@
  * crossing leaves the level-2 root but settles higher up, `across` must offer
  * the true tile across (cut at level 2), and growing its pair by the true
  * parents must follow the true far ancestors until the two sides meet in the
- * true common ancestor.
+ * true common ancestor. Every other tile offered must be the tile across in
+ * some stack: the one that closes its seam in the fewest parents.
  */
 import { describe, expect, it } from 'vitest';
 import {
@@ -29,6 +30,15 @@ describe('seams', () => {
           most = Math.max(most, offers.length);
           const truth = offers.filter((o) => sameAddress(o.address, cut(nb.address, 2)) && o.edge === nb.edge);
           expect(truth.length).toBe(1);
+          // every offer is real: closing its seam in a common ancestor, neighbour() finds it there
+          for (const o of offers) {
+            const m = meetingOf(o.pair)!;
+            const top = m.links[m.links.length - 1].parent;
+            const nearUp = { leaf: near.leaf, path: [...near.path, ...m.links] };
+            const farUp = { leaf: o.address.leaf, path: [...o.address.path, ...m.farLinks, { slot: m.farSlot, parent: top }] };
+            const there = neighbour(nearUp, e);
+            expect(there.ok && sameAddress(there.address, farUp) && there.edge === o.edge).toBe(true);
+          }
           // grow by the true parents: the pair follows the true far ancestors until they meet
           let pair: Pair = truth[0].pair;
           for (let k = 2; k < nb.level; k++) {

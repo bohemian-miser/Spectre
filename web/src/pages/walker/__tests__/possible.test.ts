@@ -64,5 +64,11 @@ describe('walking every tiling at once', () => {
       expect(ref.end).toBe('circuit');
       expect(ref.states.map((s) => `${s.address.leaf}${s.entry}`)).toEqual(pw.stage.seen.map((s) => `${s.type}${s.entry}`));
     }
+    // where two walls meet, the tile across the second is forced in every stack, and it is where the rest land
+    expect(pw.stage.corners.length).toBeGreaterThan(0);
+    for (const c of pw.stage.corners) {
+      expect(c.unforced).toBe(0);
+      expect(c.tiles.map((t) => t.tile)).toEqual([`${pw.stage.seen[c.step].type} ${pw.stage.seen[c.step].entry}`]);
+    }
   });
 });

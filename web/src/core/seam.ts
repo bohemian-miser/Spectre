@@ -83,17 +83,21 @@ function livePairs(): Set<string> {
 
 export const pairAlive = (p: Pair): boolean => livePairs().has(pairKey(p));
 
-/** How a crossing climbed out of its root: the root's edge, and per level below it the position along the edge (i of n). */
-export interface Climb { readonly edge: number; readonly at: readonly { readonly i: number; readonly n: number }[] }
+/**
+ * How a crossing climbed out of its root: the root's edge, and per level
+ * below it the position along the edge (i of n) and the class of the edge
+ * crossed at that level, which the tile or supertile across must oppose.
+ */
+export interface Climb { readonly edge: number; readonly at: readonly { readonly i: number; readonly n: number; readonly cls: number }[] }
 
 /** The climb of a crossing that leaves the root of `address`, or null when it settles inside. */
 export function climbOut(address: Address, edge: number): Climb | null {
   const nb = neighbour(address, edge);
   if (nb.ok) return null;
-  const at: { i: number; n: number }[] = [];
+  const at: { i: number; n: number; cls: number }[] = [];
   let top = edge;
   for (const t of nb.trace) {
-    if (t.kind === 'up') at[t.level] = { i: t.i, n: t.n };
+    if (t.kind === 'up') at[t.level] = { i: t.i, n: t.n, cls: edgeClass(t.type, t.edge) };
     if (t.kind === 'top') top = t.edge;
   }
   return { edge: top, at };
@@ -105,12 +109,12 @@ export function comeDown(root: HexType, edge: number, climb: Climb): { address: 
   let entry = edge;
   const links: Link[] = [];
   for (let m = climb.at.length - 1; m >= 0; m--) {
-    const { i, n } = climb.at[m];
+    const { i, n, cls } = climb.at[m];
     const arc = edgeParts(type, entry);
     if (arc.length !== n) return null;
     const part = arc[n - 1 - i];
     const ct = childType(type, part.s);
-    if (!ct) return null;
+    if (!ct || edgeClass(ct, part.e) !== -cls) return null;
     links.unshift({ slot: part.s, parent: type });
     type = ct;
     entry = part.e;

@@ -38,7 +38,7 @@ export interface World {
 }
 
 export interface Outcome {
-  /** `Psi 5`, `closes`, or `open` (still leaving at `topLevel`). */
+  /** `Psi 5`, or `closes`. */
   readonly key: string;
   readonly type: HexType | null;
   readonly edge: number | null;
@@ -61,7 +61,7 @@ export interface Walker {
   readonly startEdge: number;
   /** Stacks are extended to cross up to this level; above it, crossings go over a seam. */
   readonly maxLevel: number;
-  /** A seam moves up to this level at most; a crossing that needs more is `open`. */
+  /** A seam moves up to this level at most; a strand still leaving along a second wall there is at a `Corner`. */
   readonly topLevel: number;
   readonly table: Map<HexType, Map<number, number>>;
 }
@@ -73,8 +73,23 @@ export const makeWalker = (pattern: Pattern, start: HexType, startEdge: number, 
 /** The world's tile one level up, on its side of the seam: the near side takes the link, the far side its own. */
 const raise = (a: Address, link: Link): Address => ({ leaf: a.leaf, path: [...a.path, link] });
 
-/** Every world after one step, grouped by what is seen. */
-export function stepAll(wk: Walker, worlds: readonly World[]): Outcome[] {
+/**
+ * Stacks whose strand, at a step, still leaves its supertile along a second
+ * wall at `topLevel`: two walls meet there. They are not followed further.
+ * In each, the tiles across the second wall are found from the side the
+ * strand is on, as at the first seam: `tiles` counts the stacks where that is
+ * one tile, per tile; `unforced` the stacks where it is more than one.
+ */
+export interface Corner {
+  readonly step: number;
+  readonly stacks: number;
+  readonly tiles: readonly { readonly tile: string; readonly stacks: number }[];
+  readonly unforced: number;
+}
+
+/** Every world after one step, grouped by what is seen; and the stacks that stop at a corner of two walls. */
+export function stepAll(wk: Walker, worlds: readonly World[]): { outcomes: Outcome[]; corner: Omit<Corner, 'step'> } {
+  const corner = { stacks: 0, tiles: new Map<string, number>(), unforced: 0 };
   const groups = new Map<string, { type: HexType | null; edge: number | null; worlds: World[] }>();
   const add = (key: string, type: HexType | null, edge: number | null, w: World): void => {
     (groups.get(key) ?? groups.set(key, { type, edge, worlds: [] }).get(key)!).worlds.push(w);
@@ -94,7 +109,13 @@ export function stepAll(wk: Walker, worlds: readonly World[]): Outcome[] {
         if (down) land({ ...w, at: down.address, entry: down.edge, far: !w.far });
         return;
       }
-      if (w.chain.length >= wk.topLevel) { add('open', null, null, w); return; }
+      if (w.chain.length >= wk.topLevel) {
+        corner.stacks++;
+        const tiles = new Set(across(w.at, exit).map((o) => `${o.address.leaf} ${o.edge}`));
+        if (tiles.size === 1) for (const t of tiles) corner.tiles.set(t, (corner.tiles.get(t) ?? 0) + 1);
+        else corner.unforced++;
+        return;
+      }
       // the walk reads above the seam: move it up a level, keeping the pairs that fit
       for (const link of parentsOf(topOf(w, wk.start))) {
         for (const g of growPair(w.seam, link)) {
@@ -112,9 +133,11 @@ export function stepAll(wk: Walker, worlds: readonly World[]): Outcome[] {
     for (const link of parentsOf(topOf(w, wk.start))) go({ chain: [...w.chain, link], at: raise(w.at, link), entry: w.entry });
   };
   for (const w of worlds) go(w);
-  return [...groups.entries()]
+  const outcomes = [...groups.entries()]
     .map(([key, g]) => ({ key, ...g }))
     .sort((a, b) => b.worlds.length - a.worlds.length);
+  const tiles = [...corner.tiles].map(([tile, stacks]) => ({ tile, stacks })).sort((a, b) => b.stacks - a.stacks);
+  return { outcomes, corner: { stacks: corner.stacks, tiles, unforced: corner.unforced } };
 }
 
 export const initialWorlds = (wk: Walker): World[] => [{ chain: [], at: { leaf: wk.start, path: [] }, entry: wk.startEdge }];
@@ -130,6 +153,8 @@ export interface Stage {
   readonly status: Status;
   /** The outcomes to choose between, when `status` is 'choice'. */
   readonly pending: readonly Outcome[];
+  /** The steps where some stacks stopped at a corner of two walls. */
+  readonly corners: readonly Corner[];
 }
 
 /** One landing offered at a fork, with the bundle of stacks behind it. */
@@ -214,21 +239,22 @@ function apply(stage: Stage, wk: Walker, o: Outcome): Stage {
   const w = stage.worlds[0];
   const exit = wk.table.get(w.at.leaf)!.get(w.entry)!;
   const seen = [...stage.seen, { type: w.at.leaf, entry: w.entry, exit }];
-  const status: Status = o.key === 'closes' ? 'closed' : o.key === 'open' ? 'open' : 'walking';
-  return { worlds: o.worlds, seen, status, pending: [] };
+  const status: Status = o.key === 'closes' ? 'closed' : 'walking';
+  return { worlds: o.worlds, seen, status, pending: [], corners: stage.corners };
 }
 
 /** One step: taken if every world agrees, otherwise the stage stops at a choice. */
 export function advance(wk: Walker, stage: Stage): Stage {
   if (stage.status !== 'walking') return stage;
-  const out = stepAll(wk, stage.worlds);
-  if (out.length === 0) return { ...stage, status: 'stuck' };
-  if (out.length === 1) return apply(stage, wk, out[0]);
-  return { ...stage, status: 'choice', pending: out };
+  const { outcomes: out, corner } = stepAll(wk, stage.worlds);
+  const here = corner.stacks ? { ...stage, corners: [...stage.corners, { step: stage.seen.length + 1, ...corner }] } : stage;
+  if (out.length === 0) return { ...here, status: corner.stacks ? 'open' : 'stuck' };
+  if (out.length === 1) return apply(here, wk, out[0]);
+  return { ...here, status: 'choice', pending: out };
 }
 
 export function startWalk(wk: Walker, worlds?: readonly World[]): PossibleWalk {
-  const stage: Stage = { worlds: worlds ?? initialWorlds(wk), seen: [], status: 'walking', pending: [] };
+  const stage: Stage = { worlds: worlds ?? initialWorlds(wk), seen: [], status: 'walking', pending: [], corners: [] };
   return { walker: wk, nodes: [{ id: 0, parent: null, key: null, children: [], stage, fork: null }], current: 0, stage };
 }
 

@@ -102,7 +102,7 @@ export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial
           {stage.status === 'closed'
             ? `A circuit of ${n} tiles, after ${choicesMade} ${choicesMade === 1 ? 'choice' : 'choices'}. It is the same circuit for all ${stage.worlds.length} ancestor stacks left.`
             : stage.status === 'open'
-              ? `After ${n} tiles the strand climbs above a level-${pw.walker.topLevel} supertile.`
+              ? `After ${n} tiles every stack left stops at a corner of two walls.`
               : stage.status === 'choice'
                 ? `Step ${n + 1}: the ${stage.worlds.length} ancestor stacks still possible disagree about where the strand lands. Choose on the right.`
                 : stage.status === 'stuck'
@@ -111,6 +111,26 @@ export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial
         </span>
       </div>
 
+
+      {stage.corners.length > 0 && (
+        <ul className="wk__corners" data-testid="wk-corners">
+          {stage.corners.map((c) => {
+            const landed = c.step < n ? `${stage.seen[c.step].type} ${stage.seen[c.step].entry}` : c.step === n && stage.status !== 'choice' ? `${here.at.leaf} ${here.entry}` : null;
+            const elsewhere = c.tiles.filter((t) => (landed ? t.tile !== landed : !stage.pending.some((o) => o.key === t.tile)));
+            return (
+              <li key={c.step} className={c.unforced ? 'is-odd' : ''}>
+                Step {c.step}: {c.stacks.toLocaleString('en-US')} {c.stacks === 1 ? 'stack meets' : 'stacks meet'} a second wall (still climbing at
+                level {pw.walker.topLevel}) and {c.stacks === 1 ? 'stops' : 'stop'}; across it,{' '}
+                {c.tiles.length === 1 && c.tiles[0].stacks === c.stacks
+                  ? `${c.tiles[0].tile} in all of them`
+                  : c.tiles.map((t) => `${t.tile} in ${t.stacks.toLocaleString('en-US')}`).join(', ') || 'no tile is forced'}
+                {elsewhere.length > 0 && ` (${elsewhere.map((t) => t.tile).join(', ')}: not where the other stacks ${landed ? 'land' : 'can land'})`}
+                {c.unforced > 0 && `; not forced in ${c.unforced.toLocaleString('en-US')}`}.
+              </li>
+            );
+          })}
+        </ul>
+      )}
 
       <div className="wk__main">
         <HexBoard
