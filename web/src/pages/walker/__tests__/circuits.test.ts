@@ -2,13 +2,17 @@
  * Taking every landing, against `walkStrand` on one full stack: each circuit
  * the tree closes on is a circuit `walkStrand` walks in a stack behind its
  * branch, of the same length and word. A circuit's key does not change
- * when its word is read from another tile or the other way round.
+ * when its word is read from another tile or the other way round. Walked
+ * again from another of its tiles, either way round, by taking the landing it
+ * goes to at each fork, it closes on the same circuit, which `walkStrand`
+ * walks in a stack behind it.
  */
 import { describe, expect, it } from 'vitest';
 
 import { walkStrand } from '../../../core';
 import { circuitKey, circuitsOf } from '../circuits';
-import { concreteChain, explore, makeWalker, startWalk, type Seen } from '../possible';
+import { concreteChain, explore, followWord, makeWalker, replayChoices, rotateWord, stageAhead, startWalk, type Seen } from '../possible';
+import { decodeLink } from '../share';
 import { matchingByType, patternOf } from '../walk';
 
 const triangle = patternOf([0, 2, 3, 4, 6, 8], '000100000');
@@ -53,4 +57,22 @@ describe('every landing taken', () => {
       expect(circuitKey([...r].reverse().map((s) => ({ ...s, entry: s.exit, exit: s.entry })))).toBe(key);
     }
   });
+
+  it('walks a circuit again from any of its tiles, either way round', () => {
+    const l = decodeLink('r=023468&m=2.14.0.0.0.0.0.0.2&s=Xi&e=2&t=0-Theta5_0-Phi5_2-Phi1_3-Sigma4_4-Delta4_5-Phi1_6-Delta4_7-Delta4&c=8')!;
+    const pattern = { subset: l.subset, matching: l.matching };
+    const pw = replayChoices(startWalk(makeWalker(pattern, l.start, l.edge!, 5)), l.choices, l.current);
+    const word = stageAhead(pw, pw.current, 100000).seen;
+    expect(word).toHaveLength(57);
+    const m = Object.fromEntries(matchingByType(pattern));
+    for (const [k, back] of [[1, false], [20, false], [0, true], [33, true]] as const) {
+      const w = rotateWord(word, k, back);
+      const again = followWord(startWalk(makeWalker(pattern, w[0].type, w[0].entry, 5)), w, 100000);
+      expect(again.stage.status).toBe('closed');
+      expect(again.stage.seen).toEqual(w);
+      expect(circuitKey(again.stage.seen)).toBe(circuitKey(word));
+      const ref = walkStrand(pattern.subset, m, { address: { leaf: w[0].type, path: [...concreteChain(again.stage.worlds[0])] }, entry: w[0].entry }, 100000);
+      expect(ref.states.map((s) => `${s.address.leaf}${s.entry}`)).toEqual(w.map((s) => `${s.type}${s.entry}`));
+    }
+  }, 60000);
 });

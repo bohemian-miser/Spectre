@@ -427,3 +427,38 @@ export function explore(pw: PossibleWalk, limits: Limits, from = 0, budgetMs = I
   return { pw: { ...pw, nodes }, next: id, done };
 }
 
+/** Where the walk from a node stops: at its fork, where its branch ends, or after `cap` steps. */
+export function stageAhead(pw: PossibleWalk, id: number, cap: number): Stage {
+  const node = pw.nodes[id];
+  let st = node.end ?? (id === pw.current ? pw.stage : node.stage);
+  for (let i = 0; i < cap && st.status === 'walking'; i++) st = advance(pw.walker, st);
+  return st;
+}
+
+/**
+ * Walks a known circuit again from its first tile: runs, and at each fork
+ * takes the landing the circuit goes to next (`closes` when it is back at
+ * the start). Stops at a fork whose landings do not include it.
+ */
+export function followWord(pw: PossibleWalk, word: readonly Seen[], cap: number): PossibleWalk {
+  let w = reducePossible(pw, { type: 'run', cap });
+  while (w.stage.status === 'choice') {
+    const n = w.stage.seen.length;
+    const key = n + 1 >= word.length ? 'closes' : `${word[n + 1].type} ${word[n + 1].entry}`;
+    if (!w.stage.pending.some((o) => o.key === key)) break;
+    w = reducePossible(reducePossible(w, { type: 'choose', key }), { type: 'run', cap });
+  }
+  return w;
+}
+
+/** A circuit's tiles read from tile `k` on, or with `back`, from tile `k` the other way round. */
+export function rotateWord(word: readonly Seen[], k: number, back = false): Seen[] {
+  const N = word.length;
+  const at = (i: number): Seen => word[((i % N) + N) % N];
+  return Array.from({ length: N }, (_, i) => {
+    if (!back) return at(k + i);
+    const s = at(k - i);
+    return { type: s.type, entry: s.exit, exit: s.entry };
+  });
+}
+

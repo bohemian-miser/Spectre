@@ -47,6 +47,8 @@ interface TreeRow {
   readonly onPath: boolean;
   readonly current: boolean;
   readonly label: string;
+  /** A taken landing with more below it: whether that is folded away, and how many leaves it holds. */
+  readonly fold?: { readonly folded: boolean; readonly leaves: number };
 }
 
 const compact = (n: number): string => (n < 1000 ? String(n) : n < 1e6 ? `${(n / 1000).toFixed(n < 1e4 ? 1 : 0)}k` : `${(n / 1e6).toFixed(1)}M`);
@@ -62,9 +64,14 @@ export interface ChoiceTreeProps {
   readonly onChooseAt: (id: number, key: string) => void;
   /** A landing offered at the next fork is hovered (path mode). */
   readonly onHoverOption?: (key: string | null) => void;
+  /** A landing already taken is hovered: its node, or null when the pointer leaves. */
+  readonly onHoverNode?: (id: number | null) => void;
+  /** Whether a node's subtree is folded away (full mode), and the click that folds or opens it. */
+  readonly isCollapsed?: (id: number) => boolean;
+  readonly onToggle?: (id: number) => void;
 }
 
-export function ChoiceTree({ pw, mode, onGoto, onChooseAt, onHoverOption }: ChoiceTreeProps): JSX.Element {
+export function ChoiceTree({ pw, mode, onGoto, onChooseAt, onHoverOption, onHoverNode, isCollapsed, onToggle }: ChoiceTreeProps): JSX.Element {
   const rows = useMemo(() => {
     const ahead = new Map<number, Stage>();
     const stageAhead = (n: ChoiceNode): Stage => {
@@ -79,6 +86,10 @@ export function ChoiceTree({ pw, mode, onGoto, onChooseAt, onHoverOption }: Choi
       if (n.fork) return n.fork;
       const st = stageAhead(n);
       return st.status === 'choice' ? forkOf(pw.walker, st) : null;
+    };
+    const leavesUnder = (id: number): number => {
+      const ch = pw.nodes[id].children;
+      return ch.length === 0 ? 1 : ch.reduce((a, c) => a + leavesUnder(c), 0);
     };
     const onPath = new Set<number>();
     for (let id: number | null = pw.current; id !== null; id = pw.nodes[id].parent) onPath.add(id);
@@ -117,12 +128,15 @@ export function ChoiceTree({ pw, mode, onGoto, onChooseAt, onHoverOption }: Choi
         const main = c !== undefined && onPath.has(c);
         const l = main ? lane : free(rowIndex);
         const me = out.length;
+        const below = c !== undefined && pw.nodes[c].children.length > 0;
+        const folded = below && !!isCollapsed?.(c!);
         out.push({
           key: `${n.id}:${o.key}`, parent: rowIndex, lane: l, kind: 'landing', option: o, shared: sharedCells(f, o), node: c, at: n.id, step: f.step,
           from: f.from, then: c !== undefined ? stretch(pw.nodes[c]) : '', onPath: main, current: c === pw.current,
           label: o.type ? `${o.type} ${o.edge}` : o.key === 'closes' ? 'closes' : 'open',
+          fold: below ? { folded, leaves: leavesUnder(c!) } : undefined,
         });
-        if (c !== undefined) {
+        if (c !== undefined && !folded) {
           // keep its lane until its branch has been laid out
           busy[l] = Infinity;
           later.push({ c, row: me, lane: l });
@@ -166,7 +180,7 @@ export function ChoiceTree({ pw, mode, onGoto, onChooseAt, onHoverOption }: Choi
       if (st.status === 'closed' || st.status === 'open') out.push({ key: `end${cur.id}`, parent: here, lane: 0, kind: 'end', node: cur.id, onPath: true, current: false, label: st.status === 'closed' ? `circuit · ${st.seen.length} tiles` : `open after ${st.seen.length} tiles` });
     }
     return out;
-  }, [pw, mode]);
+  }, [pw, mode, isCollapsed]);
 
   const lanes = Math.max(1, ...rows.map((r) => r.lane + 1));
   const gw = PAD * 2 + (lanes - 1) * LANE;
@@ -231,8 +245,8 @@ export function ChoiceTree({ pw, mode, onGoto, onChooseAt, onHoverOption }: Choi
             key={r.key}
             className={`wk-tree__row${untaken ? ' is-untaken' : ''}${r.current ? ' is-current' : ''}`}
             onClick={click}
-            onMouseEnter={untaken && onHoverOption ? () => onHoverOption(r.option!.key) : undefined}
-            onMouseLeave={untaken && onHoverOption ? () => onHoverOption(null) : undefined}
+            onMouseEnter={untaken && onHoverOption ? () => onHoverOption(r.option!.key) : r.node !== undefined && onHoverNode ? () => onHoverNode(r.node!) : undefined}
+            onMouseLeave={untaken && onHoverOption ? () => onHoverOption(null) : r.node !== undefined && onHoverNode ? () => onHoverNode(null) : undefined}
             data-testid={untaken && mode === 'path' ? `wk-outcome-${r.option!.key.replace(' ', '-')}` : `wk-tree-${r.key.replace(/[: ]/g, '-')}`}
           >
             <title>{title}</title>
@@ -240,6 +254,17 @@ export function ChoiceTree({ pw, mode, onGoto, onChooseAt, onHoverOption }: Choi
             {r.current && <polygon points={hexPts(cx, cy, HEX_W / 2 + 4)} className="wk-tree__halo" />}
             <polygon points={hexPts(cx, cy, HEX_W / 2)} fill={untaken ? 'var(--panel, #fff)' : fill} stroke={untaken ? (type ? fill : '#8a93a3') : '#1b2230'} strokeWidth={untaken ? 2 : 1.2} className="wk-tree__hex" />
             <text x={cx} y={cy} className="wk-tree__name" textAnchor="middle" dominantBaseline="central">{text}</text>
+            {r.fold && onToggle && (
+              <g
+                className={`wk-tree__fold${r.fold.folded ? ' is-folded' : ''}`}
+                onClick={(e) => { e.stopPropagation(); onToggle(r.node!); }}
+                data-testid={`wk-fold-${r.node}`}
+              >
+                <title>{r.fold.folded ? `${r.fold.leaves} ${r.fold.leaves === 1 ? 'leaf' : 'leaves'} below, folded away: click to open` : 'Click to fold away what is below'}</title>
+                <rect x={cx + HEX_W / 2 + 2} y={cy - 7} width={r.fold.folded ? 26 : 12} height={14} rx={7} />
+                <text x={cx + HEX_W / 2 + 2 + (r.fold.folded ? 13 : 6)} y={cy} textAnchor="middle" dominantBaseline="central">{r.fold.folded ? `+${r.fold.leaves}` : '−'}</text>
+              </g>
+            )}
             {r.option && cols.map((col, k) => {
               const on = r.option!.cells.includes(col.c);
               const shared = on && !!r.shared?.includes(col.c);

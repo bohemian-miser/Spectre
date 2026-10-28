@@ -15,7 +15,7 @@ import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointer
 
 import { addressFromId, typeAt, transPt, type Affine, type HexType } from '../core';
 import { tileColor } from '../lib/palette';
-import { chordD, edgeLabelAt, orientationPath, pairingD, partnerEdge, pointOnEdge, tileCentre, tilePoints, HEX_OUTLINE, type BoundaryEdge } from '../lib/hexBoard';
+import { edgeLabelAt, orientationPath, pairingD, partnerEdge, strandPathD, tileCentre, tilePoints, HEX_OUTLINE, type BoundaryEdge } from '../lib/hexBoard';
 import '../styles/hexboard.css';
 
 export interface BoardTile {
@@ -145,21 +145,7 @@ export function HexBoard(props: HexBoardProps): JSX.Element {
   };
   const viewBox = `${vb.x} ${vb.y} ${vb.w} ${vb.h}`;
 
-  const strandD = (steps: readonly BoardStep[]): string => {
-    const out: string[] = [];
-    let last: { x: number; y: number } | null = null;
-    for (const s of steps) {
-      if (!pattern) break;
-      const a = pointOnEdge(s.type, pattern.subset, s.entry);
-      const b = pointOnEdge(s.type, pattern.subset, s.exit);
-      if (!a || !b) continue;
-      const pa = transPt(s.xform, a);
-      const joined = last && Math.hypot(last.x - pa.x, last.y - pa.y) < 1e-6;
-      out.push(chordD(s.xform, s.type, a, b, !joined));
-      last = transPt(s.xform, b);
-    }
-    return out.join(' ');
-  };
+  const strandD = (steps: readonly BoardStep[]): string => (pattern ? strandPathD(steps, pattern.subset) : '');
   const pendingD = pendingStep ? strandD([pendingStep]) : '';
   const strandPath = strand.length ? strandD(strand) : '';
   const solid = tiles.filter((t) => t.tone === 'solid');
