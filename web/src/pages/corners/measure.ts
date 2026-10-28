@@ -6,11 +6,11 @@
  * - Corners walked round: cut the loop into k runs of equal tile count from
  *   every start, add up each tile's distance to its run's chord
  *   (`web/circuit-classes/chord-fit.ts`), and see how much the start matters.
- * - Fitted polygons: cut the loop into k runs anywhere, fit each run a
- *   least-squares line, and find the cuts with the smallest total squared
- *   distance by dynamic programming. Corners are where neighbouring lines
- *   meet, so sides can have any lengths. A symmetric fit makes the loop's m
- *   thirds (or sixths) share one set of cuts, turned.
+ * - Fitted polygons: put k corners on the loop anywhere and find the ones
+ *   whose sides pass closest to it (least total squared distance of each
+ *   sample to the side across its run) by dynamic programming, so sides can
+ *   have any lengths and the polygon measured is the polygon drawn. A
+ *   symmetric fit makes the loop's m turns share one set of corners.
  * - A score that only takes more corners when each one cuts the error by a
  *   set fraction.
  * - The Fourier series of the loop: an m-fold turn that maps tile i to tile
@@ -121,15 +121,19 @@ export function chordCurve(loop: Loop, k: number, starts: readonly number[], rg:
   return { k, starts, unsigned: u, signed: v, best, worst, contrast: mean > 0 ? (u[worst] - u[best]) / mean : 0, swing };
 }
 
-// ---------------------------------------------------------------- least-squares runs
+// ---------------------------------------------------------------- fitted polygons
 
 /**
  * Running sums over a sequence of point groups (each index holds `per`
- * points), so any run's least-squares line and residual come in O(1).
+ * points: one per turn when the loop is folded), so the squared distance of
+ * any run of indices to any line comes in O(1).
  */
 export class RunSums {
   readonly len: number;
   private readonly s: Float64Array;
+  /** Each index's corner: the mean of its group. */
+  readonly cx: Float64Array;
+  readonly cy: Float64Array;
 
   constructor(
     /** x, y of `per` points at each index, index-major. */
@@ -138,6 +142,8 @@ export class RunSums {
   ) {
     this.len = pts.length / (2 * per);
     this.s = new Float64Array(5 * (this.len + 1));
+    this.cx = new Float64Array(this.len);
+    this.cy = new Float64Array(this.len);
     for (let i = 0; i < this.len; i++) {
       let x = 0;
       let y = 0;
@@ -153,6 +159,8 @@ export class RunSums {
         yy += py * py;
         xy += px * py;
       }
+      this.cx[i] = x / per;
+      this.cy[i] = y / per;
       const o = 5 * i;
       this.s[o + 5] = this.s[o] + x;
       this.s[o + 6] = this.s[o + 1] + y;
@@ -162,49 +170,41 @@ export class RunSums {
     }
   }
 
-  /** Mean and covariance of indices [a, b). */
-  moments(a: number, b: number): { n: number; mx: number; my: number; cxx: number; cyy: number; cxy: number } {
-    const s = this.s;
-    const n = (b - a) * this.per;
-    const A = 5 * a;
-    const B = 5 * b;
-    const mx = (s[B] - s[A]) / n;
-    const my = (s[B + 1] - s[A + 1]) / n;
-    return { n, mx, my, cxx: (s[B + 2] - s[A + 2]) / n - mx * mx, cyy: (s[B + 3] - s[A + 3]) / n - my * my, cxy: (s[B + 4] - s[A + 4]) / n - mx * my };
-  }
-
-  /** Sum of squared distances of indices [a, b) to their least-squares line. */
+  /**
+   * Sum of squared distances of the points at indices [a, b) to the side
+   * from corner a to corner b (to corner a itself if they coincide).
+   */
   cost(a: number, b: number): number {
     const s = this.s;
     const n = (b - a) * this.per;
     const A = 5 * a;
     const B = 5 * b;
+    const ax = this.cx[a];
+    const ay = this.cy[a];
     const sx = s[B] - s[A];
     const sy = s[B + 1] - s[A + 1];
-    const cxx = s[B + 2] - s[A + 2] - (sx * sx) / n;
-    const cyy = s[B + 3] - s[A + 3] - (sy * sy) / n;
-    const cxy = s[B + 4] - s[A + 4] - (sx * sy) / n;
-    const h = (cxx - cyy) / 2;
-    const lam = (cxx + cyy) / 2 - Math.sqrt(h * h + cxy * cxy);
-    return lam > 0 ? lam : 0;
-  }
-
-  /** The run's line: a point on it and its unit direction. */
-  line(a: number, b: number): { x: number; y: number; dx: number; dy: number } {
-    const m = this.moments(a, b);
-    const t = 0.5 * Math.atan2(2 * m.cxy, m.cxx - m.cyy);
-    return { x: m.mx, y: m.my, dx: Math.cos(t), dy: Math.sin(t) };
+    // Moments of the points about corner a.
+    const xx = s[B + 2] - s[A + 2] - 2 * ax * sx + n * ax * ax;
+    const yy = s[B + 3] - s[A + 3] - 2 * ay * sy + n * ay * ay;
+    const xy = s[B + 4] - s[A + 4] - ax * sy - ay * sx + n * ax * ay;
+    const dx = this.cx[b] - ax;
+    const dy = this.cy[b] - ay;
+    const l2 = dx * dx + dy * dy;
+    if (l2 === 0) return xx + yy;
+    const c = (dy * dy * xx + dx * dx * yy - 2 * dx * dy * xy) / l2;
+    return c > 0 ? c : 0;
   }
 }
 
 /**
- * Cut indices [start, start + n) of `sums` into k runs of at least `minRun`
- * indices each with the smallest total cost. Returns the cost and each run's
- * first index (the first is `start`).
+ * Corners at indices of `sums` for a closed run [start, start + n): k sides
+ * from corner start through k − 1 more corners and back to corner start + n
+ * (the same corner one lap on), with the least total cost. Each side spans at
+ * least `minRun` indices. Returns the cost and the corners, `start` first.
  */
 export function cutRuns(sums: RunSums, start: number, n: number, k: number, minRun = 2): { cost: number; cuts: number[] } {
   if (k * minRun > n) return { cost: Infinity, cuts: [] };
-  // f[t][j]: least cost to cover the first j indices with t runs.
+  // f[t][j]: least cost of t sides from corner start to corner start + j.
   const f = new Float64Array((k + 1) * (n + 1)).fill(Infinity);
   const from = new Int32Array((k + 1) * (n + 1)).fill(-1);
   f[0] = 0;
@@ -243,57 +243,52 @@ export function cutRuns(sums: RunSums, start: number, n: number, k: number, minR
 export interface PolygonFit {
   /** Sides. */
   readonly k: number;
-  /** Turns sharing one set of cuts (1 for a free fit). */
+  /** Turns sharing one set of corners (1 for a free fit). */
   readonly m: number;
-  /** Sum of squared distances to the sides, over all samples. */
+  /** Sum of squared distances of the samples to their sides. */
   readonly cost: number;
   /** sqrt(cost / n) / rg. */
   readonly rms: number;
-  /** First sample of each side, in loop order. */
+  /** The sample at each corner, in loop order; side j runs from corner j to corner j + 1. */
   readonly cuts: readonly number[];
-  /** Where neighbouring sides' lines meet: corner j ends side j. */
   readonly corners: readonly { x: number; y: number }[];
   readonly sides: readonly number[];
 }
 
-function meet(a: { x: number; y: number; dx: number; dy: number }, b: { x: number; y: number; dx: number; dy: number }, fallback: { x: number; y: number }) {
-  const den = a.dx * b.dy - a.dy * b.dx;
-  // Lines within about a degree of parallel meet far away; the cut is a better corner.
-  if (Math.abs(den) < 0.02) return fallback;
-  const t = ((b.x - a.x) * b.dy - (b.y - a.y) * b.dx) / den;
-  return { x: a.x + t * a.dx, y: a.y + t * a.dy };
-}
-
 /**
- * The k-sided polygon with the least squared distance to the loop, its
- * corners anywhere. `step` decimates the loop first (every step-th sample).
+ * The k-gon with corners on the loop whose sides pass closest to it: each
+ * sample's squared distance to the side across its run, summed, is least.
+ * `step` decimates the loop first (every step-th sample).
  *
- * The cuts of a closed loop are found by cutting it open at a start, solving
- * the open problem exactly, then reopening at each cut that solution chose
- * and keeping the best; an optimal polygon has a cut at one of the samples,
- * so starting there would be exact.
+ * The corners of a closed loop are found by fixing one corner, solving the
+ * rest exactly, then fixing each corner that solution chose in turn and
+ * keeping the best; fixing a corner of the best polygon would be exact.
  */
 export function fitPolygon(loop: Loop, k: number, rg: number, step = 1): PolygonFit {
   return fitSymmetric(loop, k, 1, rg, step);
 }
 
+/** Corners refixed after the first solve: enough to settle, few enough to stay quick at 24 sides. */
+const RESTARTS = 8;
+
 /**
- * The best k-sided polygon whose m turns about the centroid share one set of
- * cuts (k a multiple of m): fold the loop into m copies of its first n/m
- * samples, each turned back by its multiple of 1/m of a turn, and cut that.
+ * The best k-gon whose m turns about the centroid share one set of corners
+ * (k a multiple of m): fold the loop into its first n/m samples, each holding
+ * the m samples a turn apart turned back to the first, and fit that. A
+ * corner is the mean of its m turned-back samples.
  */
 export function fitSymmetric(loop: Loop, k: number, m: number, rg: number, step = 1): PolygonFit {
   const { xy, n } = loop;
-  if (k % m !== 0) throw new Error(`${k} sides cannot share cuts across ${m} turns`);
+  if (k % m !== 0) throw new Error(`${k} sides cannot share corners across ${m} turns`);
   const c = centroid(loop);
   const idx = Array.from({ length: Math.floor(n / step) }, (_, i) => i * step);
   const nd = idx.length;
   if (nd % m !== 0) throw new Error(`${nd} samples do not split into ${m} equal turns`);
   const per = nd / m;
   const q = k / m;
-  // Folded points, two laps so runs can wrap: index i holds the m samples i + j per, turned back by j / m.
-  const pts = new Float64Array(2 * 2 * per * m);
-  for (let i = 0; i < 2 * per; i++) {
+  // Folded points, two laps so sides can wrap: index i holds the m samples i + j per, turned back by j / m.
+  const pts = new Float64Array(2 * (2 * per + 1) * m);
+  for (let i = 0; i <= 2 * per; i++) {
     for (let j = 0; j < m; j++) {
       const s = idx[(i + j * per) % nd];
       const a = (-2 * Math.PI * j) / m;
@@ -305,37 +300,47 @@ export function fitSymmetric(loop: Loop, k: number, m: number, rg: number, step 
   }
   const sums = new RunSums(pts, m);
   let best = cutRuns(sums, 0, per, q);
-  for (const s of best.cuts.slice(1)) {
-    const r = cutRuns(sums, s, per, q);
-    if (r.cost < best.cost) best = r;
+  // One corner per turn: every position is a single side, so try them all.
+  if (q === 1)
+    for (let s = 1; s < per; s++) {
+      const cost = sums.cost(s, s + per);
+      if (cost < best.cost) best = { cost, cuts: [s] };
+    }
+  const tried = new Set(q === 1 ? best.cuts : [0]);
+  for (let round = 0; round < 2; round++) {
+    let improved = false;
+    const from = best.cuts.map((x) => x % per).filter((x) => !tried.has(x));
+    const pick = from.length <= RESTARTS ? from : Array.from({ length: RESTARTS }, (_, i) => from[Math.floor((i * from.length) / RESTARTS)]);
+    for (const s of pick) {
+      tried.add(s);
+      const r = cutRuns(sums, s, per, q);
+      if (r.cost < best.cost - 1e-12 * Math.abs(best.cost)) {
+        best = r;
+        improved = true;
+      }
+    }
+    if (!improved) break;
   }
-  // Lines of one turn, then turned for the others.
-  const ends = best.cuts.map((a, t) => [a, t + 1 < q ? best.cuts[t + 1] : best.cuts[0] + per] as const);
-  const base = ends.map(([a, b]) => sums.line(a, b));
-  const lines: { x: number; y: number; dx: number; dy: number }[] = [];
-  const cutsAll: number[] = [];
+  const corners: { x: number; y: number }[] = [];
+  const cuts: number[] = [];
   for (let j = 0; j < m; j++) {
     const a = (2 * Math.PI * j) / m;
     const ca = Math.cos(a);
     const sa = Math.sin(a);
-    base.forEach((l, t) => {
-      lines.push({ x: l.x * ca - l.y * sa, y: l.x * sa + l.y * ca, dx: l.dx * ca - l.dy * sa, dy: l.dx * sa + l.dy * ca });
-      cutsAll.push(idx[(best.cuts[t] + j * per) % nd]);
-    });
+    for (const i of best.cuts) {
+      const x = sums.cx[i];
+      const y = sums.cy[i];
+      corners.push({ x: c.x + x * ca - y * sa, y: c.y + x * sa + y * ca });
+      cuts.push(idx[(i + j * per) % nd]);
+    }
   }
-  const corners = lines.map((l, t) => {
-    const nx = lines[(t + 1) % k];
-    const cut = cutsAll[(t + 1) % k];
-    const p = meet(l, nx, { x: xy[2 * cut] - c.x, y: xy[2 * cut + 1] - c.y });
-    return { x: p.x + c.x, y: p.y + c.y };
-  });
   const sides = corners.map((p, t) => {
-    const prev = corners[(t + k - 1) % k];
-    return Math.hypot(p.x - prev.x, p.y - prev.y);
+    const nx = corners[(t + 1) % k];
+    return Math.hypot(nx.x - p.x, nx.y - p.y);
   });
   // The cost was over the decimated samples; scale it to all n.
   const cost = (best.cost * n) / nd;
-  return { k, m, cost, rms: Math.sqrt(cost / n) / rg, cuts: cutsAll, corners, sides };
+  return { k, m, cost, rms: Math.sqrt(cost / n) / rg, cuts, corners, sides };
 }
 
 // ---------------------------------------------------------------- how many corners
