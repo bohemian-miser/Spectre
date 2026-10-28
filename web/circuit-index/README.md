@@ -83,18 +83,27 @@ boards, and the merged walk is their check to level 4.
 
 ## Keys
 
-| key | what it identifies |
+| column | what it is |
 |---|---|
-| circuit | the word read from its least rotation, in its least direction; one letter per tile: the type's shortest unique prefix (G, D, T, L, X, Pi, S, Ph, Ps), then the entry and exit edge indices, so `D23G01X01` is Delta in by edge 2 and out by 3, then Gamma, then Xi |
-| tiles | the tiles alone, without edges: types, turns and centres relative to the centroid, least over the 24 rotations and reflections |
-| corner triple | the three corner tiles, keyed the same way |
+| `circuit` | the word read from its least rotation, in its least direction; one letter per tile: the type's shortest unique prefix (G, D, T, L, X, Pi, S, Ph, Ps), then the entry and exit edge indices, so `D23G01X01` is Delta in by edge 2 and out by 3, then Gamma, then Xi |
+| `corner_chains` | the three corners as slot chains, sorted |
 
-All positions are exact (`core/exact.ts`). The `circuit` column is the word
-itself. `corner_id` and `tiles_id` are the first 12 hex digits of a SHA-1 of
-their key, which lists each tile as type, turn (30-degree steps), mirror flag
-and centre (four integers in `Z[ζ12]`, scaled by the tile count) relative to
-the centroid: `Xi/0/0/108,0,36,0;Xi/4/0/-144,0,108,0;Xi/8/0/36,0,-144,0` is
-three Xi turned 0, 120 and 240 degrees about their centroid.
+A slot chain is a tile's type, then for each level up the slot it sits in and
+the parent's type, in the same letters: `Ph<6Pi<0G<7` is a Phi in slot 6 of
+a Pi, in slot 0 of a Gamma, which sits in slot 7 of its parent. The chain goes
+up as far as every copy of the circuit at its level agrees; where the slot
+still agrees but the parent's type does not, it ends with the bare slot. For
+`023468-111000100` at level 6:
+
+| circuit length | copies | corner chains |
+|---|---|---|
+| 372 | 160 | `X<0S<4Ps<5` ×3 |
+| 402 | 160 | `Ph<6Pi<0G<7` ×3 |
+
+Which tiles a circuit covers follows from its word (each letter fixes the next
+tile's place), so it is not stored; `points.ts` works it out where it compares
+tile sets, keyed by exact positions (`core/exact.ts`) and listed by a short
+hash.
 
 ## Measures
 

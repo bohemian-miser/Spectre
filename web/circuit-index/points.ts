@@ -23,7 +23,7 @@ import { idOf } from '../src/core/transducer';
 import { pairingTable, patternOf } from '../src/pages/walker/walk';
 import { addressOf, board, traceAll, typeOf, type Traced } from './board';
 import { measure } from './circuits';
-import { canonicalWord, shortId, tileLetter } from './keys';
+import { canonicalWord, shortId, tileLetter, tileSetKey } from './keys';
 
 const [rule, lvArg = '6', minArg = '20', outArg = 'circuit-index/data'] = process.argv.slice(2);
 const subset = [...rule].map(Number);
@@ -60,7 +60,7 @@ function strandsOf(combo: string): { strands: Strand[]; through: Int32Array } {
     let m = measured.get(key);
     if (!m && s.tiles.length >= minLength) {
       const f = measure({ key, word, tiles: Array.from(s.tiles, (t) => addressOf(b, t)) }, 3, 0);
-      m = { corners: f.corners.corners, tilesId: f.tilesId };
+      m = { corners: f.corners.corners, tilesId: shortId(tileSetKey(Array.from(s.tiles, (t) => addressOf(b, t)))) };
       measured.set(key, m);
     }
     const triple = m ? m.corners.map((p) => tileAt(s, p)).sort((x, y) => x - y).join(' ') : null;

@@ -1,8 +1,8 @@
 # circuit-index/data/023468
 
-| combinations | capped at 1000 | circuit rows | distinct circuits | corner triples | tile sets |
-|---|---|---|---|---|---|
-| 320 | 0 | 3025 | 1158 | 347 | 1056 |
+| combinations | capped at 1000 | circuit rows | distinct circuits | corner triples |
+|---|---|---|---|---|
+| 320 | 0 | 3025 | 1158 | 358 |
 
 ## Three arms
 
@@ -62,95 +62,50 @@ exact: the word repeats a multiple of 3 times. near: arm score at most 0.1.
 
 ## Corner triples held by more than one circuit
 
-137 of 322 corner triples (circuits of 10 tiles or more).
+128 of 333 corner triples (circuits of 10 tiles or more).
 
-| corner triple | circuits | lengths | tile sets | kinds |
-|---|---|---|---|---|
-| 058c10a00b4f | 4 | 75 66 84 48 | 4 | exact exact exact exact |
-| 31963c2209a9 | 3 | 321 276 339 | 3 | exact exact exact |
-| f009cd3da8ea | 12 | 513 441 549 648 414 522 675 522 414 306 414 522 | 10 | near near near near near near near near near near near near |
-| a78fd5f4e1d3 | 35 | 3789 3258 9270 7542 7506 5778 8937 7209 7173 5445 4032 8064 8730 4518 9882 9396 7083 9882 6750 8748 9216 8415 3006 3780 4842 3780 3006 4986 3645 2232 3708 3006 3780 3645 4986 | 32 | other other other near other other other near near near near near near other near near near near near other near other near near other near near other other other other near near other other |
-| f64a81fc8d27 | 2 | 45 36 | 2 | other other |
-| 9f9150ab8d19 | 8 | 105 102 102 102 102 102 102 102 | 4 | exact exact near near exact near near exact |
-| 20612127512e | 10 | 201 165 192 156 192 156 183 147 156 192 | 10 | other other other other other other other other other other |
-| c8f83385b362 | 62 | 570 471 552 453 552 453 570 471 534 435 552 453 570 471 534 435 435 336 516 417 417 318 516 417 417 318 534 435 435 336 498 399 399 300 516 417 417 318 534 435 435 336 498 498 570 570 372 534 336 534 408 336 570 390 372 498 498 534 480 336 570 372 | 62 | exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact |
-| 9c0b0d90c6e0 | 66 | 1392 1149 1356 1113 1356 1113 1410 1167 1320 1077 1374 1131 1185 1302 1059 1059 816 1266 1023 1023 780 1266 1023 1023 780 1320 1077 1077 834 1230 987 987 744 1284 1041 1041 798 1338 813 759 1266 1410 777 723 1374 888 1302 816 1302 1050 816 1410 996 924 1230 1230 1338 1176 852 660 750 606 642 624 678 948 | 66 | other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other |
-| e8b1b87a10ed | 79 | 3819 3153 3711 3045 3711 3045 3846 3180 3603 2937 3738 3072 3873 3207 3576 2910 2910 2244 3468 2802 2802 2136 3468 2802 2802 2136 3603 2937 2937 2271 3360 2694 2694 2028 3495 2829 2829 2163 3630 2964 2964 2298 2202 2067 3414 3414 3846 2094 1959 3792 2460 3576 2244 3576 2244 3846 2685 2514 3360 3360 3630 3225 2298 3900 2568 2517 2409 3282 3282 2409 1779 2022 1644 1752 1671 1806 1536 2544 3282 | 77 | near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near |
-| 541b23ae4a9d | 10 | 18 21 27 27 36 33 36 27 27 36 | 7 | other other other other other other other other other other |
-| 335d2fa3b8b1 | 2 | 162 198 | 2 | other other |
-| 15d3f52fe169 | 7 | 8784 8127 8127 9882 6030 8127 9882 | 7 | near near near near near near near |
-| 1a77bd2261a4 | 7 | 36 51 24 27 39 30 30 | 7 | other other other other other other other |
-| 588d6bde4c76 | 6 | 87 75 48 75 75 75 | 6 | exact exact exact near near exact |
-| 1ff605d33c4e | 5 | 123 105 87 69 78 | 5 | exact exact exact exact exact |
-| 03c31eee424b | 11 | 753 618 582 555 435 417 762 708 390 354 660 | 11 | exact exact exact exact exact exact exact exact exact exact exact |
-| 318e416659a8 | 19 | 1395 1143 1350 1098 1314 1071 819 1269 1026 774 1224 1152 1242 1368 1404 900 1314 810 684 | 19 | other other near near other other other other other other near near other other near other other other other |
-| 7f4177f8e8b8 | 18 | 3990 3855 3774 3072 3054 3639 2937 2919 2346 2247 2883 4026 2748 3558 3756 3423 3378 3243 | 18 | exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact |
-| 06061f6bd20d | 8 | 9792 8028 9459 7695 8550 9522 6354 5688 | 8 | near near near near near other other other |
-| e3412f432d1f | 2 | 255 243 | 2 | other other |
-| e02256e5b924 | 8 | 3270 3135 2217 3486 3288 3558 3882 3828 | 8 | exact exact exact exact exact exact exact exact |
-| 8f9bf852fc70 | 2 | 33 30 | 2 | other other |
-| 1d79e6d5a039 | 29 | 726 591 654 618 426 408 672 408 390 762 726 609 507 453 480 498 471 480 651 651 336 372 318 336 345 327 318 336 300 | 28 | exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact |
-| 03884ef029c2 | 2 | 114 78 | 2 | exact exact |
-| 3fce90dad63a | 6 | 96 96 78 66 57 66 | 6 | exact exact exact exact exact exact |
-| 3f7c9f96bd0f | 2 | 123 84 | 2 | exact exact |
-| c63f4005347f | 7 | 1428 1095 1095 852 1446 960 570 | 7 | other other other other other other other |
-| fafa5a38a129 | 2 | 24 27 | 2 | other other |
-| 96ccdea64ffa | 2 | 21 30 | 2 | exact exact |
-| 2f366f5b61d6 | 3 | 39 33 42 | 3 | other other other |
-| a202178a9919 | 9 | 96 78 78 60 105 87 96 114 87 | 9 | exact exact exact exact exact exact exact exact exact |
-| ddb4f2dced35 | 4 | 192 183 183 174 | 4 | other other other other |
-| 5f08d252dbfa | 7 | 156 147 147 138 210 192 192 | 7 | other other other other other other other |
-| 59645d956d72 | 13 | 156 120 147 111 147 111 138 102 138 120 129 120 174 | 13 | other other other other other other other other other other other other other |
-| cbfda8c270f1 | 3 | 105 87 87 | 3 | exact exact exact |
-| 663f11e1b330 | 2 | 300 276 | 2 | other other |
-| 73925f2b1563 | 4 | 717 354 402 402 | 3 | exact exact exact exact |
-| da08e1f945a3 | 6 | 243 186 231 231 204 180 | 6 | other other other other other other |
-| b5ef19d8c857 | 2 | 243 294 | 2 | other other |
-
-## Tile sets covered by more than one circuit
-
-| tile set | circuits | length |
-|---|---|---|
-| 0942b151dbd2 | 2 | 114 |
-| 5d07bd168a93 | 2 | 114 |
-| f2c0b4a140ca | 5 | 30 |
-| dc005ec6aeda | 2 | 27 |
-| 62be20590b5a | 3 | 27 |
-| a7832106294f | 2 | 93 |
-| 43226d69ad8b | 2 | 27 |
-| 709fd1a98840 | 3 | 84 |
-| fd2264e3fde6 | 3 | 180 |
-| 28eded5b1812 | 3 | 312 |
-| a36a6441ede4 | 3 | 522 |
-| dc20182be2b5 | 3 | 1488 |
-| 69ca66541c81 | 3 | 3780 |
-| 28b08d4c58b7 | 3 | 102 |
-| ee2da8748df7 | 3 | 12 |
-| 7ae2c45d7334 | 2 | 273 |
-| 432320d41b34 | 2 | 642 |
-| 8c268cd193ef | 2 | 1296 |
-| 6ad98fcc02bc | 2 | 3606 |
-| 4c2a40aadedb | 2 | 8766 |
-| 30ae02725710 | 9 | 36 |
-| 4b458f101c7c | 3 | 102 |
-| 99d472ecc67b | 2 | 264 |
-| 013c86c95e80 | 2 | 624 |
-| 10d9a494b7ba | 2 | 1242 |
-| 502e1136804b | 2 | 3471 |
-| 22b5eef121fe | 2 | 8451 |
-| fdfce6f3760f | 2 | 33 |
-| 42720f1bcdf5 | 3 | 270 |
-| 0aa11727b4fc | 3 | 642 |
-| 99e0524fa834 | 3 | 1278 |
-| ad2316718d8b | 3 | 3570 |
-| 285b662e1f9e | 3 | 8694 |
-| 9cb2db3356f1 | 2 | 276 |
-| 06459cc272b5 | 2 | 651 |
-| cd845b3ac038 | 2 | 1287 |
-| 08d242c3cf0b | 2 | 3606 |
-| 0c97246fbb7d | 2 | 8784 |
-| 0a5e1fe2d8ce | 3 | 66 |
-| b38d94690253 | 3 | 168 |
+| corner triple | circuits | lengths | kinds |
+|---|---|---|---|
+| G<7 G<7 G<7 | 3 | 27 21 30 | other exact exact |
+| Ph<3 Ph<3 Ph<3 | 5 | 75 12 66 84 48 | exact exact exact exact exact |
+| S<4L<6S<4Ph S<4L<6S<4Ph S<4L<6S<4Ph | 3 | 321 276 339 | exact exact exact |
+| Ph<3Pi<0G<7 Ph<3Pi<0G<7 Ph<3Pi<0G<7 | 12 | 513 441 549 648 414 522 675 522 414 306 414 522 | near near near near near near near near near near near near |
+| Ph<3L<6S<4L<6S<4G<7 Ph<3L<6S<4Pi<0G<7D<1 Ph<3L<6S<4Pi<0G<7S<4 | 35 | 3789 3258 9270 7542 7506 5778 8937 7209 7173 5445 4032 8064 8730 4518 9882 9396 7083 9882 6750 8748 9216 8415 3006 3780 4842 3780 3006 4986 3645 2232 3708 3006 3780 3645 4986 | other other other near other other other near near near near near near other near near near near near other near other near near other near near other other other other near near other other |
+| Ph<3D<1G<7 Ph<3S<4G<7 X<2L<6S<4 | 2 | 45 36 | other other |
+| S<4D<1Ph S<4D<1Ph S<4D<1Ph | 4 | 105 102 102 102 | exact exact exact exact |
+| G<7Ph<6 G<7Ph<6 G<7Ph<6 | 9 | 201 165 192 156 192 156 183 147 156 | other other other other other other other other other |
+| Ph<3Ph<3 Ph<3Ph<3 Ph<3Ph<3 | 62 | 570 471 552 453 552 453 570 471 534 435 552 453 570 471 534 435 435 336 516 417 417 318 516 417 417 318 534 435 435 336 498 399 399 300 516 417 417 318 534 435 435 336 498 498 570 570 372 534 336 534 408 336 570 390 372 498 498 534 480 336 570 372 | exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact |
+| L<6S<4L<6S<4G<7 L<6S<4Pi<0G<7D<1 L<6S<4Pi<0G<7S<4 | 66 | 1392 1149 1356 1113 1356 1113 1410 1167 1320 1077 1374 1131 1185 1302 1059 1059 816 1266 1023 1023 780 1266 1023 1023 780 1320 1077 1077 834 1230 987 987 744 1284 1041 1041 798 1338 813 759 1266 1410 777 723 1374 888 1302 816 1302 1050 816 1410 996 924 1230 1230 1338 1176 852 660 750 606 642 624 678 948 | other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other |
+| X<0D<1Pi<0G<7 X<0D<1Pi<0G<7 X<0D<1Pi<0G<7 | 79 | 3819 3153 3711 3045 3711 3045 3846 3180 3603 2937 3738 3072 3873 3207 3576 2910 2910 2244 3468 2802 2802 2136 3468 2802 2802 2136 3603 2937 2937 2271 3360 2694 2694 2028 3495 2829 2829 2163 3630 2964 2964 2298 2202 2067 3414 3414 3846 2094 1959 3792 2460 3576 2244 3576 2244 3846 2685 2514 3360 3360 3630 3225 2298 3900 2568 2517 2409 3282 3282 2409 1779 2022 1644 1752 1671 1806 1536 2544 3282 | near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near near |
+| D<1D<1 D<1S<4 Ph<6G<7 | 10 | 18 21 27 27 36 33 36 27 27 36 | other other other other other other other other other other |
+| D<1Pi<0G<7D<1 S<4L<6S<4G<7 S<4Pi<0G<7S<4 | 2 | 162 198 | other other |
+| Ph<3X<0D<1Pi<0G<7 Ph<3X<0D<1Pi<0G<7 Ph<3X<0D<1Pi<0G<7 | 7 | 8784 8127 8127 9882 6030 8127 9882 | near near near near near near near |
+| Ph<3D<1G<7 Ph<3L<6S<4 Ph<3S<4G<7 | 7 | 36 51 24 27 39 30 30 | other other other other other other other |
+| G<7D<1Ph G<7D<1Ph G<7D<1Ph | 4 | 87 75 48 75 | exact exact exact exact |
+| D<1G<7 D<1G<7 D<1G<7 | 13 | 123 105 87 69 156 78 132 123 168 168 123 123 168 | exact exact exact exact other exact other other other other other other other |
+| X<0S<4S<4Ph X<0S<4S<4Ph X<0S<4S<4Ph | 11 | 753 618 582 555 435 417 762 708 390 354 660 | exact exact exact exact exact exact exact exact exact exact exact |
+| Ph<6G<7Ph<6 Ph<6G<7Ph<6 Ph<6G<7Ph<6 | 20 | 1395 1143 1350 1098 1314 1071 819 1269 1026 774 1224 1152 3846 1242 3846 1404 900 1314 810 684 | other other near near other other other other other other near near exact other exact near other other other other |
+| G<7Ph<3Ph<3 G<7Ph<3Ph<3 G<7Ph<3Ph<3 | 18 | 3990 3855 3774 3072 3054 3639 2937 2919 2346 2247 2883 4026 2748 3558 3756 3423 3378 3243 | exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact |
+| Ph<3L<6S<4Pi<0G<7D<1 S<4L<6S<4L<6S<4G<7 S<4L<6S<4Pi<0G<7S<4 | 8 | 9792 8028 9459 7695 8550 9522 6354 5688 | near near near near near other other other |
+| G<7X<2L<6S<4 Ph<3Ph<3D<1G<7 Ph<3Ph<3S<4G<7 | 2 | 255 243 | other other |
+| S<4Ph<3Ph<3 S<4Ph<3Ph<3 S<4Ph<3Ph<3 | 8 | 3270 3135 2217 3486 3288 3558 3882 3828 | exact exact exact exact exact exact exact exact |
+| G<7 G<7 X<0D<1 | 2 | 33 30 | other other |
+| G<7S<4S<4Ph G<7S<4S<4Ph G<7S<4S<4Ph | 29 | 726 591 654 618 426 408 672 408 390 762 726 609 507 453 480 498 471 480 651 651 336 372 318 336 345 327 318 336 300 | exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact exact |
+| G<7S<4Ph L<6S<4Ph L<6S<4Ph | 2 | 114 78 | exact exact |
+| L<6S<4Ph L<6S<4Ph L<6S<4Ph | 6 | 96 96 78 66 57 66 | exact exact exact exact exact exact |
+| T<3G<7Ph T<3G<7Ph T<3G<7Ph | 2 | 123 84 | exact exact |
+| G<7D<1Pi<0G<7D<1 L<6S<4L<6S<4G<7 L<6S<4Pi<0G<7S<4 | 6 | 1428 1095 1095 852 1446 960 | other other other other other other |
+| Pi<0G<7 Pi<5D<1 S<4S<4 | 2 | 24 27 | other other |
+| Ph<3S<4G<7 X<2D<1G<7 X<2L<6S<4 | 3 | 39 33 42 | other other other |
+| S<4S<4Ph S<4S<4Ph S<4S<4Ph | 9 | 96 78 78 60 105 87 96 114 87 | exact exact exact exact exact exact exact exact exact |
+| Ps<0Ph<6 Ps<0Ph<6 Ps<0Ph<6 | 4 | 192 183 183 174 | other other other other |
+| G<7G<7 G<7G<7 G<7G<7 | 7 | 156 147 147 138 210 192 192 | other other other other other other other |
+| D<1Ph<6 D<1Ph<6 D<1Ph<6 | 15 | 156 120 105 87 147 111 147 111 138 102 87 138 120 129 120 | other other exact exact other other other other other other exact other other other other |
+| G<7Ph<3D<1G<7 Ph<3Ph<3S<4G<7 Ph<6Ph<3L<6S<4 | 2 | 300 276 | other other |
+| G<7L<6S<4Ph G<7L<6S<4Ph G<7L<6S<4Ph | 4 | 717 354 402 402 | exact exact exact exact |
+| Ph<3Ph<3S<4G<7 Ph<6Ph<3D<1G<7 S<4Ph<3L<6S<4 | 6 | 243 186 231 231 204 180 | other other other other other other |
+| Ph<3Ph<3S<4G<7 Ph<6Ph<3D<1G<7 Ph<6Ph<3L<6S<4 | 2 | 243 294 | other other |
+| Pi<0G<7S<4Ph Pi<0G<7S<4Ph Pi<0G<7S<4Ph | 3 | 582 555 546 | exact exact exact |
 
 ## Not triangles: closest equal parts
 
@@ -196,4 +151,8 @@ exact: the word repeats a multiple of 3 times. near: arm score at most 0.1.
 | D01Pi54X23G52D01Ps54Ph41Pi54X23G52D01Pi5… | 4293 | 1 | 0.1076 | 3 | 0.108 |
 | D01Ps54Ph45S10D54Ph01Pi54X23G54Ph54X45Ph… | 3789 | 1 | 0.1219 | 3 | 0.122 |
 | D05S01Ph50D41Ps54Ph41Pi54X23G52D05S01T54… | 3708 | 1 | 0.1464 | 3 | 0.146 |
+
+## Corner triples on one patch (points.6.csv)
+
+Too large to read here; see points.6.md.
 
