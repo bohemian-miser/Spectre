@@ -97,6 +97,19 @@ test('the Shapes page groups the circuits and finds a circuit’s twins', async 
   await expect(page.locator('[data-testid="shapes-nearest"] tbody tr').first()).toContainText('0.00');
 });
 
+test.describe('on a screen of pixel ratio 2', () => {
+  test.use({ deviceScaleFactor: 2 });
+  test('the Shapes page’s epicycles keep their size', async ({ page }) => {
+    await page.goto('shapes.html#c=000100000-5');
+    const epi = page.locator('[data-testid="corners-epicycles"]');
+    await expect(epi).toBeVisible({ timeout: 90000 });
+    await page.waitForTimeout(500);
+    const [width, shown] = await epi.evaluate((c: HTMLCanvasElement) => [c.width, c.clientWidth]);
+    expect(shown).toBeLessThanOrEqual(560);
+    expect(width).toBe(2 * shown);
+  });
+});
+
 test('a circuit opens in the Explorer’s infinite view and the trace closes on it', async ({ page }) => {
   // 000100000's [147] circuit at level 7: 1,272 tiles whose chords add up to 1,161.34 hexagon edges.
   await page.goto('corners.html#c=000100000-3');

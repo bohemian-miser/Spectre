@@ -87,5 +87,27 @@ describe('ShapesPage', () => {
     expect(link).toMatch(/#\/explorer\?.*md=infinite/);
     expect(link).toMatch(/wc=[A-Za-z]+(-\d-[A-Za-z]+)+/);
     expect(link).toMatch(/ts=/);
+    expect(screen.getByTestId('shapes-add-note').textContent).toMatch(/^Added 023468 · 000000000: \d+ circuits?, selected below\.$/);
+  }, 60000);
+
+  it('says so beside the picker when a combination has no circuit big enough, and leaves the comparison alone', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        if (url.endsWith('index.json')) return new Response(JSON.stringify(index));
+        const combo = url.split('/').pop()!.replace('.json', '') as keyof typeof classes;
+        return new Response(JSON.stringify({ combo, circuits: classes[combo] }));
+      }),
+    );
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null);
+    render(<ShapesPage forceSync />);
+    await waitFor(() => expect(screen.getByTestId('shapes-summary').textContent).toMatch(/^3 circuits in/), { timeout: 10000 });
+    // Rule 15 stays bounded: no circuit reaches 400 tiles.
+    fireEvent.change(screen.getByTestId('shapes-combo-rule'), { target: { value: '15' } });
+    fireEvent.change(screen.getByTestId('shapes-combo-level'), { target: { value: '6' } });
+    fireEvent.click(screen.getByTestId('shapes-combo-add'));
+    await waitFor(() => expect(screen.getByTestId('shapes-add-note').textContent).toBe('15 · 000000000 has no circuit of 400 tiles or more by level 6; nothing added.'), { timeout: 20000 });
+    expect(screen.getByTestId('shapes-summary').textContent).toMatch(/^3 circuits in/);
+    expect(screen.queryByTestId('shapes-added')).toBeNull();
   }, 60000);
 });
