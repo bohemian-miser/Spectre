@@ -19,9 +19,11 @@ import {
 } from './corners/measure';
 import { ErrorChart, OutlineView, SidesBars, SpectrumChart, SymmetryBars, WalkChart, fmt, type Overlay } from './corners/charts';
 import { createCornersClient } from './corners/cornersClient';
-import { familyLabel, loadClass, loadIndex, type Circuit, type CornerIndex } from './corners/data';
+import type { TileTypeId } from '../core';
+import { familyLabel, loadClass, loadIndex, RULE, type Circuit, type CornerIndex } from './corners/data';
 import { Epicycles } from './corners/Epicycles';
 import { Survey } from './corners/Survey';
+import { explorerCircuitHref } from './shapes/explorerLink';
 import '../styles/corners.css';
 
 const WALK_STARTS = 1080;
@@ -247,6 +249,29 @@ export default function CornersPage(props: { forceSync?: boolean }): JSX.Element
           <p className="corners-note" data-testid="corners-caption">
             Family {familyLabel(circuit)} of combination <span className="mono">{combo}</span>: {nf(circuit.length)} tiles, born in a level-{circuit.level}{' '}
             {circuit.type} supertile, radius of gyration {circuit.rg.toFixed(1)}. <a href={`${base}shapes.html#c=${combo}-${pick}`}>Nearest shapes</a>.
+            {circuit.first && (
+              <>
+                {' '}
+                <a
+                  href={explorerCircuitHref(base, {
+                    family: 'hex',
+                    subset: [...RULE.rule].map(Number),
+                    combo,
+                    type: circuit.type as TileTypeId,
+                    level: circuit.level,
+                    path: circuit.first.path.map(([type, pos]) => ({ type: type as TileTypeId, pos })),
+                    chord: [
+                      { x: circuit.first.chord[0], y: circuit.first.chord[1] },
+                      { x: circuit.first.chord[2], y: circuit.first.chord[3] },
+                    ],
+                  })}
+                  data-testid="corners-explorer"
+                >
+                  Open in the Explorer
+                </a>
+                .
+              </>
+            )}
           </p>
 
           <section aria-labelledby="corners-walk-h">

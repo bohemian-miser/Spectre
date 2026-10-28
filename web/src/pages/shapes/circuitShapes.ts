@@ -308,3 +308,103 @@ export class CircuitShapes {
   }
 }
 
+
+export interface FamilyCircuit {
+  /** Child slots it runs through, sorted: the family. */
+  readonly family: string;
+  readonly level: number;
+  readonly type: TileTypeId;
+  readonly length: number;
+  readonly circuit: BornCircuit;
+}
+
+/**
+ * The biggest circuit of each family (set of child slots) at each level, the
+ * Delta on a tie, for the `families` biggest families and their last
+ * `generations` levels.
+ */
+export function familyCircuits(cs: CircuitShapes, families = 4, generations = 3): FamilyCircuit[] {
+  const best = new Map<string, Map<number, BornCircuit>>();
+  for (const c of cs.born) {
+    const key = [...new Set(c.slots)].sort((x, y) => x - y).join('');
+    const byLevel = best.get(key) ?? best.set(key, new Map()).get(key)!;
+    const m = byLevel.get(c.level);
+    if (!m || c.length > m.length || (c.length === m.length && c.type === 'Delta' && m.type !== 'Delta')) byLevel.set(c.level, c);
+  }
+  return [...best]
+    .map(([slots, byLevel]) => ({ slots, byLevel, top: Math.max(...[...byLevel.values()].map((c) => c.length)) }))
+    .sort((a, b) => b.top - a.top)
+    .slice(0, families)
+    .flatMap((f) =>
+      [...f.byLevel.keys()]
+        .sort((a, b) => a - b)
+        .slice(-generations)
+        .map((level) => {
+          const c = f.byLevel.get(level)!;
+          return { family: f.slots, level, type: c.type as TileTypeId, length: c.length, circuit: c };
+        }),
+    );
+}
+
+/**
+ * Keep each circuit once: the same level, length and radius of gyration is
+ * the same circuit, biggest in several families (or born in several
+ * supertile types); the others' families become its aliases.
+ */
+export function mergeTwins<T extends { readonly family: string; readonly level: number; readonly length: number; readonly rg: number }>(
+  list: readonly T[],
+): (T & { readonly aliases: string[] })[] {
+  const out: (T & { aliases: string[] })[] = [];
+  for (const c of list) {
+    const twin = out.find((o) => o.level === c.level && o.length === c.length && Math.abs(o.rg - c.rg) < 1e-6 * c.rg);
+    if (twin) {
+      if (twin.family !== c.family && !twin.aliases.includes(c.family)) twin.aliases.push(c.family);
+    } else out.push({ ...c, aliases: [] });
+  }
+  return out;
+}
+
+export interface TileLoop {
+  /** Tile positions (chord midpoints), anticlockwise, `samples` of them evenly spaced by tile count. */
+  readonly xy: Float64Array;
+  readonly n: number;
+  /** Radius of gyration over every tile. */
+  readonly rg: number;
+}
+
+/**
+ * A circuit's tiles as a loop: the midpoint of the strand's chord through
+ * each tile (from the crossings `shape(c, 0)` draws), turned anticlockwise,
+ * then sampled at tiles round(j L / n).
+ */
+export function tileLoop(crossings: readonly Pt[], samples: number): TileLoop {
+  const L = crossings.length;
+  const mx = new Float64Array(L);
+  const my = new Float64Array(L);
+  let area = 0;
+  for (let i = 0; i < L; i++) {
+    const q = crossings[(i + 1) % L];
+    mx[i] = (crossings[i].x + q.x) / 2;
+    my[i] = (crossings[i].y + q.y) / 2;
+  }
+  for (let i = 0; i < L; i++) area += mx[i] * my[(i + 1) % L] - mx[(i + 1) % L] * my[i];
+  const at = (i: number) => (area < 0 ? L - 1 - i : i);
+  let cx = 0;
+  let cy = 0;
+  for (let i = 0; i < L; i++) {
+    cx += mx[i];
+    cy += my[i];
+  }
+  cx /= L;
+  cy /= L;
+  let s = 0;
+  for (let i = 0; i < L; i++) s += (mx[i] - cx) ** 2 + (my[i] - cy) ** 2;
+  const n = Math.min(L, samples);
+  const xy = new Float64Array(2 * n);
+  for (let j = 0; j < n; j++) {
+    const t = at(Math.round((j * L) / n) % L);
+    xy[2 * j] = mx[t];
+    xy[2 * j + 1] = my[t];
+  }
+  return { xy, n, rg: Math.sqrt(s / L) };
+}

@@ -37,9 +37,11 @@ describe('ShapesPage', () => {
   afterEach(() => {
     cleanup();
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
   });
 
   it('groups turned copies of one shape and keeps a different shape apart', async () => {
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null);
     vi.stubGlobal(
       'fetch',
       vi.fn(async (url: string) => {
@@ -57,5 +59,33 @@ describe('ShapesPage', () => {
     // A threshold above the gap to the other shape puts all three together.
     fireEvent.change(screen.getByTestId('shapes-threshold'), { target: { value: '100' } });
     await waitFor(() => expect(screen.getByTestId('shapes-summary').textContent).toBe('3 circuits in 1 group: 1 of two or more, 0 alone.'));
-  });
+    // The selected circuit's terms, rebuilt: with every term kept nothing is left over.
+    expect(screen.getByTestId('shapes-terms-chart')).toBeTruthy();
+    fireEvent.change(screen.getByTestId('shapes-rebuild-count'), { target: { value: '60' } });
+    expect(screen.getByTestId('shapes-rebuild-left').textContent).toMatch(/^rms distance left to the circuit: 0\.0\d\d/);
+    expect(screen.getByTestId('shapes-termgaps-note').textContent).toMatch(/^Gap over these terms 0\.0/);
+  }, 30000);
+
+  it('adds a combination of another rule, computed in the page', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        if (url.endsWith('index.json')) return new Response(JSON.stringify(index));
+        const combo = url.split('/').pop()!.replace('.json', '') as keyof typeof classes;
+        return new Response(JSON.stringify({ combo, circuits: classes[combo] }));
+      }),
+    );
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null);
+    render(<ShapesPage forceSync />);
+    await waitFor(() => expect(screen.getByTestId('shapes-summary').textContent).toMatch(/^3 circuits/), { timeout: 10000 });
+    fireEvent.change(screen.getByTestId('shapes-combo-level'), { target: { value: '6' } });
+    fireEvent.click(screen.getByTestId('shapes-combo-add'));
+    await waitFor(() => expect(screen.getByTestId('shapes-added').textContent).toMatch(/023468·000000000/), { timeout: 20000 });
+    await waitFor(() => expect(screen.getByTestId('shapes-summary').textContent).toMatch(/^([4-9]|\d\d) circuits in/), { timeout: 20000 });
+    // A computed circuit knows its first tile, so it opens in the Explorer, tracing it from there.
+    const link = screen.getByTestId('shapes-explorer').getAttribute('href')!;
+    expect(link).toMatch(/#\/explorer\?.*md=infinite/);
+    expect(link).toMatch(/wc=[A-Za-z]+(-\d-[A-Za-z]+)+/);
+    expect(link).toMatch(/ts=/);
+  }, 60000);
 });

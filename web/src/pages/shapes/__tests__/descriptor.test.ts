@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { centroid, radiusOfGyration, type Loop } from '../../corners/measure';
-import { align, cluster, cut, gaps, meanShape, medoid, outline, planeLayout, terms } from '../descriptor';
+import { align, aligned, canonical, cluster, cut, gaps, meanShape, medoid, outline, planeLayout, separation, termGaps, terms, truncated, type Terms } from '../descriptor';
 
 /** A lopsided closed curve: no turn or mirror maps it to itself. */
 function blob(n: number, wobble = 0.3): Loop {
@@ -145,5 +145,71 @@ describe('groups', () => {
     const q = planeLayout(d, n);
     for (let i = 0; i < n; i++)
       for (let j = 0; j < n; j++) expect(Math.hypot(q[2 * i] - q[2 * j], q[2 * i + 1] - q[2 * j + 1])).toBeCloseTo(d[i * n + j], 6);
+  });
+});
+
+/** A loop made of known terms: z(t) = sum c_f e^{2 pi i f t}. */
+function fromTerms(n: number, cs: readonly [number, number, number][]): Loop {
+  const xy = new Float64Array(2 * n);
+  for (let j = 0; j < n; j++) {
+    for (const [f, re, im] of cs) {
+      const a = (2 * Math.PI * f * j) / n;
+      xy[2 * j] += re * Math.cos(a) - im * Math.sin(a);
+      xy[2 * j + 1] += re * Math.sin(a) + im * Math.cos(a);
+    }
+  }
+  return { xy, n };
+}
+
+describe('reading the terms', () => {
+  const shape = fromTerms(360, [
+    [1, 1, 0.2],
+    [-2, 0.3, -0.1],
+    [4, 0.05, 0.12],
+    [3, -0.08, 0.02],
+  ]);
+
+  it('put any turned, restarted, resized copy in the same place', () => {
+    const a = canonical(terms(shape, 12));
+    const b = canonical(terms(copy(shape, 2.5, 1.3, 101, false), 12));
+    for (let k = 0; k < a.c.length; k++) expect(b.c[k]).toBeCloseTo(a.c[k], 9);
+    // The circle term and the largest other (f = -2) come out real and positive.
+    const at = (t: Terms, f: number) => [t.c[2 * (f + t.F)], t.c[2 * (f + t.F) + 1]];
+    expect(at(a, 1)[1]).toBeCloseTo(0, 12);
+    expect(at(a, 1)[0]).toBeGreaterThan(0);
+    expect(at(a, -2)[1]).toBeCloseTo(0, 12);
+    expect(at(a, -2)[0]).toBeGreaterThan(0);
+  });
+
+  it('keep the lowest or the largest terms', () => {
+    const t = terms(shape, 12);
+    const low = truncated(t, 2, 'lowest');
+    const big = truncated(t, 2, 'largest');
+    const kept = (u: Terms) => Array.from({ length: 2 * u.F + 1 }, (_, i) => i - u.F).filter((f) => u.c[2 * (f + u.F)] !== 0 || u.c[2 * (f + u.F) + 1] !== 0);
+    expect(kept(low)).toEqual([-1, 1].filter((f) => kept(t).includes(f)));
+    expect(kept(big)).toEqual([-2, 1]);
+    expect(truncated(t, 24, 'lowest').c).toEqual(t.c);
+  });
+
+  it('split the squared gap by harmonic', () => {
+    const a = terms(blob(300), 20);
+    const b = terms(copy(blob(300, 0.45), 1.5, 0.7, 30, false), 20);
+    const al = align(a, b, false);
+    const parts = termGaps(a, aligned(b, al));
+    expect(parts.reduce((x, y) => x + y, 0)).toBeCloseTo(al.gap ** 2, 9);
+  });
+
+  it('score a harmonic by how its size differs between groups against within them', () => {
+    // Two groups of three: f = -2 is 0.3 in one and 0.1 in the other (give or take 0.01), f = 3 the other way
+    // round, so every circuit has the same size; f = 4 is 0.05 everywhere.
+    const make = (c2: number, c3: number, wobble: number) => terms(fromTerms(240, [[1, 1, 0], [-2, c2 + wobble, 0], [3, c3 - wobble, 0], [4, 0.05, 0]]), 6);
+    const all = [make(0.3, 0.1, 0), make(0.3, 0.1, 0.01), make(0.3, 0.1, -0.01), make(0.1, 0.3, 0), make(0.1, 0.3, 0.01), make(0.1, 0.3, -0.01)];
+    const s = separation(all, [0, 0, 0, 1, 1, 1]);
+    const F = 6;
+    // Between: 6 (0.1)^2 / 1 = 0.06; within: 4 (0.01)^2 / 4 = 1e-4, so about 600 (each over the same Rg).
+    expect(s[-2 + F]).toBeGreaterThan(500);
+    expect(s[-2 + F]).toBeLessThan(700);
+    expect(s[3 + F]).toBeGreaterThan(500);
+    expect(s[4 + F]).toBeLessThan(1);
   });
 });

@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   COS30,
+  DEFAULT_LINK_STATE,
+  decodeExplorerQuery,
+  encodeExplorerQuery,
   SIN30,
   buildSystem,
   createUnrootedEngine,
@@ -96,5 +99,16 @@ describe('a born circuit’s first tile', () => {
       expect(chord[1].x).toBeCloseTo(pts[1].x, 9);
       expect(chord[1].y).toBeCloseTo(pts[1].y, 9);
     }
+  });
+});
+
+describe('the Explorer’s link', () => {
+  it('keeps a legal world chain and drops one the substitution does not allow', () => {
+    const wc = 'Psi-0-Psi-0-Psi-2-Psi-0-Xi-0-Delta-1-Gamma';
+    expect(decodeWorldChain(wc)).not.toBeNull();
+    const q = encodeExplorerQuery({ ...DEFAULT_LINK_STATE, family: 'hex', mode: 'infinite', worldChain: wc });
+    expect(q).toContain(`wc=${wc}`);
+    expect(decodeExplorerQuery(q).worldChain).toBe(wc);
+    expect(decodeExplorerQuery(q.replace('Delta-1-Gamma', 'Delta-0-Gamma')).worldChain).toBeUndefined();
   });
 });
