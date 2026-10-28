@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { addressFromId, walkStrand, zMul, type ZAffine } from '../../src/core';
+import { HEX_TYPES, addressFromId, walkStrand, zMul, type ZAffine } from '../../src/core';
 import { longestCircuit, matchingByType, pairingTable, patternOf } from '../../src/pages/walker/walk';
 import { addressOf, board, indexOf, traceAll } from '../board';
 import { collect, measure } from '../circuits';
@@ -14,6 +14,7 @@ import { initialWorlds, makeWalker, stepAll, type World } from '../../src/pages/
 import { idOf } from '../../src/core/transducer';
 import { canonicalWord, circuitKey, leastRotation, placedKey, placedOf, reverseWord, tileLetter, wordOrder } from '../keys';
 import { encode, fitCorners, levenshtein } from '../sides';
+import { count, enumerateCircuits as enumerateOnGraph, startBundle, stepBundle, worldsOf, type Bundle } from '../stack-graph';
 
 const triangle = patternOf([0, 2, 3, 4, 6, 8], '111000100');
 
@@ -70,6 +71,56 @@ describe('every stack the walk on every tiling carries', () => {
     }
     expect(checked).toBeGreaterThan(100);
   });
+});
+
+describe('the walk with bundles kept as merged graphs', () => {
+  const worldKey = (w: World): string =>
+    `${w.chain.map((l) => `${l.parent}:${l.slot}`).join(' ')}|${w.at.leaf} ${w.entry}|${w.at.path.map((l) => `${l.parent}:${l.slot}`).join(' ')}`;
+
+  it.each([['15', '000010010', 4], ['023468', '111000100', 4]] as const)(
+    '%s-%s, at most %i levels: every step holds the same worlds as the list walk, grouped the same way',
+    (rule, combo, level) => {
+      const p = patternOf([...rule].map(Number), combo);
+      const table = pairingTable(p);
+      let compared = 0;
+      for (const t of HEX_TYPES) for (const e of table.get(t)?.keys() ?? []) {
+        const wk = makeWalker(p, t, e, level, false);
+        const gw = { start: t, startEdge: e, maxLevel: level, table };
+        let live: [World[], Bundle][] = [[initialWorlds(wk), startBundle(gw)]];
+        for (let step = 0; step < 8 && live.length; step++) {
+          const next: [World[], Bundle][] = [];
+          for (const [worlds, bundle] of live) {
+            const listed = stepAll(wk, worlds).outcomes;
+            const merged = stepBundle(gw, bundle);
+            expect(merged.map((o) => o.key).sort()).toEqual(listed.map((o) => o.key).sort());
+            for (const o of listed) {
+              if (o.key === 'open') continue;
+              const g = merged.find((x) => x.key === o.key)!.bundle!;
+              expect(count(g.graph)).toBe(o.worlds.length);
+              expect(new Set(worldsOf(g).map(worldKey))).toEqual(new Set(o.worlds.map(worldKey)));
+              compared++;
+              if (o.key !== 'closes') next.push([[...o.worlds], g]);
+            }
+          }
+          live = next;
+        }
+      }
+      expect(compared).toBeGreaterThan(100);
+    },
+  );
+
+  it.each([['15', '000000000', 4], ['15', '000010010', 4], ['023468', '111000100', 4]] as const)(
+    '%s-%s to level %i: the same circuits as the boards, born at the same level',
+    (rule, combo, level) => {
+      const sub = [...rule].map(Number);
+      const onGraph = enumerateOnGraph(pairingTable(patternOf(sub, combo)), { maxLevel: level, maxLength: 10000, maxCircuits: 1e9 }, tileLetter, circuitKey);
+      const onBoards = collect(sub, combo, level, 1e9);
+      const byKey = (cs: readonly { key: string; level: number }[]) => new Map(cs.map((c) => [c.key, c.level]));
+      expect(byKey(onGraph.circuits)).toEqual(byKey(onBoards.circuits));
+    },
+    // The 023468 case walks open strands to 10,000 tiles: about 4 s here, longer on CI.
+    60_000,
+  );
 });
 
 describe('every circuit of a combination', () => {
