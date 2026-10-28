@@ -86,16 +86,7 @@ export function supertilePatch(family: TileFamilyId, subset: readonly number[], 
   return { type, nTiles, tileType, tileOcc, occNode, across, outline, nNodes: firstOcc.length };
 }
 
-/** Each tile type's options for a rule (digit -> local index pairs). */
-export function ruleOptions(family: TileFamilyId, subset: readonly number[]): (readonly (readonly [number, number])[])[][] {
-  const sel = new Set(subset);
-  return leafOrder(family).map((t) => {
-    const n = connectionPoints(family, t, sel).length;
-    const all = enumerateMatchings(n);
-    const nc = nonCrossingForTile(family, t, sel);
-    return nc.length === 0 ? [[]] : nc.map((m) => all[m] as (readonly [number, number])[]);
-  });
-}
+export { ruleOptions } from '../src/pages/shapes/circuitShapes';
 
 /**
  * The boundary map of one pairing on one supertile: for each outline crossing

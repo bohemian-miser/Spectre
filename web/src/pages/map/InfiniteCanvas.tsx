@@ -433,6 +433,12 @@ export interface InfiniteCanvasApi {
 export interface InfiniteCanvasProps {
   readonly seed: number;
   /**
+   * A chosen start for the ancestor chain (`encodeWorldChain`). Part of the
+   * world's identity like `family`: embedding pages remount the canvas on a
+   * change.
+   */
+  readonly worldChain?: string;
+  /**
    * Tile family the engine generates. Treated as part of the world's identity
    * — embedding pages remount the canvas (`key={family}`) on a change, so a
    * live component never sees it move; it rides every worker query and picks
@@ -587,6 +593,7 @@ export interface InfiniteCanvasProps {
 export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
   const {
     seed,
+    worldChain,
     family = 'spectre',
     budget,
     chords = null,
@@ -631,8 +638,8 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
   const size = useElementSize(hostRef);
 
   const camRef = useRef<MapCamera>(props.initialCamera ?? createCamera(0, 0, DEFAULT_SCALE));
-  const worldRef = useRef({ seed, family, budget });
-  worldRef.current = { seed, family, budget };
+  const worldRef = useRef({ seed, family, budget, chain: worldChain ?? '' });
+  worldRef.current = { seed, family, budget, chain: worldChain ?? '' };
   const sizeRef = useRef(size);
   sizeRef.current = size;
 
@@ -924,6 +931,7 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
       id: ++reqSeqRef.current,
       seed: s >>> 0,
       family: f,
+      ...(worldRef.current.chain ? { chain: worldRef.current.chain } : {}),
       view: viewRectFor(camRef.current, width, height),
       budget: effBudget,
     });
@@ -1516,6 +1524,7 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
       id: ++feedSeqRef.current,
       seed: worldRef.current.seed >>> 0,
       family: worldRef.current.family,
+      ...(worldRef.current.chain ? { chain: worldRef.current.chain } : {}),
       view: { cx: trail.head.x, cy: trail.head.y, halfW: half, halfH: half },
       budget: FEED_BUDGET,
     });
@@ -1766,6 +1775,7 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
         // Stale world: an old seed's (or old family's) cut must never land.
         if (res.seed !== (worldRef.current.seed >>> 0)) return;
         if (res.family !== worldRef.current.family) return;
+        if (res.chain !== worldRef.current.chain) return;
         lastCutRef.current = res.cut;
         coveredRef.current = req.view;
         rendererRef.current?.setCut(res.cut);
@@ -1824,6 +1834,7 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
       onResult: ({ res }, req) => {
         if (res.seed !== (worldRef.current.seed >>> 0)) return;
         if (res.family !== worldRef.current.family) return;
+        if (res.chain !== worldRef.current.chain) return;
         const trail = trailRef.current;
         if (!trail || isTerminal(trail.status)) return;
         const table = chordsRef.current;

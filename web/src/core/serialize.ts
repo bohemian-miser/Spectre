@@ -14,7 +14,7 @@ import { FAMILIES, leafOrder, TILE_NAMES, type TileFamilyId, type TileTypeId } f
 import { comboToMatchingIndices, matchingIndicesToCombo } from './matchings';
 import { matchingCount } from './matchings';
 import { connectionCount } from './edges';
-import { DEFAULT_INSTANCE_BUDGET, clampInstanceBudget } from './unrooted';
+import { DEFAULT_INSTANCE_BUDGET, clampInstanceBudget, decodeWorldChain } from './unrooted';
 
 export const CODEC_VERSION = 1;
 
@@ -178,6 +178,12 @@ export interface ExplorerState {
    * traced, so the link replays the same chase from the same chord.
    */
   readonly traceSeed?: readonly [number, number, number, number];
+  /**
+   * A chosen start for the infinite view's ancestor chain (`wc=`,
+   * `encodeWorldChain`): the anchor tile and the supertiles above it, so a
+   * link can open on any supertile of any level.
+   */
+  readonly worldChain?: string;
 }
 
 /**
@@ -574,6 +580,7 @@ export function encodeExplorerState(s: ExplorerState): URLSearchParams {
     q.set('fd', String(clampFollowDamping(s.damping)));
   }
   if (s.traceSeed) q.set('ts', encodeTraceSeed(s.traceSeed));
+  if (s.worldChain) q.set('wc', s.worldChain);
   return q;
 }
 
@@ -693,6 +700,8 @@ export function decodeExplorerState(q: URLSearchParams): ExplorerState {
   const damping = Number.isFinite(fdRaw) ? clampFollowDamping(fdRaw) : undefined;
   const tsRaw = q.get('ts');
   const traceSeed = tsRaw ? decodeTraceSeed(tsRaw) : undefined;
+  const wcRaw = q.get('wc');
+  const worldChain = wcRaw && decodeWorldChain(wcRaw) ? wcRaw : undefined;
 
   const state: ExplorerState = {
     family,
@@ -726,6 +735,7 @@ export function decodeExplorerState(q: URLSearchParams): ExplorerState {
     ...(pace !== undefined ? { pace } : {}),
     ...(damping !== undefined && damping !== DEFAULT_FOLLOW_DAMPING ? { damping } : {}),
     ...(traceSeed ? { traceSeed } : {}),
+    ...(worldChain ? { worldChain } : {}),
   };
   return state;
 }
