@@ -161,6 +161,7 @@ export function HexBoard(props: HexBoardProps): JSX.Element {
     return out.join(' ');
   };
   const pendingD = pendingStep ? strandD([pendingStep]) : '';
+  const strandPath = strand.length ? strandD(strand) : '';
   const solid = tiles.filter((t) => t.tone === 'solid');
   const flagged = [...solid, ...tiles.filter((t) => t.tone !== 'solid').slice(0, Math.max(0, flagCap - solid.length))];
 
@@ -230,7 +231,13 @@ export function HexBoard(props: HexBoardProps): JSX.Element {
         return d ? <path key={`c-${t.tone}-${t.id}`} className={`hb__chords is-${t.tone}`} d={d} /> : null;
       })}
       {flagged.map((t) => <path key={`f-${t.tone}-${t.id}`} d={orientationPath(t.xform)} className={`hb__flag is-${t.tone}`} />)}
-      {strand.length > 0 && <path className="hb__strand" d={strandD(strand)} data-testid={testId ? `${testId}-strand` : undefined} />}
+      {strand.length > 0 && (
+        <>
+          {/* a casing in the board colour under the strand, so it reads on light and dark tiles alike */}
+          <path className="hb__strand-casing" d={strandPath} />
+          <path className="hb__strand" d={strandPath} data-testid={testId ? `${testId}-strand` : undefined} />
+        </>
+      )}
       {pendingD && <path className="hb__strand is-pending" d={pendingD} />}
       {focus && (
         <g className="hb__focus">

@@ -20,7 +20,7 @@
  * stack again.
  */
 import {
-  HEX_TYPES, across, childType, climbOut, comeDown, growPair, meetingOf, neighbour, pairAlive,
+  HEX_TYPES, across, childType, climbOut, comeDown, growPair, meetingOf, neighbour, pairAlive, pairKey,
   type Address, type HexType, type Link, type Pair,
 } from '../../core';
 import type { Pattern } from './walk';
@@ -61,25 +61,25 @@ export interface Walker {
   readonly startEdge: number;
   /** Stacks are extended to cross up to this level; above it, crossings go over a seam. */
   readonly maxLevel: number;
-  /**
-   * A seam moves up to this level at most; a strand still leaving along a
-   * second wall there is at a `Corner`. At `maxLevel` or below, no seams are
-   * crossed: a strand leaving a level-`maxLevel` stack is `open`.
-   */
-  readonly topLevel: number;
+  /** Whether crossings go over seams above `maxLevel`; without, a strand leaving a level-`maxLevel` stack is `open`. */
+  readonly seams: boolean;
   readonly table: Map<HexType, Map<number, number>>;
 }
 
-export const makeWalker = (pattern: Pattern, start: HexType, startEdge: number, maxLevel: number, topLevel = maxLevel + 10): Walker => ({
-  start, startEdge, maxLevel, topLevel, table: pairingTable(pattern),
+export const makeWalker = (pattern: Pattern, start: HexType, startEdge: number, maxLevel: number, seams = true): Walker => ({
+  start, startEdge, maxLevel, seams, table: pairingTable(pattern),
 });
 
 /** The world's tile one level up, on its side of the seam: the near side takes the link, the far side its own. */
 const raise = (a: Address, link: Link): Address => ({ leaf: a.leaf, path: [...a.path, link] });
 
 /**
- * Stacks whose strand, at a step, still leaves its supertile along a second
- * wall at `topLevel`: two walls meet there. They are not followed further.
+ * Stacks whose strand, at a step, leaves its supertile along a second wall
+ * that goes on for ever: while the seam moves up for that one crossing, the
+ * seam's pair, the side the strand is on and the edge it leaves by come back
+ * to what they were a level or more below. Whether the crossing climbs on
+ * depends on nothing else, so that stack can repeat those levels for ever:
+ * two walls meet there. They are not followed further.
  * In each, the tiles across the second wall are found from the side the
  * strand is on, as at the first seam: `tiles` counts the stacks where that is
  * one tile, per tile; `unforced` the stacks where it is more than one.
@@ -100,7 +100,8 @@ export function stepAll(wk: Walker, worlds: readonly World[]): { outcomes: Outco
   };
   const isHome = (w: World): boolean => !w.far && sameAddress(w.at, { leaf: wk.start, path: w.chain }) && w.entry === wk.startEdge;
   const land = (w: World): void => (isHome(w) ? add('closes', null, null, w) : add(`${w.at.leaf} ${w.entry}`, w.at.leaf, w.entry, w));
-  const go = (w: World): void => {
+  // `climbing`: on this crossing, the states the seam has been moved up through
+  const go = (w: World, climbing: ReadonlySet<string> = new Set()): void => {
     const exit = wk.table.get(w.at.leaf)?.get(w.entry);
     if (exit === undefined) return;
     const nb = neighbour(w.at, exit);
@@ -113,7 +114,8 @@ export function stepAll(wk: Walker, worlds: readonly World[]): { outcomes: Outco
         if (down) land({ ...w, at: down.address, entry: down.edge, far: !w.far });
         return;
       }
-      if (w.chain.length >= wk.topLevel) {
+      const state = `${pairKey(w.seam)} ${w.far ? 'far' : 'near'} ${climb.edge}`;
+      if (climbing.has(state)) {
         corner.stacks++;
         const tiles = new Set(across(w.at, exit).map((o) => `${o.address.leaf} ${o.edge}`));
         if (tiles.size === 1) for (const t of tiles) corner.tiles.set(t, (corner.tiles.get(t) ?? 0) + 1);
@@ -121,18 +123,19 @@ export function stepAll(wk: Walker, worlds: readonly World[]): { outcomes: Outco
         return;
       }
       // the walk reads above the seam: move it up a level, keeping the pairs that fit
+      const seen = new Set(climbing).add(state);
       for (const link of parentsOf(topOf(w, wk.start))) {
         for (const g of growPair(w.seam, link)) {
           const chain = [...w.chain, link];
-          if (g.kind === 'meet') go({ chain, at: raise(w.at, w.far ? { slot: g.farSlot, parent: link.parent } : link), entry: w.entry });
-          else if (pairAlive(g.pair)) go({ chain, at: raise(w.at, w.far ? g.farLink : link), entry: w.entry, seam: g.pair, far: w.far });
+          if (g.kind === 'meet') go({ chain, at: raise(w.at, w.far ? { slot: g.farSlot, parent: link.parent } : link), entry: w.entry }, seen);
+          else if (pairAlive(g.pair)) go({ chain, at: raise(w.at, w.far ? g.farLink : link), entry: w.entry, seam: g.pair, far: w.far }, seen);
         }
       }
       return;
     }
     if (w.chain.length >= wk.maxLevel) {
       // with no room above maxLevel, the strand is cut off as open
-      if (wk.topLevel <= wk.maxLevel) { add('open', null, null, w); return; }
+      if (!wk.seams) { add('open', null, null, w); return; }
       for (const o of across(w.at, exit)) land({ chain: w.chain, at: o.address, entry: o.edge, seam: o.pair, far: true });
       return;
     }

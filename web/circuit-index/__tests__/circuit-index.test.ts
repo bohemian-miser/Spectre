@@ -44,7 +44,7 @@ describe('every stack the walk on every tiling carries', () => {
     let checked = 0;
     for (const [start, edge] of [['Psi', 0], ['Delta', [...(table.get('Delta')?.keys() ?? [])][0]]] as const) {
       if (edge === undefined) continue;
-      const wk = makeWalker(p, start, edge, 3, 3);
+      const wk = makeWalker(p, start, edge, 3, false);
       let live: World[][] = [initialWorlds(wk)];
       for (let step = 0; step < 12 && live.length; step++) {
         const next: World[][] = [];
