@@ -14,10 +14,11 @@
  * tile over the circuit's radius of gyration, so circuits of different sizes,
  * and the reference triangle, hexagon and circle, share one scale.
  *
- * Usage: tsx chord-fit.ts <family> <rule> <combo> <level> <out.json> [starts]
+ * Usage: tsx chord-fit.ts <family> <rule> <combo> <level> <out.json> [starts] [ks]
  *   fits the biggest circuit of each family born at <level> (and the
- *   reference shapes) for k = 3, 5, 6, at `starts` evenly spaced start tiles
- *   (default 1200, or every tile if the circuit is shorter).
+ *   reference shapes) for each corner count in `ks` (comma-separated,
+ *   default 3,5,6,9), at `starts` evenly spaced start tiles (default 1200, or
+ *   every tile if the circuit is shorter).
  */
 import { writeFileSync } from 'node:fs';
 import type { Pt, TileFamilyId } from '../src/core';
@@ -130,19 +131,19 @@ export function referenceShape(sides: number, L: number): Pt[] {
   return out;
 }
 
-const KS = [3, 5, 6];
+const DEFAULT_KS = [3, 5, 6, 9];
 
 function evenStarts(L: number, n: number): number[] {
   if (L <= n) return Array.from({ length: L }, (_, i) => i);
   return Array.from({ length: n }, (_, i) => Math.round((i * L) / n));
 }
 
-function fitAll(name: string, p: readonly Pt[], nStarts: number) {
+function fitAll(name: string, p: readonly Pt[], nStarts: number, ks: readonly number[]) {
   const L = p.length;
   const rg = radiusOfGyration(p);
   const starts = evenStarts(L, nStarts);
   const scale = 1 / (L * rg);
-  const fits = KS.map((k) => {
+  const fits = ks.map((k) => {
     const f = chordFit(p, k, starts);
     const u = f.unsigned.map((x) => x * scale);
     const v = f.signed.map((x) => x * scale);
@@ -169,9 +170,10 @@ function fitAll(name: string, p: readonly Pt[], nStarts: number) {
 }
 
 if (process.argv[1]?.endsWith('chord-fit.ts')) {
-  const [family, rule, combo, levelArg, outFile, startsArg] = process.argv.slice(2);
+  const [family, rule, combo, levelArg, outFile, startsArg, ksArg] = process.argv.slice(2);
   const level = Number(levelArg);
   const nStarts = Number(startsArg ?? 1200);
+  const ks = ksArg ? ksArg.split(',').map(Number) : DEFAULT_KS;
   const cs = new CircuitShapes(family as TileFamilyId, [...rule].map(Number), [...combo].map((ch) => parseInt(ch, 36)), level, 1000);
   // The biggest circuit of each family (set of child slots) born at this level, as on the Circuits page.
   const best = new Map<string, BornCircuit>();
@@ -182,14 +184,14 @@ if (process.argv[1]?.endsWith('chord-fit.ts')) {
     if (!m || c.length > m.length || (c.length === m.length && c.type === 'Delta' && m.type !== 'Delta')) best.set(key, c);
   }
   const picks = [...best].sort((a, b) => b[1].length - a[1].length).slice(0, 4);
-  const circuits = picks.map(([slots, c]) => fitAll(`family [${slots}], ${c.type}`, tilePositions(cs.shape(c, 0)), nStarts));
+  const circuits = picks.map(([slots, c]) => fitAll(`family [${slots}], ${c.type}`, tilePositions(cs.shape(c, 0)), nStarts, ks));
   const L = circuits[0]?.length ?? 6000;
   const n = Math.min(L, 6000);
   const references = [
-    fitAll('triangle', referenceShape(3, n), nStarts),
-    fitAll('hexagon', referenceShape(6, n), nStarts),
-    fitAll('circle', referenceShape(0, n), nStarts),
+    fitAll('triangle', referenceShape(3, n), nStarts, ks),
+    fitAll('hexagon', referenceShape(6, n), nStarts, ks),
+    fitAll('circle', referenceShape(0, n), nStarts, ks),
   ];
-  writeFileSync(outFile, JSON.stringify({ family, rule, combo, level, ks: KS, circuits, references }));
+  writeFileSync(outFile, JSON.stringify({ family, rule, combo, level, ks, circuits, references }));
   console.error(`wrote ${outFile}`);
 }
