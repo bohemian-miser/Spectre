@@ -517,13 +517,14 @@ export default function CornersPage(props: { forceSync?: boolean }): JSX.Element
 
       {index && circuit && circuits && compareWith && (
         <section aria-labelledby="corners-compare-h">
-          <h2 id="corners-compare-h">Two circuits compared</h2>
+          <h2 id="corners-compare-h">Two circuits through their terms</h2>
           <p className="corners-note">
-            B laid over A, each about its centroid over its radius of gyration, so a copy at another size has the same terms. Turning B adds the same angle to the
-            phase of every term; starting it k tiles on adds 2π f k / L to term f. The best fit is the turn, start and mirror image that leave the least rms gap
-            between the outlines. B starts as the same family two levels up when the class has it.
+            Both circuits in the same standard position: about the centroid, over the radius of gyration, A turned and started so its circle term and largest other
+            term are real and positive, B turned, started and if need be mirrored to match A. Size, place, turn and starting tile then drop out, so a copy of A at
+            another size has the same terms. Click a harmonic to switch it off or on for both; each circuit is redrawn from the terms left on. B starts as A’s
+            family two levels up when the class has it.
           </p>
-          <Compare base={base} index={index} a={circuit} aLabel={`${combo} ${familyLabel(circuit)} L${circuit.level}`} combo={combo} circuits={circuits} initial={compareWith} />
+          <Compare base={base} index={index} combo={combo} circuits={circuits} pick={pick!} initial={compareWith} />
         </section>
       )}
 

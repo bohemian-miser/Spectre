@@ -89,15 +89,21 @@ test('the Corners page fits a circuit’s polygons and draws its spectrum', asyn
   await expect(page.locator('[data-testid="corners-epicycles"]')).toBeVisible();
 });
 
-test('two circuits compared on the Corners page: a copy two levels up turns back onto the first', async ({ page }) => {
+test('two circuits through their terms on the Corners page: a copy two levels up has the same terms', async ({ page }) => {
   await page.goto('corners.html#c=000100000-13');
-  const gap = page.locator('[data-testid="corners-compare-gap"]');
-  // B starts as the same family two levels up, near 4 + √15 = 7.873 times the radius of gyration.
-  await expect(gap).toContainText(/B has 25,356 tiles to A’s 1,272 and a radius of gyration 7\.8\d+ times A’s\.$/, { timeout: 60000 });
-  await page.locator('[data-testid="corners-compare-turn"]').fill('90');
-  await expect(gap).toHaveText(/^Gap (1|0\.[5-9])\d*/);
-  await page.locator('[data-testid="corners-compare-best"]').click();
-  await expect(gap).toHaveText(/^Gap (0\.0\d\d) radii of gyration at this turn and start; the best fit is \1,/, { timeout: 5000 });
+  const note = page.locator('[data-testid="corners-compare-gap"]');
+  // B starts as A's family two levels up, near 4 + √15 = 7.873 times the radius of gyration, and draws within a hundredth of A.
+  await expect(note).toContainText(/^60 of 60 terms on, .* differ by 0\.00\d radii .* B has 25,356 tiles to A’s 1,272 and a radius of gyration 7\.8\d+ times A’s\.$/, {
+    timeout: 60000,
+  });
+  await page.locator('[data-testid="corners-compare-nocircle"]').click();
+  await expect(note).toContainText(/^59 of 60 terms on/);
+  // A click on a harmonic switches it for both.
+  const f2 = page.locator('[data-testid="corners-compare-terms"] g[data-f="2"]');
+  await f2.click();
+  await expect(f2).toHaveAttribute('data-on', '0');
+  await expect(note).toContainText(/^58 of 60 terms on/);
+  await expect(page.locator('[data-testid="corners-compare-epi-b"]')).toBeVisible();
 });
 
 test('the Shapes page groups the circuits and finds a circuit’s twins', async ({ page }) => {
