@@ -25,7 +25,7 @@ import { HexBoard, type BoardMark, type BoardStep, type BoardTile } from '../com
 import { HEX_OUTLINE, nearest, placeWorld, supertileEdges, tileCentre, tilesAround, type PlacedTile } from '../lib/hexBoard';
 import { tileColor } from '../lib/palette';
 import { MAX_LEVEL, parentOptions, prefixId, type World } from './transducer/world';
-import { LandingWalk } from './walker/LandingWalk';
+import { LandingWalk, type Carry } from './walker/LandingWalk';
 import { decodeLink, encodeLink, type Choice, type WalkerLink } from './walker/share';
 import { MachineView } from './walker/MachineView';
 import type { Seen, World as Stack } from './walker/possible';
@@ -64,7 +64,7 @@ export function WalkerPage(): JSX.Element {
   const [previewing, setPreviewing] = useState(false);
   /** 'landings': walk every ancestor stack at once and choose only between landings; 'ancestors': choose each parent by hand. */
   const [mode, setMode] = useState<'landings' | 'ancestors'>(link?.mode ?? 'landings');
-  const [seed, setSeed] = useState<{ edge: number | null; stacks?: Stack[]; find?: { level: number; id: string } | null; replay?: { choices: readonly Choice[]; current: number; whole: boolean }; follow?: readonly Seen[]; n: number }>(() => ({
+  const [seed, setSeed] = useState<{ edge: number | null; stacks?: Stack[]; find?: { level: number; id: string } | null; replay?: { choices: readonly Choice[]; current: number; whole: boolean }; follow?: readonly Seen[]; carry?: Carry; n: number }>(() => ({
     edge: link?.edge ?? null,
     stacks: link?.stacks,
     find: link?.find,
@@ -337,12 +337,13 @@ export function WalkerPage(): JSX.Element {
                 worlds={seed.stacks}
                 initial={seed.replay}
                 follow={seed.follow}
+                carry={seed.carry}
                 onState={(choices, current, whole) => setWalked({ choices, current, whole })}
-                onRestart={(word) => {
+                onRestart={(word, carry) => {
                   // the same circuit from another of its tiles: a bare start there, following it
                   reset(word[0].type);
                   dispatch({ type: 'startEdge', edge: word[0].entry });
-                  setSeed((x) => ({ edge: word[0].entry, follow: word, n: x.n + 1 }));
+                  setSeed((x) => ({ edge: word[0].entry, follow: word, carry, n: x.n + 1 }));
                 }}
               />
         ) : (
