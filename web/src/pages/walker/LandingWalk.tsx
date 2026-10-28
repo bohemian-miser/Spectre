@@ -11,7 +11,7 @@ import { addressFromId, idOf, type HexType } from '../../core';
 import { HexBoard, type BoardStep, type BoardTile } from '../../components/HexBoard';
 import { HEX_OUTLINE, placeNear, placeWorld, strandPathD, supertileEdges, tileCentre, tilePoints, tilesAround, type PlacedTile } from '../../lib/hexBoard';
 import { tileColor } from '../../lib/palette';
-import { choicesOf, concreteChain, followWord, makeWalker, reducePossible, replay, replayChoices, rotateWord, stageAfter, stageAhead, startWalk, type Limits, type Outcome, type PossibleWalk, type Seen, type World } from './possible';
+import { choicesOf, concreteChain, circuitsAhead, followWord, makeWalker, reducePossible, replay, replayChoices, rotateWord, stageAfter, stageAhead, startWalk, type Ahead, type Limits, type Outcome, type PossibleWalk, type Seen, type World } from './possible';
 import { AncestorFlow } from './AncestorFlow';
 import { classLabel } from './landings';
 import { CircuitList } from './CircuitList';
@@ -74,6 +74,9 @@ function CircuitPeek({ pw, subset, id, landing, x, y }: { pw: PossibleWalk; subs
 }
 
 const CHAIN_ROWS = 5000;
+/** How far the circuits ahead of each landing are looked for, and how far the nearest circuit is sought. */
+const AHEAD = { choices: 3, forks: 30, tiles: 3000 };
+const SEEK = { choices: 40, forks: 400, tiles: 30000 };
 
 /** The walk tile by tile: the tile, its slot path, the edges in and out with their classes, where the crossing out settled, and the landing chosen there. */
 function ChainTable({ seen, ids, levels, root, level, chosen }: {
@@ -145,6 +148,9 @@ export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial
   const [showDots, setShowDots] = useState(true);
   const [showDecisions, setShowDecisions] = useState(false);
   const [debugOpen, setDebugOpen] = useState(false);
+  // per landing at the current fork, the circuits found a few choices ahead, worked out in the background
+  const [ahead, setAhead] = useState<{ at: string; by: ReadonlyMap<string, Ahead> } | null>(null);
+  const [seeking, setSeeking] = useState(false);
   const [peek, setPeek] = useState<{ id: number; landing?: string; x: number; y: number } | null>(null);
   const pointer = useRef({ x: 0, y: 0 });
   // the pointer, wherever it is, so a node's walk is drawn beside it in any of the trees
@@ -252,6 +258,35 @@ export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial
         onHoverLanding: (at: { node: number; key: string } | null) => setPeek(at === null ? null : { id: at.node, landing: at.key, ...pointer.current }),
       }
     : {};
+  const forkAt = `${pw.current}|${n}|${stage.status}`;
+  useEffect(() => {
+    if (stage.status !== 'choice') return undefined;
+    let cancelled = false;
+    const keys = stage.pending.map((o) => o.key);
+    let i = 0;
+    const next = (): void => {
+      if (cancelled || i >= keys.length) return;
+      const key = keys[i++];
+      const found = circuitsAhead(pw.walker, stageAfter(pw, pw.current, key, 0), AHEAD);
+      setAhead((a) => ({ at: forkAt, by: new Map([...(a && a.at === forkAt ? a.by : []), [key, found]]) }));
+      setTimeout(next, 0);
+    };
+    const t = setTimeout(next, 30);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [forkAt]); // eslint-disable-line react-hooks/exhaustive-deps
+  const aheadHere = ahead && ahead.at === forkAt ? ahead.by : null;
+  // the shortest circuit from here: its branches walked shortest first, then its landings taken
+  const seek = (): void => {
+    setSeeking(true);
+    setTimeout(() => {
+      const found = circuitsAhead(pw.walker, stage, SEEK, true);
+      setSeeking(false);
+      if (!found.path) return;
+      setHover(null);
+      dispatch({ type: 'run', cap: RUN_CAP });
+      for (const key of found.path) { dispatch({ type: 'choose', key }); dispatch({ type: 'run', cap: RUN_CAP }); }
+    }, 20);
+  };
   const exploreBar = (
     <div className="wk__explore">
       <button
@@ -298,6 +333,33 @@ export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial
                   : `${n} ${n === 1 ? 'tile' : 'tiles'} walked; ${stage.worlds.length} ancestor ${stage.worlds.length === 1 ? 'stack' : 'stacks'} still possible. Steps they all agree on are taken without asking.`}
         </span>
       </div>
+      {stage.status === 'choice' && (
+        <div className="wk__ahead" data-testid="wk-ahead">
+          <span className="td__hint">Circuits within {AHEAD.choices} more choices:</span>
+          {stage.pending.map((o) => {
+            const a = aheadHere?.get(o.key);
+            return (
+              <button
+                key={o.key}
+                type="button"
+                className="td__chip"
+                onClick={() => take(pw.current, o.key)}
+                onMouseEnter={() => setHover(o)}
+                onMouseLeave={() => setHover(null)}
+                title={a ? `Taking ${o.key}: ${a.min === null ? 'no circuit' : `the shortest circuit closes ${a.min} tiles on`}${a.max !== null && a.max !== a.min ? `, the longest found ${a.max}` : ''}${a.open ? '; some branches were still open where the search stopped' : ''}.` : 'Looking ahead…'}
+                data-testid={`wk-ahead-${o.key.replace(' ', '-')}`}
+              >
+                <strong>{o.key === 'closes' ? 'closes' : o.key}</strong>{' '}
+                {!a ? '…' : a.min === null ? (a.open ? 'none yet' : 'none') : `${a.min}${a.max !== null && a.max !== a.min ? `–${a.max}` : ''}${a.open ? '+' : ''} tiles`}
+              </button>
+            );
+          })}
+          <button type="button" className="td__chip" onClick={seek} disabled={seeking} data-testid="wk-seek">
+            {seeking ? 'Looking…' : 'Walk to the nearest circuit'}
+          </button>
+        </div>
+      )}
+
       {closed && onRestart && (
         <div className="wk__restart" data-testid="wk-restart">
           <span className="td__hint">The same circuit, walked again from</span>
