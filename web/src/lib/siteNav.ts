@@ -147,6 +147,14 @@ export const SITE_NAV: readonly NavItem[] = Object.freeze([
     blurb: 'Every circuit type of a rule: classes, families, growth and silhouettes of the giants.',
   },
   {
+    id: 'corners',
+    label: 'Corners',
+    short: 'Corners',
+    entry: 'corners.html',
+    status: 'ready',
+    blurb: 'How many sides a circuit has: corners walked round it, fitted polygons, and its Fourier series as epicycles.',
+  },
+  {
     id: 'legacy',
     label: 'Legacy p5 app',
     short: 'Legacy',
