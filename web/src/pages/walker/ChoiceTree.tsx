@@ -65,9 +65,9 @@ export interface ChoiceTreeProps {
   /** A landing offered at the next fork is hovered (path mode). */
   readonly onHoverOption?: (key: string | null) => void;
   /** A landing already taken is hovered: its node, or null when the pointer leaves. */
-  readonly onHoverNode?: (id: number | null) => void;
+  readonly onHoverNode?: (id: number | null, text?: string) => void;
   /** A landing not yet taken is hovered: the node whose fork offers it, and its key; null when the pointer leaves. */
-  readonly onHoverLanding?: (at: { readonly node: number; readonly key: string } | null) => void;
+  readonly onHoverLanding?: (at: { readonly node: number; readonly key: string } | null, text?: string) => void;
   /** Whether a node's subtree is folded away (full mode), and the click that folds or opens it. */
   readonly isCollapsed?: (id: number) => boolean;
   readonly onToggle?: (id: number) => void;
@@ -248,14 +248,15 @@ export function ChoiceTree({ pw, mode, onGoto, onChooseAt, onHoverOption, onHove
             className={`wk-tree__row${untaken ? ' is-untaken' : ''}${r.current ? ' is-current' : ''}`}
             onClick={click}
             onMouseEnter={() => {
-              if (untaken) { onHoverOption?.(r.option!.key); onHoverLanding?.({ node: r.at!, key: r.option!.key }); } else if (r.node !== undefined) onHoverNode?.(r.node);
+              if (untaken) { onHoverOption?.(r.option!.key); onHoverLanding?.({ node: r.at!, key: r.option!.key }, title); } else if (r.node !== undefined) onHoverNode?.(r.node, title);
             }}
             onMouseLeave={() => {
               if (untaken) { onHoverOption?.(null); onHoverLanding?.(null); } else if (r.node !== undefined) onHoverNode?.(null);
             }}
             data-testid={untaken && mode === 'path' ? `wk-outcome-${r.option!.key.replace(' ', '-')}` : `wk-tree-${r.key.replace(/[: ]/g, '-')}`}
           >
-            <title>{title}</title>
+            {/* where the walk is drawn on hover, this text goes with it instead of over it */}
+            {!(untaken ? onHoverLanding : onHoverNode) && <title>{title}</title>}
             <rect x={0} y={cy - TIGHT / 2} width={width} height={TIGHT} className="wk-tree__hit" />
             {r.current && <polygon points={hexPts(cx, cy, HEX_W / 2 + 4)} className="wk-tree__halo" />}
             <polygon points={hexPts(cx, cy, HEX_W / 2)} fill={untaken ? 'var(--panel, #fff)' : fill} stroke={untaken ? (type ? fill : '#8a93a3') : '#1b2230'} strokeWidth={untaken ? 2 : 1.2} className="wk-tree__hex" />

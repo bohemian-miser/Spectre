@@ -44,7 +44,7 @@ function sceneOf(pw: PossibleWalk, w: World, steps: number) {
  * tiles in their colours and the strand through their centres, to the
  * node's fork or to where its branch ends.
  */
-function CircuitPeek({ pw, subset, id, landing, x, y }: { pw: PossibleWalk; subset: readonly number[]; id: number; landing?: string; x: number; y: number }): JSX.Element | null {
+function CircuitPeek({ pw, subset, id, landing, text, x, y }: { pw: PossibleWalk; subset: readonly number[]; id: number; landing?: string; text?: string; x: number; y: number }): JSX.Element | null {
   const drawn = useMemo(() => {
     // a landing not yet taken is taken here, on the side, without adding it to the tree
     const st = landing ? stageAfter(pw, id, landing, RUN_CAP) : stageAhead(pw, id, RUN_CAP);
@@ -59,16 +59,18 @@ function CircuitPeek({ pw, subset, id, landing, x, y }: { pw: PossibleWalk; subs
   }, [pw, id, landing, subset]);
   const { st, tiles, pts, box, strand } = drawn;
   const size = 220;
+  // above and to the right of the pointer, clear of the rows under it; below only where there is no room above
   const left = Math.min(x + 18, window.innerWidth - size - 12);
-  const top = Math.min(y + 18, window.innerHeight - size - 40);
+  const above = y > size + 160;
   return (
-    <div className="wk__peek" style={{ left, top, width: size }} data-testid="wk-peek">
+    <div className="wk__peek" style={above ? { left, top: y - 18, width: size, transform: 'translateY(-100%)' } : { left, top: y + 18, width: size }} data-testid="wk-peek">
       <svg viewBox={`${box.x} ${box.y} ${box.w} ${box.h}`} width={size} height={size}>
         {tiles.map((t) => <polygon key={t.id} points={tilePoints(t.xform)} fill={tileColor(t.type)} className="wk__peek-tile" />)}
         <path d={strand} className="wk__peek-strand" />
         {pts[0] && <circle cx={pts[0].x} cy={pts[0].y} r={0.6} className="wk__peek-start" />}
       </svg>
-      <p>{st.status === 'closed' ? `A circuit of ${st.seen.length} tiles` : st.status === 'choice' ? `${st.seen.length} tiles, to the fork at step ${st.seen.length + 1}` : `${st.seen.length} tiles, still open`}</p>
+      <p className="wk__peek-head">{st.status === 'closed' ? `A circuit of ${st.seen.length} tiles` : st.status === 'choice' ? `${st.seen.length} tiles, to the fork at step ${st.seen.length + 1}` : `${st.seen.length} tiles, still open`}</p>
+      {text && <p>{text}</p>}
     </div>
   );
 }
@@ -151,7 +153,7 @@ export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial
   // per landing at the current fork, the circuits found a few choices ahead, worked out in the background
   const [ahead, setAhead] = useState<{ at: string; by: ReadonlyMap<string, Ahead> } | null>(null);
   const [seeking, setSeeking] = useState(false);
-  const [peek, setPeek] = useState<{ id: number; landing?: string; x: number; y: number } | null>(null);
+  const [peek, setPeek] = useState<{ id: number; landing?: string; text?: string; x: number; y: number } | null>(null);
   const pointer = useRef({ x: 0, y: 0 });
   // the pointer, wherever it is, so a node's walk is drawn beside it in any of the trees
   const peeking = useRef(false);
@@ -254,8 +256,8 @@ export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial
   // hovering a node, or a landing not yet taken, draws its walk beside the pointer (not on a touch screen)
   const peekHandlers = canHover
     ? {
-        onHoverNode: (id: number | null) => setPeek(id === null ? null : { id, ...pointer.current }),
-        onHoverLanding: (at: { node: number; key: string } | null) => setPeek(at === null ? null : { id: at.node, landing: at.key, ...pointer.current }),
+        onHoverNode: (id: number | null, text?: string) => setPeek(id === null ? null : { id, text, ...pointer.current }),
+        onHoverLanding: (at: { node: number; key: string } | null, text?: string) => setPeek(at === null ? null : { id: at.node, landing: at.key, text, ...pointer.current }),
       }
     : {};
   const forkAt = `${pw.current}|${n}|${stage.status}`;
@@ -446,7 +448,7 @@ export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial
         </div>
       )}
 
-      {peek && <CircuitPeek pw={pw} subset={pattern.subset} id={peek.id} landing={peek.landing} x={peek.x} y={peek.y} />}
+      {peek && <CircuitPeek pw={pw} subset={pattern.subset} id={peek.id} landing={peek.landing} text={peek.text} x={peek.x} y={peek.y} />}
 
       <section className="td__section">
         <h3>How high each step reached</h3>
