@@ -259,10 +259,12 @@ export function ErrorChart(props: { series: readonly ErrorSeries[]; chosen: numb
         ))}
         {ks.map((k) => (
           <g key={k} onClick={() => onPick(k)} style={{ cursor: 'pointer' }}>
-            <rect x={X(k) - 12} y={m.t} width={24} height={H - m.t - m.b} fill={k === picked ? 'var(--panel-2)' : 'transparent'} />
-            <text x={X(k)} y={H - m.b + 15} textAnchor="middle" className={k % 3 === 0 ? 'tick label-strong' : 'tick'}>
-              {k}
-            </text>
+            <rect x={X(k) - (W - m.l - m.r) / (kMax - kMin) / 2} y={m.t} width={(W - m.l - m.r) / (kMax - kMin)} height={H - m.t - m.b} fill={k === picked ? 'var(--panel-2)' : 'transparent'} />
+            {(kMax - kMin <= 12 || k % 3 === 0) && (
+              <text x={X(k)} y={H - m.b + 15} textAnchor="middle" className={k % 3 === 0 ? 'tick label-strong' : 'tick'}>
+                {k}
+              </text>
+            )}
           </g>
         ))}
         {chosen !== null && <line x1={X(chosen)} x2={X(chosen)} y1={m.t} y2={H - m.b} stroke="var(--accent)" strokeWidth={2} strokeDasharray="5 4" />}

@@ -26,8 +26,11 @@ import '../styles/corners.css';
 
 const WALK_STARTS = 1080;
 const MAX_WALKS = 8;
-const FREE_SIDES = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
-const THIRD_SIDES = [3, 6, 9, 12];
+const MAX_SIDES = 24;
+const FREE_SIDES = Array.from({ length: MAX_SIDES - 2 }, (_, i) => i + 3);
+const THIRD_SIDES = FREE_SIDES.filter((k) => k % 3 === 0);
+/** Samples the fits keep: free corners have three times as many places to go, so they get half the samples. */
+const FIT_SAMPLES = { free: 360, thirds: 720 } as const;
 const SYMMETRY_TURNS = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
 const DEFAULT_COMBO = '000100000';
 const nf = (n: number) => n.toLocaleString('en-US');
@@ -137,7 +140,7 @@ export default function CornersPage(props: { forceSync?: boolean }): JSX.Element
     // This circuit's fits both ways, then its other generations' the current way.
     const fitsFor = (i: number, c: Circuit, md: FitMode) => {
       const m = turnsOf(md);
-      const step = decimation(c.loop.n, m);
+      const step = decimation(c.loop.n, m, FIT_SAMPLES[md]);
       if (step === null) return;
       for (const k of sidesOf(md))
         ask(`fit:${fitKey(i, m, k)}`, async () => {
@@ -350,9 +353,10 @@ export default function CornersPage(props: { forceSync?: boolean }): JSX.Element
           <section aria-labelledby="corners-fit-h">
             <h2 id="corners-fit-h">Fitted polygons</h2>
             <p className="corners-note">
-              The loop cut into k runs anywhere, each run given its least-squares line, the cuts chosen by dynamic programming to make the total squared distance
-              smallest. Corners are where neighbouring lines meet, so the sides can have any lengths. With <b>thirds alike</b> the three thirds of the loop share one
-              set of cuts, turned, which leaves a third as many corners to choose; for an exactly three-fold circuit it costs nothing in fit.
+              k corners anywhere on the loop, chosen by dynamic programming so that the sides pass closest to it: each tile’s squared distance to the side across
+              its stretch of the loop, summed, is least. The sides can have any lengths, and the polygon drawn is the one measured, so more sides never fit worse.
+              With <b>thirds alike</b> the three thirds of the loop share one set of corners, turned, which leaves a third as many to choose; for an exactly
+              three-fold circuit it costs almost nothing in fit.
               {results.spectrum && ` This one has ${(symmetryShare(results.spectrum, 3, true) * 100).toFixed(1)}% of its shape beyond the circle on the harmonics a third of a turn allows (100% is three-fold).`}{' '}
               The score keeps more sides only if each extra corner cuts the rms distance by the fraction set.
             </p>
@@ -392,7 +396,7 @@ export default function CornersPage(props: { forceSync?: boolean }): JSX.Element
               <div style={{ display: 'grid', gap: 8, minWidth: 0 }}>
                 <ErrorChart
                   kMin={3}
-                  kMax={12}
+                  kMax={MAX_SIDES}
                   chosen={chosen}
                   picked={sides}
                   onPick={(k) => setPickedSides(mode === 'thirds' && k % 3 !== 0 ? Math.max(3, Math.round(k / 3) * 3) : k)}

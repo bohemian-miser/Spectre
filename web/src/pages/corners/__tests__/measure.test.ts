@@ -77,37 +77,26 @@ describe('corners walked round', () => {
 });
 
 describe('fitted polygons', () => {
-  it('a run’s cost is the smaller eigenvalue of its scatter, as computed directly', () => {
-    const loop = toLoop(Array.from({ length: 40 }, (_, i) => ({ x: Math.cos(i) * 3 + i * 0.1, y: Math.sin(1.7 * i) })));
+  it('a side’s cost is the squared distance of its run to the line through its corners, as computed directly', () => {
+    const loop = toLoop(Array.from({ length: 41 }, (_, i) => ({ x: Math.cos(i) * 3 + i * 0.1, y: Math.sin(1.7 * i) })));
     const sums = new RunSums(loop.xy, 1);
     for (const [a, b] of [[0, 5], [3, 17], [10, 40]]) {
-      let mx = 0;
-      let my = 0;
-      for (let i = a; i < b; i++) {
-        mx += loop.xy[2 * i];
-        my += loop.xy[2 * i + 1];
-      }
-      mx /= b - a;
-      my /= b - a;
-      // Minimise the squared distance over line directions by brute force.
-      let best = Infinity;
-      for (let s = 0; s < 20000; s++) {
-        const t = (Math.PI * s) / 20000;
-        let c = 0;
-        for (let i = a; i < b; i++) c += ((loop.xy[2 * i] - mx) * Math.sin(t) - (loop.xy[2 * i + 1] - my) * Math.cos(t)) ** 2;
-        best = Math.min(best, c);
-      }
-      expect(sums.cost(a, b)).toBeCloseTo(best, 4);
+      const ax = loop.xy[2 * a];
+      const ay = loop.xy[2 * a + 1];
+      const dx = loop.xy[2 * b] - ax;
+      const dy = loop.xy[2 * b + 1] - ay;
+      let want = 0;
+      for (let i = a; i < b; i++) want += (((loop.xy[2 * i] - ax) * dy - (loop.xy[2 * i + 1] - ay) * dx) / Math.hypot(dx, dy)) ** 2;
+      expect(sums.cost(a, b)).toBeCloseTo(want, 9);
     }
   });
 
-  it('open cuts are the cheapest of every possible set of cuts', () => {
-    const loop = toLoop(Array.from({ length: 14 }, (_, i) => ({ x: Math.cos(i * 1.3) + i * 0.2, y: Math.sin(i * 0.7) * 2 })));
+  it('the corners chosen are the cheapest of every possible choice', () => {
+    const loop = toLoop(Array.from({ length: 15 }, (_, i) => ({ x: Math.cos(i * 1.3) + i * 0.2, y: Math.sin(i * 0.7) * 2 })));
     const sums = new RunSums(loop.xy, 1);
-    const k = 3;
     let best = Infinity;
     for (let a = 2; a <= 14; a++) for (let b = a + 2; b <= 12; b++) best = Math.min(best, sums.cost(0, a) + sums.cost(a, b) + sums.cost(b, 14));
-    expect(cutRuns(sums, 0, 14, k).cost).toBeCloseTo(best, 12);
+    expect(cutRuns(sums, 0, 14, 3).cost).toBeCloseTo(best, 12);
   });
 
   it('finds a triangle with its corners cut off as six sides of two lengths', () => {
@@ -125,7 +114,7 @@ describe('fitted polygons', () => {
   });
 
   it('error never rises with more sides, and the score keeps the corners that pay', () => {
-    const loop = polygon(truncated(0.15), 1080);
+    const loop = polygon(truncated(0.2), 1080);
     const rg = radiusOfGyration(loop);
     const rms = new Map([3, 4, 5, 6, 7, 8, 9].map((k) => [k, fitPolygon(loop, k, rg).rms]));
     for (let k = 4; k <= 9; k++) expect(rms.get(k)!).toBeLessThanOrEqual(rms.get(k - 1)! + 1e-6);
