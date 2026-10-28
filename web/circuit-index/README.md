@@ -51,6 +51,28 @@ boards (rule `15` to level 4, `023468` to level 3). The walk keeps each
 stack in a list, so its sweeps stop at level 3 or 4; the boards run to
 level 6 here.
 
+### Bundles as merged graphs
+
+`stack-graph.ts` runs the same walk with each bundle stored as a merged
+graph. A world is read bottom up as one pair of links per level, the start
+tile's ancestor and the current tile's; worlds whose upper levels are the
+same share those nodes. A step runs `neighbour()` through the graph: the climb
+reads one level at a time, and where it settles the current tile's links
+below are rebuilt and the subgraph above is kept as it is. Closing is the
+paths whose every pair agrees, landing on the start tile by the start edge.
+
+The walk from a bare Phi entered by edge 1, rule `023468`, combination
+`111000100`, at most 6 levels:
+
+| step | lands on | worlds | graph nodes |
+|---|---|---|---|
+| 1 | Psi, edge 4 | 25,368 | 151 |
+| 3 | Psi, edge 4 | 18,146 | 195 |
+| 5 | Xi, edge 4 | 9,527 | 48 |
+
+The tests compare it with the list walk world by world for eight steps from
+every start, and its circuits with the boards'.
+
 ## Keys
 
 | key | what it identifies |
