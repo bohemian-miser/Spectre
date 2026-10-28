@@ -422,3 +422,62 @@
   color: #c92a2a;
   font-weight: 600;
 }
+
+.wk-flow {
+  display: block;
+  font-family: inherit;
+}
+.wk-flow__line {
+  fill: none;
+  stroke: #1c7ed6;
+  stroke-linecap: round;
+}
+.wk-flow__dot {
+  stroke: var(--text, #1d2430);
+  stroke-width: 0.6;
+}
+.wk-flow__behind .wk-flow__line {
+  stroke: var(--muted, #6b7280);
+  opacity: 0.35;
+}
+.wk-flow__behind .wk-flow__dot {
+  opacity: 0.25;
+  stroke: none;
+}
+.wk-flow__head,
+.wk-flow__level {
+  font-size: 8px;
+  fill: var(--muted, #6b7280);
+}
+
+.wk__explore {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.6rem;
+  font-size: 0.85rem;
+}
+.wk__explore input {
+  width: 4.5rem;
+}
+.wk__whole-tree {
+  max-height: 80vh;
+  overflow: auto;
+}
+.wk__circuits {
+  margin-top: 0.6rem;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+.wk__circuits th,
+.wk__circuits td {
+  padding: 0.15rem 0.6rem 0.15rem 0;
+  text-align: left;
+  border-bottom: 1px solid var(--rule, #2a3140);
+}
+.wk__circuits tbody tr {
+  cursor: pointer;
+}
+.wk__circuits tbody tr:hover {
+  background: var(--panel-2, #efece5);
+}

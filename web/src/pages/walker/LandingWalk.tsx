@@ -10,7 +10,10 @@ import { useEffect, useMemo, useReducer, useState } from 'react';
 import { addressFromId, idOf, type HexType } from '../../core';
 import { HexBoard, type BoardStep, type BoardTile } from '../../components/HexBoard';
 import { HEX_OUTLINE, placeNear, placeWorld, supertileEdges, tilesAround, type PlacedTile } from '../../lib/hexBoard';
-import { choicesOf, concreteChain, makeWalker, reducePossible, replay, replayChoices, startWalk, type Outcome, type PossibleWalk, type World } from './possible';
+import { choicesOf, concreteChain, makeWalker, reducePossible, replay, replayChoices, startWalk, type Limits, type Outcome, type PossibleWalk, type World } from './possible';
+import { AncestorFlow } from './AncestorFlow';
+import { CircuitList } from './CircuitList';
+import { circuitsOf } from './circuits';
 import { ChoiceTree } from './ChoiceTree';
 import type { Choice } from './share';
 import { SidesView, sideMarks, sidesOf } from './SidesView';
@@ -56,9 +59,26 @@ export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial
   const [hover, setHover] = useState<Outcome | null>(null);
   const [hoverRun, setHoverRun] = useState<number | null>(null);
   const [whole, setWhole] = useState(initial?.whole ?? false);
+  const [limits, setLimits] = useState<Limits>({ forks: 60, tiles: 1000 });
+  const [exploring, setExploring] = useState(false);
+  // take every landing a little at a time, so the page keeps drawing
+  useEffect(() => {
+    if (!exploring) return undefined;
+    if (pw.explored?.done) { setExploring(false); return undefined; }
+    const t = setTimeout(() => dispatch({ type: 'explore', limits, budgetMs: 250 }), 0);
+    return () => clearTimeout(t);
+  }, [exploring, pw, limits]);
+  const circuits = useMemo(() => circuitsOf(pw), [pw]);
+  const forksOpen = pw.nodes.filter((x) => x.fork).length;
+  const unopened = pw.nodes.filter((x) => !x.fork && !x.end && x.id !== pw.current).length;
+  const long = pw.nodes.filter((x) => x.end?.status === 'walking').length;
+  const branchesClosed = circuits.reduce((a, c) => a + c.nodes.length, 0);
+  const exploredText = `${exploring ? 'Taking every landing: ' : ''}${forksOpen} ${forksOpen === 1 ? 'fork' : 'forks'}; ${branchesClosed} ${branchesClosed === 1 ? 'branch closes' : 'branches close'} on ${circuits.length} ${circuits.length === 1 ? 'circuit' : 'circuits'}${long ? `; ${long} still open after ${limits.tiles} tiles` : ''}${unopened && !exploring ? `; ${unopened} not walked (fork limit)` : ''}.`;
   useEffect(() => { onState?.(choicesOf(pw), pw.current, whole); }, [pw, whole]); // eslint-disable-line react-hooks/exhaustive-deps
   const { stage } = pw;
   const n = stage.seen.length;
+  // every stack at the fork, after its step, whichever landing it takes
+  const atFork = useMemo(() => stage.pending.flatMap((o) => o.worlds), [stage]);
 
   // The board: one stack still possible, or while a landing is hovered, a stack that lands there.
   const shown = useMemo(() => {
@@ -152,6 +172,12 @@ export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial
             onChooseAt={(id, key) => { setHover(null); dispatch({ type: 'chooseAt', id, key }); }}
             onHoverOption={(key) => setHover(key && stage.status === 'choice' ? stage.pending.find((o) => o.key === key) ?? null : null)}
           />
+          <p className="wk__tape-title">Ancestor stacks</p>
+          <AncestorFlow
+            start={pw.walker.start}
+            shown={hover ? hover.worlds : pw.nodes[pw.current].before ? pw.nodes[pw.current].stage.worlds : stage.worlds}
+            behind={hover ? atFork : pw.nodes[pw.current].before}
+          />
         </div>
       </div>
 
@@ -165,14 +191,33 @@ export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial
       </section>
 
       <div className="wk__whole">
-        <button type="button" className="td__chip" onClick={() => setWhole((v) => !v)} aria-expanded={whole} data-testid="wk-whole">
-          {whole ? 'Hide the whole tree' : 'Show the whole tree'}
-        </button>
+        <div className="wk__explore">
+          <button type="button" className="td__chip" onClick={() => setWhole((v) => !v)} aria-expanded={whole} data-testid="wk-whole">
+            {whole ? 'Hide the whole tree' : 'Show the whole tree'}
+          </button>
+          <button
+            type="button"
+            className="td__chip"
+            onClick={() => {
+              if (exploring) { setExploring(false); return; }
+              setWhole(true);
+              dispatch({ type: 'explore', limits, budgetMs: 250, restart: true });
+              setExploring(true);
+            }}
+            data-testid="wk-explore"
+          >
+            {exploring ? 'Stop' : 'Take every landing'}
+          </button>
+          <label>up to <input type="number" min={1} value={limits.forks} onChange={(e) => setLimits((l) => ({ ...l, forks: Math.max(1, Number(e.target.value) || 1) }))} /> forks</label>
+          <label>and <input type="number" min={1} value={limits.tiles} onChange={(e) => setLimits((l) => ({ ...l, tiles: Math.max(1, Number(e.target.value) || 1) }))} /> tiles a branch</label>
+          {pw.explored && <span className="td__hint" data-testid="wk-explored">{exploredText}</span>}
+        </div>
         {whole && (
           <div className="wk__whole-tree">
             <ChoiceTree pw={pw} mode="full" onGoto={(id) => dispatch({ type: 'goto', id })} onChooseAt={(id, key) => dispatch({ type: 'chooseAt', id, key })} />
           </div>
         )}
+        {circuits.length > 0 && <CircuitList circuits={circuits} onGoto={(id) => dispatch({ type: 'goto', id })} />}
       </div>
 
       {closed && <SidesView sides={sides} length={n} onHoverRun={setHoverRun} />}

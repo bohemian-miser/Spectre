@@ -68,7 +68,7 @@ export function ChoiceTree({ pw, mode, onGoto, onChooseAt, onHoverOption }: Choi
   const rows = useMemo(() => {
     const ahead = new Map<number, Stage>();
     const stageAhead = (n: ChoiceNode): Stage => {
-      const hit = ahead.get(n.id);
+      const hit = ahead.get(n.id) ?? n.end;
       if (hit) return hit;
       let st = n.id === pw.current ? pw.stage : n.stage;
       for (let i = 0; i < 20000 && st.status === 'walking'; i++) st = advance(pw.walker, st);
