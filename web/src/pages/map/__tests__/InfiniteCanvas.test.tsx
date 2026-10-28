@@ -391,9 +391,16 @@ describe('InfiniteCanvas — tap to trace', () => {
     const anchored = m.renderer.trails.at(-1) as TrailGeometry;
     expect(first.status).toBe('frontier');
 
-    // Zoom out: more tiles come into range, so the paused walk carries on.
+    // Zoom out: more tiles come into range, so the paused walk carries on,
+    // across several frames; wait until it has grown and stopped.
     act(() => m.api.current?.setCamera({ scale: 6 }));
-    await settle();
+    let last = -1;
+    await settleUntil(() => {
+      const p = m.status().trace.points;
+      const still = p > first.points && p === last;
+      last = p;
+      return still;
+    }, 'the paused walk to carry on after zooming out');
     const grown = m.status().trace;
     expect(grown.points).toBeGreaterThan(first.points);
     expect(grown.length).toBeGreaterThan(first.length);
