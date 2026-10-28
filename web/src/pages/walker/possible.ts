@@ -38,7 +38,7 @@ export interface World {
 }
 
 export interface Outcome {
-  /** `Psi 5`, or `closes`. */
+  /** `Psi 5`, `closes`, or `open` (leaving a level-`maxLevel` stack, when the walker crosses no seams). */
   readonly key: string;
   readonly type: HexType | null;
   readonly edge: number | null;
@@ -61,7 +61,11 @@ export interface Walker {
   readonly startEdge: number;
   /** Stacks are extended to cross up to this level; above it, crossings go over a seam. */
   readonly maxLevel: number;
-  /** A seam moves up to this level at most; a strand still leaving along a second wall there is at a `Corner`. */
+  /**
+   * A seam moves up to this level at most; a strand still leaving along a
+   * second wall there is at a `Corner`. At `maxLevel` or below, no seams are
+   * crossed: a strand leaving a level-`maxLevel` stack is `open`.
+   */
   readonly topLevel: number;
   readonly table: Map<HexType, Map<number, number>>;
 }
@@ -127,6 +131,8 @@ export function stepAll(wk: Walker, worlds: readonly World[]): { outcomes: Outco
       return;
     }
     if (w.chain.length >= wk.maxLevel) {
+      // with no room above maxLevel, the strand is cut off as open
+      if (wk.topLevel <= wk.maxLevel) { add('open', null, null, w); return; }
       for (const o of across(w.at, exit)) land({ chain: w.chain, at: o.address, entry: o.edge, seam: o.pair, far: true });
       return;
     }
@@ -239,7 +245,7 @@ function apply(stage: Stage, wk: Walker, o: Outcome): Stage {
   const w = stage.worlds[0];
   const exit = wk.table.get(w.at.leaf)!.get(w.entry)!;
   const seen = [...stage.seen, { type: w.at.leaf, entry: w.entry, exit }];
-  const status: Status = o.key === 'closes' ? 'closed' : 'walking';
+  const status: Status = o.key === 'closes' ? 'closed' : o.key === 'open' ? 'open' : 'walking';
   return { worlds: o.worlds, seen, status, pending: [], corners: stage.corners };
 }
 
