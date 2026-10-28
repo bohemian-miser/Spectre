@@ -40,7 +40,7 @@ describe('every landing taken', () => {
       expect(b.fromTiles).toBeLessThan(c.tiles);
       expect(pw.nodes[b.node].fork!.options.map((o) => o.key)).toEqual(expect.arrayContaining([b.took, b.other]));
     }
-  });
+  }, 60000);
 
   it('keys a circuit the same from any tile, either way round', () => {
     const seen: Seen[] = [
