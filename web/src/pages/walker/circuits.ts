@@ -100,3 +100,28 @@ export function circuitsOf(pw: PossibleWalk): Circuit[] {
     return { key, tiles: g.tiles, nodes, choices: route(nodes[0]).length - 1, branching: best?.branching ?? null };
   });
 }
+
+/** A circuit the tree has closed on: its key and length, the first branch that closed on it, that branch's choices, and how many branches close on it. */
+export interface Found { readonly key: string; readonly tiles: number; readonly node: number; readonly choices: number; readonly branches: number }
+
+const keys = new WeakMap<Stage, string>();
+
+/**
+ * The circuits closed on so far, in the order their first branches were
+ * made. `explore` makes the nodes breadth first, so a circuit reached in
+ * fewer choices comes first.
+ */
+export function foundCircuits(pw: PossibleWalk): Found[] {
+  const by = new Map<string, { key: string; tiles: number; node: number; choices: number; branches: number }>();
+  for (const n of pw.nodes) {
+    const st = endOf(pw, n);
+    if (!st || st.status !== 'closed') continue;
+    const key = keys.get(st) ?? keys.set(st, circuitKey(st.seen)).get(st)!;
+    const f = by.get(key);
+    if (f) { f.branches++; continue; }
+    let choices = 0;
+    for (let at = n.parent; at !== null; at = pw.nodes[at].parent) choices++;
+    by.set(key, { key, tiles: st.seen.length, node: n.id, choices, branches: 1 });
+  }
+  return [...by.values()];
+}

@@ -398,7 +398,7 @@ export interface Limits { readonly forks: number; readonly tiles: number }
 export function explore(pw: PossibleWalk, limits: Limits, from = 0, budgetMs = Infinity): { pw: PossibleWalk; next: number; done: boolean } {
   const wk = pw.walker;
   const t0 = Date.now();
-  let nodes = [...pw.nodes];
+  const nodes = [...pw.nodes];
   let forks = nodes.filter((n) => n.fork).length;
   let id = from;
   for (; id < nodes.length; id++) {
@@ -419,7 +419,7 @@ export function explore(pw: PossibleWalk, limits: Limits, from = 0, budgetMs = I
     for (const o of st.pending) {
       if (nodes[id].children.some((c) => nodes[c].key === o.key)) continue;
       const child = nodes.length;
-      nodes = [...nodes, { id: child, parent: id, key: o.key, children: [], stage: apply(st, wk, o), fork: null, before: st.pending.flatMap((x) => x.worlds) }];
+      nodes.push({ id: child, parent: id, key: o.key, children: [], stage: apply(st, wk, o), fork: null, before: st.pending.flatMap((x) => x.worlds) });
       nodes[id] = { ...nodes[id], children: [...nodes[id].children, child] };
     }
   }

@@ -10,7 +10,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { walkStrand } from '../../../core';
-import { circuitKey, circuitsOf } from '../circuits';
+import { circuitKey, circuitsOf, foundCircuits } from '../circuits';
 import { concreteChain, explore, followWord, makeWalker, replayChoices, rotateWord, stageAhead, startWalk, type Seen } from '../possible';
 import { decodeLink } from '../share';
 import { matchingByType, patternOf } from '../walk';
@@ -43,6 +43,25 @@ describe('every branch explored', () => {
       const b = c.branching!;
       expect(b.fromTiles).toBeLessThan(c.tiles);
       expect(pw.nodes[b.node].fork!.options.map((o) => o.key)).toEqual(expect.arrayContaining([b.took, b.other]));
+    }
+  }, 60000);
+
+  it('searched with no fork limit, lists each circuit once, nearest first, as circuitsOf groups them', () => {
+    const wk = makeWalker(triangle, 'Delta', 0, 5);
+    let pw = startWalk(wk);
+    let next = 0;
+    while (pw.nodes.filter((n) => n.fork).length < 40) {
+      const r = explore(pw, { forks: Infinity, tiles: 600 }, next, 50);
+      pw = r.pw;
+      next = r.next;
+    }
+    const found = foundCircuits(pw);
+    const circuits = circuitsOf(pw);
+    expect(found.length).toBeGreaterThan(2);
+    expect(new Map(found.map((f) => [f.key, [f.tiles, f.branches, f.choices]]))).toEqual(new Map(circuits.map((c) => [c.key, [c.tiles, c.nodes.length, c.choices]])));
+    for (const [i, f] of found.entries()) {
+      expect(circuitKey(pw.nodes[f.node].end!.seen)).toBe(f.key);
+      if (i > 0) expect(f.choices).toBeGreaterThanOrEqual(found[i - 1].choices);
     }
   }, 60000);
 
