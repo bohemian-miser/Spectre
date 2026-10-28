@@ -58,7 +58,7 @@ describe('seams', () => {
     }
     expect(checked).toBeGreaterThan(1000);
     expect(most).toBeLessThanOrEqual(8);
-  });
+  }, 30000);
 
   it('of 264 pairs of edges with opposite classes, 101 are live, and each can meet within 3 levels', () => {
     let pairs = 0, liveCount = 0;

@@ -138,7 +138,16 @@ export function across(address: Address, edge: number): { pair: Pair; address: A
 }
 
 /** The fewest near parents that bring a pair to a common ancestor, or null when every way on runs along a wall for ever. */
-export function meetingOf(p: Pair): { links: Link[]; farLinks: Link[]; farSlot: number } | null {
+export function meetingOf(p: Pair): Meeting | null {
+  const k0 = pairKey(p);
+  if (!meetings.has(k0)) meetings.set(k0, findMeeting(p));
+  return meetings.get(k0)!;
+}
+
+type Meeting = { readonly links: readonly Link[]; readonly farLinks: readonly Link[]; readonly farSlot: number };
+const meetings = new Map<string, Meeting | null>();
+
+function findMeeting(p: Pair): Meeting | null {
   type Path = { pair: Pair; links: Link[]; farLinks: Link[] };
   const seen = new Set([pairKey(p)]);
   let layer: Path[] = [{ pair: p, links: [], farLinks: [] }];
