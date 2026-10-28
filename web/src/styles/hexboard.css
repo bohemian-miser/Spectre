@@ -34,6 +34,10 @@
   stroke-dasharray: 0.15 0.12;
   stroke-width: 0.03;
 }
+.hb__tile.is-decision {
+  stroke: #7048e8;
+  stroke-width: 0.26;
+}
 .hb__tile.is-landing {
   opacity: 0.95;
   stroke: #e8590c;

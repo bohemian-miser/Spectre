@@ -5,12 +5,13 @@
  * hovering a landing shows a stack that lands there. Every choice made stays
  * in the tree of choices, and clicking one goes back to it.
  */
-import { useEffect, useMemo, useReducer, useState } from 'react';
+import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 
 import { addressFromId, idOf, type HexType } from '../../core';
 import { HexBoard, type BoardStep, type BoardTile } from '../../components/HexBoard';
-import { HEX_OUTLINE, placeNear, placeWorld, supertileEdges, tilesAround, type PlacedTile } from '../../lib/hexBoard';
-import { choicesOf, concreteChain, makeWalker, reducePossible, replay, replayChoices, startWalk, type Limits, type Outcome, type PossibleWalk, type World } from './possible';
+import { HEX_OUTLINE, placeNear, placeWorld, strandPathD, supertileEdges, tileCentre, tilePoints, tilesAround, type PlacedTile } from '../../lib/hexBoard';
+import { tileColor } from '../../lib/palette';
+import { choicesOf, concreteChain, makeWalker, reducePossible, replay, replayChoices, stageAhead, startWalk, type Limits, type Outcome, type PossibleWalk, type World } from './possible';
 import { AncestorFlow } from './AncestorFlow';
 import { CircuitList } from './CircuitList';
 import { circuitsOf } from './circuits';
@@ -37,6 +38,39 @@ function sceneOf(pw: PossibleWalk, w: World, steps: number) {
   return { placed, ids, levels, root, level };
 }
 
+/**
+ * The walk from a node of the tree, drawn small beside the pointer: its
+ * tiles in their colours and the strand through their centres, to the
+ * node's fork or to where its branch ends.
+ */
+function CircuitPeek({ pw, subset, id, x, y }: { pw: PossibleWalk; subset: readonly number[]; id: number; x: number; y: number }): JSX.Element | null {
+  const drawn = useMemo(() => {
+    const st = stageAhead(pw, id, RUN_CAP);
+    const g = sceneOf(pw, st.worlds[0], st.seen.length);
+    const ids = g.ids.slice(0, st.seen.length + 1).filter((t) => g.placed.has(t));
+    const tiles = [...new Set(ids)].map((t) => g.placed.get(t)!);
+    const pts = ids.map((t) => tileCentre(g.placed.get(t)!.xform));
+    const xs = pts.map((p) => p.x), ys = pts.map((p) => p.y);
+    const box = { x: Math.min(...xs) - 1.2, y: Math.min(...ys) - 1.2, w: Math.max(...xs) - Math.min(...xs) + 2.4, h: Math.max(...ys) - Math.min(...ys) + 2.4 };
+    const strand = strandPathD(st.seen.flatMap((s, i) => (g.placed.has(g.ids[i]) ? [{ ...s, xform: g.placed.get(g.ids[i])!.xform }] : [])), subset);
+    return { st, tiles, pts, box, strand };
+  }, [pw, id, subset]);
+  const { st, tiles, pts, box, strand } = drawn;
+  const size = 220;
+  const left = Math.min(x + 18, window.innerWidth - size - 12);
+  const top = Math.min(y + 18, window.innerHeight - size - 40);
+  return (
+    <div className="wk__peek" style={{ left, top, width: size }} data-testid="wk-peek">
+      <svg viewBox={`${box.x} ${box.y} ${box.w} ${box.h}`} width={size} height={size}>
+        {tiles.map((t) => <polygon key={t.id} points={tilePoints(t.xform)} fill={tileColor(t.type)} className="wk__peek-tile" />)}
+        <path d={strand} className="wk__peek-strand" />
+        {pts[0] && <circle cx={pts[0].x} cy={pts[0].y} r={0.6} className="wk__peek-start" />}
+      </svg>
+      <p>{st.status === 'closed' ? `A circuit of ${st.seen.length} tiles` : st.status === 'choice' ? `${st.seen.length} tiles, to the fork at step ${st.seen.length + 1}` : `${st.seen.length} tiles, still open`}</p>
+    </div>
+  );
+}
+
 export interface LandingWalkProps {
   readonly pattern: Pattern;
   readonly byType: ReadonlyMap<HexType, number>;
@@ -58,9 +92,18 @@ export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial
   });
   const [hover, setHover] = useState<Outcome | null>(null);
   const [hoverRun, setHoverRun] = useState<number | null>(null);
-  const [whole, setWhole] = useState(initial?.whole ?? false);
+  // the whole tree: off, beside the board, or across the page
+  const [view, setView] = useState<'off' | 'split' | 'full'>(initial?.whole ? 'split' : 'off');
+  const whole = view !== 'off';
   const [limits, setLimits] = useState<Limits>({ forks: 60, tiles: 1000 });
   const [exploring, setExploring] = useState(false);
+  const [showDots, setShowDots] = useState(true);
+  const [showDecisions, setShowDecisions] = useState(false);
+  const [peek, setPeek] = useState<{ id: number; x: number; y: number } | null>(null);
+  const pointer = useRef({ x: 0, y: 0 });
+  // a landing taken, or a node of the tree, walks on by itself to the next fork or the end
+  const goto = (id: number): void => { setHover(null); dispatch({ type: 'goto', id }); dispatch({ type: 'run', cap: RUN_CAP }); };
+  const take = (id: number, key: string): void => { setHover(null); dispatch({ type: 'chooseAt', id, key }); dispatch({ type: 'run', cap: RUN_CAP }); };
   // take every landing a little at a time, so the page keeps drawing
   useEffect(() => {
     if (!exploring) return undefined;
@@ -89,9 +132,19 @@ export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial
   const solid = [...new Set(walked)].map((id) => shown.placed.get(id)).filter((p): p is PlacedTile => !!p);
   const landing = hover && hover.key !== 'closes' && hover.key !== 'open' ? shown.placed.get(shown.ids[n + 1]) : undefined;
   const faint = tilesAround(shown.placed.values(), landing ? [...solid, landing] : solid, 3.6, FAINT_CAP, new Set([...walked, ...(landing ? [landing.id] : [])]));
+  // the tiles where a landing was chosen, along the walk to the current node
+  const decisions = useMemo(() => {
+    const out = new Set<string>();
+    if (!showDecisions) return out;
+    for (let id: number | null = pw.current; id !== null && pw.nodes[id].parent !== null; id = pw.nodes[id].parent) {
+      const step = pw.nodes[pw.nodes[id].parent!].fork?.step;
+      if (step !== undefined && step <= n) out.add(shown.ids[step]);
+    }
+    return out;
+  }, [showDecisions, pw, shown, n]);
   const tiles: BoardTile[] = [
     ...faint.map((t): BoardTile => ({ ...t, tone: 'faint' })),
-    ...solid.map((t): BoardTile => ({ ...t, tone: 'solid' })),
+    ...solid.map((t): BoardTile => ({ ...t, tone: 'solid', className: decisions.has(t.id) ? 'is-decision' : undefined })),
     ...(landing ? [{ ...landing, tone: 'preview' as const, className: 'is-landing' }] : []),
   ];
   const xformOf = (id: string) => shown.placed.get(id)!.xform;
@@ -106,18 +159,46 @@ export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial
   const closed = stage.status === 'closed';
   const sides = useMemo(() => (closed ? sidesOf(stage.seen, shown.ids, xformOf) : null), [closed, stage.seen, shown]); // eslint-disable-line react-hooks/exhaustive-deps
   const marks = [
-    ...sideMarks(sides, hoverRun, xformOf),
+    ...(showDots ? sideMarks(sides, hoverRun, xformOf) : []),
     { xform: xformOf(shown.ids[0]), kind: 'start', r: 0.75 },
   ];
   const heights = shown.levels.slice(0, n);
   const maxHeight = Math.max(1, ...heights);
   const choicesMade = pw.nodes[pw.current] ? (function count(id: number): number { const p = pw.nodes[id].parent; return p === null ? 0 : 1 + count(p); })(pw.current) : 0;
 
+  const exploreBar = (
+    <div className="wk__explore">
+      <button
+        type="button"
+        className="td__chip"
+        onClick={() => {
+          if (exploring) { setExploring(false); return; }
+          dispatch({ type: 'explore', limits, budgetMs: 250, restart: true });
+          setExploring(true);
+        }}
+        data-testid="wk-explore"
+      >
+        {exploring ? 'Stop' : 'Take every landing'}
+      </button>
+      <label>up to <input type="number" min={1} value={limits.forks} onChange={(e) => setLimits((l) => ({ ...l, forks: Math.max(1, Number(e.target.value) || 1) }))} /> forks</label>
+      <label><input type="number" min={1} value={limits.tiles} onChange={(e) => setLimits((l) => ({ ...l, tiles: Math.max(1, Number(e.target.value) || 1) }))} /> tiles a branch</label>
+    </div>
+  );
+
   return (
     <>
       <div className="td__controls">
         <button type="button" onClick={() => dispatch({ type: 'step' })} disabled={stage.status !== 'walking'} data-testid="wk-step">Step</button>
         <button type="button" onClick={() => dispatch({ type: 'run', cap: RUN_CAP })} disabled={stage.status !== 'walking'} data-testid="wk-run">Run until a choice</button>
+        <button type="button" className="td__chip" aria-pressed={showDots} onClick={() => setShowDots((v) => !v)} data-testid="wk-dots">{showDots ? 'Dots on' : 'Dots off'}</button>
+        <button type="button" className="td__chip" aria-pressed={showDecisions} onClick={() => setShowDecisions((v) => !v)} data-testid="wk-decisions">{showDecisions ? 'Choices marked' : 'Mark choices'}</button>
+        <span className="wk__views" role="group" aria-label="Whole tree">
+          {(['off', 'split', 'full'] as const).map((v) => (
+            <button key={v} type="button" className={`td__chip${view === v ? ' is-active' : ''}`} aria-pressed={view === v} onClick={() => setView(v)} data-testid={`wk-view-${v}`}>
+              {v === 'off' ? 'Landings' : v === 'split' ? 'Tree beside' : 'Tree full page'}
+            </button>
+          ))}
+        </span>
         <span className="td__hint" data-testid="wk-status">
           {stage.status === 'closed'
             ? `A circuit of ${n} tiles, after ${choicesMade} ${choicesMade === 1 ? 'choice' : 'choices'}. It is the same circuit for all ${stage.worlds.length} ancestor stacks left.`
@@ -152,35 +233,61 @@ export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial
         </ul>
       )}
 
-      <div className="wk__main">
-        <HexBoard
-          tiles={tiles}
-          pattern={{ subset: pattern.subset, matching: byType }}
-          strand={strand}
-          focus={current && !closed ? { xform: current.xform, type: here.at.leaf, entry: here.entry } : null}
-          marks={marks}
-          boundaries={boundaries}
-          nest={{ root: shown.root, level: shown.level }}
-          testId="wk-svg"
-        />
-        <div className="wk__side">
-          <p className="wk__tape-title">Landings</p>
+      {view === 'full' ? (
+        <div
+          className="wk__fulltree"
+          data-testid="wk-fulltree"
+          onMouseMove={(e) => { pointer.current = { x: e.clientX, y: e.clientY }; setPeek((p) => (p ? { ...p, ...pointer.current } : p)); }}
+        >
+          {exploreBar}
+          {pw.explored && <p className="td__hint" data-testid="wk-explored">{exploredText}</p>}
           <ChoiceTree
             pw={pw}
-            mode="path"
-            onGoto={(id) => { setHover(null); dispatch({ type: 'goto', id }); }}
-            onChooseAt={(id, key) => { setHover(null); dispatch({ type: 'chooseAt', id, key }); }}
-            onHoverOption={(key) => setHover(key && stage.status === 'choice' ? stage.pending.find((o) => o.key === key) ?? null : null)}
+            mode="full"
+            onGoto={(id) => { setPeek(null); goto(id); setView('split'); }}
+            onChooseAt={(id, key) => { setPeek(null); take(id, key); setView('split'); }}
+            onHoverNode={(id) => setPeek(id === null ? null : { id, ...pointer.current })}
           />
-          <p className="wk__tape-title">Ancestor stacks</p>
-          <AncestorFlow
-            start={pw.walker.start}
-            shown={hover ? hover.worlds : pw.nodes[pw.current].before ? pw.nodes[pw.current].stage.worlds : stage.worlds}
-            behind={hover ? atFork : pw.nodes[pw.current].before}
-          />
+          {peek && <CircuitPeek pw={pw} subset={pattern.subset} id={peek.id} x={peek.x} y={peek.y} />}
         </div>
-      </div>
-
+      ) : (
+        <div className={`wk__main${view === 'split' ? ' is-whole' : ''}`}>
+          <HexBoard
+            tiles={tiles}
+            pattern={{ subset: pattern.subset, matching: byType }}
+            strand={strand}
+            focus={current && !closed ? { xform: current.xform, type: here.at.leaf, entry: here.entry } : null}
+            marks={marks}
+            boundaries={boundaries}
+            nest={{ root: shown.root, level: shown.level }}
+            testId="wk-svg"
+          />
+          {view === 'split' ? (
+            <div className="wk__side wk__side--whole">
+              {exploreBar}
+              {pw.explored && <p className="td__hint" data-testid="wk-explored">{exploredText}</p>}
+              <ChoiceTree pw={pw} mode="full" onGoto={goto} onChooseAt={take} />
+            </div>
+          ) : (
+            <div className="wk__side">
+              <p className="wk__tape-title">Landings</p>
+              <ChoiceTree
+                pw={pw}
+                mode="path"
+                onGoto={goto}
+                onChooseAt={take}
+                onHoverOption={(key) => setHover(key && stage.status === 'choice' ? stage.pending.find((o) => o.key === key) ?? null : null)}
+              />
+              <p className="wk__tape-title">Ancestor stacks</p>
+              <AncestorFlow
+                start={pw.walker.start}
+                shown={hover ? hover.worlds : pw.nodes[pw.current].before ? pw.nodes[pw.current].stage.worlds : stage.worlds}
+                behind={hover ? atFork : pw.nodes[pw.current].before}
+              />
+            </div>
+          )}
+        </div>
+      )}
 
       <section className="td__section">
         <h3>How high each step reached</h3>
@@ -190,35 +297,7 @@ export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial
         </svg>
       </section>
 
-      <div className="wk__whole">
-        <div className="wk__explore">
-          <button type="button" className="td__chip" onClick={() => setWhole((v) => !v)} aria-expanded={whole} data-testid="wk-whole">
-            {whole ? 'Hide the whole tree' : 'Show the whole tree'}
-          </button>
-          <button
-            type="button"
-            className="td__chip"
-            onClick={() => {
-              if (exploring) { setExploring(false); return; }
-              setWhole(true);
-              dispatch({ type: 'explore', limits, budgetMs: 250, restart: true });
-              setExploring(true);
-            }}
-            data-testid="wk-explore"
-          >
-            {exploring ? 'Stop' : 'Take every landing'}
-          </button>
-          <label>up to <input type="number" min={1} value={limits.forks} onChange={(e) => setLimits((l) => ({ ...l, forks: Math.max(1, Number(e.target.value) || 1) }))} /> forks</label>
-          <label>and <input type="number" min={1} value={limits.tiles} onChange={(e) => setLimits((l) => ({ ...l, tiles: Math.max(1, Number(e.target.value) || 1) }))} /> tiles a branch</label>
-          {pw.explored && <span className="td__hint" data-testid="wk-explored">{exploredText}</span>}
-        </div>
-        {whole && (
-          <div className="wk__whole-tree">
-            <ChoiceTree pw={pw} mode="full" onGoto={(id) => dispatch({ type: 'goto', id })} onChooseAt={(id, key) => dispatch({ type: 'chooseAt', id, key })} />
-          </div>
-        )}
-        {circuits.length > 0 && <CircuitList circuits={circuits} onGoto={(id) => dispatch({ type: 'goto', id })} />}
-      </div>
+      {circuits.length > 0 && <CircuitList circuits={circuits} onGoto={goto} />}
 
       {closed && <SidesView sides={sides} length={n} onHoverRun={setHoverRun} />}
     </>

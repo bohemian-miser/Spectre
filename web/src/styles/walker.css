@@ -503,3 +503,77 @@
 .wk__odd {
   color: #c92a2a;
 }
+
+.wk__main.is-whole {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+@media (max-width: 760px) {
+  .wk__main.is-whole {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.wk__side--whole {
+  max-height: min(80vh, 900px);
+}
+.wk__side--whole .wk__explore {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding-bottom: 0.3rem;
+  background: var(--bg, #f4f2ec);
+}
+.wk__side--whole .td__hint {
+  margin: 0.2rem 0 0.4rem;
+}
+
+.wk__views {
+  display: inline-flex;
+  gap: 0.25rem;
+}
+.wk__fulltree {
+  max-height: 85vh;
+  overflow: auto;
+  border: 1px solid var(--rule, #2a3140);
+  border-radius: 8px;
+  padding: 0.4rem;
+  background: var(--panel, #fff);
+}
+.wk__fulltree .wk__explore {
+  position: sticky;
+  top: 0;
+  left: 0;
+  z-index: 1;
+  padding-bottom: 0.3rem;
+  background: var(--panel, #fff);
+}
+.wk__peek {
+  position: fixed;
+  z-index: 20;
+  pointer-events: none;
+  padding: 0.3rem;
+  border: 1px solid var(--rule, #2a3140);
+  border-radius: 8px;
+  background: var(--panel, #fff);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+}
+.wk__peek p {
+  margin: 0.2rem 0 0;
+  font-size: 0.8rem;
+  color: var(--muted, #6b7280);
+}
+.wk__peek-tile {
+  stroke: var(--panel, #fff);
+  stroke-width: 0.06;
+}
+.wk__peek-strand {
+  fill: none;
+  stroke: var(--text, #1d2430);
+  stroke-width: 0.16;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.wk__peek-start {
+  fill: none;
+  stroke: #2f9e44;
+  stroke-width: 0.2;
+}

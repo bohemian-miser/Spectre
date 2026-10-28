@@ -62,9 +62,11 @@ export interface ChoiceTreeProps {
   readonly onChooseAt: (id: number, key: string) => void;
   /** A landing offered at the next fork is hovered (path mode). */
   readonly onHoverOption?: (key: string | null) => void;
+  /** A landing already taken is hovered: its node, or null when the pointer leaves. */
+  readonly onHoverNode?: (id: number | null) => void;
 }
 
-export function ChoiceTree({ pw, mode, onGoto, onChooseAt, onHoverOption }: ChoiceTreeProps): JSX.Element {
+export function ChoiceTree({ pw, mode, onGoto, onChooseAt, onHoverOption, onHoverNode }: ChoiceTreeProps): JSX.Element {
   const rows = useMemo(() => {
     const ahead = new Map<number, Stage>();
     const stageAhead = (n: ChoiceNode): Stage => {
@@ -231,8 +233,8 @@ export function ChoiceTree({ pw, mode, onGoto, onChooseAt, onHoverOption }: Choi
             key={r.key}
             className={`wk-tree__row${untaken ? ' is-untaken' : ''}${r.current ? ' is-current' : ''}`}
             onClick={click}
-            onMouseEnter={untaken && onHoverOption ? () => onHoverOption(r.option!.key) : undefined}
-            onMouseLeave={untaken && onHoverOption ? () => onHoverOption(null) : undefined}
+            onMouseEnter={untaken && onHoverOption ? () => onHoverOption(r.option!.key) : r.node !== undefined && onHoverNode ? () => onHoverNode(r.node!) : undefined}
+            onMouseLeave={untaken && onHoverOption ? () => onHoverOption(null) : r.node !== undefined && onHoverNode ? () => onHoverNode(null) : undefined}
             data-testid={untaken && mode === 'path' ? `wk-outcome-${r.option!.key.replace(' ', '-')}` : `wk-tree-${r.key.replace(/[: ]/g, '-')}`}
           >
             <title>{title}</title>

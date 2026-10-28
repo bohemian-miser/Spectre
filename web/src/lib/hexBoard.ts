@@ -110,6 +110,22 @@ export function chordD(xform: Affine, type: HexType, a: Pt, b: Pt, move = true):
 }
 
 /** Every chord of a tile's pairing, as one SVG path. */
+/** A strand along tiles: per tile, the chord from the edge it enters by to the edge it leaves by, joined where they meet. */
+export function strandPathD(steps: readonly { readonly type: HexType; readonly entry: number; readonly exit: number; readonly xform: Affine }[], subset: readonly number[]): string {
+  const out: string[] = [];
+  let last: Pt | null = null;
+  for (const s of steps) {
+    const a = pointOnEdge(s.type, subset, s.entry);
+    const b = pointOnEdge(s.type, subset, s.exit);
+    if (!a || !b) continue;
+    const pa = transPt(s.xform, a);
+    const joined = last && Math.hypot(last.x - pa.x, last.y - pa.y) < 1e-6;
+    out.push(chordD(s.xform, s.type, a, b, !joined));
+    last = transPt(s.xform, b);
+  }
+  return out.join(' ');
+}
+
 export function pairingD(xform: Affine, type: HexType, subset: readonly number[], matching: number): string {
   const pts = points(type, subset);
   if (pts.length < 2 || pts.length % 2) return '';

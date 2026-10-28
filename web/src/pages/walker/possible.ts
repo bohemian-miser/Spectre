@@ -427,3 +427,11 @@ export function explore(pw: PossibleWalk, limits: Limits, from = 0, budgetMs = I
   return { pw: { ...pw, nodes }, next: id, done };
 }
 
+/** Where the walk from a node stops: at its fork, where its branch ends, or after `cap` steps. */
+export function stageAhead(pw: PossibleWalk, id: number, cap: number): Stage {
+  const node = pw.nodes[id];
+  let st = node.end ?? (id === pw.current ? pw.stage : node.stage);
+  for (let i = 0; i < cap && st.status === 'walking'; i++) st = advance(pw.walker, st);
+  return st;
+}
+
