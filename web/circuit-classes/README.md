@@ -239,7 +239,9 @@ drawn as a chord. Drawn to level 0 a circuit has exactly one point per tile.
 start tile and sums each tile's distance to its run's chord.
 `corner-paths.ts` writes the Corners page's data: for every class of a rule,
 the biggest circuit of each family at its last three generations, as 4320
-tile positions evenly spaced by tile count:
+tile positions evenly spaced by tile count, with the tile it enters first
+(the slots down from its supertile and its chord there, which the Explorer
+link uses):
 
     npx tsx circuit-classes/corner-paths.ts hex 023468 9 public/data/corners/hex-023468
     npx tsx circuit-classes/corner-paths.ts index hex 023468 public/data/corners/hex-023468

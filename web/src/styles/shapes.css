@@ -197,3 +197,78 @@
 .shapes-members button[aria-pressed='true'] {
   border-color: var(--accent);
 }
+.shapes-page h3 {
+  font-size: 14px;
+  margin: 6px 0 0;
+  font-weight: 600;
+}
+.shapes-chart {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-width: 760px;
+}
+.shapes-chart text {
+  fill: var(--muted);
+  font: 10px var(--mono);
+}
+.shapes-chart text.strong {
+  fill: var(--text);
+  font-weight: 700;
+}
+.shapes-combo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 8px 14px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+.shapes-combo label {
+  display: grid;
+  gap: 3px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.shapes-combo-digits {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.shapes-combo-digits select {
+  font-family: var(--mono);
+}
+.shapes-added {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.shapes-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 1px 3px 1px 9px;
+  font: 12px var(--mono);
+  color: var(--text);
+  background: var(--panel);
+}
+.shapes-chip button {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 0 6px;
+  border-radius: 999px;
+}
+.shapes-chip button:hover,
+.shapes-chip button:focus-visible {
+  color: var(--text);
+  background: var(--panel-2);
+}

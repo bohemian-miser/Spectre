@@ -375,3 +375,101 @@ export function planeLayout(d: Float64Array, n: number): Float64Array {
   }
   return out;
 }
+
+/** Term f of a set of terms, re and im. */
+export function termAt(t: Terms, f: number): { re: number; im: number } {
+  const i = 2 * (f + t.F);
+  return { re: t.c[i], im: t.c[i + 1] };
+}
+
+/**
+ * The terms turned and restarted to a fixed position, so phases can be read
+ * and compared: the circle term and the largest other term g both real and
+ * positive. That fixes the turn and the start up to |g - 1| choices, which
+ * differ only in the terms f with f - 1 not a multiple of g - 1; of those,
+ * the one giving the largest such term the largest real part is kept (with
+ * no such term the choices are the same terms).
+ */
+export function canonical(t: Terms): Terms {
+  const F = t.F;
+  const mag = (f: number) => Math.hypot(t.c[2 * (f + F)], t.c[2 * (f + F) + 1]);
+  const others = Array.from({ length: 2 * F + 1 }, (_, i) => i - F).filter((f) => f !== 0 && f !== 1 && mag(f) > 0);
+  others.sort((a, b) => mag(b) - mag(a) || Math.abs(a) - Math.abs(b));
+  const g = others[0];
+  if (g === undefined) return t;
+  const h = others.find((f) => (f - 1) % (g - 1) !== 0);
+  const p1 = Math.atan2(t.c[2 * (1 + F) + 1], t.c[2 * (1 + F)]);
+  const pg = Math.atan2(t.c[2 * (g + F) + 1], t.c[2 * (g + F)]);
+  // Phase of f after the move: phi_f + theta + 2 pi f s. Zero for f = 1 and f = g.
+  const k = Math.abs(g - 1);
+  let best: Terms | null = null;
+  let bestRe = -Infinity;
+  for (let j = 0; j < k; j++) {
+    const s = (-(pg - p1) / (2 * Math.PI) + j) / (g - 1);
+    const theta = -p1 - 2 * Math.PI * s;
+    const moved = aligned(t, { gap: 0, mirror: false, s, theta });
+    const re = h === undefined ? 0 : moved.c[2 * (h + F)];
+    if (re > bestRe + 1e-12) {
+      bestRe = re;
+      best = moved;
+    }
+  }
+  return best!;
+}
+
+/** Only `count` terms kept: the lowest |f| first, or the largest first. */
+export function truncated(t: Terms, count: number, order: 'lowest' | 'largest'): Terms {
+  const F = t.F;
+  const fs = Array.from({ length: 2 * F + 1 }, (_, i) => i - F).filter((f) => f !== 0);
+  const mag = (f: number) => Math.hypot(t.c[2 * (f + F)], t.c[2 * (f + F) + 1]);
+  fs.sort(order === 'lowest' ? (a, b) => Math.abs(a) - Math.abs(b) || b - a : (a, b) => mag(b) - mag(a) || Math.abs(a) - Math.abs(b));
+  const keep = new Set(fs.slice(0, count));
+  const c = new Float64Array(t.c.length);
+  for (const f of keep) {
+    c[2 * (f + F)] = t.c[2 * (f + F)];
+    c[2 * (f + F) + 1] = t.c[2 * (f + F) + 1];
+  }
+  return { F, c };
+}
+
+/** |a_f - b_f|^2 for each f = -F..F: each harmonic's part of the squared gap once b is aligned onto a. */
+export function termGaps(a: Terms, b: Terms): Float64Array {
+  const out = new Float64Array(2 * a.F + 1);
+  for (let i = 0; i < out.length; i++) out[i] = (a.c[2 * i] - b.c[2 * i]) ** 2 + (a.c[2 * i + 1] - b.c[2 * i + 1]) ** 2;
+  return out;
+}
+
+/**
+ * For each f = -F..F, how much the size |c_f| differs between groups against
+ * within them: the one-way analysis-of-variance ratio (mean square between
+ * groups over mean square within), over the groups of two or more. A
+ * harmonic every circuit has at the same size scores 0.
+ */
+export function separation(all: readonly Terms[], groups: readonly number[]): Float64Array {
+  const F = all[0].F;
+  const members = new Map<number, number[]>();
+  groups.forEach((g, i) => (members.get(g) ?? members.set(g, []).get(g)!).push(i));
+  const used = [...members.values()].filter((m) => m.length > 1);
+  const N = used.reduce((s, m) => s + m.length, 0);
+  const k = used.length;
+  const out = new Float64Array(2 * F + 1);
+  if (k < 2 || N <= k) return out;
+  for (let f = -F; f <= F; f++) {
+    if (f === 0) continue;
+    const x = (i: number) => Math.hypot(all[i].c[2 * (f + F)], all[i].c[2 * (f + F) + 1]);
+    let total = 0;
+    for (const m of used) for (const i of m) total += x(i);
+    const mean = total / N;
+    let between = 0;
+    let within = 0;
+    for (const m of used) {
+      const gm = m.reduce((s, i) => s + x(i), 0) / m.length;
+      between += m.length * (gm - mean) ** 2;
+      for (const i of m) within += (x(i) - gm) ** 2;
+    }
+    const msb = between / (k - 1);
+    const msw = within / (N - k);
+    out[f + F] = msw > 0 ? msb / msw : msb > 0 ? Infinity : 0;
+  }
+  return out;
+}

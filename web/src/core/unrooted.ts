@@ -454,6 +454,42 @@ export interface ChainStep {
   readonly slot: number;
 }
 
+/**
+ * A chosen start for the ancestor chain: the anchor tile's type and the
+ * first steps up from it. Above the last step the seed's draws take over, so
+ * a link can put any supertile around the origin (the anchor is the world
+ * frame) and still name one whole tiling.
+ */
+export interface WorldChain {
+  readonly anchor: TileTypeId;
+  readonly steps: readonly ChainStep[];
+}
+
+/** `anchor-slot-parent-slot-parent...`, e.g. `Xi-5-Gamma-7-Delta`: Xi in slot 5 of a Gamma, that Gamma in slot 7 of a Delta. */
+export function encodeWorldChain(c: WorldChain): string {
+  return [c.anchor, ...c.steps.flatMap((s) => [String(s.slot), s.parentType])].join('-');
+}
+
+/** The chain an encoded string names, or null if it is not a legal one. */
+export function decodeWorldChain(text: string): WorldChain | null {
+  const parts = text.split('-');
+  if (parts.length % 2 !== 1) return null;
+  const names = TILE_NAMES as readonly string[];
+  if (!names.includes(parts[0])) return null;
+  const steps: ChainStep[] = [];
+  let child = parts[0];
+  for (let i = 1; i < parts.length; i += 2) {
+    const slot = Number(parts[i]);
+    const parent = parts[i + 1];
+    if (!Number.isInteger(slot) || !names.includes(parent)) return null;
+    if (SUPER_RULES[parent as TileTypeId][slot] !== child) return null;
+    steps.push({ parentType: parent as TileTypeId, slot });
+    child = parent;
+  }
+  if (steps.length > UNROOTED_MAX_LEVEL) return null;
+  return { anchor: parts[0] as TileTypeId, steps };
+}
+
 /** Camera rect in world coordinates (axis-aligned, center + half extents). */
 export interface ViewRect {
   readonly cx: number;
@@ -541,6 +577,7 @@ function weightedPick<T>(items: readonly T[], weights: readonly number[], u: num
 export function createUnrootedEngine(
   seed: number,
   family: TileFamilyId = 'spectre',
+  start?: WorldChain,
 ): UnrootedEngine {
   const normSeed = Math.floor(seed) >>> 0;
   const rng = splitmix32(normSeed);
@@ -548,12 +585,13 @@ export function createUnrootedEngine(
   const leafIndex = leafIndexFor(family);
   const tileArea = averageLeafArea(family);
 
-  // Anchor type: one stationary-weighted draw.
-  const anchorType = weightedPick(
+  // Anchor type: the chosen one, else one stationary-weighted draw.
+  const drawn = weightedPick(
     TILE_NAMES,
     TILE_NAMES.map((t) => freq[t]),
     rng(),
   );
+  const anchorType = start?.anchor ?? drawn;
 
   const chain: ChainStep[] = [];
   // X[l] maps anchor frame -> A_l frame; world transform of A_l is inv(X[l]).
@@ -583,7 +621,8 @@ export function createUnrootedEngine(
         }
       }
       if (candidates.length === 0) throw new Error(`no legal parent for ${childType}`);
-      const step = weightedPick(candidates, weights, rng());
+      const chosen = start?.steps[chain.length];
+      const step = chosen ?? weightedPick(candidates, weights, rng());
       const nextLevel = chain.length + 1;
       chain.push(step);
       const X = zMul(
@@ -1135,6 +1174,8 @@ export interface UnrootedQueryRequest {
   readonly budget: number;
   readonly emitIds?: boolean;
   readonly emitExact?: boolean;
+  /** A chosen start for the ancestor chain (`encodeWorldChain`); absent means the seed alone. */
+  readonly chain?: string;
 }
 
 export interface UnrootedQueryResponse {
@@ -1142,20 +1183,24 @@ export interface UnrootedQueryResponse {
   readonly seed: number;
   /** Echoed so clients can drop cuts from a family that is no longer shown. */
   readonly family: TileFamilyId;
+  /** Echoed likewise: the chain asked for ('' for none). */
+  readonly chain: string;
   readonly cut: ViewportCut;
 }
 
 const engineCache = new Map<string, UnrootedEngine>();
 
-/** Get (or lazily create) the shared engine for a (seed, family) world. */
+/** Get (or lazily create) the shared engine for a (seed, family, chain) world. */
 export function unrootedEngineFor(
   seed: number,
   family: TileFamilyId = 'spectre',
+  chain?: string,
 ): UnrootedEngine {
-  const key = `${family}:${Math.floor(seed) >>> 0}`;
+  const start = chain ? decodeWorldChain(chain) : null;
+  const key = `${family}:${Math.floor(seed) >>> 0}:${start ? chain : ''}`;
   let engine = engineCache.get(key);
   if (!engine) {
-    engine = createUnrootedEngine(seed, family);
+    engine = createUnrootedEngine(seed, family, start ?? undefined);
     engineCache.set(key, engine);
   }
   return engine;
@@ -1163,10 +1208,10 @@ export function unrootedEngineFor(
 
 /** Pure request handler; `workers/tiling.worker.ts` is a thin shell around it. */
 export function runUnrootedQuery(req: UnrootedQueryRequest): UnrootedQueryResponse {
-  const engine = unrootedEngineFor(req.seed, req.family ?? 'spectre');
+  const engine = unrootedEngineFor(req.seed, req.family ?? 'spectre', req.chain);
   const cut = engine.query(req.view, req.budget, {
     emitIds: req.emitIds,
     emitExact: req.emitExact,
   });
-  return { id: req.id, seed: engine.seed, family: engine.family, cut };
+  return { id: req.id, seed: engine.seed, family: engine.family, chain: req.chain ?? '', cut };
 }

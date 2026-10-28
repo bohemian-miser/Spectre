@@ -96,3 +96,13 @@ test('the Shapes page groups the circuits and finds a circuit’s twins', async 
   // Its nearest shape is the same knobbly triangle in another family or level.
   await expect(page.locator('[data-testid="shapes-nearest"] tbody tr').first()).toContainText('0.00');
 });
+
+test('a circuit opens in the Explorer’s infinite view and the trace closes on it', async ({ page }) => {
+  // 000100000's [147] circuit at level 7: 1,272 tiles whose chords add up to 1,161.34 hexagon edges.
+  await page.goto('corners.html#c=000100000-3');
+  await expect(page.locator('[data-testid="corners-caption"]')).toContainText('1,272 tiles', { timeout: 20000 });
+  const href = await page.locator('[data-testid="corners-explorer"]').getAttribute('href');
+  expect(href).toMatch(/md=infinite/);
+  await page.goto(href!.replace(/^\/Spectre\//, ''));
+  await expect(page.getByText(/traced: 1,161 edges long — closed circuit/)).toBeVisible({ timeout: 60000 });
+});

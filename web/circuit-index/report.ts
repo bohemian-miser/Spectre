@@ -7,8 +7,8 @@
  * - sides: how many circuits are three copies of one arm, exactly (the word
  *   repeats three times) or within `triangleScore` (largest edit distance
  *   between consecutive arms over the mean arm length, default 0.1);
- * - corners: each corner triple, the circuits whose fitted corners it is, and
- *   whether those circuits cover the same tiles;
+ * - corners: each corner triple (slot chains, `circuits.ts`) and the circuits
+ *   whose fitted corners it is;
  * - segments: for the circuits that are not triangles, the k whose equal
  *   parts are closest.
  */
@@ -46,9 +46,9 @@ const kind = (r: Row): string => {
 
 const out: string[] = [];
 out.push(`# ${dir}`, '');
-out.push(table(['combinations', 'capped at 1000', 'circuit rows', 'distinct circuits', 'corner triples', 'tile sets'], [[
+out.push(table(['combinations', 'capped at 1000', 'circuit rows', 'distinct circuits', 'corner triples'], [[
   combos.length, combos.filter((c) => c.capped === '1').length, rows.length, byCircuit.size,
-  new Set(rows.map((r) => r.corner_id)).size, new Set(rows.map((r) => r.tiles_id)).size,
+  new Set(rows.map((r) => r.corner_chains)).size,
 ]]), '');
 
 // Sides, by length.
@@ -69,16 +69,11 @@ out.push(table(['circuit', 'length', 'level', 'combinations', 'kind', 'arm score
 
 // Corner triples.
 out.push('## Corner triples held by more than one circuit', '');
-const byCorner = group([...byCircuit.keys()].map(one).filter((r) => Number(r.length) >= 10), (r) => r.corner_id);
+const byCorner = group([...byCircuit.keys()].map(one).filter((r) => Number(r.length) >= 10), (r) => r.corner_chains);
 const multi = [...byCorner].filter(([, rs]) => rs.length > 1);
 out.push(`${multi.length} of ${byCorner.size} corner triples (circuits of 10 tiles or more).`, '');
-out.push(table(['corner triple', 'circuits', 'lengths', 'tile sets', 'kinds'], multi.slice(0, 40).map(([id, rs]) =>
-  [id, rs.length, rs.map((r) => r.length).join(' '), new Set(rs.map((r) => r.tiles_id)).size, rs.map(kind).join(' ')])), '');
-
-// Tile sets.
-const byTiles = group([...byCircuit.keys()].map(one), (r) => r.tiles_id);
-out.push('## Tile sets covered by more than one circuit', '');
-out.push(table(['tile set', 'circuits', 'length'], [...byTiles].filter(([, rs]) => rs.length > 1).slice(0, 40).map(([id, rs]) => [id, rs.length, rs[0].length])), '');
+out.push(table(['corner triple', 'circuits', 'lengths', 'kinds'], multi.slice(0, 40).map(([id, rs]) =>
+  [id, rs.length, rs.map((r) => r.length).join(' '), rs.map(kind).join(' ')])), '');
 
 // Segments for the rest.
 out.push('## Not triangles: closest equal parts', '');

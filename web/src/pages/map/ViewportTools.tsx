@@ -1,6 +1,7 @@
 /**
  * `ViewportTools` — the button cluster pinned to the viewport's top-right
- * corner: show/hide the stats overlay, record, and fullscreen. It lives
+ * corner: start/stop following the traced strand, show/hide the stats
+ * overlay, record, and fullscreen. It lives
  * INSIDE the `InfiniteCanvas` host on purpose: the Fullscreen API displays
  * only the fullscreen element's subtree, so any control that must survive
  * going fullscreen (starting and above all STOPPING a take) has to be in
@@ -39,6 +40,9 @@ export interface ViewportToolsProps {
   /** Stats overlay visibility, shown as a toggle when `onToggleHud` is given. */
   readonly hudShown?: boolean;
   onToggleHud?(): void;
+  /** Whether the camera follows the traced strand, shown as a toggle when `onToggleFollow` is given. */
+  readonly followOn?: boolean;
+  onToggleFollow?(): void;
 }
 
 /** `● Rec` / `■ 1:07` — the cluster is small; the page button has the words. */
@@ -48,7 +52,7 @@ export function compactRecordingLabel(recording: boolean, elapsed: number): stri
 }
 
 export function ViewportTools(props: ViewportToolsProps): JSX.Element {
-  const { apiRef, rec, hudShown, onToggleHud } = props;
+  const { apiRef, rec, hudShown, onToggleHud, followOn, onToggleFollow } = props;
   const [isFull, setIsFull] = useState<boolean>(() => fullscreenElement() !== null);
 
   useEffect(() => {
@@ -81,6 +85,17 @@ export function ViewportTools(props: ViewportToolsProps): JSX.Element {
       onPointerUp={swallow}
       onClick={swallow}
     >
+      {onToggleFollow ? (
+        <button
+          type="button"
+          data-testid="tools-follow"
+          aria-pressed={followOn ?? false}
+          title="Start or stop the camera following the traced strand"
+          onClick={onToggleFollow}
+        >
+          {followOn ? '■ Stop follow' : '▶ Follow'}
+        </button>
+      ) : null}
       {onToggleHud ? (
         <button
           type="button"

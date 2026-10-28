@@ -20,8 +20,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { TileFamilyId } from '../src/core';
-import { radiusOfGyration, tilePositions } from './chord-fit';
-import { CircuitShapes, type BornCircuit } from './circuit-shapes';
+import { CircuitShapes, familyCircuits, mergeTwins, tileLoop } from '../src/pages/shapes/circuitShapes';
 
 export const SAMPLES = 4320;
 const MIN_LENGTH = 400;
@@ -48,6 +47,8 @@ export interface CornerCircuit {
   /** x0, y0, side of the bounding square. */
   readonly box: readonly [number, number, number];
   readonly pts: string;
+  /** The tile it enters first: slots from its supertile down (type, slot), and its chord across that tile (x0, y0, x1, y1) in the supertile's frame. */
+  readonly first: { readonly path: readonly (readonly [string, number])[]; readonly chord: readonly number[] };
 }
 
 function encode(xy: Float64Array, n: number): { box: [number, number, number]; pts: string } {
@@ -72,42 +73,15 @@ function encode(xy: Float64Array, n: number): { box: [number, number, number]; p
 
 function classCircuits(family: TileFamilyId, subset: readonly number[], combo: string, maxLevel: number): CornerCircuit[] {
   const cs = new CircuitShapes(family, subset, [...combo].map((ch) => parseInt(ch, 36)), maxLevel, MIN_LENGTH);
-  // Biggest circuit per (family, level), the Delta on a tie, as on the Circuits page.
-  const best = new Map<string, Map<number, BornCircuit>>();
-  for (const c of cs.born) {
-    const key = [...new Set(c.slots)].sort((x, y) => x - y).join('');
-    const byLevel = best.get(key) ?? best.set(key, new Map()).get(key)!;
-    const m = byLevel.get(c.level);
-    if (!m || c.length > m.length || (c.length === m.length && c.type === 'Delta' && m.type !== 'Delta')) byLevel.set(c.level, c);
-  }
-  const families = [...best]
-    .map(([slots, byLevel]) => ({ slots, byLevel, top: Math.max(...[...byLevel.values()].map((c) => c.length)) }))
-    .sort((a, b) => b.top - a.top)
-    .slice(0, FAMILIES);
-  const out: CornerCircuit[] = [];
-  for (const f of families) {
-    const levels = [...f.byLevel.keys()].sort((a, b) => a - b).slice(-GENERATIONS);
-    for (const level of levels) {
-      const c = f.byLevel.get(level)!;
-      const p = tilePositions(cs.shape(c, 0));
-      const rg = radiusOfGyration(p);
-      const twin = out.find((o) => o.level === level && o.length === c.length && Math.abs(o.rg - rg) < 1e-6 * rg);
-      if (twin) {
-        (twin.aliases as string[]).push(f.slots);
-        continue;
-      }
-      const L = p.length;
-      const n = Math.min(L, SAMPLES);
-      const xy = new Float64Array(2 * n);
-      for (let j = 0; j < n; j++) {
-        const t = Math.round((j * L) / n) % L;
-        xy[2 * j] = p[t].x;
-        xy[2 * j + 1] = p[t].y;
-      }
-      out.push({ family: f.slots, aliases: [], level, type: c.type, length: L, rg, samples: n, ...encode(xy, n) });
-    }
-  }
-  return out;
+  const all = familyCircuits(cs, FAMILIES, GENERATIONS).map((f) => {
+    const loop = tileLoop(cs.shape(f.circuit, 0), SAMPLES);
+    return { ...f, loop, rg: loop.rg };
+  });
+  return mergeTwins(all).map((f) => {
+    const { path, chord } = cs.firstTile(f.circuit);
+    const first = { path: path.map((p) => [p.type, p.pos] as [string, number]), chord: chord.flatMap((p) => [+p.x.toFixed(6), +p.y.toFixed(6)]) };
+    return { family: f.family, aliases: f.aliases, level: f.level, type: f.type, length: f.length, rg: f.rg, samples: f.loop.n, ...encode(f.loop.xy, f.loop.n), first };
+  });
 }
 
 if (process.argv[1]?.endsWith('corner-paths.ts')) {

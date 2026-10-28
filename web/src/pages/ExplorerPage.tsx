@@ -1650,10 +1650,11 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
         <div className="explorer-field" ref={viewportRef}>
         {infinite ? (
           <InfiniteCanvas
-            key={drawFamily}
+            key={`${drawFamily}/${state.worldChain ?? ''}`}
             className="map-viewport explorer-infinite"
             ariaLabel="Infinite tiling viewport — drag to pan, wheel or pinch to zoom"
             seed={INFINITE_SEED}
+            worldChain={state.worldChain}
             family={drawFamily}
             budget={budget}
             chords={infiniteChords}
@@ -1709,6 +1710,12 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
               rec={rec}
               hudShown={!hasFlag(state, FLAG.HIDE_STATS)}
               onToggleHud={() => dispatch({ type: 'toggleFlag', flag: FLAG.HIDE_STATS })}
+              followOn={followOn}
+              onToggleFollow={
+                traceOn && infiniteChords
+                  ? () => dispatch({ type: 'setFollow', follow: !followOn })
+                  : undefined
+              }
             />
           </InfiniteCanvas>
         ) : !heavy ? (

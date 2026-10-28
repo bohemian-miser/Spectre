@@ -4,13 +4,20 @@
  * Level by level, every supertile type's board (`board.ts`) is traced, and
  * its circuits are told apart by `circuitKey`. A circuit's level is the
  * lowest at which some supertile holds it; its roots are the types that do
- * at that level. Collection stops after the level at which `maxCircuits` is
- * passed.
+ * at that level, and its copies are where it sits in them. Collection stops
+ * after the level at which `maxCircuits` is passed.
+ *
+ * A corner is written as its slot chain: the tile's type, then for each level
+ * up the slot it sits in and the parent's type, in compact letters
+ * (`Ph<6Pi<0G<7`: a Phi in slot 6 of a Pi, in slot 0 of a Gamma, which sits
+ * in slot 7). The chain goes up as far as every copy of the circuit agrees;
+ * where the slot still agrees but the parent's type does not, it ends with
+ * the bare slot.
  */
 import { HEX_TYPES, zToPt, type Address, type HexType } from '../src/core';
 import { pairingTable, patternOf } from '../src/pages/walker/walk';
-import { addressOf, board, traceAll, typeOf } from './board';
-import { canonicalWord, centre6, placedKey, placedOf, shortId, tileLetter, wordOrder } from './keys';
+import { addressOf, board, traceAll, typeOf, type Board } from './board';
+import { TYPE_PREFIX, canonicalWord, centre6, placedOf, tileLetter, wordOrder } from './keys';
 import { armDistances, encode, fitCorners, segmentProfile, type Arms, type CornerFit, type Segments } from './sides';
 
 export interface Found {
@@ -21,7 +28,11 @@ export interface Found {
   readonly roots: HexType[];
   /** Copies in the supertiles of the circuit's level, over all roots. */
   copies: number;
+  /** Where each copy sits: its board and tiles, and how its walk is turned into the canonical word. */
+  readonly at: Copy[];
 }
+
+export interface Copy { readonly board: Board; readonly tiles: Int32Array; readonly offset: number; readonly reversed: boolean }
 
 export interface Collected {
   readonly circuits: readonly Found[];
@@ -50,10 +61,12 @@ export function collect(subset: readonly number[], combo: string, maxLevel: numb
           continue;
         }
         const word = Array.from(s.tiles, (t, i) => tileLetter(typeOf(b, t), s.entries[i], s.exits[i]));
-        const key = canonicalWord(word).word.join('');
+        const can = canonicalWord(word);
+        const key = can.word.join('');
+        const copy: Copy = { board: b, tiles: s.tiles, offset: can.offset, reversed: can.reversed };
         const f = found.get(key);
-        if (!f) found.set(key, { key, word, tiles: Array.from(s.tiles, (t) => addressOf(b, t)), level: L, roots: [root], copies: 1 });
-        else if (f.level === L) { if (!f.roots.includes(root)) f.roots.push(root); f.copies++; }
+        if (!f) found.set(key, { key, word, tiles: Array.from(s.tiles, (t) => addressOf(b, t)), level: L, roots: [root], copies: 1, at: [copy] });
+        else if (f.level === L) { if (!f.roots.includes(root)) f.roots.push(root); f.copies++; f.at.push(copy); }
       }
     }
   }
@@ -68,8 +81,6 @@ export interface Measured {
   /** Corners as positions in the canonical word. */
   readonly corners: CornerFit;
   readonly cornerLetters: readonly string[];
-  readonly cornerId: string;
-  readonly tilesId: string;
   readonly arms: Arms;
   readonly segments: readonly Segments[];
 }
@@ -97,9 +108,35 @@ export function measure(c: Pick<Found, 'key' | 'word' | 'tiles'>, k = 3, maxK = 
     order: wordOrder(word),
     corners,
     cornerLetters: corners.corners.map((i) => word[i]),
-    cornerId: shortId(placedKey(corners.corners.map((i) => placed[i]))),
-    tilesId: shortId(placedKey(placed)),
     arms: armDistances(w, corners.corners),
     segments: segmentProfile(w, ks),
   };
+}
+
+/** The board tile of a copy at a position of the canonical word. */
+export const copyTile = (c: Copy, p: number): number => {
+  const n = c.tiles.length;
+  return c.reversed ? c.tiles[n - 1 - ((p + c.offset) % n)] : c.tiles[(p + c.offset) % n];
+};
+
+/**
+ * Each corner's slot chain, as far up as every copy agrees. Positions one
+ * period of the word apart are the same corner turned, so their chains are
+ * agreed together.
+ */
+export function cornerChains(f: Found, corners: readonly number[]): string[] {
+  const n = f.word.length;
+  const period = n / wordOrder(canonicalWord(f.word).word);
+  const chainOf = (positions: readonly number[]): string => {
+    const addrs = f.at.flatMap((c) => positions.map((p) => addressOf(c.board, copyTile(c, p))));
+    let out: string = TYPE_PREFIX[addrs[0].leaf];
+    for (let k = 0; k < addrs[0].path.length; k++) {
+      const { slot, parent } = addrs[0].path[k];
+      if (!addrs.every((a) => a.path[k]?.slot === slot)) break;
+      if (!addrs.every((a) => a.path[k].parent === parent)) { out += `<${slot}`; break; }
+      out += `<${slot}${TYPE_PREFIX[parent]}`;
+    }
+    return out;
+  };
+  return corners.map((p) => chainOf(corners.filter((q) => (q - p) % period === 0)));
 }

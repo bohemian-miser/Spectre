@@ -16,6 +16,8 @@ export interface CircuitMeta {
   readonly rg: number;
   readonly samples: number;
   readonly box: readonly [number, number, number];
+  /** The tile it enters first: slots from its supertile down (type, slot), and its chord across that tile (x0, y0, x1, y1) in the supertile's frame. */
+  readonly first?: { readonly path: readonly (readonly [string, number])[]; readonly chord: readonly number[] };
 }
 
 export interface CornerClass {
@@ -40,6 +42,9 @@ export interface Circuit extends CircuitMeta {
 }
 
 export const RULE = { family: 'hex', rule: '023468' } as const;
+
+/** Samples per circuit: 4320 = 2^5 3^3 5 divides by 2, 3, 4, 5, 6, 8, 9, 10 and 12 (`corner-paths.ts`). */
+export const SAMPLES = 4320;
 
 export function cornersDir(base: string): string {
   return `${base.endsWith('/') ? base : `${base}/`}data/corners/${RULE.family}-${RULE.rule}/`;
