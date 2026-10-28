@@ -472,3 +472,50 @@ export function rotateWord(word: readonly Seen[], k: number, back = false): Seen
   });
 }
 
+/** The circuits ahead of a stage, as far as a search went. */
+export interface Ahead {
+  /** Fewest and most tiles, counted from the stage, of the circuits found. */
+  readonly min: number | null;
+  readonly max: number | null;
+  /** Some branch was still walking when the search stopped: longer circuits may lie beyond. */
+  readonly open: boolean;
+  /** The landings to take for the shortest circuit found. */
+  readonly path: readonly string[] | null;
+}
+
+/**
+ * The circuits ahead of a stage: its branches walked shortest first (by
+ * tiles), taking each landing at each fork, to at most `choices` choices,
+ * `forks` forks opened and `tiles` tiles in all. With `first`, stops at the
+ * shortest circuit.
+ */
+export function circuitsAhead(wk: Walker, from: Stage, limits: { choices: number; forks: number; tiles: number }, first = false): Ahead {
+  const base = from.seen.length;
+  const run = (st: Stage): Stage => {
+    let s = st;
+    while (s.status === 'walking' && s.seen.length - base < limits.tiles) s = advance(wk, s);
+    return s;
+  };
+  // a queue kept in order of tiles walked
+  const queue: { st: Stage; keys: string[] }[] = [{ st: run(from), keys: [] }];
+  let min: number | null = null, max: number | null = null, path: string[] | null = null, open = false, forks = 0;
+  while (queue.length) {
+    let at = 0;
+    for (let i = 1; i < queue.length; i++) if (queue[i].st.seen.length < queue[at].st.seen.length) at = i;
+    const { st, keys } = queue.splice(at, 1)[0];
+    if (st.status === 'closed') {
+      const n = st.seen.length - base;
+      if (min === null) { min = n; path = keys; if (first) break; }
+      max = Math.max(max ?? n, n);
+      continue;
+    }
+    if (st.status === 'walking') { open = true; continue; }
+    if (st.status !== 'choice') continue;
+    if (keys.length >= limits.choices || forks >= limits.forks) { open = true; continue; }
+    forks++;
+    for (const o of st.pending) queue.push({ st: run(apply(st, wk, o)), keys: [...keys, o.key] });
+  }
+  if (queue.length) open = true;
+  return { min, max, open, path };
+}
+

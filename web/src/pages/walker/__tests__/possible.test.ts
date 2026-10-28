@@ -10,7 +10,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { addressFromId, walkStrand, type HexType } from '../../../core';
-import { concreteChain, stageAfter, initialWorlds, makeWalker, reducePossible, replay, startWalk, type PossibleWalk } from '../possible';
+import { circuitsAhead, concreteChain, explore, stageAfter, initialWorlds, makeWalker, reducePossible, replay, startWalk, type PossibleWalk } from '../possible';
 import { longestCircuit, matchingByType, patternOf } from '../walk';
 
 const triangle = patternOf([0, 2, 3, 4, 6, 8], '000100000');
@@ -84,4 +84,17 @@ describe('walking every tiling at once', () => {
     }
     expect(pw.nodes).toHaveLength(1);
   });
+
+  it('finds the shortest circuit ahead, as every branch explored finds it, and its landings walk to it', () => {
+    const wk = makeWalker(triangle, 'Delta', 0, 5);
+    const start = startWalk(wk);
+    const all = explore(start, { forks: 40, tiles: 600 }).pw;
+    const shortest = Math.min(...all.nodes.filter((x) => x.end?.status === 'closed').map((x) => x.end!.seen.length));
+    const ahead = circuitsAhead(wk, start.stage, { choices: 20, forks: 200, tiles: 600 }, true);
+    expect(ahead.min).toBe(shortest);
+    let w = reducePossible(start, { type: 'run', cap: 5000 });
+    for (const key of ahead.path!) w = reducePossible(reducePossible(w, { type: 'choose', key }), { type: 'run', cap: 5000 });
+    expect(w.stage.status).toBe('closed');
+    expect(w.stage.seen).toHaveLength(shortest);
+  }, 60000);
 });

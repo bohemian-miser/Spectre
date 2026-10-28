@@ -650,3 +650,11 @@
   background: var(--panel-2, #efece5);
   font-weight: 600;
 }
+
+.wk__ahead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem 0.5rem;
+  margin: 0.3rem 0;
+}
