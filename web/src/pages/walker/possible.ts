@@ -435,6 +435,16 @@ export function stageAhead(pw: PossibleWalk, id: number, cap: number): Stage {
   return st;
 }
 
+/** Where the walk stops after taking landing `key` at a node's fork, without adding it to the tree. */
+export function stageAfter(pw: PossibleWalk, id: number, key: string, cap: number): Stage {
+  const st = stageAhead(pw, id, cap);
+  const o = st.status === 'choice' ? st.pending.find((x) => x.key === key) : undefined;
+  if (!o) return st;
+  let next = apply(st, pw.walker, o);
+  for (let i = 0; i < cap && next.status === 'walking'; i++) next = advance(pw.walker, next);
+  return next;
+}
+
 /**
  * Walks a known circuit again from its first tile: runs, and at each fork
  * takes the landing the circuit goes to next (`closes` when it is back at

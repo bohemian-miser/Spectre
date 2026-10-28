@@ -66,12 +66,14 @@ export interface ChoiceTreeProps {
   readonly onHoverOption?: (key: string | null) => void;
   /** A landing already taken is hovered: its node, or null when the pointer leaves. */
   readonly onHoverNode?: (id: number | null) => void;
+  /** A landing not yet taken is hovered (full mode): the node whose fork offers it, and its key; null when the pointer leaves. */
+  readonly onHoverLanding?: (at: { readonly node: number; readonly key: string } | null) => void;
   /** Whether a node's subtree is folded away (full mode), and the click that folds or opens it. */
   readonly isCollapsed?: (id: number) => boolean;
   readonly onToggle?: (id: number) => void;
 }
 
-export function ChoiceTree({ pw, mode, onGoto, onChooseAt, onHoverOption, onHoverNode, isCollapsed, onToggle }: ChoiceTreeProps): JSX.Element {
+export function ChoiceTree({ pw, mode, onGoto, onChooseAt, onHoverOption, onHoverNode, onHoverLanding, isCollapsed, onToggle }: ChoiceTreeProps): JSX.Element {
   const rows = useMemo(() => {
     const ahead = new Map<number, Stage>();
     const stageAhead = (n: ChoiceNode): Stage => {
@@ -245,8 +247,8 @@ export function ChoiceTree({ pw, mode, onGoto, onChooseAt, onHoverOption, onHove
             key={r.key}
             className={`wk-tree__row${untaken ? ' is-untaken' : ''}${r.current ? ' is-current' : ''}`}
             onClick={click}
-            onMouseEnter={untaken && onHoverOption ? () => onHoverOption(r.option!.key) : r.node !== undefined && onHoverNode ? () => onHoverNode(r.node!) : undefined}
-            onMouseLeave={untaken && onHoverOption ? () => onHoverOption(null) : r.node !== undefined && onHoverNode ? () => onHoverNode(null) : undefined}
+            onMouseEnter={untaken && onHoverOption ? () => onHoverOption(r.option!.key) : untaken && onHoverLanding ? () => onHoverLanding({ node: r.at!, key: r.option!.key }) : r.node !== undefined && onHoverNode ? () => onHoverNode(r.node!) : undefined}
+            onMouseLeave={untaken && onHoverOption ? () => onHoverOption(null) : untaken && onHoverLanding ? () => onHoverLanding(null) : r.node !== undefined && onHoverNode ? () => onHoverNode(null) : undefined}
             data-testid={untaken && mode === 'path' ? `wk-outcome-${r.option!.key.replace(' ', '-')}` : `wk-tree-${r.key.replace(/[: ]/g, '-')}`}
           >
             <title>{title}</title>

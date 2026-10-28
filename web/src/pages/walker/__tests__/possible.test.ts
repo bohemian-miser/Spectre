@@ -10,7 +10,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { addressFromId, walkStrand, type HexType } from '../../../core';
-import { concreteChain, initialWorlds, makeWalker, reducePossible, replay, startWalk, type PossibleWalk } from '../possible';
+import { concreteChain, stageAfter, initialWorlds, makeWalker, reducePossible, replay, startWalk, type PossibleWalk } from '../possible';
 import { longestCircuit, matchingByType, patternOf } from '../walk';
 
 const triangle = patternOf([0, 2, 3, 4, 6, 8], '000100000');
@@ -70,5 +70,18 @@ describe('walking every tiling at once', () => {
       expect(c.unforced).toBe(0);
       expect(c.tiles.map((t) => t.tile)).toEqual([`${pw.stage.seen[c.step].type} ${pw.stage.seen[c.step].entry}`]);
     }
+  });
+
+  it('takes a landing on the side as choosing it would, without adding it to the tree', () => {
+    const pw = reducePossible(startWalk(makeWalker(triangle, 'Delta', 0, 5)), { type: 'run', cap: 5000 });
+    expect(pw.stage.status).toBe('choice');
+    for (const o of pw.stage.pending) {
+      const side = stageAfter(pw, pw.current, o.key, 5000);
+      const chosen = reducePossible(reducePossible(pw, { type: 'choose', key: o.key }), { type: 'run', cap: 5000 }).stage;
+      expect(side.seen).toEqual(chosen.seen);
+      expect(side.status).toBe(chosen.status);
+      expect(side.worlds.length).toBe(chosen.worlds.length);
+    }
+    expect(pw.nodes).toHaveLength(1);
   });
 });

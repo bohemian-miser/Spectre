@@ -11,7 +11,7 @@ import { addressFromId, idOf, type HexType } from '../../core';
 import { HexBoard, type BoardStep, type BoardTile } from '../../components/HexBoard';
 import { HEX_OUTLINE, placeNear, placeWorld, strandPathD, supertileEdges, tileCentre, tilePoints, tilesAround, type PlacedTile } from '../../lib/hexBoard';
 import { tileColor } from '../../lib/palette';
-import { choicesOf, concreteChain, followWord, makeWalker, reducePossible, replay, replayChoices, rotateWord, stageAhead, startWalk, type Limits, type Outcome, type PossibleWalk, type Seen, type World } from './possible';
+import { choicesOf, concreteChain, followWord, makeWalker, reducePossible, replay, replayChoices, rotateWord, stageAfter, stageAhead, startWalk, type Limits, type Outcome, type PossibleWalk, type Seen, type World } from './possible';
 import { AncestorFlow } from './AncestorFlow';
 import { classLabel } from './landings';
 import { CircuitList } from './CircuitList';
@@ -44,9 +44,10 @@ function sceneOf(pw: PossibleWalk, w: World, steps: number) {
  * tiles in their colours and the strand through their centres, to the
  * node's fork or to where its branch ends.
  */
-function CircuitPeek({ pw, subset, id, x, y }: { pw: PossibleWalk; subset: readonly number[]; id: number; x: number; y: number }): JSX.Element | null {
+function CircuitPeek({ pw, subset, id, landing, x, y }: { pw: PossibleWalk; subset: readonly number[]; id: number; landing?: string; x: number; y: number }): JSX.Element | null {
   const drawn = useMemo(() => {
-    const st = stageAhead(pw, id, RUN_CAP);
+    // a landing not yet taken is taken here, on the side, without adding it to the tree
+    const st = landing ? stageAfter(pw, id, landing, RUN_CAP) : stageAhead(pw, id, RUN_CAP);
     const g = sceneOf(pw, st.worlds[0], st.seen.length);
     const ids = g.ids.slice(0, st.seen.length + 1).filter((t) => g.placed.has(t));
     const tiles = [...new Set(ids)].map((t) => g.placed.get(t)!);
@@ -55,7 +56,7 @@ function CircuitPeek({ pw, subset, id, x, y }: { pw: PossibleWalk; subset: reado
     const box = { x: Math.min(...xs) - 1.2, y: Math.min(...ys) - 1.2, w: Math.max(...xs) - Math.min(...xs) + 2.4, h: Math.max(...ys) - Math.min(...ys) + 2.4 };
     const strand = strandPathD(st.seen.flatMap((s, i) => (g.placed.has(g.ids[i]) ? [{ ...s, xform: g.placed.get(g.ids[i])!.xform }] : [])), subset);
     return { st, tiles, pts, box, strand };
-  }, [pw, id, subset]);
+  }, [pw, id, landing, subset]);
   const { st, tiles, pts, box, strand } = drawn;
   const size = 220;
   const left = Math.min(x + 18, window.innerWidth - size - 12);
@@ -144,7 +145,7 @@ export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial
   const [showDots, setShowDots] = useState(true);
   const [showDecisions, setShowDecisions] = useState(false);
   const [debugOpen, setDebugOpen] = useState(false);
-  const [peek, setPeek] = useState<{ id: number; x: number; y: number } | null>(null);
+  const [peek, setPeek] = useState<{ id: number; landing?: string; x: number; y: number } | null>(null);
   const pointer = useRef({ x: 0, y: 0 });
   const mainRef = useRef<HTMLDivElement | null>(null);
   // a pointer that hovers shows a node's walk beside it; a touch screen shows it on the board above
@@ -358,10 +359,11 @@ export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial
             onGoto={(id) => { setPeek(null); goto(id); if (canHover) mainRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}
             onChooseAt={(id, key) => { setPeek(null); take(id, key); if (canHover) mainRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}
             onHoverNode={canHover ? (id) => setPeek(id === null ? null : { id, ...pointer.current }) : undefined}
+            onHoverLanding={canHover ? (at) => setPeek(at === null ? null : { id: at.node, landing: at.key, ...pointer.current }) : undefined}
             isCollapsed={isCollapsed}
             onToggle={toggle}
           />
-          {peek && <CircuitPeek pw={pw} subset={pattern.subset} id={peek.id} x={peek.x} y={peek.y} />}
+          {peek && <CircuitPeek pw={pw} subset={pattern.subset} id={peek.id} landing={peek.landing} x={peek.x} y={peek.y} />}
         </div>
       )}
 
