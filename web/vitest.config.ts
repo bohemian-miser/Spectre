@@ -10,7 +10,7 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   plugins: [react()],
   test: {
-    include: ['src/**/__tests__/**/*.test.{ts,tsx}'],
+    include: ['src/**/__tests__/**/*.test.{ts,tsx}', 'circuit-index/__tests__/*.test.ts', 'circuit-classes/__tests__/*.test.ts'],
     environment: 'node',
   },
 });
