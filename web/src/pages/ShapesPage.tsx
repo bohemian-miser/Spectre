@@ -121,6 +121,8 @@ export default function ShapesPage(props: { forceSync?: boolean }): JSX.Element 
   const [busy, setBusy] = useState(false);
   const [loaded, setLoaded] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  /** What the last Add came to, shown beside the picker until the next one. */
+  const [addNote, setAddNote] = useState<string | null>(null);
   const [F, setF] = useState(30);
   const [mirror, setMirror] = useState(true);
   const [threshold, setThreshold] = useState(0.05);
@@ -174,6 +176,7 @@ export default function ShapesPage(props: { forceSync?: boolean }): JSX.Element 
 
   const add = async (c: ComboChoice) => {
     setBusy(true);
+    setAddNote(null);
     try {
       const rule = c.subset.join('');
       const circuits = await combos.run({ family: 'hex', subset: c.subset, combo: c.combo, level: c.level });
@@ -189,10 +192,12 @@ export default function ShapesPage(props: { forceSync?: boolean }): JSX.Element 
         shape: normalised(circuit),
       }));
       setAdded((prev) => [...prev.filter((e) => !fresh.some((f) => f.key === e.key)), ...fresh]);
-      if (fresh.length) setSelectedKey(fresh[fresh.length - 1].key);
-      else setError(`${rule} · ${c.combo} has no circuit of 400 tiles or more by level ${c.level}.`);
+      if (fresh.length) {
+        setSelectedKey(fresh[fresh.length - 1].key);
+        setAddNote(`Added ${rule} · ${c.combo}: ${fresh.length} circuit${fresh.length === 1 ? '' : 's'}, selected below.`);
+      } else setAddNote(`${rule} · ${c.combo} has no circuit of 400 tiles or more by level ${c.level}; nothing added.`);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setAddNote(`${c.subset.join('')} · ${c.combo} could not be computed (${e instanceof Error ? e.message : String(e)}).`);
     } finally {
       setBusy(false);
     }
@@ -268,6 +273,11 @@ export default function ShapesPage(props: { forceSync?: boolean }): JSX.Element 
           last three generations, 400 tiles or more. Level 8 takes a few seconds.
         </p>
         <ComboPicker busy={busy} onAdd={add} />
+        {addNote && (
+          <p className="shapes-note" data-testid="shapes-add-note" role="status">
+            {addNote}
+          </p>
+        )}
         <div className="shapes-controls">
           <label className="shapes-check">
             <input type="checkbox" checked={showAtlas} onChange={(e) => setShowAtlas(e.target.checked)} data-testid="shapes-atlas" />

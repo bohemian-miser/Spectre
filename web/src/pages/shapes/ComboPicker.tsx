@@ -79,7 +79,7 @@ export function ComboPicker(props: { busy: boolean; onAdd: (c: ComboChoice) => v
       <button type="button" disabled={props.busy} onClick={() => props.onAdd({ subset, combo, level })} data-testid="shapes-combo-add">
         {props.busy ? 'Computing…' : `Add ${rule} · ${combo}`}
       </button>
-      <span className="shapes-note">{total.toLocaleString('en-US')} combinations of this rule.</span>
+      <span className="shapes-note">{total.toLocaleString('en-US')} combinations of this rule. Nothing changes below until you press Add.</span>
     </div>
   );
 }
