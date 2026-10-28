@@ -5,14 +5,15 @@
  * hovering a landing shows a stack that lands there. Every choice made stays
  * in the tree of choices, and clicking one goes back to it.
  */
-import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 
 import { addressFromId, idOf, type HexType } from '../../core';
 import { HexBoard, type BoardStep, type BoardTile } from '../../components/HexBoard';
 import { HEX_OUTLINE, placeNear, placeWorld, strandPathD, supertileEdges, tileCentre, tilePoints, tilesAround, type PlacedTile } from '../../lib/hexBoard';
 import { tileColor } from '../../lib/palette';
-import { choicesOf, concreteChain, makeWalker, reducePossible, replay, replayChoices, stageAhead, startWalk, type Limits, type Outcome, type PossibleWalk, type World } from './possible';
+import { choicesOf, concreteChain, followWord, makeWalker, reducePossible, replay, replayChoices, rotateWord, stageAhead, startWalk, type Limits, type Outcome, type PossibleWalk, type Seen, type World } from './possible';
 import { AncestorFlow } from './AncestorFlow';
+import { classLabel } from './landings';
 import { CircuitList } from './CircuitList';
 import { circuitsOf } from './circuits';
 import { ChoiceTree } from './ChoiceTree';
@@ -71,6 +72,44 @@ function CircuitPeek({ pw, subset, id, x, y }: { pw: PossibleWalk; subset: reado
   );
 }
 
+const CHAIN_ROWS = 5000;
+
+/** The walk tile by tile: the tile, its slot path, the edges in and out with their classes, where the crossing out settled, and the landing chosen there. */
+function ChainTable({ seen, ids, levels, root, level, chosen }: {
+  seen: readonly Seen[]; ids: readonly string[]; levels: readonly number[]; root: HexType; level: number; chosen: ReadonlyMap<number, { key: string; options: string[] }>;
+}): JSX.Element {
+  const rows = seen.slice(0, CHAIN_ROWS);
+  return (
+    <>
+      <p className="td__hint">
+        Slot paths in a level-{level} {root}{seen.length > CHAIN_ROWS ? `; the first ${CHAIN_ROWS.toLocaleString('en-US')} of ${seen.length.toLocaleString('en-US')} tiles` : ''}.
+        A choice is on the tile it lands on.
+      </p>
+      <table className="wk__chain" data-testid="wk-chain">
+        <thead>
+          <tr><th>#</th><th>Tile</th><th>Slot path</th><th>In</th><th>Out</th><th>Crossing out settled at</th><th>Chosen</th></tr>
+        </thead>
+        <tbody>
+          {rows.map((s, i) => {
+            const c = chosen.get(i);
+            return (
+              <tr key={i} className={c ? 'is-chosen' : ''}>
+                <td>{i}</td>
+                <td>{s.type}</td>
+                <td className="td__mono">{ids[i] ?? ''}</td>
+                <td>{s.entry} <span className="td__mono">{classLabel(s.type, s.entry)}</span></td>
+                <td>{s.exit} <span className="td__mono">{classLabel(s.type, s.exit)}</span></td>
+                <td>{levels[i] !== undefined ? `level ${levels[i]}` : ''}</td>
+                <td>{c ? `${c.key}, of ${c.options.join(' / ')}` : ''}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </>
+  );
+}
+
 export interface LandingWalkProps {
   readonly pattern: Pattern;
   readonly byType: ReadonlyMap<HexType, number>;
@@ -82,12 +121,17 @@ export interface LandingWalkProps {
   readonly initial?: { readonly choices: readonly Choice[]; readonly current: number; readonly whole: boolean };
   /** Told the choices, the current node and whether the whole tree is open, whenever they change. */
   readonly onState?: (choices: Choice[], current: number, whole: boolean) => void;
+  /** A circuit to walk again on the way in: at each fork, the landing it goes to. */
+  readonly follow?: readonly Seen[];
+  /** Asked to walk a closed circuit again from another of its tiles: its tiles from there. */
+  readonly onRestart?: (word: Seen[]) => void;
 }
 
-export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial, onState }: LandingWalkProps): JSX.Element {
+export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial, onState, follow, onRestart }: LandingWalkProps): JSX.Element {
   const [pw, dispatch] = useReducer(reducePossible, null, () => {
     const w = startWalk(makeWalker(pattern, start, startEdge, MAX_LEVEL), worlds);
     // from a link: make its choices again and walk on to where it was
+    if (follow) return followWord(w, follow, RUN_CAP);
     return initial ? replayChoices(w, initial.choices, initial.current) : w;
   });
   const [hover, setHover] = useState<Outcome | null>(null);
@@ -99,8 +143,22 @@ export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial
   const [exploring, setExploring] = useState(false);
   const [showDots, setShowDots] = useState(true);
   const [showDecisions, setShowDecisions] = useState(false);
+  const [debugOpen, setDebugOpen] = useState(false);
   const [peek, setPeek] = useState<{ id: number; x: number; y: number } | null>(null);
   const pointer = useRef({ x: 0, y: 0 });
+  const mainRef = useRef<HTMLDivElement | null>(null);
+  // a pointer that hovers shows a node's walk beside it; a touch screen shows it on the board above
+  const canHover = typeof window !== 'undefined' && !!window.matchMedia?.('(hover: hover)').matches;
+  // subtrees three choices down fold away, unless on the way to the current node; a click flips one
+  const [flipped, setFlipped] = useState<ReadonlySet<number>>(() => new Set());
+  const toggle = (id: number): void => setFlipped((f) => { const g = new Set(f); if (g.has(id)) g.delete(id); else g.add(id); return g; });
+  const onRoute = useMemo(() => { const r = new Set<number>(); for (let id: number | null = pw.current; id !== null; id = pw.nodes[id].parent) r.add(id); return r; }, [pw]);
+  const isCollapsed = useCallback((id: number): boolean => {
+    let depth = 0;
+    for (let at = pw.nodes[id].parent; at !== null; at = pw.nodes[at].parent) depth++;
+    const fold = depth >= 3 && !onRoute.has(id);
+    return flipped.has(id) ? !fold : fold;
+  }, [pw, onRoute, flipped]);
   // a landing taken, or a node of the tree, walks on by itself to the next fork or the end
   const goto = (id: number): void => { setHover(null); dispatch({ type: 'goto', id }); dispatch({ type: 'run', cap: RUN_CAP }); };
   const take = (id: number, key: string): void => { setHover(null); dispatch({ type: 'chooseAt', id, key }); dispatch({ type: 'run', cap: RUN_CAP }); };
@@ -132,6 +190,15 @@ export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial
   const solid = [...new Set(walked)].map((id) => shown.placed.get(id)).filter((p): p is PlacedTile => !!p);
   const landing = hover && hover.key !== 'closes' && hover.key !== 'open' ? shown.placed.get(shown.ids[n + 1]) : undefined;
   const faint = tilesAround(shown.placed.values(), landing ? [...solid, landing] : solid, 3.6, FAINT_CAP, new Set([...walked, ...(landing ? [landing.id] : [])]));
+  // per landing tile chosen on the way to the current node: the landing taken and those offered
+  const chosen = useMemo(() => {
+    const out = new Map<number, { key: string; options: string[] }>();
+    for (let id: number | null = pw.current; id !== null && pw.nodes[id].parent !== null; id = pw.nodes[id].parent) {
+      const fork = pw.nodes[pw.nodes[id].parent!].fork;
+      if (fork) out.set(fork.step, { key: pw.nodes[id].key!, options: fork.options.map((o) => o.key) });
+    }
+    return out;
+  }, [pw]);
   // the tiles where a landing was chosen, along the walk to the current node
   const decisions = useMemo(() => {
     const out = new Set<string>();
@@ -211,7 +278,14 @@ export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial
                   : `${n} ${n === 1 ? 'tile' : 'tiles'} walked; ${stage.worlds.length} ancestor ${stage.worlds.length === 1 ? 'stack' : 'stacks'} still possible. Steps they all agree on are taken without asking.`}
         </span>
       </div>
-
+      {closed && onRestart && (
+        <div className="wk__restart" data-testid="wk-restart">
+          <span className="td__hint">The same circuit, walked again from</span>
+          <button type="button" className="td__chip" onClick={() => onRestart(rotateWord(stage.seen, n - 1))} data-testid="wk-restart-prev">◀ the tile before</button>
+          <button type="button" className="td__chip" onClick={() => onRestart(rotateWord(stage.seen, 1))} data-testid="wk-restart-next">the next tile ▶</button>
+          <button type="button" className="td__chip" onClick={() => onRestart(rotateWord(stage.seen, 0, true))} data-testid="wk-restart-back">this tile, the other way round</button>
+        </div>
+      )}
 
       {stage.corners.length > 0 && (
         <ul className="wk__corners" data-testid="wk-corners">
@@ -233,7 +307,44 @@ export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial
         </ul>
       )}
 
-      {view === 'full' ? (
+      <div className={`wk__main${view === 'split' ? ' is-whole' : view === 'full' ? ' is-fullpage' : ''}`} ref={mainRef}>
+        <HexBoard
+          tiles={tiles}
+          pattern={{ subset: pattern.subset, matching: byType }}
+          strand={strand}
+          focus={current && !closed ? { xform: current.xform, type: here.at.leaf, entry: here.entry } : null}
+          marks={marks}
+          boundaries={boundaries}
+          nest={{ root: shown.root, level: shown.level }}
+          testId="wk-svg"
+        />
+        {view === 'split' ? (
+          <div className="wk__side wk__side--whole">
+            {exploreBar}
+            {pw.explored && <p className="td__hint" data-testid="wk-explored">{exploredText}</p>}
+            <ChoiceTree pw={pw} mode="full" onGoto={goto} onChooseAt={take} isCollapsed={isCollapsed} onToggle={toggle} />
+          </div>
+        ) : (
+          <div className="wk__side">
+            <p className="wk__tape-title">Landings</p>
+            <ChoiceTree
+              pw={pw}
+              mode="path"
+              onGoto={goto}
+              onChooseAt={take}
+              onHoverOption={(key) => setHover(key && stage.status === 'choice' ? stage.pending.find((o) => o.key === key) ?? null : null)}
+            />
+            <p className="wk__tape-title">Ancestor stacks</p>
+            <AncestorFlow
+              start={pw.walker.start}
+              shown={hover ? hover.worlds : pw.nodes[pw.current].before ? pw.nodes[pw.current].stage.worlds : stage.worlds}
+              behind={hover ? atFork : pw.nodes[pw.current].before}
+            />
+          </div>
+        )}
+      </div>
+
+      {view === 'full' && (
         <div
           className="wk__fulltree"
           data-testid="wk-fulltree"
@@ -244,48 +355,13 @@ export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial
           <ChoiceTree
             pw={pw}
             mode="full"
-            onGoto={(id) => { setPeek(null); goto(id); setView('split'); }}
-            onChooseAt={(id, key) => { setPeek(null); take(id, key); setView('split'); }}
-            onHoverNode={(id) => setPeek(id === null ? null : { id, ...pointer.current })}
+            onGoto={(id) => { setPeek(null); goto(id); if (canHover) mainRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}
+            onChooseAt={(id, key) => { setPeek(null); take(id, key); if (canHover) mainRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}
+            onHoverNode={canHover ? (id) => setPeek(id === null ? null : { id, ...pointer.current }) : undefined}
+            isCollapsed={isCollapsed}
+            onToggle={toggle}
           />
           {peek && <CircuitPeek pw={pw} subset={pattern.subset} id={peek.id} x={peek.x} y={peek.y} />}
-        </div>
-      ) : (
-        <div className={`wk__main${view === 'split' ? ' is-whole' : ''}`}>
-          <HexBoard
-            tiles={tiles}
-            pattern={{ subset: pattern.subset, matching: byType }}
-            strand={strand}
-            focus={current && !closed ? { xform: current.xform, type: here.at.leaf, entry: here.entry } : null}
-            marks={marks}
-            boundaries={boundaries}
-            nest={{ root: shown.root, level: shown.level }}
-            testId="wk-svg"
-          />
-          {view === 'split' ? (
-            <div className="wk__side wk__side--whole">
-              {exploreBar}
-              {pw.explored && <p className="td__hint" data-testid="wk-explored">{exploredText}</p>}
-              <ChoiceTree pw={pw} mode="full" onGoto={goto} onChooseAt={take} />
-            </div>
-          ) : (
-            <div className="wk__side">
-              <p className="wk__tape-title">Landings</p>
-              <ChoiceTree
-                pw={pw}
-                mode="path"
-                onGoto={goto}
-                onChooseAt={take}
-                onHoverOption={(key) => setHover(key && stage.status === 'choice' ? stage.pending.find((o) => o.key === key) ?? null : null)}
-              />
-              <p className="wk__tape-title">Ancestor stacks</p>
-              <AncestorFlow
-                start={pw.walker.start}
-                shown={hover ? hover.worlds : pw.nodes[pw.current].before ? pw.nodes[pw.current].stage.worlds : stage.worlds}
-                behind={hover ? atFork : pw.nodes[pw.current].before}
-              />
-            </div>
-          )}
         </div>
       )}
 
@@ -300,6 +376,11 @@ export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial
       {circuits.length > 0 && <CircuitList circuits={circuits} onGoto={goto} />}
 
       {closed && <SidesView sides={sides} length={n} onHoverRun={setHoverRun} />}
+
+      <details className="wk__debug" onToggle={(e) => setDebugOpen((e.target as HTMLDetailsElement).open)} data-testid="wk-debug">
+        <summary>The chain, tile by tile</summary>
+        {debugOpen && <ChainTable seen={stage.seen} ids={shown.ids} levels={shown.levels} root={shown.root} level={shown.level} chosen={chosen} />}
+      </details>
     </>
   );
 }
