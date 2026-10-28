@@ -4,19 +4,24 @@
  * with every term it lands on every sample.
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { epicyclePoint, epicycles, type Loop, type Spectrum } from './measure';
-import { frameOf } from './charts';
+import { useEffect, useMemo, useRef, useState } from "react";
+import { epicyclePoint, epicycles, type Loop, type Spectrum } from "./measure";
+import { frameOf } from "./charts";
 
 const LAP_MS = 14000;
 const TRAIL = 1500;
 
-export function Epicycles(props: { loop: Loop; spectrum: Spectrum }): JSX.Element {
+export function Epicycles(props: {
+  loop: Loop;
+  spectrum: Spectrum;
+}): JSX.Element {
   const { loop, spectrum } = props;
   const canvas = useRef<HTMLCanvasElement>(null);
   const [terms, setTerms] = useState(30);
   // Still until asked when motion is unwelcome or there is no animation clock.
-  const still = typeof requestAnimationFrame === 'undefined' || !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  const still =
+    typeof requestAnimationFrame === "undefined" ||
+    !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
   const [playing, setPlaying] = useState(!still);
   const [t, setT] = useState(0);
   const tRef = useRef(0);
@@ -49,12 +54,12 @@ export function Epicycles(props: { loop: Loop; spectrum: Spectrum }): JSX.Elemen
 
   useEffect(() => {
     const c = canvas.current;
-    const ctx = c?.getContext('2d');
+    const ctx = c?.getContext("2d");
     if (!c || !ctx) return;
     const css = getComputedStyle(c);
-    const ink = css.getPropertyValue('--text').trim() || '#222';
-    const muted = css.getPropertyValue('--muted').trim() || '#888';
-    const accent = css.getPropertyValue('--accent').trim() || '#2f7d6d';
+    const ink = css.getPropertyValue("--text").trim() || "#222";
+    const muted = css.getPropertyValue("--muted").trim() || "#888";
+    const accent = css.getPropertyValue("--accent").trim() || "#2f7d6d";
     const size = c.clientWidth || 560;
     const dpr = window.devicePixelRatio || 1;
     if (c.width !== Math.round(size * dpr)) {
@@ -124,15 +129,40 @@ export function Epicycles(props: { loop: Loop; spectrum: Spectrum }): JSX.Elemen
 
   const total = spectrum.n - 1;
   return (
-    <div className="corners-fig" style={{ display: 'grid', gap: 8 }}>
-      <canvas ref={canvas} width={560} height={560} aria-label={`The circuit redrawn by its ${terms} largest Fourier terms`} data-testid="corners-epicycles" />
+    <div className="corners-fig" style={{ display: "grid", gap: 8 }}>
+      {/* Sized by its own style: a display size that followed the pixel size would grow with every frame. */}
+      <canvas
+        ref={canvas}
+        width={560}
+        height={560}
+        style={{
+          display: "block",
+          width: "100%",
+          maxWidth: 560,
+          height: "auto",
+          aspectRatio: "1",
+        }}
+        aria-label={`The circuit redrawn by its ${terms} largest Fourier terms`}
+        data-testid="corners-epicycles"
+      />
       <div className="corners-controls">
-        <button type="button" onClick={() => setPlaying((p) => !p)} data-testid="corners-epi-play">
-          {playing ? 'Pause' : 'Play'}
+        <button
+          type="button"
+          onClick={() => setPlaying((p) => !p)}
+          data-testid="corners-epi-play"
+        >
+          {playing ? "Pause" : "Play"}
         </button>
         <label>
           Terms: {terms}
-          <input type="range" min={1} max={Math.min(400, total)} value={terms} onChange={(e) => setTerms(Number(e.target.value))} data-testid="corners-epi-terms" />
+          <input
+            type="range"
+            min={1}
+            max={Math.min(400, total)}
+            value={terms}
+            onChange={(e) => setTerms(Number(e.target.value))}
+            data-testid="corners-epi-terms"
+          />
         </label>
         <label>
           Lap
