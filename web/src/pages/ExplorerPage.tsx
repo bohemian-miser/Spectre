@@ -1709,6 +1709,12 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
               rec={rec}
               hudShown={!hasFlag(state, FLAG.HIDE_STATS)}
               onToggleHud={() => dispatch({ type: 'toggleFlag', flag: FLAG.HIDE_STATS })}
+              followOn={followOn}
+              onToggleFollow={
+                traceOn && infiniteChords
+                  ? () => dispatch({ type: 'setFollow', follow: !followOn })
+                  : undefined
+              }
             />
           </InfiniteCanvas>
         ) : !heavy ? (

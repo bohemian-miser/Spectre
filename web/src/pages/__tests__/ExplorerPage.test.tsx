@@ -86,6 +86,24 @@ describe('ExplorerPage', () => {
     expect(window.location.hash).not.toMatch(/(fw|fc|pf|hp)=/);
   });
 
+  it('stops and restarts following from the button in the field corner', () => {
+    window.history.replaceState(null, '', '/#/explorer?v=1&md=infinite&e=2578');
+    const { container } = render(<ExplorerPage />);
+    const button = () => container.querySelector('[data-testid="tools-follow"]') as HTMLButtonElement;
+    const box = () => container.querySelector('[data-testid="follow-toggle"]') as HTMLInputElement;
+
+    expect(button().getAttribute('aria-pressed')).toBe('true');
+    fireEvent.click(button());
+    expect(box().checked).toBe(false);
+    expect(button().getAttribute('aria-pressed')).toBe('false');
+    fireEvent.click(button());
+    expect(box().checked).toBe(true);
+
+    // Without a traced strand there is nothing to follow, so no button.
+    fireEvent.click(container.querySelector('[data-testid="trace-toggle"]') as Element);
+    expect(button()).toBeNull();
+  });
+
   it('has no midpoint-clipping control left to offer', () => {
     window.history.replaceState(null, '', '/#/explorer?v=1&md=infinite');
     const { container } = render(<ExplorerPage />);
