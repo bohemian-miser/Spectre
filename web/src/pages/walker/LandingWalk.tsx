@@ -147,6 +147,17 @@ export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial
   const [debugOpen, setDebugOpen] = useState(false);
   const [peek, setPeek] = useState<{ id: number; landing?: string; x: number; y: number } | null>(null);
   const pointer = useRef({ x: 0, y: 0 });
+  // the pointer, wherever it is, so a node's walk is drawn beside it in any of the trees
+  const peeking = useRef(false);
+  peeking.current = peek !== null;
+  useEffect(() => {
+    const move = (e: MouseEvent): void => {
+      pointer.current = { x: e.clientX, y: e.clientY };
+      if (peeking.current) setPeek((p) => (p ? { ...p, ...pointer.current } : p));
+    };
+    window.addEventListener('mousemove', move);
+    return () => window.removeEventListener('mousemove', move);
+  }, []);
   const mainRef = useRef<HTMLDivElement | null>(null);
   // a pointer that hovers shows a node's walk beside it; a touch screen shows it on the board above
   const canHover = typeof window !== 'undefined' && !!window.matchMedia?.('(hover: hover)').matches;
@@ -175,7 +186,7 @@ export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial
   const unopened = pw.nodes.filter((x) => !x.fork && !x.end && x.id !== pw.current).length;
   const long = pw.nodes.filter((x) => x.end?.status === 'walking').length;
   const branchesClosed = circuits.reduce((a, c) => a + c.nodes.length, 0);
-  const exploredText = `${exploring ? 'Taking every landing: ' : ''}${forksOpen} ${forksOpen === 1 ? 'fork' : 'forks'}; ${branchesClosed} ${branchesClosed === 1 ? 'branch closes' : 'branches close'} on ${circuits.length} ${circuits.length === 1 ? 'circuit' : 'circuits'}${long ? `; ${long} still open after ${limits.tiles} tiles` : ''}${unopened && !exploring ? `; ${unopened} not walked (fork limit)` : ''}.`;
+  const exploredText = `${exploring ? 'Exploring: ' : ''}${forksOpen} ${forksOpen === 1 ? 'fork' : 'forks'}; ${branchesClosed} ${branchesClosed === 1 ? 'branch closes' : 'branches close'} on ${circuits.length} ${circuits.length === 1 ? 'circuit' : 'circuits'}${long ? `; ${long} still open after ${limits.tiles} tiles` : ''}${unopened && !exploring ? `; ${unopened} not walked (fork limit)` : ''}.`;
   useEffect(() => { onState?.(choicesOf(pw), pw.current, whole); }, [pw, whole]); // eslint-disable-line react-hooks/exhaustive-deps
   const { stage } = pw;
   const n = stage.seen.length;
@@ -234,6 +245,13 @@ export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial
   const maxHeight = Math.max(1, ...heights);
   const choicesMade = pw.nodes[pw.current] ? (function count(id: number): number { const p = pw.nodes[id].parent; return p === null ? 0 : 1 + count(p); })(pw.current) : 0;
 
+  // hovering a node, or a landing not yet taken, draws its walk beside the pointer (not on a touch screen)
+  const peekHandlers = canHover
+    ? {
+        onHoverNode: (id: number | null) => setPeek(id === null ? null : { id, ...pointer.current }),
+        onHoverLanding: (at: { node: number; key: string } | null) => setPeek(at === null ? null : { id: at.node, landing: at.key, ...pointer.current }),
+      }
+    : {};
   const exploreBar = (
     <div className="wk__explore">
       <button
@@ -246,10 +264,11 @@ export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial
         }}
         data-testid="wk-explore"
       >
-        {exploring ? 'Stop' : 'Take every landing'}
+        {exploring ? 'Stop' : 'Explore every branch'}
       </button>
-      <label>up to <input type="number" min={1} value={limits.forks} onChange={(e) => setLimits((l) => ({ ...l, forks: Math.max(1, Number(e.target.value) || 1) }))} /> forks</label>
-      <label><input type="number" min={1} value={limits.tiles} onChange={(e) => setLimits((l) => ({ ...l, tiles: Math.max(1, Number(e.target.value) || 1) }))} /> tiles a branch</label>
+      <label>stop after <input type="number" min={1} value={limits.forks} onChange={(e) => setLimits((l) => ({ ...l, forks: Math.max(1, Number(e.target.value) || 1) }))} /> forks,</label>
+      <label>and a branch after <input type="number" min={1} value={limits.tiles} onChange={(e) => setLimits((l) => ({ ...l, tiles: Math.max(1, Number(e.target.value) || 1) }))} /> tiles</label>
+      <span className="td__hint">At every fork, walks each landing in turn, the nearest forks first, until the whole tree of choices is drawn or a limit is reached.</span>
     </div>
   );
 
@@ -323,7 +342,7 @@ export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial
           <div className="wk__side wk__side--whole">
             {exploreBar}
             {pw.explored && <p className="td__hint" data-testid="wk-explored">{exploredText}</p>}
-            <ChoiceTree pw={pw} mode="full" onGoto={goto} onChooseAt={take} isCollapsed={isCollapsed} onToggle={toggle} />
+            <ChoiceTree pw={pw} mode="full" onGoto={goto} onChooseAt={take} isCollapsed={isCollapsed} onToggle={toggle} {...peekHandlers} />
           </div>
         ) : (
           <div className="wk__side">
@@ -334,6 +353,7 @@ export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial
               onGoto={goto}
               onChooseAt={take}
               onHoverOption={(key) => setHover(key && stage.status === 'choice' ? stage.pending.find((o) => o.key === key) ?? null : null)}
+              {...peekHandlers}
             />
             <p className="wk__tape-title">Ancestor stacks</p>
             <AncestorFlow
@@ -349,7 +369,6 @@ export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial
         <div
           className="wk__fulltree"
           data-testid="wk-fulltree"
-          onMouseMove={(e) => { pointer.current = { x: e.clientX, y: e.clientY }; setPeek((p) => (p ? { ...p, ...pointer.current } : p)); }}
         >
           {exploreBar}
           {pw.explored && <p className="td__hint" data-testid="wk-explored">{exploredText}</p>}
@@ -358,14 +377,14 @@ export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial
             mode="full"
             onGoto={(id) => { setPeek(null); goto(id); if (canHover) mainRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}
             onChooseAt={(id, key) => { setPeek(null); take(id, key); if (canHover) mainRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}
-            onHoverNode={canHover ? (id) => setPeek(id === null ? null : { id, ...pointer.current }) : undefined}
-            onHoverLanding={canHover ? (at) => setPeek(at === null ? null : { id: at.node, landing: at.key, ...pointer.current }) : undefined}
+            {...peekHandlers}
             isCollapsed={isCollapsed}
             onToggle={toggle}
           />
-          {peek && <CircuitPeek pw={pw} subset={pattern.subset} id={peek.id} landing={peek.landing} x={peek.x} y={peek.y} />}
         </div>
       )}
+
+      {peek && <CircuitPeek pw={pw} subset={pattern.subset} id={peek.id} landing={peek.landing} x={peek.x} y={peek.y} />}
 
       <section className="td__section">
         <h3>How high each step reached</h3>

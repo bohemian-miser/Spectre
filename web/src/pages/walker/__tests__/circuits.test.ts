@@ -1,5 +1,5 @@
 /**
- * Taking every landing, against `walkStrand` on one full stack: each circuit
+ * Every branch explored, against `walkStrand` on one full stack: each circuit
  * the tree closes on is a circuit `walkStrand` walks in a stack behind its
  * branch, of the same length and word. A circuit's key does not change
  * when its word is read from another tile or the other way round. Walked
@@ -18,7 +18,7 @@ import { matchingByType, patternOf } from '../walk';
 const triangle = patternOf([0, 2, 3, 4, 6, 8], '000100000');
 const matching = Object.fromEntries(matchingByType(triangle));
 
-describe('every landing taken', () => {
+describe('every branch explored', () => {
   it('closes on circuits that walkStrand walks, each related to a smaller one', () => {
     const wk = makeWalker(triangle, 'Delta', 0, 5);
     const { pw, done } = explore(startWalk(wk), { forks: 30, tiles: 600 });
