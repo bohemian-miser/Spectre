@@ -8,11 +8,11 @@ import { describe, expect, it } from 'vitest';
 import { HEX_TYPES, addressFromId, walkStrand, zMul, type ZAffine } from '../../src/core';
 import { longestCircuit, matchingByType, pairingTable, patternOf } from '../../src/pages/walker/walk';
 import { addressOf, board, indexOf, traceAll } from '../board';
-import { collect, measure } from '../circuits';
+import { collect, copyTile, cornerChains, measure } from '../circuits';
 import { enumerateCircuits } from '../every-tiling';
 import { initialWorlds, makeWalker, stepAll, type World } from '../../src/pages/walker/possible';
 import { idOf } from '../../src/core/transducer';
-import { canonicalWord, circuitKey, leastRotation, placedKey, placedOf, reverseWord, tileLetter, wordOrder } from '../keys';
+import { TYPE_PREFIX, canonicalWord, circuitKey, leastRotation, placedKey, placedOf, reverseWord, tileLetter, tileSetKey, wordOrder } from '../keys';
 import { encode, fitCorners, levenshtein } from '../sides';
 import { count, enumerateCircuits as enumerateOnGraph, startBundle, stepBundle, worldsOf, type Bundle } from '../stack-graph';
 
@@ -191,7 +191,7 @@ describe('placed tiles', () => {
     expect(placedKey(tiles.slice(1))).not.toBe(key);
   });
 
-  it('gives a circuit the same tiles, corners and corner key in every supertile that holds it, read from any tile', () => {
+  it('gives a circuit the same tiles and corners in every supertile that holds it, read from any tile', () => {
     const { circuits } = collect([0, 2, 3, 4, 6, 8], '111000100', 4, 1e9);
     const table = pairingTable(triangle);
     for (const root of ['Delta', 'Psi', 'Gamma'] as const) {
@@ -201,11 +201,43 @@ describe('placed tiles', () => {
         const tiles = Array.from(s.tiles, (t) => addressOf(b, t));
         const word = tiles.map((a, i) => tileLetter(a.leaf, s.entries[i], s.exits[i]));
         const f = circuits.find((c) => c.key === circuitKey(word))!;
-        const [m, here] = [measure(f), measure({ ...f, tiles, word })];
-        expect([here.tilesId, here.cornerId, here.corners.corners]).toEqual([m.tilesId, m.cornerId, m.corners.corners]);
+        expect(measure({ ...f, tiles, word }).corners.corners).toEqual(measure(f).corners.corners);
+        expect(tileSetKey(tiles)).toBe(tileSetKey(f.tiles));
       }
     }
   });
+});
+
+describe('corner chains', () => {
+  it.each([['023468', '000100000', 5], ['15', '000010010', 4]] as const)(
+    '%s-%s to level %i: every copy has the chain, and the copies disagree one level above it',
+    (rule, combo, level) => {
+      const { circuits } = collect([...rule].map(Number), combo, level, 1e9);
+      let checked = 0;
+      for (const f of circuits) {
+        const corners = measure(f, 3, 0).corners.corners;
+        const chains = cornerChains(f, corners);
+        corners.forEach((p, j) => {
+          // Read each copy's corner tile and its ancestors straight from the board.
+          const addrs = f.at.map((c) => addressOf(c.board, copyTile(c, p)));
+          const links = chains[j].split('<').slice(1);
+          for (const a of addrs) {
+            expect(TYPE_PREFIX[a.leaf]).toBe(chains[j].split('<')[0]);
+            links.forEach((l, k) => expect(l).toBe(/\D$/.test(l) ? `${a.path[k].slot}${TYPE_PREFIX[a.path[k].parent]}` : `${a.path[k].slot}`));
+          }
+          // One more level would not hold for every copy (or there is none), unless symmetry folds corners together.
+          const k = links.length;
+          const last = links.at(-1) ?? '';
+          if (k < f.level && /\D$/.test(last || 'x')) {
+            const next = new Set(addrs.map((a) => `${a.path[k].slot}`));
+            if (corners.every((q) => q === p || (q - p) % (f.word.length / wordOrder(canonicalWord(f.word).word)) !== 0)) expect(next.size).toBeGreaterThan(1);
+          }
+          checked++;
+        });
+      }
+      expect(checked).toBeGreaterThan(20);
+    },
+  );
 });
 
 describe('sides', () => {

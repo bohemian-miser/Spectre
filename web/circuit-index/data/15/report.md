@@ -1,8 +1,8 @@
 # circuit-index/data/15
 
-| combinations | capped at 1000 | circuit rows | distinct circuits | corner triples | tile sets |
-|---|---|---|---|---|---|
-| 4 | 0 | 46 | 26 | 24 | 26 |
+| combinations | capped at 1000 | circuit rows | distinct circuits | corner triples |
+|---|---|---|---|---|
+| 4 | 0 | 46 | 26 | 26 |
 
 ## Three arms
 
@@ -21,13 +21,8 @@ exact: the word repeats a multiple of 3 times. near: arm score at most 0.1.
 
 0 of 0 corner triples (circuits of 10 tiles or more).
 
-| corner triple | circuits | lengths | tile sets | kinds |
-|---|---|---|---|---|
-
-## Tile sets covered by more than one circuit
-
-| tile set | circuits | length |
-|---|---|---|
+| corner triple | circuits | lengths | kinds |
+|---|---|---|---|
 
 ## Not triangles: closest equal parts
 
