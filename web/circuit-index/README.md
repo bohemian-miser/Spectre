@@ -5,32 +5,66 @@ to three copies of one arm, and indexed by its corners.
 
 ## Finding the circuits
 
-A circuit that needs at most L ancestors lies inside a level-L supertile of
-some type. `board.ts` writes each level-L supertile as a table: for each tile
-and edge, the tile and edge across it (from `neighbour()`, once per type and
-level, whatever the rule). Tracing a combination's strands is then table
-lookups. `circuits.ts` traces the boards of all nine types, level by level,
-and keeps each distinct circuit once, with the lowest level at which it
-appears (its level) and the types that hold it there.
+The walk on every tiling at once (`src/pages/walker/possible.ts`) carries a
+set of ancestor stacks. A stack of depth L is the start tile's ancestors up
+to level L: a top type and a slot path down from it. That is a tile of the
+level-L supertile of the top type, and the strand's current position is
+another tile of the same supertile. So every stack the walk can hold is a
+tile of one of nine boards, one per top type: `board.ts` writes each level-L
+supertile as a table giving, for each tile and edge, the tile and edge
+across it inside the supertile (from the same `neighbour()` call the walk
+makes), or nothing when the edge is on the outline. A step of the walk that
+stays inside the stack is a lookup in that stack's board; a step that needs
+a parent the walk does not have yet is, on the board, an outline edge, and
+the walk's new stacks (one per possible parent) are tiles of the level-(L+1)
+boards.
 
-`every-tiling.ts` finds the circuits another way: the Circuit walker's walk
-on every tiling at once (`src/pages/walker/possible.ts`), branching at every
-choice of ancestor, from every tile type and entry edge. The two agree on
-the circuits and their levels (tested to level 3). The walk carries every
-ancestor stack it has read, which is tens of thousands after one step at
-level 6, so the boards do the sweeping.
+The first step from a bare Psi entered by edge 0, rule `15`, at most 3
+levels:
+
+| bundle (what the stacks land on) | stacks |
+|---|---|
+| Psi, edge 2 | 142 |
+| Pi, edge 2 | 44 |
+| still on the outline at level 3 | 283 |
+
+| stack (bottom up) | tile, board | across its edge 1 |
+|---|---|---|
+| Xi:5 < Gamma:5 < Gamma:7 | `7.5.5`, level-3 Gamma | `1.5.0`, Psi edge 2 |
+| Xi:5 < Gamma:5 < Delta:7 | `7.5.5`, level-3 Delta | `1.5.0`, Psi edge 2 |
+| Xi:5 < Gamma:5 < Theta:7 | `7.5.5`, level-3 Theta | `1.5.0`, Psi edge 2 |
+
+All 186 stacks that land are tiles of a board and land where that tile's
+edge does. A board holds every stack of its depth and top type, not only
+the ones a walk from one start reaches, so tracing every strand of every
+board at level L finds every circuit the walk finds with at most L levels,
+from every start tile at once, and each strand is traced once.
+`circuits.ts` traces the boards of all nine types, level by level, and keeps
+each distinct circuit once, with the lowest level at which it appears (its
+level) and the types that hold it there.
+
+The tests check both directions: every stack the walk carries, for twelve
+steps from two starts, is a board tile that steps where the walk does; and
+`every-tiling.ts`, the walk run from every tile type and entry edge with a
+branch at every choice, finds the same circuits at the same levels as the
+boards (rule `15` to level 4, `023468` to level 3). The walk keeps each
+stack in a list, so its sweeps stop at level 3 or 4; the boards run to
+level 6 here.
 
 ## Keys
 
 | key | what it identifies |
 |---|---|
-| circuit | the word (type, entry edge, exit edge per tile) read from its least rotation, in its least direction |
+| circuit | the word read from its least rotation, in its least direction; one letter per tile: the type's shortest unique prefix (G, D, T, L, X, Pi, S, Ph, Ps), then the entry and exit edge indices, so `D23G01X01` is Delta in by edge 2 and out by 3, then Gamma, then Xi |
 | tiles | the tiles alone, without edges: types, turns and centres relative to the centroid, least over the 24 rotations and reflections |
 | corner triple | the three corner tiles, keyed the same way |
 
-All positions are exact (`core/exact.ts`). The `circuit`, `corner_id` and
-`tiles_id` columns are the first 12 hex digits of a SHA-1 of the key;
-`words.*.tsv` maps each circuit id to its word.
+All positions are exact (`core/exact.ts`). The `circuit` column is the word
+itself. `corner_id` and `tiles_id` are the first 12 hex digits of a SHA-1 of
+their key, which lists each tile as type, turn (30-degree steps), mirror flag
+and centre (four integers in `Z[ζ12]`, scaled by the tile count) relative to
+the centroid: `Xi/0/0/108,0,36,0;Xi/4/0/-144,0,108,0;Xi/8/0/36,0,-144,0` is
+three Xi turned 0, 120 and 240 degrees about their centroid.
 
 ## Measures
 
