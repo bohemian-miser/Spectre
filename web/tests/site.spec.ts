@@ -127,6 +127,12 @@ test('the Compare page lines two circuits of a combination up and compares their
   await expect(page.locator('[data-testid="compare-title"]')).toHaveText('A: 303 tiles at level 4 of 023468-140000001; B: 14,679 tiles at level 6', { timeout: 120000 });
   await expect(page.locator('[data-testid="compare-summary"]')).toContainText('the same at 2 of the 4 levels compared, 2, 3');
   await expect(page.locator('[data-testid="corners-compare-gap"]')).toContainText('B has 14,679 tiles to A’s 303');
+  // The series colours are the Corners page's; the view must carry them for its bars and drawings to show.
+  const strokes = await page.evaluate(() => {
+    const colour = (sel: string) => getComputedStyle(document.querySelector(sel) as Element).stroke;
+    return [colour('[data-testid="corners-compare-terms"] g[data-f="1"] line'), colour('.shapes-glyph path')];
+  });
+  for (const s of strokes) expect(s).toMatch(/^rgb\(/);
 });
 
 test.describe('on a screen of pixel ratio 2', () => {

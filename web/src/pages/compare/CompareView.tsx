@@ -124,8 +124,8 @@ export function CompareView(props: { a: CircuitRef; b: CircuitRef; base?: string
         centroid over its radius of gyration; B is turned, restarted and if need be mirrored onto A.
       </p>
       <TermsCompare
-        a={{ loop: { xy: result.a.loop.xy, n: result.a.loop.n }, rg: result.a.loop.rg, length: A.length, label: `A, ${nf(A.length)} L${A.level}` }}
-        b={{ loop: { xy: result.b.loop.xy, n: result.b.loop.n }, rg: result.b.loop.rg, length: B.length, label: `B, ${nf(B.length)} L${B.level}` }}
+        a={{ loop: { xy: result.a.loop.xy, n: result.a.loop.n }, rg: result.a.loop.rg, length: A.length, label: `${nf(A.length)} tiles, level ${A.level}` }}
+        b={{ loop: { xy: result.b.loop.xy, n: result.b.loop.n }, rg: result.b.loop.rg, length: B.length, label: `${nf(B.length)} tiles, level ${B.level}` }}
       />
       <h3>Readings</h3>
       <ReadingsTable b={B} a={A} rows={result.rows} nameA="of A" testId="compare-readings" />
