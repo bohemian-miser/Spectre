@@ -25,5 +25,10 @@ describe('HarmonicsPage', () => {
     // A fundamental has no partner.
     fireEvent.click(screen.getAllByRole('button', { name: /^18/ })[0]);
     expect(screen.getByTestId('harm-detail').querySelector('h2')!.textContent).toBe('18 tiles at level 2, a fundamental');
+    // One level more adds nothing new at level 7, and the chosen circuit stays chosen.
+    fireEvent.click(screen.getByTestId('harm-next'));
+    await waitFor(() => expect(screen.getByTestId('harm-summary').textContent).toMatch(/Level 6: 4 born, 0 new\.$/), { timeout: 60000 });
+    expect(screen.getByText(/Lineages of 023468 · 000100000 to level 7/)).toBeTruthy();
+    expect(screen.getByTestId('harm-detail').querySelector('h2')!.textContent).toBe('18 tiles at level 2, a fundamental');
   });
 });

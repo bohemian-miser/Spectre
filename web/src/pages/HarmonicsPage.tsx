@@ -4,7 +4,7 @@
  * level (`harmonics/readings.ts`: the supertiles its strand runs through,
  * backtracks across a seam cancelled); a circuit whose reading at level
  * k + 2 is another's at level k, at every level, is that circuit's harmonic.
- * The lineages are listed as chains; a chosen circuit is shown beside its
+ * The renormalisation can be taken one level further at a time, as far as the machine allows. The lineages are listed as chains; a chosen circuit is shown beside its
  * fundamental with the two readings lined up level by level, and where they
  * differ at the tiles, the harmonic's extra visits. Any circuit opens in the
  * Explorer's infinite view.
@@ -76,7 +76,7 @@ function Glyph(props: { circuit: CircuitInfo; size: number; colour: string; labe
   const { size } = props;
   return (
     <svg className="shapes-glyph" width={size} height={size} viewBox={`${-size / 2} ${-size / 2} ${size} ${size}`} role="img" aria-label={props.label}>
-      <path d={glyphPath(props.circuit.outline, size)} fill="none" stroke={props.colour} strokeWidth={1.2} strokeLinejoin="round" />
+      <path d={glyphPath(props.circuit.outlines[0] ?? new Float64Array(0), size)} fill="none" stroke={props.colour} strokeWidth={1.2} strokeLinejoin="round" />
     </svg>
   );
 }
@@ -123,22 +123,24 @@ export default function HarmonicsPage(props: { forceSync?: boolean }): JSX.Eleme
   const [error, setError] = useState<string | null>(null);
   const [picked, setPicked] = useState<number | null>(null);
 
-  useEffect(() => {
-    const c = client.current;
-    let live = true;
+  const live = useRef(0);
+  /** Runs a request against the engine; the newest request wins. */
+  const run = (go: () => Promise<HarmonicsResult>, pick: boolean): void => {
+    const n = ++live.current;
     setBusy(true);
     setError(null);
-    c.run({ family: 'hex', ...choice })
+    go()
       .then((r) => {
-        if (!live) return;
+        if (n !== live.current) return;
         setResult(r);
-        setPicked(r.circuits.length ? r.circuits.length - 1 : null);
+        if (pick) setPicked(r.circuits.length ? r.circuits.length - 1 : null);
       })
-      .catch((e: unknown) => live && setError(e instanceof Error ? e.message : String(e)))
-      .finally(() => live && setBusy(false));
-    return () => {
-      live = false;
-    };
+      .catch((e: unknown) => n === live.current && setError(e instanceof Error ? e.message : String(e)))
+      .finally(() => n === live.current && setBusy(false));
+  };
+  useEffect(() => {
+    run(() => client.current.start({ family: 'hex', ...choice }), true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [choice]);
   useEffect(() => () => client.current.dispose(), []);
 
@@ -172,8 +174,17 @@ export default function HarmonicsPage(props: { forceSync?: boolean }): JSX.Eleme
         <>
           <section>
             <h2>
-              Lineages of {choice.subset.join('')} · {choice.combo} to level {choice.level}
+              Lineages of {choice.subset.join('')} · {choice.combo} to level {result.level}
             </h2>
+            <div className="shapes-controls">
+              <button type="button" disabled={busy} onClick={() => run(() => client.current.next(), false)} data-testid="harm-next">
+                {busy ? 'Computing…' : `Next level (${result.level + 1})`}
+              </button>
+              <span className="shapes-note">
+                Level {result.level} took {result.seconds < 1 ? 'under a second' : `${result.seconds.toFixed(0)} s`}; each level costs about four times the last, and
+                there is no limit.
+              </span>
+            </div>
             <p className="shapes-note" data-testid="harm-summary">
               {nf(result.circuits.length)} distinct circuits in {nf(chains.length)} lineages
               {chains.some((ch) => ch.members.length > 1) ? `: ${nf(chains.filter((ch) => ch.members.length > 1).length)} with harmonics, ${nf(chains.filter((ch) => ch.members.length === 1).length)} alone` : ''}.{' '}
@@ -219,7 +230,7 @@ export default function HarmonicsPage(props: { forceSync?: boolean }): JSX.Eleme
                 <figure>
                   <Glyph circuit={picking} size={220} colour="var(--g1)" label={describe(picking)} />
                   <figcaption>
-                    {describe(picking)}; drawn at level {picking.drawnAt}.{' '}
+                    {describe(picking)}; drawn at level {picking.drawnFrom}.{' '}
                     <a href={explorerHref(base, choice, picking)}>Explorer</a>
                   </figcaption>
                 </figure>
@@ -227,7 +238,7 @@ export default function HarmonicsPage(props: { forceSync?: boolean }): JSX.Eleme
                   <figure>
                     <Glyph circuit={fundamental} size={220} colour="var(--g2)" label={describe(fundamental)} />
                     <figcaption>
-                      {describe(fundamental)}; drawn at level {fundamental.drawnAt}.{' '}
+                      {describe(fundamental)}; drawn at level {fundamental.drawnFrom}.{' '}
                       <a href={explorerHref(base, choice, fundamental)}>Explorer</a>
                     </figcaption>
                   </figure>
@@ -242,13 +253,12 @@ export default function HarmonicsPage(props: { forceSync?: boolean }): JSX.Eleme
                   </tr>
                 </thead>
                 <tbody>
-                  {picking.readings
-                    .slice()
+                  {[...picking.readings]
                     .reverse()
                     .map((r) => {
                       const k = r.level - 2;
-                      const ra = fundamental && k >= 0 ? fundamental.readings[k] : null;
-                      const same = lineage && k >= 0 ? lineage.levels[k] : null;
+                      const ra = fundamental && k >= 0 ? fundamental.readings.find((x) => x.level === k) ?? null : null;
+                      const same = lineage && k >= 0 ? lineage.levels[k] ?? null : null;
                       return [
                         <tr key={`b${r.level}`} className="harm-row-b">
                           <td>{r.level}</td>
@@ -267,7 +277,7 @@ export default function HarmonicsPage(props: { forceSync?: boolean }): JSX.Eleme
                             </td>
                             <td>
                               <Tokens tokens={ra.tokens} />
-                              <span className={same ? 'harm-same' : 'harm-differs'}>{same ? 'the same' : 'differs'}</span>
+                              <span className={same ? 'harm-same' : 'harm-differs'}>{same === null ? 'not compared' : same ? 'the same' : 'differs'}</span>
                             </td>
                           </tr>
                         ) : null,
