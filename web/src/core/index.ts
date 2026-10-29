@@ -38,4 +38,5 @@ export * from './pairingSearch';
 export * from './transducer';
 export * from './seam';
 export * from './circuitSides';
+export * from './circuitWord';
 export * from './topDown';
