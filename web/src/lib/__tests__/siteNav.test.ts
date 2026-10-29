@@ -24,6 +24,7 @@ describe('siteNav', () => {
       'rules',
       'map',
       'supertiles',
+      'topdown',
       'machine',
       'transducer',
       'walker',
@@ -39,7 +40,7 @@ describe('siteNav', () => {
     expect(new Set(SITE_NAV.map((i) => i.id)).size).toBe(SITE_NAV.length);
   });
 
-  it('ships all seventeen destinations', () => {
+  it('ships all eighteen destinations', () => {
     expect(readyNav().map((i) => i.id)).toEqual([
       'explorer',
       'tails',
@@ -47,6 +48,7 @@ describe('siteNav', () => {
       'rules',
       'map',
       'supertiles',
+      'topdown',
       'machine',
       'transducer',
       'walker',
@@ -78,6 +80,7 @@ describe('siteNav', () => {
     expect(activeNavId('/Spectre/legacy.html')).toBe('legacy');
     expect(activeNavId('/Spectre/map.html')).toBe('map');
     expect(activeNavId('/Spectre/supertiles.html')).toBe('supertiles');
+    expect(activeNavId('/Spectre/topdown.html')).toBe('topdown');
     expect(activeNavId('/Spectre/machine.html')).toBe('machine');
     expect(activeNavId('/Spectre/lattice.html')).toBe('lattice');
     expect(activeNavId('/Spectre/multiedge.html')).toBe('multiedge');

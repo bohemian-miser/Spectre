@@ -29,6 +29,7 @@ export default defineConfig({
         rules: resolve(__dirname, 'rules.html'),
         map: resolve(__dirname, 'map.html'),
         supertiles: resolve(__dirname, 'supertiles.html'),
+        topdown: resolve(__dirname, 'topdown.html'),
         machine: resolve(__dirname, 'machine.html'),
         transducer: resolve(__dirname, 'transducer.html'),
         walker: resolve(__dirname, 'walker.html'),
