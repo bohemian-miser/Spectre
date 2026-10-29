@@ -83,6 +83,14 @@ export const SITE_NAV: readonly NavItem[] = Object.freeze([
     blurb: 'Push a supertile apart into the pieces it is made of, one substitution at a time.',
   },
   {
+    id: 'topdown',
+    label: 'Top-down',
+    short: 'Top-down',
+    entry: 'topdown.html',
+    status: 'ready',
+    blurb: 'Select an area and replace each tile by its supertile, one level deeper at a time.',
+  },
+  {
     id: 'machine',
     label: 'Strand machine',
     short: 'Machine',
