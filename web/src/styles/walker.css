@@ -336,6 +336,9 @@
 .wk-tree__row.is-current .wk-tree__hit {
   fill: rgba(47, 125, 109, 0.1);
 }
+.wk-tree__row.is-searching .wk-tree__hit {
+  fill: rgba(208, 138, 58, 0.18);
+}
 .wk-tree__halo {
   fill: none;
   stroke: var(--accent, #2f7d6d);
@@ -705,4 +708,67 @@
   .wk__found-word {
     display: none;
   }
+}
+
+.wk__found-swatch {
+  display: inline-block;
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 2px;
+  margin-right: 0.3rem;
+  vertical-align: -1px;
+}
+.wk-stree {
+  margin-top: 0.5rem;
+  width: 100%;
+  overflow: hidden;
+}
+.wk-stree svg {
+  display: block;
+}
+.wk-stree__edge {
+  fill: none;
+  stroke: var(--muted, #8a8f99);
+  stroke-width: 1;
+  opacity: 0.6;
+}
+.wk-stree__edge.is-searching {
+  stroke: #d0702a;
+  stroke-width: 2.5;
+  opacity: 1;
+}
+.wk-stree__node {
+  cursor: pointer;
+}
+.wk-stree__hex {
+  stroke: var(--text, #1d2430);
+  stroke-width: 0.6;
+}
+.wk-stree__node.is-waiting .wk-stree__hex {
+  opacity: 0.35;
+}
+.wk-stree__node:hover .wk-stree__hex {
+  stroke-width: 2;
+}
+.wk-stree__end {
+  fill: var(--muted, #8a8f99);
+}
+.wk-stree__ring {
+  fill: none;
+  stroke-width: 2.5;
+}
+.wk-stree__ring.is-open {
+  stroke: #d0702a;
+  stroke-width: 1.2;
+  stroke-dasharray: 2 2;
+}
+.wk-stree__name {
+  font-size: 7px;
+  pointer-events: none;
+}
+.wk-stree svg.is-highlit .wk-stree__node {
+  opacity: 0.25;
+}
+.wk-stree svg.is-highlit .wk-stree__node.is-lit {
+  opacity: 1;
 }

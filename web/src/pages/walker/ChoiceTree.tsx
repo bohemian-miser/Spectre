@@ -71,9 +71,11 @@ export interface ChoiceTreeProps {
   /** Whether a node's subtree is folded away (full mode), and the click that folds or opens it. */
   readonly isCollapsed?: (id: number) => boolean;
   readonly onToggle?: (id: number) => void;
+  /** The nodes on the way to where a search is walking: their rows are marked. */
+  readonly searching?: ReadonlySet<number>;
 }
 
-export function ChoiceTree({ pw, mode, onGoto, onChooseAt, onHoverOption, onHoverNode, onHoverLanding, isCollapsed, onToggle }: ChoiceTreeProps): JSX.Element {
+export function ChoiceTree({ pw, mode, onGoto, onChooseAt, onHoverOption, onHoverNode, onHoverLanding, isCollapsed, onToggle, searching }: ChoiceTreeProps): JSX.Element {
   const rows = useMemo(() => {
     const ahead = new Map<number, Stage>();
     const stageAhead = (n: ChoiceNode): Stage => {
@@ -245,7 +247,7 @@ export function ChoiceTree({ pw, mode, onGoto, onChooseAt, onHoverOption, onHove
         return (
           <g
             key={r.key}
-            className={`wk-tree__row${untaken ? ' is-untaken' : ''}${r.current ? ' is-current' : ''}`}
+            className={`wk-tree__row${untaken ? ' is-untaken' : ''}${r.current ? ' is-current' : ''}${r.node !== undefined && searching?.has(r.node) ? ' is-searching' : ''}`}
             onClick={click}
             onMouseEnter={() => {
               if (untaken) { onHoverOption?.(r.option!.key); onHoverLanding?.({ node: r.at!, key: r.option!.key }, title); } else if (r.node !== undefined) onHoverNode?.(r.node, title);

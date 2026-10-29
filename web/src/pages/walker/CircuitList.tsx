@@ -42,8 +42,10 @@ export function CircuitList({ circuits, onGoto }: { circuits: readonly Circuit[]
 }
 
 /** The circuits a search has found, in the order it found them, in a box that scrolls. */
-export function FoundList({ found, onGoto, onHover }: {
+export function FoundList({ found, onGoto, onHover, colour }: {
   found: readonly Found[];
+  /** The colour a circuit has elsewhere (the search map), by its place in the list. */
+  colour?: (i: number) => string;
   onGoto: (node: number) => void;
   onHover?: (f: Found | null) => void;
 }): JSX.Element {
@@ -56,7 +58,7 @@ export function FoundList({ found, onGoto, onHover }: {
           onMouseEnter={onHover && (() => onHover(f))}
           onMouseLeave={onHover && (() => onHover(null))}
         >
-          <span className="wk__found-n">{i + 1}</span>
+          <span className="wk__found-n">{colour && <span className="wk__found-swatch" style={{ background: colour(i) }} />}{i + 1}</span>
           <span>{f.tiles} tiles</span>
           <span>{f.choices} {f.choices === 1 ? 'choice' : 'choices'}</span>
           <span>{f.branches > 1 ? `${f.branches} branches` : ''}</span>

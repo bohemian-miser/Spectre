@@ -7,9 +7,10 @@
  */
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 
-import { addressFromId, idOf, mul, type Affine, type HexType } from '../../core';
+import { addressFromId, idOf, matchingIndicesToCombo, mul, transPt, type Affine, type HexType, type TileTypeId } from '../../core';
 import { HexBoard, type BoardStep, type BoardTile } from '../../components/HexBoard';
-import { HEX_OUTLINE, placeNear, placeWorld, strandPathD, supertileEdges, tileCentre, tilePoints, tilesAround, type PlacedTile } from '../../lib/hexBoard';
+import { HEX_OUTLINE, placeNear, placeWorld, pointOnEdge, strandPathD, supertileEdges, tileCentre, tilePoints, tilesAround, xformInRoot, type PlacedTile } from '../../lib/hexBoard';
+import { explorerCircuitHref } from '../shapes/explorerLink';
 import { tileColor } from '../../lib/palette';
 import { choicesOf, concreteChain, circuitsAhead, followWord, makeWalker, reducePossible, replay, replayChoices, rotateWord, stageAfter, stageAhead, startWalk, type Ahead, type Limits, type Outcome, type PossibleWalk, type Seen, type World } from './possible';
 import { AncestorFlow } from './AncestorFlow';
@@ -17,6 +18,7 @@ import { classLabel } from './landings';
 import { CircuitList, FoundList } from './CircuitList';
 import { circuitsOf, foundCircuits, type Circuit } from './circuits';
 import { ChoiceTree } from './ChoiceTree';
+import { SearchTree, circuitColor } from './SearchTree';
 import type { Choice } from './share';
 import { SidesView, sideMarks, sidesOf } from './SidesView';
 import type { Pattern } from './walk';
@@ -171,6 +173,8 @@ export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial
   const [exploring, setExploring] = useState(false);
   // a search: explore with no limit on forks, until stopped
   const [searching, setSearching] = useState(false);
+  // a circuit of the list hovered: its branches outlined on the search map
+  const [lit, setLit] = useState<string | null>(null);
   const [showDots, setShowDots] = useState(carry?.dots ?? true);
   const [showDecisions, setShowDecisions] = useState(carry?.decisions ?? false);
   const [debugOpen, setDebugOpen] = useState(false);
@@ -197,12 +201,19 @@ export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial
   const [flipped, setFlipped] = useState<ReadonlySet<number>>(() => new Set());
   const toggle = (id: number): void => setFlipped((f) => { const g = new Set(f); if (g.has(id)) g.delete(id); else g.add(id); return g; });
   const onRoute = useMemo(() => { const r = new Set<number>(); for (let id: number | null = pw.current; id !== null; id = pw.nodes[id].parent) r.add(id); return r; }, [pw]);
+  // while a search runs, the way down to the node it is walking: unfolded in the trees, and marked
+  const searchRoute = useMemo(() => {
+    const r = new Set<number>();
+    const at = exploring && pw.explored ? Math.min(pw.explored.next, pw.nodes.length - 1) : null;
+    for (let id: number | null = at; id !== null; id = pw.nodes[id].parent) r.add(id);
+    return r;
+  }, [pw, exploring]);
   const isCollapsed = useCallback((id: number): boolean => {
     let depth = 0;
     for (let at = pw.nodes[id].parent; at !== null; at = pw.nodes[at].parent) depth++;
-    const fold = depth >= 3 && !onRoute.has(id);
+    const fold = depth >= 3 && !onRoute.has(id) && !searchRoute.has(id);
     return flipped.has(id) ? !fold : fold;
-  }, [pw, onRoute, flipped]);
+  }, [pw, onRoute, searchRoute, flipped]);
   // a landing taken, or a node of the tree, walks on by itself to the next fork or the end
   const goto = (id: number): void => { setHover(null); dispatch({ type: 'goto', id }); dispatch({ type: 'run', cap: RUN_CAP }); };
   const take = (id: number, key: string): void => { setHover(null); dispatch({ type: 'chooseAt', id, key }); dispatch({ type: 'run', cap: RUN_CAP }); };
@@ -268,6 +279,26 @@ export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial
   );
   const strand: BoardStep[] = stage.seen.map((s, i) => ({ ...s, xform: xformOf(shown.ids[i]) }));
   const here = stage.worlds[0];
+  // the supertile the board is drawn in, in the Explorer's infinite view, tracing the strand from the start tile
+  const explorerHref = useMemo(() => {
+    const chain = concreteChain(here);
+    const first = stage.seen[0];
+    if (!chain.length || !first) return null;
+    const root = chain[chain.length - 1].parent;
+    const top = [...chain].reverse();
+    const at = xformInRoot({ root, level: chain.length, startId: '' }, idOf({ leaf: pw.walker.start, path: chain }));
+    const a = pointOnEdge(first.type, pattern.subset, first.entry), b = pointOnEdge(first.type, pattern.subset, first.exit);
+    if (!a || !b) return null;
+    return explorerCircuitHref(import.meta.env.BASE_URL, {
+      family: 'hex',
+      subset: pattern.subset,
+      combo: matchingIndicesToCombo('hex', pattern.subset, pattern.matching) ?? '',
+      type: root as TileTypeId,
+      level: chain.length,
+      path: top.map((l, i) => ({ type: (i + 1 < top.length ? top[i + 1].parent : pw.walker.start) as TileTypeId, pos: l.slot })),
+      chord: [transPt(at, a), transPt(at, b)],
+    });
+  }, [here, stage.seen, pw.walker.start, pattern]);
   const current = shown.placed.get(shown.ids[n]) ?? solid[solid.length - 1];
 
   const closed = stage.status === 'closed';
@@ -345,6 +376,7 @@ export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial
         <button type="button" onClick={() => dispatch({ type: 'run', cap: RUN_CAP })} disabled={stage.status !== 'walking'} data-testid="wk-run">Run until a choice</button>
         <button type="button" className="td__chip" aria-pressed={showDots} onClick={() => setShowDots((v) => !v)} data-testid="wk-dots">{showDots ? 'Dots on' : 'Dots off'}</button>
         <button type="button" className="td__chip" aria-pressed={showDecisions} onClick={() => setShowDecisions((v) => !v)} data-testid="wk-decisions">{showDecisions ? 'Choices marked' : 'Mark choices'}</button>
+        {explorerHref && <a className="td__chip" href={explorerHref} target="_blank" rel="noreferrer" data-testid="wk-open-explorer">Open in the Explorer</a>}
         <span className="wk__views" role="group" aria-label="Whole tree">
           {(['off', 'split', 'full'] as const).map((v) => (
             <button key={v} type="button" className={`td__chip${view === v ? ' is-active' : ''}`} aria-pressed={view === v} onClick={() => setView(v)} data-testid={`wk-view-${v}`}>
@@ -435,7 +467,7 @@ export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial
           <div className="wk__side wk__side--whole">
             {exploreBar}
             {pw.explored && <p className="td__hint" data-testid="wk-explored">{exploredText}</p>}
-            <ChoiceTree pw={pw} mode="full" onGoto={goto} onChooseAt={take} isCollapsed={isCollapsed} onToggle={toggle} {...peekHandlers} />
+            <ChoiceTree pw={pw} mode="full" onGoto={goto} onChooseAt={take} isCollapsed={isCollapsed} onToggle={toggle} searching={searchRoute} {...peekHandlers} />
           </div>
         ) : (
           <div className="wk__side">
@@ -473,6 +505,7 @@ export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial
             {...peekHandlers}
             isCollapsed={isCollapsed}
             onToggle={toggle}
+            searching={searchRoute}
           />
         </div>
       )}
@@ -500,11 +533,22 @@ export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial
             {pw.explored ? exploredText : 'Takes every landing at every fork, the nearest forks first, until stopped, and lists each circuit the first time a branch closes on it.'}
           </span>
         </div>
+        {pw.nodes.length > 1 && (
+          <SearchTree
+            pw={pw}
+            found={found}
+            highlight={lit}
+            route={searchRoute}
+            onHoverNode={canHover ? (id) => setPeek(id === null ? null : { id, ...pointer.current }) : undefined}
+            onGoto={(id) => { setPeek(null); goto(id); mainRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}
+          />
+        )}
         {found.length > 0 && (
           <FoundList
             found={found}
+            colour={circuitColor}
             onGoto={(id) => { setPeek(null); goto(id); mainRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}
-            onHover={canHover ? (f) => setPeek(f ? { id: f.node, text: `${f.choices} ${f.choices === 1 ? 'choice' : 'choices'} from the start${f.branches > 1 ? `; ${f.branches} branches close on it` : ''}`, ...pointer.current } : null) : undefined}
+            onHover={canHover ? (f) => { setLit(f?.key ?? null); setPeek(f ? { id: f.node, text: `${f.choices} ${f.choices === 1 ? 'choice' : 'choices'} from the start${f.branches > 1 ? `; ${f.branches} branches close on it` : ''}`, ...pointer.current } : null); }: undefined}
           />
         )}
       </section>

@@ -50,10 +50,11 @@ export const edgeParts = (type: HexType, edge: number): readonly ChildEdge[] => 
 /** The glued pairs of child edges inside a P. */
 export const gluedPairs = (type: HexType): readonly (readonly [ChildEdge, ChildEdge])[] => G[type];
 
-/** Where child edge (s, e) sits in a parent of type P: inside, glued to another child edge, or on parent edge j at position i of n. */
-export function locateChildEdge(parent: HexType, s: number, e: number):
-  | { kind: 'inside'; s: number; e: number }
-  | { kind: 'outside'; j: number; i: number; n: number } {
+type Located = { readonly kind: 'inside'; readonly s: number; readonly e: number } | { readonly kind: 'outside'; readonly j: number; readonly i: number; readonly n: number };
+/** Every child edge of every type, located once: parent, then slot * 6 + edge. */
+const LOCATED = new Map<string, (Located | undefined)[]>();
+
+function locate(parent: HexType, s: number, e: number): Located | undefined {
   for (const [a, b] of G[parent]) {
     if (a.s === s && a.e === e) return { kind: 'inside', s: b.s, e: b.e };
     if (b.s === s && b.e === e) return { kind: 'inside', s: a.s, e: a.e };
@@ -63,7 +64,19 @@ export function locateChildEdge(parent: HexType, s: number, e: number):
     const i = arc.findIndex((c) => c.s === s && c.e === e);
     if (i >= 0) return { kind: 'outside', j, i, n: arc.length };
   }
-  throw new Error(`child edge ${s}.${e} is not in the tables of ${parent}`);
+  return undefined;
+}
+
+/** Where child edge (s, e) sits in a parent of type P: inside, glued to another child edge, or on parent edge j at position i of n. */
+export function locateChildEdge(parent: HexType, s: number, e: number): Located {
+  let row = LOCATED.get(parent);
+  if (!row) {
+    row = Array.from({ length: 48 }, (_, k) => locate(parent, Math.floor(k / 6), k % 6));
+    LOCATED.set(parent, row);
+  }
+  const loc = row[s * 6 + e];
+  if (!loc) throw new Error(`child edge ${s}.${e} is not in the tables of ${parent}`);
+  return loc;
 }
 
 // ---------------------------------------------------------------------------
@@ -187,6 +200,33 @@ export function neighbour(address: Address, edge: number): Neighbour {
     climb[k] = { i: loc.i, n: loc.n };
     e = loc.j;
     k++;
+  }
+}
+
+/** `neighbour` without the trace, for walks that take many steps: the same tile and edge, or the level whose parent is missing. */
+export function neighbourOf(address: Address, edge: number): { ok: true; address: Address; edge: number; level: number } | { ok: false; level: number } {
+  const climb: Located[] = [];
+  let e = edge;
+  for (let k = 0; ; k++) {
+    if (k >= address.path.length) return { ok: false, level: k };
+    const { slot, parent } = address.path[k];
+    const loc = locateChildEdge(parent, slot, e);
+    if (loc.kind === 'inside') {
+      const path: Link[] = address.path.slice(k);
+      path[0] = { slot: loc.s, parent };
+      let type = childType(parent, loc.s) as HexType;
+      let entry = loc.e;
+      for (let m = k - 1; m >= 0; m--) {
+        const { i, n } = climb[m] as { i: number; n: number };
+        const part = B[type][entry][n - 1 - i];
+        path.unshift({ slot: part.s, parent: type });
+        type = childType(type, part.s) as HexType;
+        entry = part.e;
+      }
+      return { ok: true, address: { leaf: type, path }, edge: entry, level: k + 1 };
+    }
+    climb[k] = loc;
+    e = loc.j;
   }
 }
 
