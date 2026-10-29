@@ -8,6 +8,7 @@
  */
 
 import { Subtrees, type Branch, type Handle, type Walked } from '../pages/walker/search';
+import { FRESH } from '../pages/walker/canon';
 import type { Stage, Walker } from '../pages/walker/possible';
 
 export type SearchRequest =
@@ -33,10 +34,12 @@ export interface Search {
   stop(): void;
 }
 
-export function startSearch(walker: Walker, root: Stage, tiles: number, onUpdate: (u: SearchUpdate) => void, size = Math.max(1, (globalThis.navigator?.hardwareConcurrency ?? 2) - 1)): Search {
+/** `oneReading`: cut every branch that is not the first reading of what it closes on (`canon.ts`). */
+export function startSearch(walker: Walker, root: Stage, tiles: number, oneReading: boolean, onUpdate: (u: SearchUpdate) => void, size = Math.max(1, (globalThis.navigator?.hardwareConcurrency ?? 2) - 1)): Search {
+  const rootBranch: Branch = { handle: '0', stage: root, ...(oneReading ? { reading: FRESH } : {}) };
   if (typeof Worker === 'undefined') {
     const sub = new Subtrees(walker, 'w0', tiles);
-    sub.add([{ handle: '0', stage: root }]);
+    sub.add([rootBranch]);
     let live = true;
     const slice = (): void => {
       if (!live) return;
@@ -84,7 +87,7 @@ export function startSearch(walker: Walker, root: Stage, tiles: number, onUpdate
       balance();
     };
   });
-  workers[0].worker.postMessage({ type: 'add', branches: [{ handle: '0', stage: root }] } satisfies SearchRequest);
+  workers[0].worker.postMessage({ type: 'add', branches: [rootBranch] } satisfies SearchRequest);
   return {
     workers: size,
     stop: () => {

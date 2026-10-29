@@ -442,8 +442,8 @@
   gap: 0.4rem 0.6rem;
   font-size: 0.85rem;
 }
-.wk__explore input {
-  width: 4.5rem;
+.wk__explore input[type='number'] {
+  width: 5.5rem;
 }
 .wk__whole-tree {
   max-height: 80vh;
@@ -728,6 +728,9 @@
 }
 .wk-stree__node.is-waiting .wk-stree__hex {
   opacity: 0.35;
+}
+.wk-stree__node.is-cut .wk-stree__hex {
+  opacity: 0.15;
 }
 .wk-stree__node:hover .wk-stree__hex {
   stroke-width: 2;

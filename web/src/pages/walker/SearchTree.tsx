@@ -3,8 +3,9 @@
  * width: one row per choice from the start, each node a hexagon in its
  * landing's colour, centred over the leaves below it, so the tree zooms out
  * as it grows. A branch that closes is ringed in its circuit's colour, one
- * that gave up or left the patch is ringed dashed, and a node not yet walked
- * is faint. The way down to the node a search is walking is drawn in orange.
+ * that gave up or left the patch is ringed dashed, a node not yet walked is
+ * faint, and one cut as not a circuit's first reading fainter. The way down
+ * to the node a search is walking is drawn in orange.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 
@@ -74,7 +75,7 @@ export function SearchTree({ nodes: tree, version, start, found, highlight, rout
       return {
         id: node.id, parent: node.parent, cx: 4 + u * (x0[node.id] + leaves[node.id] / 2), cy: 12 + depth[node.id] * row, r,
         type, key, ring: key !== null ? circuitColor(index.get(key) ?? 0) : null,
-        state: end ? (end.status === 'closed' ? 'closed' : 'open') : node.fork ? 'walked' : 'waiting',
+        state: end ? (end.status === 'closed' ? 'closed' : end.status === 'cut' ? 'cut' : 'open') : node.fork ? 'walked' : 'waiting',
       };
     });
     return { nodes, height: 24 + deepest * row };

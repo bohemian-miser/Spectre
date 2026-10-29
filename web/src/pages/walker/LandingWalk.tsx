@@ -186,6 +186,8 @@ export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial
   const whole = view !== 'off';
   // a branch of the search gives up after this many tiles
   const [tileLimit, setTileLimit] = useState(1000);
+  // keep only the branch that is a circuit's first reading (canon.ts)
+  const [oneReading, setOneReading] = useState(true);
   // a search: explore with no limit on forks, until stopped
   const [searching, setSearching] = useState(false);
   // the search: its workers, its tree as their records come in (shown every 200 ms), the branch each walked last, and what is left
@@ -247,7 +249,7 @@ export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial
     const d = new SearchTreeData();
     data.current = d;
     latest.current = { at: [], waiting: 1 };
-    search.current = startSearch(pw.walker, pw.current === 0 ? pw.stage : pw.nodes[0].stage, tileLimit, (u) => {
+    search.current = startSearch(pw.walker, pw.current === 0 ? pw.stage : pw.nodes[0].stage, tileLimit, oneReading, (u) => {
       d.put(u.walked);
       latest.current = { at: u.at, waiting: u.waiting };
     });
@@ -275,8 +277,9 @@ export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial
     const forks = ns.filter((x) => x.fork).length;
     const closed = found.reduce((a, c) => a + c.branches, 0);
     const gaveUp = ns.filter((x) => x.end?.status === 'walking').length;
-    return `${searching ? `Searching on ${searchShown.workers} ${searchShown.workers === 1 ? 'worker' : 'workers'}: ` : ''}${forks.toLocaleString('en-US')} forks; ${closed} ${closed === 1 ? 'branch closes' : 'branches close'} on ${found.length} ${found.length === 1 ? 'circuit' : 'circuits'}; ${gaveUp.toLocaleString('en-US')} still open after ${tileLimit} tiles; ${searchShown.waiting.toLocaleString('en-US')} waiting.`;
-  }, [searchShown, found, searching, tileLimit]);
+    const cut = ns.filter((x) => x.end?.status === 'cut').length;
+    return `${searching ? `Searching on ${searchShown.workers} ${searchShown.workers === 1 ? 'worker' : 'workers'}: ` : ''}${forks.toLocaleString('en-US')} forks; ${closed} ${closed === 1 ? 'branch closes' : 'branches close'} on ${found.length} ${found.length === 1 ? 'circuit' : 'circuits'}; ${gaveUp.toLocaleString('en-US')} still open after ${tileLimit} tiles; ${cut ? `${cut.toLocaleString('en-US')} cut as not the first reading; ` : ''}${searchShown.waiting.toLocaleString('en-US')} waiting.`;
+  }, [searchShown, found, searching, tileLimit]); // eslint-disable-line react-hooks/exhaustive-deps
   const goSearch = (id: number): void => {
     const d = data.current;
     if (!d) return;
@@ -554,6 +557,9 @@ export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial
             {searching ? 'Stop' : 'Search breadth first'}
           </button>
           <label>a branch gives up after <input type="number" min={1} value={tileLimit} onChange={(e) => setTileLimit(Math.max(1, Number(e.target.value) || 1))} /> tiles</label>
+          <label title="A circuit through the start tile at several places is read from each, either way round; keep only the reading that comes first, comparing tile by tile with the start's type and edge first.">
+            <input type="checkbox" checked={oneReading} onChange={(e) => setOneReading(e.target.checked)} data-testid="wk-one-reading" /> one branch per circuit
+          </label>
           <span className="td__hint" data-testid="wk-search-status">
             {searchText ?? 'Takes every landing at every fork, the nearest forks first, on every core but one, until stopped, and lists each circuit the first time a branch closes on it.'}
           </span>
