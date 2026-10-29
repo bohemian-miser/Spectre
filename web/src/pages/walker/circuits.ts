@@ -9,7 +9,7 @@
  * the direction that reads least.
  */
 import { letter, reverseLetter } from '../../core';
-import type { ChoiceNode, PossibleWalk, Seen, Stage } from './possible';
+import type { ChoiceNode, Fork, PossibleWalk, Seen, Stage } from './possible';
 
 /** The least of the word's rotations, read either way round. */
 export function circuitKey(seen: readonly Seen[]): string {
@@ -59,22 +59,34 @@ export interface Circuit {
 /** Where the walk from a node ended, if it has. */
 const endOf = (pw: PossibleWalk, n: ChoiceNode): Stage | null => n.end ?? (n.id === pw.current && pw.stage.status !== 'walking' && pw.stage.status !== 'choice' ? pw.stage : null);
 
-const routeOf = (pw: PossibleWalk, id: number): number[] => {
-  const out: number[] = [];
-  for (let at: number | null = id; at !== null; at = pw.nodes[at].parent) out.unshift(at);
-  return out;
-};
+/** A node of a tree of choices as `circuitsIn` reads it: the walk's own tree, or a search's (`search.ts`). */
+export interface TreeNode {
+  readonly id: number;
+  readonly parent: number | null;
+  readonly key: string | null;
+  readonly fork?: Fork | null;
+  readonly end?: { readonly status: string; readonly seen?: readonly Seen[] } | null;
+}
 
-export function circuitsOf(pw: PossibleWalk): Circuit[] {
+export const circuitsOf = (pw: PossibleWalk): Circuit[] => circuitsIn(pw.nodes.map((n) => ({ ...n, end: endOf(pw, n) })));
+
+export function circuitsIn(tree: readonly TreeNode[]): Circuit[] {
   const groups = new Map<string, { tiles: number; nodes: number[] }>();
-  for (const n of pw.nodes) {
-    const st = endOf(pw, n);
-    if (!st || st.status !== 'closed') continue;
-    const key = circuitKey(st.seen);
-    (groups.get(key) ?? groups.set(key, { tiles: st.seen.length, nodes: [] }).get(key)!).nodes.push(n.id);
+  for (const n of tree) {
+    const seen = n.end?.status === 'closed' ? n.end.seen : undefined;
+    if (!seen) continue;
+    const key = circuitKey(seen);
+    (groups.get(key) ?? groups.set(key, { tiles: seen.length, nodes: [] }).get(key)!).nodes.push(n.id);
   }
   const routes = new Map<number, number[]>();
-  const route = (id: number): number[] => routes.get(id) ?? routes.set(id, routeOf(pw, id)).get(id)!;
+  const route = (id: number): number[] => {
+    const hit = routes.get(id);
+    if (hit) return hit;
+    const out: number[] = [];
+    for (let at: number | null = id; at !== null; at = tree[at].parent) out.unshift(at);
+    routes.set(id, out);
+    return out;
+  };
   const sorted = [...groups].sort((a, b) => a[1].tiles - b[1].tiles || (a[0] < b[0] ? -1 : 1));
   return sorted.map(([key, g]) => {
     const nodes = [...g.nodes].sort((a, b) => route(a).length - route(b).length || a - b);
@@ -88,8 +100,8 @@ export function circuitsOf(pw: PossibleWalk): Circuit[] {
         // ra[d - 1] is the last node both branches pass; they part at its fork
         if (d === 0 || d >= ra.length || d >= rb.length) continue;
         if (best && (d - 1 < best.depth || (d - 1 === best.depth && h.tiles <= best.branching.fromTiles))) continue;
-        const at = pw.nodes[ra[d - 1]];
-        const took = pw.nodes[ra[d]].key!, other = pw.nodes[rb[d]].key!;
+        const at = tree[ra[d - 1]];
+        const took = tree[ra[d]].key!, other = tree[rb[d]].key!;
         const option = at.fork?.options.find((o) => o.key === took);
         best = {
           depth: d - 1,
