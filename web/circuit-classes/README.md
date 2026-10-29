@@ -326,3 +326,17 @@ lineage (441 and 8784 tiles) with the same structure: two equal sides, and
 on the third a 7-tile block `Psi54 Phi45 Sigma10 Delta54 Phi01 Xi52 Pi45`
 walked backwards (once at 441 tiles, six times with three 4-tile blocks at
 8784), and nine-tile corners that agree.
+
+## Harmonics
+
+`harmonics.ts` reads every circuit of a combination at every level (the
+level-k supertiles its strand runs through, backtracks across a seam
+cancelled) and lists the pairs where one circuit read two levels up is
+another: the lineages of a triangle fractal, such as 27 → 513 → 10215 in
+`023468-000000000`. `chase-harmonic.ts` runs the Circuit walker's search for
+a harmonic with the rule that a fork decided at level 3 or above may only
+take a landing whose cells, two levels down, the fundamental's own stacks
+use. Write-up in [`docs/HARMONICS.md`](../../docs/HARMONICS.md).
+
+    npx tsx circuit-classes/harmonics.ts 023468-000100000 6
+    npx tsx circuit-classes/chase-harmonic.ts 023468-000100000 5 6 18 441 all
