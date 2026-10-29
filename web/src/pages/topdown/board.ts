@@ -5,7 +5,7 @@
  * Pure — no React, no DOM.
  */
 
-import { TILE_NAMES, type Pt, type TileTypeId, type TopDownFamily } from '../../core';
+import { TILE_NAMES, parseComboShareString, type Pt, type TileTypeId, type TopDownFamily } from '../../core';
 import type { Placed } from './world';
 
 export const DEFAULT_FAMILY: TopDownFamily = 'hex';
@@ -22,11 +22,14 @@ export interface TopDownUrlState {
   readonly type: TileTypeId;
   /** The level of the supertile the map starts as. */
   readonly level: number;
+  /** Circuits drawn under this rule and combination (`023468-111000100`), when they are on. */
+  readonly circuits?: string;
 }
 
-/** `#family=hex&type=Delta&level=2`. */
+/** `#family=hex&type=Delta&level=2&c=023468-111000100`. */
 export function stateToHash(state: TopDownUrlState): string {
-  return `#family=${state.family}&type=${state.type}&level=${state.level}`;
+  const c = state.circuits ? `&c=${state.circuits}` : '';
+  return `#family=${state.family}&type=${state.type}&level=${state.level}${c}`;
 }
 
 export function hashToState(hash: string): TopDownUrlState {
@@ -37,7 +40,8 @@ export function hashToState(hash: string): TopDownUrlState {
   const type = raw && TILE_NAMES.includes(raw) ? raw : DEFAULT_TYPE;
   const n = Number(params.get('level'));
   const level = params.has('level') && Number.isInteger(n) && n >= 0 && n <= MAX_START_LEVEL ? n : DEFAULT_LEVEL;
-  return { family, type, level };
+  const c = params.get('c');
+  return c && parseComboShareString(c) ? { family, type, level, circuits: c } : { family, type, level };
 }
 
 // ---------------------------------------------------------------------------

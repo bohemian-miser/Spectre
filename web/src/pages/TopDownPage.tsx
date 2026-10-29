@@ -12,9 +12,11 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
 
-import { PanZoom, type PanZoomApi } from '../components';
+import { PanZoom, SeamContractControls, StrandRuleControls, type PanZoomApi } from '../components';
 import {
   TILE_NAMES,
+  leafOrder,
+  normalizeMatchingVector,
   stepMatrix,
   supertileFrameByPath,
   topDownRule,
@@ -36,6 +38,15 @@ import {
   type TopDownUrlState,
 } from './topdown/board';
 import { drawMap, progressOf, type Running } from './topdown/draw';
+import {
+  defaultRule,
+  ruleFromShare,
+  ruleShare,
+  strandNear,
+  traceMap,
+  type MapStrand,
+  type StrandRule,
+} from './topdown/strands';
 import { MAX_DEPTH, MAX_MAP_TILES, prune, startMap, substitute, tilesIn, undo, type TopDownMap } from './topdown/map';
 import { FIT_LEVEL, QUAD_LEVEL, levelMap } from './topdown/world';
 import '../styles/topdown.css';
@@ -45,7 +56,7 @@ export interface TopDownPageProps {
   readonly syncUrl?: boolean;
 }
 
-type Tool = 'substitute' | 'select' | 'lasso';
+type Tool = 'substitute' | 'select' | 'lasso' | 'circuit';
 
 /** A press that moves less than this is a click, not a pan. */
 const CLICK_SLOP = 5;
@@ -65,6 +76,9 @@ const TOOLS: readonly { id: Tool; label: string }[] = [
   { id: 'select', label: 'Click selects' },
   { id: 'lasso', label: 'Lasso selects (Alt removes)' },
 ];
+const CIRCUIT_TOOL: { id: Tool; label: string } = { id: 'circuit', label: 'Click picks a circuit' };
+/** How close, in pixels, a click must come to a strand to pick it. */
+const PICK_REACH = 9;
 
 const fmt = (n: number): string => n.toLocaleString('en-US');
 const coeffs = (p: ZVec): string => `(${p.join(', ')})`;
@@ -95,10 +109,12 @@ interface CanvasProps {
   readonly selected: ReadonlySet<string>;
   readonly focus: string | null;
   readonly outlines: boolean;
+  readonly strands?: readonly MapStrand[];
+  readonly picked: number | null;
 }
 
 function MapCanvas(props: CanvasProps): JSX.Element {
-  const { map, camera, size, running, runKey, selected, focus, outlines } = props;
+  const { map, camera, size, running, runKey, selected, focus, outlines, strands, picked } = props;
   const ref = useRef<HTMLCanvasElement | null>(null);
   const accent = useMemo(
     () =>
@@ -131,12 +147,14 @@ function MapCanvas(props: CanvasProps): JSX.Element {
         selected,
         focus,
         outlines,
+        strands,
+        picked,
         colour: (type) => tileColor(type, 'bright'),
         accent,
         ink: INK,
       });
     },
-    [map, camera, size, running, selected, focus, outlines, accent],
+    [map, camera, size, running, selected, focus, outlines, strands, picked, accent],
   );
 
   useLayoutEffect(() => draw(performance.now()), [draw]);
@@ -173,12 +191,17 @@ export function TopDownPage(props: TopDownPageProps): JSX.Element {
   const [map, setMap] = useState<TopDownMap>(() => startMap(url.family, url.type, url.level));
   const [selected, setSelected] = useState<ReadonlySet<string>>(() => new Set<string>());
   const [focus, setFocus] = useState<string | null>(null);
-  const [tool, setTool] = useState<Tool>('substitute');
+  const [tool, setTool] = useState<Tool>(() => (url.circuits ? 'circuit' : 'substitute'));
   const [outlines, setOutlines] = useState(true);
   const [speed, setSpeed] = useState(SPEEDS[1].ms);
   const [message, setMessage] = useState<string | null>(null);
   const [lasso, setLasso] = useState<Pt[] | null>(null);
   const [runKey, setRunKey] = useState(0);
+  const [strandRule, setStrandRule] = useState<StrandRule>(
+    () => (url.circuits ? ruleFromShare(url.family, url.circuits) : null) ?? defaultRule(url.family),
+  );
+  const [circuitsOn, setCircuitsOn] = useState(Boolean(url.circuits));
+  const [picked, setPicked] = useState<number | null>(null);
   const [fitKey, setFitKey] = useState(0);
   const running = useRef<Running[]>([]);
   const panRef = useRef<PanZoomApi | null>(null);
@@ -189,16 +212,22 @@ export function TopDownPage(props: TopDownPageProps): JSX.Element {
   const { family } = map;
 
   // --- URL --------------------------------------------------------------
+  const share = circuitsOn ? ruleShare(url.family, strandRule) : null;
   useEffect(() => {
     if (!syncUrl || typeof window === 'undefined') return;
-    const hash = stateToHash(url);
+    const hash = stateToHash({ ...url, circuits: share ?? undefined });
     if (window.location.hash !== hash) window.history.replaceState(window.history.state, '', hash);
-  }, [url, syncUrl]);
+  }, [url, share, syncUrl]);
 
   const restart = useCallback((next: TopDownUrlState): void => {
     running.current = [];
     setUrl(next);
     setMap(startMap(next.family, next.type, next.level));
+    setPicked(null);
+    setStrandRule((r) => {
+      if (next.circuits) return ruleFromShare(next.family, next.circuits) ?? r;
+      return { ...r, matching: normalizeMatchingVector(next.family, r.subset, r.matching, r.contracts) };
+    });
     setSelected(new Set<string>());
     setFocus(null);
     setMessage(null);
@@ -209,11 +238,22 @@ export function TopDownPage(props: TopDownPageProps): JSX.Element {
     if (!syncUrl || typeof window === 'undefined') return;
     const onHash = (): void => {
       const next = hashToState(window.location.hash);
-      if (stateToHash(next) !== stateToHash(url)) restart(next);
+      if (stateToHash(next) !== stateToHash({ ...url, circuits: share ?? undefined })) restart(next);
     };
     window.addEventListener('hashchange', onHash);
     return () => window.removeEventListener('hashchange', onHash);
-  }, [syncUrl, url, restart]);
+  }, [syncUrl, url, share, restart]);
+
+  // --- circuits ---------------------------------------------------------------
+  const traced = useMemo(() => (circuitsOn ? traceMap(map, strandRule) : null), [circuitsOn, map, strandRule]);
+  useEffect(() => setPicked(null), [traced]);
+  const pickedStrand = picked !== null && traced ? traced.strands[picked] ?? null : null;
+  const changeRule = (next: Partial<StrandRule>): void => {
+    setStrandRule((r) => {
+      const merged = { ...r, ...next };
+      return { ...merged, matching: normalizeMatchingVector(family, merged.subset, merged.matching, merged.contracts) };
+    });
+  };
 
   // --- substituting -------------------------------------------------------
   const run = useCallback(
@@ -276,7 +316,17 @@ export function TopDownPage(props: TopDownPageProps): JSX.Element {
     pressRef.current = null;
     if (!down || tool === 'lasso' || !panRef.current) return;
     if (Math.hypot(e.clientX - down.x, e.clientY - down.y) > CLICK_SLOP) return;
-    const hit = tileAt(map.tiles.values(), panRef.current.toWorld({ x: e.clientX, y: e.clientY }));
+    const at = panRef.current.toWorld({ x: e.clientX, y: e.clientY });
+    if (tool === 'circuit') {
+      if (!traced) return;
+      const i = strandNear(traced.strands, at, PICK_REACH / panRef.current.camera.scale);
+      setPicked(i);
+      if (i === null) return;
+      const tiles = traced.strands[i].tiles;
+      setSelected((prev) => (e.shiftKey ? new Set([...prev, ...tiles]) : new Set(tiles)));
+      return;
+    }
+    const hit = tileAt(map.tiles.values(), at);
     if (!hit) return;
     setFocus(hit.tile.id);
     if (tool === 'substitute') {
@@ -438,7 +488,7 @@ export function TopDownPage(props: TopDownPageProps): JSX.Element {
 
       <div className="td-toolbar">
         <div className="td-tools" role="group" aria-label="What a click or drag does">
-          {TOOLS.map((t) => (
+          {(circuitsOn ? [...TOOLS, CIRCUIT_TOOL] : TOOLS).map((t) => (
             <button
               key={t.id}
               type="button"
@@ -460,6 +510,19 @@ export function TopDownPage(props: TopDownPageProps): JSX.Element {
         >
           Substitute {fmt(selected.size)} selected
         </button>
+        {pickedStrand ? (
+          <button
+            type="button"
+            className="td-primary"
+            data-testid="td-substitute-circuit"
+            onClick={() => {
+              run(pickedStrand.tiles);
+              setPicked(null);
+            }}
+          >
+            Substitute this {pickedStrand.closed ? 'circuit' : 'strand'}'s {fmt(pickedStrand.tiles.length)} tiles
+          </button>
+        ) : null}
         <button type="button" data-testid="td-in-view" onClick={() => run(inView())}>
           Substitute all in view
         </button>
@@ -491,6 +554,19 @@ export function TopDownPage(props: TopDownPageProps): JSX.Element {
           <input type="checkbox" checked={outlines} onChange={(e) => setOutlines(e.target.checked)} />
           <span>Outline clusters</span>
         </label>
+        <label className="td-check">
+          <input
+            type="checkbox"
+            data-testid="td-circuits"
+            checked={circuitsOn}
+            onChange={(e) => {
+              setCircuitsOn(e.target.checked);
+              if (e.target.checked) setTool('circuit');
+              else if (tool === 'circuit') setTool('substitute');
+            }}
+          />
+          <span>Circuits</span>
+        </label>
       </div>
 
       <div className="td-viewport" onPointerDown={onPressDown} onPointerUp={onPressUp}>
@@ -515,6 +591,8 @@ export function TopDownPage(props: TopDownPageProps): JSX.Element {
                 selected={selected}
                 focus={focus}
                 outlines={outlines}
+                strands={traced?.strands}
+                picked={picked}
               />
               <span
                 hidden
@@ -524,6 +602,8 @@ export function TopDownPage(props: TopDownPageProps): JSX.Element {
                 data-depth-max={depths.hi}
                 data-selected={selected.size}
                 data-steps={map.history.length}
+                data-circuits={traced ? traced.circuits : ''}
+                data-picked={pickedStrand ? pickedStrand.tiles.length : ''}
               />
               {tool === 'lasso' ? (
                 <div
@@ -556,9 +636,79 @@ export function TopDownPage(props: TopDownPageProps): JSX.Element {
             depth {depths.lo === depths.hi ? depths.lo : `${depths.lo}–${depths.hi}`}
           </span>
           <span data-testid="td-selected">{fmt(selected.size)} selected</span>
+          {traced ? (
+            <span data-testid="td-circuit-count">
+              {fmt(traced.circuits)} circuits · {fmt(traced.open)} open
+            </span>
+          ) : null}
           {message ? <span data-testid="td-message">{message}</span> : null}
         </div>
       </div>
+
+      {circuitsOn ? (
+        <div className="td-circuits">
+          <section className="td-panel" aria-labelledby="td-circ-h" data-testid="td-circuit-panel">
+            <h2 id="td-circ-h">Circuits</h2>
+            <p>
+              Strands join only between tiles of one depth, whose edges meet exactly; a strand that
+              reaches a tile of another depth, or the edge of the map, stays open. Each depth is
+              welded and traced as the Explorer does it.
+            </p>
+            {pickedStrand ? (
+              <table className="td-worked">
+                <tbody>
+                  <tr>
+                    <th>picked</th>
+                    <td>{pickedStrand.closed ? 'circuit' : 'open strand'}</td>
+                  </tr>
+                  <tr>
+                    <th>length</th>
+                    <td data-testid="td-picked-length">{fmt(pickedStrand.length)}</td>
+                  </tr>
+                  <tr>
+                    <th>tiles</th>
+                    <td>{fmt(pickedStrand.tiles.length)}</td>
+                  </tr>
+                  <tr>
+                    <th>depth</th>
+                    <td>{pickedStrand.depth}</td>
+                  </tr>
+                </tbody>
+              </table>
+            ) : (
+              <p className="muted">
+                With “Click picks a circuit”, click a strand to select its tiles; Shift adds another.
+              </p>
+            )}
+          </section>
+          <StrandRuleControls
+            family={family}
+            subset={strandRule.subset}
+            matching={strandRule.matching}
+            contracts={strandRule.contracts}
+            tileSize={84}
+            onSubsetChange={(subset) => changeRule({ subset })}
+            onToggleMajor={(major) =>
+              changeRule({
+                subset: strandRule.subset.includes(major)
+                  ? strandRule.subset.filter((m) => m !== major)
+                  : [...strandRule.subset, major].sort((a, b) => a - b),
+              })
+            }
+            onMatchingChange={(tileType, index) =>
+              changeRule({ matching: leafOrder(family).map((t, i) => (t === tileType ? index : strandRule.matching[i] ?? 0)) })
+            }
+            onMatchingVectorChange={(matching) => changeRule({ matching })}
+          />
+          <SeamContractControls
+            family={family}
+            subset={strandRule.subset}
+            contracts={strandRule.contracts}
+            onChange={(major, contract) => changeRule({ contracts: { ...(strandRule.contracts ?? {}), [major]: contract } })}
+            onReset={() => changeRule({ contracts: undefined })}
+          />
+        </div>
+      ) : null}
 
       <div className="td-panels">
         <section className="td-panel" aria-labelledby="td-map-h" data-testid="td-levelmap">
