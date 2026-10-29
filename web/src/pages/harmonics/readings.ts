@@ -22,6 +22,11 @@
 import { TYPE_PREFIX, buildSystem, type HexType, type MetaNode } from '../../core';
 import type { BornCircuit, CircuitShapes } from '../shapes/circuitShapes';
 
+/** Type names by their letters in a token. */
+export const LONG: Readonly<Record<string, string>> = Object.fromEntries(Object.entries(TYPE_PREFIX).map(([k, v]) => [v, k]));
+/** The type a token names (`Ph<6D` → Phi), or null when the token leaves it out. */
+export const tokenType = (tok: string): string | null => LONG[tok.split('<')[0]] ?? null;
+
 export interface Visit {
   /** The supertile: its slots from the birth supertile down. */
   readonly id: string;
@@ -184,4 +189,50 @@ export function extraRuns(a: readonly string[], b: readonly string[], maxTokens 
   rb.forEach((t, q) => { if (!matched[q]) run.push(t); else if (run.length) { runs.push(run); run = []; } });
   if (run.length) runs.push(run);
   return { unmatched: a.length - best.lcs, runs };
+}
+
+export interface Alignment {
+  /** B as aligned: read backwards when `back`, from `rotation`. */
+  readonly rotation: number;
+  readonly back: boolean;
+  /** Per token of A, whether it is matched in B; per token of B as aligned, likewise. */
+  readonly matchedA: readonly boolean[];
+  readonly matchedB: readonly boolean[];
+  /** The tokens of B in the aligned order. */
+  readonly tokensB: readonly string[];
+}
+
+/**
+ * Lines two readings up as well as they go: the longest common subsequence
+ * over the rotations of B where its token matches A's first, read either
+ * way round. Null when either is longer than `maxTokens`.
+ */
+export function alignReadings(a: readonly string[], b: readonly string[], maxTokens = 2500): Alignment | null {
+  if (a.length > maxTokens || b.length > maxTokens || a.length === 0 || b.length === 0) return null;
+  const table = (rb: readonly string[]): Uint16Array[] => {
+    const d: Uint16Array[] = Array.from({ length: a.length + 1 }, () => new Uint16Array(rb.length + 1));
+    for (let i = 1; i <= a.length; i++) for (let j = 1; j <= rb.length; j++) d[i][j] = a[i - 1] === rb[j - 1] ? d[i - 1][j - 1] + 1 : Math.max(d[i - 1][j], d[i][j - 1]);
+    return d;
+  };
+  let best: { lcs: number; rotation: number; back: boolean; seq: readonly string[] } | null = null;
+  for (const back of [false, true]) {
+    const bb = back ? [...b].reverse() : b;
+    const starts = bb.map((t, r) => (t === a[0] ? r : -1)).filter((r) => r >= 0);
+    for (const r of starts.length ? starts : [0]) {
+      const rb = [...bb.slice(r), ...bb.slice(0, r)];
+      const lcs = table(rb)[a.length][rb.length];
+      if (!best || lcs > best.lcs) best = { lcs, rotation: r, back, seq: rb };
+    }
+  }
+  if (!best) return null;
+  const rb = best.seq;
+  const d = table(rb);
+  const matchedA = new Array<boolean>(a.length).fill(false);
+  const matchedB = new Array<boolean>(rb.length).fill(false);
+  for (let i = a.length, j = rb.length; i > 0 && j > 0;) {
+    if (a[i - 1] === rb[j - 1]) { matchedA[i - 1] = true; matchedB[j - 1] = true; i--; j--; }
+    else if (d[i - 1][j] >= d[i][j - 1]) i--;
+    else j--;
+  }
+  return { rotation: best.rotation, back: best.back, matchedA, matchedB, tokensB: rb };
 }

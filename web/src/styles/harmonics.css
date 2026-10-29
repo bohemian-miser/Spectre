@@ -98,3 +98,40 @@
 .harm-differs {
   color: var(--g2);
 }
+
+.harm-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0 4px 0 2px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--chip, #888) 18%, transparent);
+  border: 1px solid color-mix(in srgb, var(--chip, #888) 45%, transparent);
+  line-height: 18px;
+  white-space: nowrap;
+}
+.harm-chip::before {
+  content: '';
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  background: var(--chip, #888);
+  flex: none;
+}
+.harm-chip.harm-token-differs {
+  outline: 2px solid var(--g2);
+  outline-offset: -1px;
+  color: inherit;
+}
+.harm-compare {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+}
+.harm-compare select {
+  font: inherit;
+}
+.harm-related {
+  border-style: dashed;
+}
