@@ -19,10 +19,8 @@
  * which keeps every arc's route through its children, so a circuit born at
  * any level can be read without building a patch.
  */
-import { buildSystem, type MetaNode } from '../../core';
+import { TYPE_PREFIX, buildSystem, type HexType, type MetaNode } from '../../core';
 import type { BornCircuit, CircuitShapes } from '../shapes/circuitShapes';
-
-const SHORT: Record<string, string> = { Gamma: 'G', Delta: 'D', Theta: 'T', Lambda: 'L', Xi: 'X', Pi: 'Pi', Sigma: 'S', Phi: 'Ph', Psi: 'Ps' };
 
 export interface Visit {
   /** The supertile: its slots from the birth supertile down. */
@@ -82,8 +80,8 @@ export function cancelBacktracks(visits: readonly Visit[]): Visit[] {
 
 /** A visit's token at level k of a circuit born at level `birth`: `Ph<6D`, with the type left out from the level just below the birth and the parent from the one below that. */
 export function token(v: Visit, k: number, birth: number): string {
-  const type = k <= birth - 2 ? SHORT[v.type] : '';
-  const parent = k <= birth - 3 ? SHORT[v.parent] : '';
+  const type = k <= birth - 2 ? TYPE_PREFIX[v.type as HexType] : '';
+  const parent = k <= birth - 3 ? TYPE_PREFIX[v.parent as HexType] : '';
   return `${type}<${v.slot}${parent}`;
 }
 
