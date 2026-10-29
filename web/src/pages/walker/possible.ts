@@ -267,6 +267,12 @@ function apply(stage: Stage, wk: Walker, o: Outcome): Stage {
   return { worlds: o.worlds, seen, status, pending: [], corners: stage.corners };
 }
 
+/** The stage after taking landing `key` at a stage stopped at a choice (unchanged if it offers no such landing). */
+export function chooseIn(wk: Walker, stage: Stage, key: string): Stage {
+  const o = stage.status === 'choice' ? stage.pending.find((x) => x.key === key) : undefined;
+  return o ? apply(stage, wk, o) : stage;
+}
+
 /** One step: taken if every world agrees, otherwise the stage stops at a choice. */
 export function advance(wk: Walker, stage: Stage): Stage {
   if (stage.status !== 'walking') return stage;
@@ -290,7 +296,9 @@ export type PossibleAction =
   /** Go back to a node, walk on to its fork, and choose there. */
   | { type: 'chooseAt'; id: number; key: string }
   /** Take every landing for about `budgetMs` (see `explore`); `restart` walks the nodes again from the first. */
-  | { type: 'explore'; limits: Limits; budgetMs: number; restart?: boolean };
+  | { type: 'explore'; limits: Limits; budgetMs: number; restart?: boolean }
+  /** Back to the start, then take these landings in turn (a branch of a search, see `search.ts`). */
+  | { type: 'follow'; keys: readonly string[]; cap: number };
 
 export function reducePossible(pw: PossibleWalk, action: PossibleAction): PossibleWalk {
   const wk = pw.walker;
@@ -321,6 +329,14 @@ export function reducePossible(pw: PossibleWalk, action: PossibleAction): Possib
     case 'goto': {
       const n = pw.nodes[action.id];
       return n ? { ...pw, current: n.id, stage: n.end ?? n.stage } : pw;
+    }
+    case 'follow': {
+      let w = reducePossible(reducePossible(pw, { type: 'goto', id: 0 }), { type: 'run', cap: action.cap });
+      for (const key of action.keys) {
+        if (w.stage.status !== 'choice' || !w.stage.pending.some((o) => o.key === key)) break;
+        w = reducePossible(reducePossible(w, { type: 'choose', key }), { type: 'run', cap: action.cap });
+      }
+      return w;
     }
     case 'explore': {
       const r = explore(pw, action.limits, action.restart ? 0 : pw.explored?.next ?? 0, action.budgetMs);
@@ -416,25 +432,36 @@ export function explore(pw: PossibleWalk, limits: Limits, from = 0, budgetMs = I
     if (node.end) continue;
     if (node.fork && node.fork.options.every((o) => node.children.some((c) => nodes[c].key === o.key))) continue;
     // walk on from the node to its fork, or to where the branch ends
-    let st = node.id === pw.current ? pw.stage : node.stage;
-    while (st.status === 'walking' && st.seen.length < limits.tiles) st = advance(wk, st);
-    if (st.status !== 'choice') { nodes[id] = { ...node, end: st }; continue; }
-    const fork = node.fork ?? forkOf(wk, st);
-    if (!node.fork) {
-      if (forks >= limits.forks) continue;
-      forks++;
-    }
-    nodes[id] = { ...nodes[id], fork };
-    for (const o of st.pending) {
-      if (nodes[id].children.some((c) => nodes[c].key === o.key)) continue;
-      const child = nodes.length;
-      nodes.push({ id: child, parent: id, key: o.key, children: [], stage: apply(st, wk, o), fork: null, before: st.pending.flatMap((x) => x.worlds) });
-      nodes[id] = { ...nodes[id], children: [...nodes[id].children, child] };
-    }
+    const st = walkOn(wk, node.id === pw.current ? pw.stage : node.stage, limits.tiles);
+    if (st.status === 'choice' && !node.fork && forks >= limits.forks) continue;
+    if (place(nodes, wk, id, st)) forks++;
   }
   const done = id >= nodes.length;
   return { pw: { ...pw, nodes }, next: id, done };
 }
+
+/** The walk from a stage on to its fork, or to where its branch ends, or until it has `tiles` tiles. */
+export function walkOn(wk: Walker, stage: Stage, tiles: number): Stage {
+  let st = stage;
+  while (st.status === 'walking' && st.seen.length < tiles) st = advance(wk, st);
+  return st;
+}
+
+/** The node that a branch walked to `st` ended at, or opened a fork at, with a child per landing not yet taken; whether a fork was opened. */
+function place(nodes: ChoiceNode[], wk: Walker, id: number, st: Stage): boolean {
+  const node = nodes[id];
+  if (st.status !== 'choice') { nodes[id] = { ...node, end: st }; return false; }
+  const fork = node.fork ?? forkOf(wk, st);
+  nodes[id] = { ...node, fork };
+  for (const o of st.pending) {
+    if (nodes[id].children.some((c) => nodes[c].key === o.key)) continue;
+    const child = nodes.length;
+    nodes.push({ id: child, parent: id, key: o.key, children: [], stage: apply(st, wk, o), fork: null, before: st.pending.flatMap((x) => x.worlds) });
+    nodes[id] = { ...nodes[id], children: [...nodes[id].children, child] };
+  }
+  return !node.fork;
+}
+
 
 /** Where the walk from a node stops: at its fork, where its branch ends, or after `cap` steps. */
 export function stageAhead(pw: PossibleWalk, id: number, cap: number): Stage {

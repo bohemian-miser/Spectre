@@ -125,3 +125,19 @@ export function foundCircuits(pw: PossibleWalk): Found[] {
   }
   return [...by.values()];
 }
+
+/** The circuits a search's records close on (`search.ts`), by the same rule as `foundCircuits`: in the order their first branches were made. */
+export function foundIn(nodes: readonly { readonly id: number; readonly depth: number; readonly end?: { readonly status: string; readonly seen?: readonly Seen[] } }[]): Found[] {
+  const by = new Map<string, { key: string; tiles: number; node: number; choices: number; branches: number }>();
+  for (const n of nodes) {
+    const seen = n.end?.status === 'closed' ? n.end.seen : undefined;
+    if (!seen) continue;
+    const key = wordKeys.get(seen) ?? wordKeys.set(seen, circuitKey(seen)).get(seen)!;
+    const f = by.get(key);
+    if (f) f.branches++;
+    else by.set(key, { key, tiles: seen.length, node: n.id, choices: n.depth, branches: 1 });
+  }
+  return [...by.values()];
+}
+
+const wordKeys = new WeakMap<readonly Seen[], string>();
