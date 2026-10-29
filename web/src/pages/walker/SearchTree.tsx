@@ -9,13 +9,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { tileColor } from '../../lib/palette';
+import type { HexType } from '../../core';
 import { circuitKey, type Found } from './circuits';
-import type { PossibleWalk, Stage } from './possible';
+import type { Seen } from './possible';
+import type { SearchNode } from './search';
 
 const HEIGHT = 420;
 
-const keys = new WeakMap<Stage, string>();
-const keyOf = (st: Stage): string => keys.get(st) ?? keys.set(st, circuitKey(st.seen)).get(st)!;
+const keys = new WeakMap<readonly Seen[], string>();
+const keyOf = (seen: readonly Seen[]): string => keys.get(seen) ?? keys.set(seen, circuitKey(seen)).get(seen)!;
 
 /** A colour per circuit, by the order the search found it. */
 export const circuitColor = (i: number): string => `hsl(${(i * 137.5) % 360} 65% 45%)`;
@@ -23,12 +25,15 @@ export const circuitColor = (i: number): string => `hsl(${(i * 137.5) % 360} 65%
 const hexPoints = (cx: number, cy: number, r: number): string =>
   [0, 1, 2, 3, 4, 5].map((k) => { const a = (Math.PI / 3) * k; return `${cx + r * Math.cos(a)},${cy + r * Math.sin(a)}`; }).join(' ');
 
-export function SearchTree({ pw, found, highlight, route, onHoverNode, onGoto }: {
-  pw: PossibleWalk;
+export function SearchTree({ nodes: tree, version, start, found, highlight, route, onHoverNode, onGoto }: {
+  /** The search's tree (`SearchTreeData`), which grows in place; `version` says it has. */
+  nodes: readonly SearchNode[];
+  version: number;
+  start: HexType;
   found: readonly Found[];
   /** A circuit's key: its branches are ringed and the rest fade. */
   highlight?: string | null;
-  /** The way down to the node a search is walking. */
+  /** The way down to the nodes the search is walking. */
   route?: ReadonlySet<number>;
   onHoverNode?: (id: number | null) => void;
   onGoto?: (id: number) => void;
@@ -44,36 +49,36 @@ export function SearchTree({ pw, found, highlight, route, onHoverNode, onGoto }:
   }, []);
 
   const drawn = useMemo(() => {
-    const n = pw.nodes.length;
+    const n = tree.length;
     // children are made after their parents: one pass down the ids counts leaves, one up places them
     const leaves = new Float64Array(n);
     for (let id = n - 1; id >= 0; id--) {
-      const ch = pw.nodes[id].children;
+      const ch = tree[id].children;
       leaves[id] = ch.length ? ch.reduce((a, c) => a + leaves[c], 0) : 1;
     }
     const x0 = new Float64Array(n);
     const depth = new Int32Array(n);
     for (let id = 0; id < n; id++) {
       let at = x0[id];
-      for (const c of pw.nodes[id].children) { x0[c] = at; depth[c] = depth[id] + 1; at += leaves[c]; }
+      for (const c of tree[id].children) { x0[c] = at; depth[c] = depth[id] + 1; at += leaves[c]; }
     }
     const deepest = Math.max(...depth);
     const row = Math.max(12, Math.min(44, (HEIGHT - 24) / Math.max(1, deepest)));
     const u = (width - 8) / leaves[0];
     const index = new Map(found.map((f, i) => [f.key, i]));
-    const nodes = pw.nodes.map((node) => {
-      const end = node.end ?? (node.id === pw.current && pw.stage.status !== 'walking' && pw.stage.status !== 'choice' ? pw.stage : null);
-      const key = end?.status === 'closed' ? keyOf(end) : null;
-      const type = node.parent === null ? pw.walker.start : node.key && /^[A-Z]/.test(node.key) ? node.key.split(' ')[0] : null;
+    const nodes = tree.slice(0, n).map((node) => {
+      const end = node.end;
+      const key = end?.status === 'closed' && end.seen ? keyOf(end.seen) : null;
+      const type = node.parent === null ? start : node.key && /^[A-Z]/.test(node.key) ? node.key.split(' ')[0] : null;
       const r = Math.max(1.5, Math.min(10, row * 0.38, u * leaves[node.id] * 0.45));
       return {
         id: node.id, parent: node.parent, cx: 4 + u * (x0[node.id] + leaves[node.id] / 2), cy: 12 + depth[node.id] * row, r,
         type, key, ring: key !== null ? circuitColor(index.get(key) ?? 0) : null,
-        state: end ? (end.status === 'closed' ? 'closed' : 'open') : node.fork || node.children.length ? 'walked' : 'waiting',
+        state: end ? (end.status === 'closed' ? 'closed' : 'open') : node.fork ? 'walked' : 'waiting',
       };
     });
     return { nodes, height: 24 + deepest * row };
-  }, [pw, found, width]);
+  }, [tree, version, start, found, width]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const { nodes, height } = drawn;
   return (
