@@ -83,6 +83,8 @@ export interface MapStrand {
   readonly curves: readonly { readonly c1: Pt; readonly c2: Pt }[];
   /** Slot paths of the tiles it runs through, each once, in order. */
   readonly tiles: readonly string[];
+  /** The tile of every chord along it, in order, with repeats: a tile crossed twice appears twice. */
+  readonly route: readonly string[];
   /** World length of a tile edge at its depth. */
   readonly edge: number;
 }
@@ -161,6 +163,7 @@ export function traceMap(map: TopDownMap, rule: StrandRule): MapStrands {
     ] as const) {
       for (const path of paths) {
         const tiles: string[] = [];
+        const route: string[] = [];
         const seen = new Set<string>();
         const curves: { c1: Pt; c2: Pt }[] = [];
         for (const seg of pathSegments(path)) {
@@ -169,6 +172,7 @@ export function traceMap(map: TopDownMap, rule: StrandRule): MapStrands {
             curves.push({ c1: transPt(world, seg[0]), c2: transPt(world, seg[1]) });
             continue;
           }
+          route.push(c.tile);
           if (!seen.has(c.tile)) {
             seen.add(c.tile);
             tiles.push(c.tile);
@@ -187,6 +191,7 @@ export function traceMap(map: TopDownMap, rule: StrandRule): MapStrands {
           points: path.points.map((p) => transPt(world, p)),
           curves,
           tiles,
+          route,
           edge,
         });
         if (closed) circuits++;

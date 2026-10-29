@@ -242,3 +242,19 @@
   flex-wrap: wrap;
   gap: 10px;
 }
+
+.td-harmonic h3 {
+  font-size: 14px;
+  margin: 10px 0 4px;
+}
+.td-harmonic .td-reading {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  color: var(--muted);
+  word-break: break-word;
+}
+.td-harmonic .td-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}

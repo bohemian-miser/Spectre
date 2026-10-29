@@ -206,6 +206,26 @@ from each of the 22 starts that lie on one, in 113 to 406 forks; the other
 - Why the loops round junctions are always Xi, Phi in slot 6, Gamma in slot
   7, and only in combinations whose Xi pairing is the second option.
 
+## On the Top-down map
+
+The Top-down page grows a harmonic where it stands. Pick a closed circuit
+on a map of hexagons and press "Grow its harmonic": the circuit's tiles and
+a margin of two tiles round them are substituted twice, the strands are
+traced among the tiles two depths down, and the closed strand that reads as
+the circuit is picked out, with the circuit's former tiles drawn as the
+level-2 supertiles they have become. Reading a strand two levels up on the
+map is literal: each chord lies in a tile whose slot path, cut by two slots,
+is one of the circuit's tiles, and the sequence of those, backtracks across
+a seam and loops into the margin cancelled, is compared with the circuit's
+own route (`web/src/pages/topdown/harmonic.ts`). The margin is two tiles
+because the loops round junctions reach two tiles out: with one, the 441 of
+`000100000` comes out as three open strands of 142 tiles, cut at its corners.
+
+The tests grow the 18-tile triangle of `000100000` into the 441 (exact,
+three loops cancelled) and the 27 of the base combination into the 513
+(exact, no loops), on the map, by substitution alone: a check of the
+readings of §2 that shares no code with them.
+
 ## When the walker's search can stop, and when it cannot
 
 The walker searches from one start tile and entry edge over every stack at
