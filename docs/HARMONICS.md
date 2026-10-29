@@ -176,7 +176,12 @@ searching every landing until every branch ends:
 | with the rule | 236 | 38, 52, 111, 30, 2 | 377 | 99 | 36 branches |
 
 The rule halves the level-3 forks; the forks at levels 1 and 2 are left to
-the search, and they are most of the rest. From every start tile and entry
+the search, and they are most of the rest. One harmonic up, from the 8784's
+first tile with the 441 as fundamental and the search capped at 3,000
+forks, the rule drops 549 landings and both searches close on the 8784
+within the cap (1,275 and 1,282 branches); the forks there are decided at
+levels 3, 4 and 5 in about equal numbers, and the rule reaches only the
+ones whose deciding cells the 441 never uses. From every start tile and entry
 edge of the rule (34 starts), the search with the rule closes on the 441
 from each of the 22 starts that lie on one, in 113 to 406 forks; the other
 12 starts close on the 3-, 9- or 18-tile circuits within two forks.
