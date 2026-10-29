@@ -1,58 +1,33 @@
 import { describe, expect, it } from 'vitest';
-import { buildSystem, flatten, levelMirror, stepMatrix } from '../../../core';
-import {
-  boardsFor,
-  charPoly,
-  drawTiles,
-  formatPoly,
-  hashToState,
-  pointInPolygon,
-  stateToHash,
-  supertileOutlines,
-  tileAt,
-  tilesInLasso,
-} from '../board';
+import { stepMatrix } from '../../../core';
+import { charPoly, formatPoly, hashToState, pointInPolygon, stateToHash, tileAt, tilesInLasso } from '../board';
+import { startMap } from '../map';
 
-describe('boards', () => {
-  it('substituting everything twice is the level-2 supertile', () => {
-    const boards = boardsFor('spectre', 'Xi', ['*', '*']);
-    expect(boards.map((b) => b.length)).toEqual([1, 8, 63]);
-  });
-
-  it('a partial step keeps only the selected tiles children', () => {
-    const [, one] = boardsFor('spectre', 'Delta', ['*']);
-    const picked = [one[0].id, one[3].id];
-    const two = boardsFor('spectre', 'Delta', ['*', picked])[2];
-    expect(new Set(two.map((t) => t.id.split('.')[0]))).toEqual(new Set(picked));
-  });
-
-  it('draws the leaves flatten draws', () => {
-    for (const family of ['spectre', 'hex'] as const) {
-      const tiles = drawTiles(boardsFor(family, 'Gamma', ['*', '*'])[2], family);
-      const ref = flatten(buildSystem(family, 2).Gamma, levelMirror(2));
-      expect(tiles.reduce((s, t) => s + t.leaves.length, 0)).toBe(ref.length);
-    }
+describe('url', () => {
+  it('round-trips and falls back to the defaults', () => {
+    const s = { family: 'spectre' as const, type: 'Sigma' as const, level: 3 };
+    expect(hashToState(stateToHash(s))).toEqual(s);
+    expect(hashToState('')).toEqual({ family: 'hex', type: 'Delta', level: 2 });
+    expect(hashToState('#family=nope&type=Nope&level=9')).toEqual({ family: 'hex', type: 'Delta', level: 2 });
   });
 });
 
 describe('picking', () => {
-  const tiles = drawTiles(boardsFor('spectre', 'Psi', ['*'])[1], 'spectre');
+  const tiles = [...startMap('spectre', 'Psi', 1).tiles.values()];
 
   it('a tile centre picks that tile', () => {
-    for (const t of tiles) {
-      // the centre of a spectre's vertices lies inside it
-      expect(tileAt(tiles, t.centre)?.id).toBe(t.id);
-    }
+    // the centre of a spectre's vertices lies inside it
+    for (const t of tiles) expect(tileAt(tiles, t.centre)?.tile.id).toBe(t.tile.id);
   });
 
-  it('a lasso round the whole board picks every tile', () => {
+  it('a lasso round the whole map picks every tile', () => {
     const big = [
       { x: -1e3, y: -1e3 },
       { x: 1e3, y: -1e3 },
       { x: 1e3, y: 1e3 },
       { x: -1e3, y: 1e3 },
     ];
-    expect(tilesInLasso(tiles, big).sort()).toEqual(tiles.map((t) => t.id).sort());
+    expect(tilesInLasso(tiles, big).sort()).toEqual(tiles.map((t) => t.tile.id).sort());
     expect(tilesInLasso(tiles, big.slice(0, 2))).toEqual([]);
   });
 
@@ -68,38 +43,9 @@ describe('picking', () => {
   });
 });
 
-describe('supertile outlines', () => {
-  for (const family of ['spectre', 'hex'] as const) it(`${family}: one outline per substituted tile, made of unshared edges`, () => {
-    const board = boardsFor(family, 'Delta', ['*', '*'])[2];
-    const outlines = supertileOutlines(board, family);
-    expect(outlines.map((o) => o.id).sort()).toEqual(['0', '1', '2', '3', '4', '5', '6', '7']);
-    // every outline is closed: as many segment ends meet at each vertex as leave it
-    for (const o of outlines) {
-      const ends = new Map<string, number>();
-      for (const seg of o.d.split('M').filter(Boolean)) {
-        for (const p of seg.split('L')) {
-          const [x, y] = p.split(' ').map(Number);
-          const k = `${x.toFixed(6)},${y.toFixed(6)}`;
-          ends.set(k, (ends.get(k) ?? 0) + 1);
-        }
-      }
-      for (const n of ends.values()) expect(n % 2).toBe(0);
-    }
-  });
-});
-
-describe('url', () => {
-  it('round-trips', () => {
-    const s = { family: 'hex' as const, type: 'Sigma' as const, steps: ['*' as const, ['0.1', '3.7'], '*' as const] };
-    expect(hashToState(stateToHash(s))).toEqual(s);
-    expect(hashToState('')).toEqual({ family: 'spectre', type: 'Delta', steps: ['*'] });
-    expect(hashToState('#type=Nope&steps=')).toEqual({ family: 'spectre', type: 'Delta', steps: [] });
-  });
-});
-
 describe('characteristic polynomial', () => {
-  it('of the step matrix', () => {
-    expect(charPoly(stepMatrix()!)).toEqual([1, 0, -8, 0, 1]);
+  it('of the spectre step matrix', () => {
+    expect(charPoly(stepMatrix('spectre')!)).toEqual([1, 0, -8, 0, 1]);
     expect(formatPoly([1, 0, -8, 0, 1])).toBe('λ⁴ − 8λ² + 1');
   });
 
