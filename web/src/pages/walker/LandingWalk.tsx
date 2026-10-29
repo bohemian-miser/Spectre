@@ -14,8 +14,8 @@ import { tileColor } from '../../lib/palette';
 import { choicesOf, concreteChain, circuitsAhead, followWord, makeWalker, reducePossible, replay, replayChoices, rotateWord, stageAfter, stageAhead, startWalk, type Ahead, type Limits, type Outcome, type PossibleWalk, type Seen, type World } from './possible';
 import { AncestorFlow } from './AncestorFlow';
 import { classLabel } from './landings';
-import { CircuitList } from './CircuitList';
-import { circuitsOf } from './circuits';
+import { CircuitList, FoundList } from './CircuitList';
+import { circuitsOf, foundCircuits, type Circuit } from './circuits';
 import { ChoiceTree } from './ChoiceTree';
 import type { Choice } from './share';
 import { SidesView, sideMarks, sidesOf } from './SidesView';
@@ -169,6 +169,8 @@ export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial
   const whole = view !== 'off';
   const [limits, setLimits] = useState<Limits>({ forks: 60, tiles: 1000 });
   const [exploring, setExploring] = useState(false);
+  // a search: explore with no limit on forks, until stopped
+  const [searching, setSearching] = useState(false);
   const [showDots, setShowDots] = useState(carry?.dots ?? true);
   const [showDecisions, setShowDecisions] = useState(carry?.decisions ?? false);
   const [debugOpen, setDebugOpen] = useState(false);
@@ -207,16 +209,19 @@ export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial
   // take every landing a little at a time, so the page keeps drawing
   useEffect(() => {
     if (!exploring) return undefined;
-    if (pw.explored?.done) { setExploring(false); return undefined; }
-    const t = setTimeout(() => dispatch({ type: 'explore', limits, budgetMs: 250 }), 0);
+    if (pw.explored?.done) { setExploring(false); setSearching(false); return undefined; }
+    const t = setTimeout(() => dispatch({ type: 'explore', limits: searching ? { forks: Infinity, tiles: limits.tiles } : limits, budgetMs: 250 }), 0);
     return () => clearTimeout(t);
-  }, [exploring, pw, limits]);
-  const circuits = useMemo(() => circuitsOf(pw), [pw]);
+  }, [exploring, searching, pw, limits]);
+  const found = useMemo(() => foundCircuits(pw), [pw]);
+  // how each circuit branches from the smaller ones compares every pair of branches, so it waits until the tree stops growing
+  const lastCircuits = useRef<Circuit[]>([]);
+  const circuits = useMemo(() => (exploring ? lastCircuits.current : (lastCircuits.current = circuitsOf(pw))), [pw, exploring]);
   const forksOpen = pw.nodes.filter((x) => x.fork).length;
   const unopened = pw.nodes.filter((x) => !x.fork && !x.end && x.id !== pw.current).length;
   const long = pw.nodes.filter((x) => x.end?.status === 'walking').length;
-  const branchesClosed = circuits.reduce((a, c) => a + c.nodes.length, 0);
-  const exploredText = `${exploring ? 'Exploring: ' : ''}${forksOpen} ${forksOpen === 1 ? 'fork' : 'forks'}; ${branchesClosed} ${branchesClosed === 1 ? 'branch closes' : 'branches close'} on ${circuits.length} ${circuits.length === 1 ? 'circuit' : 'circuits'}${long ? `; ${long} still open after ${limits.tiles} tiles` : ''}${unopened && !exploring ? `; ${unopened} not walked (fork limit)` : ''}.`;
+  const branchesClosed = found.reduce((a, c) => a + c.branches, 0);
+  const exploredText = `${exploring ? (searching ? 'Searching: ' : 'Exploring: ') : ''}${forksOpen} ${forksOpen === 1 ? 'fork' : 'forks'}; ${branchesClosed} ${branchesClosed === 1 ? 'branch closes' : 'branches close'} on ${found.length} ${found.length === 1 ? 'circuit' : 'circuits'}${long ? `; ${long} still open after ${limits.tiles} tiles` : ''}${unopened && !exploring ? `; ${unopened} not walked yet` : ''}.`;
   useEffect(() => { onState?.(choicesOf(pw), pw.current, whole); }, [pw, whole]); // eslint-disable-line react-hooks/exhaustive-deps
   const { stage } = pw;
   const n = stage.seen.length;
@@ -319,13 +324,13 @@ export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial
         type="button"
         className="td__chip"
         onClick={() => {
-          if (exploring) { setExploring(false); return; }
+          if (exploring) { setExploring(false); setSearching(false); return; }
           dispatch({ type: 'explore', limits, budgetMs: 250, restart: true });
           setExploring(true);
         }}
         data-testid="wk-explore"
       >
-        {exploring ? 'Stop' : 'Explore every branch'}
+        {exploring && !searching ? 'Stop' : 'Explore every branch'}
       </button>
       <label>stop after <input type="number" min={1} value={limits.forks} onChange={(e) => setLimits((l) => ({ ...l, forks: Math.max(1, Number(e.target.value) || 1) }))} /> forks,</label>
       <label>and a branch after <input type="number" min={1} value={limits.tiles} onChange={(e) => setLimits((l) => ({ ...l, tiles: Math.max(1, Number(e.target.value) || 1) }))} /> tiles</label>
@@ -473,6 +478,36 @@ export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial
       )}
 
       {peek && <CircuitPeek pw={pw} subset={pattern.subset} frame={carry?.frame} id={peek.id} landing={peek.landing} text={peek.text} x={peek.x} y={peek.y} />}
+
+      <section className="td__section" data-testid="wk-search">
+        <h3>Circuits found</h3>
+        <div className="wk__explore">
+          <button
+            type="button"
+            className="td__chip"
+            onClick={() => {
+              if (exploring) { setExploring(false); setSearching(false); return; }
+              dispatch({ type: 'explore', limits: { forks: Infinity, tiles: limits.tiles }, budgetMs: 250, restart: true });
+              setSearching(true);
+              setExploring(true);
+            }}
+            data-testid="wk-search-go"
+          >
+            {searching ? 'Stop' : 'Search breadth first'}
+          </button>
+          <label>a branch gives up after <input type="number" min={1} value={limits.tiles} onChange={(e) => setLimits((l) => ({ ...l, tiles: Math.max(1, Number(e.target.value) || 1) }))} /> tiles</label>
+          <span className="td__hint" data-testid="wk-search-status">
+            {pw.explored ? exploredText : 'Takes every landing at every fork, the nearest forks first, until stopped, and lists each circuit the first time a branch closes on it.'}
+          </span>
+        </div>
+        {found.length > 0 && (
+          <FoundList
+            found={found}
+            onGoto={(id) => { setPeek(null); goto(id); mainRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}
+            onHover={canHover ? (f) => setPeek(f ? { id: f.node, text: `${f.choices} ${f.choices === 1 ? 'choice' : 'choices'} from the start${f.branches > 1 ? `; ${f.branches} branches close on it` : ''}`, ...pointer.current } : null) : undefined}
+          />
+        )}
+      </section>
 
       <section className="td__section">
         <h3>How high each step reached</h3>

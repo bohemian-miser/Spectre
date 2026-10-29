@@ -3,7 +3,7 @@
  * its branch leaves the smaller circuit it shares the most choices with, and
  * the supertile positions that decide that fork.
  */
-import type { Circuit } from './circuits';
+import type { Circuit, Found } from './circuits';
 
 const levelWord = (k: number | null): string => (k === null ? 'nothing below the top' : k === 1 ? 'parent' : k === 2 ? 'grandparent' : `level ${k}`);
 
@@ -38,6 +38,32 @@ export function CircuitList({ circuits, onGoto }: { circuits: readonly Circuit[]
         })}
       </tbody>
     </table>
+  );
+}
+
+/** The circuits a search has found, in the order it found them, in a box that scrolls. */
+export function FoundList({ found, onGoto, onHover }: {
+  found: readonly Found[];
+  onGoto: (node: number) => void;
+  onHover?: (f: Found | null) => void;
+}): JSX.Element {
+  return (
+    <ol className="wk__found" data-testid="wk-found" data-count={found.length}>
+      {found.map((f, i) => (
+        <li
+          key={f.key}
+          onClick={() => onGoto(f.node)}
+          onMouseEnter={onHover && (() => onHover(f))}
+          onMouseLeave={onHover && (() => onHover(null))}
+        >
+          <span className="wk__found-n">{i + 1}</span>
+          <span>{f.tiles} tiles</span>
+          <span>{f.choices} {f.choices === 1 ? 'choice' : 'choices'}</span>
+          <span>{f.branches > 1 ? `${f.branches} branches` : ''}</span>
+          <code className="wk__found-word">{f.key}</code>
+        </li>
+      ))}
+    </ol>
   );
 }
 
