@@ -19,6 +19,8 @@ export interface Running {
   readonly batch: Batch;
   readonly t0: number;
   readonly ms: number;
+  /** Strands traced before the change: the ones through its tiles fade out with them. */
+  readonly before?: readonly MapStrand[];
 }
 
 export interface DrawOptions {
@@ -121,42 +123,84 @@ export function drawMap(ctx: CanvasRenderingContext2D, o: DrawOptions): void {
     }
   }
 
-  // Strands are traced on the settled map: they wait for running changes to finish.
-  const settled = !o.running.some((r) => progressOf(r, o.now) < 1);
-  if (o.strands && settled) {
-    const drawStrand = (s: MapStrand, width: number, colour: string): void => {
-      const n = s.points.length;
-      const last = s.closed ? n : n - 1;
-      if (n < 2) return;
-      ctx.beginPath();
-      const at = (p: Pt): Pt => ({ x: p.x * cam.scale + cam.x, y: p.y * cam.scale + cam.y });
-      const p0 = at(s.points[0]);
-      ctx.moveTo(p0.x, p0.y);
-      for (let i = 0; i < last; i++) {
-        const c = s.curves[i];
-        const q = at(s.points[(i + 1) % n]);
-        const c1 = at(c.c1);
-        const c2 = at(c.c2);
-        ctx.bezierCurveTo(c1.x, c1.y, c2.x, c2.y, q.x, q.y);
+  // Where each mid-change tile is: its cluster's slide and fade, and its old
+  // tile's fade. Strands go piece by piece with the tiles they lie in.
+  const childMotion = new Map<string, { dx: number; dy: number; alpha: number }>();
+  const parentFade = new Map<string, number>();
+  for (const r of o.running) {
+    const t = progressOf(r, o.now);
+    if (t >= 1) continue;
+    for (const plan of r.batch.plan) {
+      const f = tileFrame(plan.start, t);
+      parentFade.set(plan.id, 1 - f.shown);
+      for (const k of r.batch.children.get(plan.id) ?? []) {
+        childMotion.set(k.tile.id, {
+          dx: plan.offset.x * f.remaining,
+          dy: plan.offset.y * f.remaining,
+          alpha: f.shown,
+        });
       }
-      ctx.strokeStyle = colour;
-      ctx.lineWidth = width;
-      ctx.stroke();
+    }
+  }
+  const strandStyle = (s: MapStrand): { width: number; colour: string } => {
+    const [r, g, b] = circuitLengthRgb(s.length);
+    // strand weight follows its own depth's tile size
+    return {
+      width: Math.min(5, Math.max(0.6, s.edge * cam.scale * 0.12)),
+      colour: s.closed ? `rgb(${r},${g},${b})` : TAIL_COLOR,
     };
+  };
+  /**
+   * Draw the segments of `s` that `pick` accepts, each moved by `dx, dy`
+   * (screen pixels) and joined to the next when consecutive.
+   */
+  const drawPieces = (
+    s: MapStrand,
+    pick: (tile: string) => { dx: number; dy: number } | null,
+  ): void => {
+    const n = s.points.length;
+    const last = s.closed ? n : n - 1;
+    ctx.beginPath();
+    let open = false;
+    for (let i = 0; i < last; i++) {
+      const m = pick(s.segTiles[i]);
+      if (!m) {
+        open = false;
+        continue;
+      }
+      const at = (p: Pt): Pt => ({ x: (p.x + m.dx) * cam.scale + cam.x, y: (p.y + m.dy) * cam.scale + cam.y });
+      const a = at(s.points[i]);
+      const c = s.curves[i];
+      const c1 = at(c.c1);
+      const c2 = at(c.c2);
+      const q = at(s.points[(i + 1) % n]);
+      if (!open) ctx.moveTo(a.x, a.y);
+      ctx.bezierCurveTo(c1.x, c1.y, c2.x, c2.y, q.x, q.y);
+      open = true;
+    }
+    ctx.stroke();
+  };
+  const still = { dx: 0, dy: 0 };
+
+  if (o.strands) {
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     o.strands.forEach((s, i) => {
       if (i === o.picked) return;
-      // strand weight follows its own depth's tile size
-      const width = Math.min(5, Math.max(0.6, s.edge * cam.scale * 0.12));
-      const [r, g, b] = circuitLengthRgb(s.length);
-      drawStrand(s, width, s.closed ? `rgb(${r},${g},${b})` : TAIL_COLOR);
+      const { width, colour } = strandStyle(s);
+      ctx.strokeStyle = colour;
+      ctx.lineWidth = width;
+      drawPieces(s, (tile) => (childMotion.has(tile) ? null : still));
     });
     const p = o.picked != null ? o.strands[o.picked] : undefined;
     if (p) {
       const width = Math.min(8, Math.max(2, p.edge * cam.scale * 0.25));
-      drawStrand(p, width + 3, o.ink);
-      drawStrand(p, width, o.accent);
+      ctx.strokeStyle = o.ink;
+      ctx.lineWidth = width + 3;
+      drawPieces(p, (tile) => (childMotion.has(tile) ? null : still));
+      ctx.strokeStyle = o.accent;
+      ctx.lineWidth = width;
+      drawPieces(p, (tile) => (childMotion.has(tile) ? null : still));
     }
   }
 
@@ -197,6 +241,59 @@ export function drawMap(ctx: CanvasRenderingContext2D, o: DrawOptions): void {
         ctx.globalAlpha = 1;
       }
     }
+  }
+
+  // The strands of running changes: the old ones fade with the tiles they
+  // ran through, the new ones fade in and slide home with their clusters.
+  if (o.strands && (childMotion.size > 0 || parentFade.size > 0)) {
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    /** One pass over a strand: each run of consecutive segments in one moving tile, drawn as that tile is. */
+    const drawRuns = (s: MapStrand, motion: (tile: string) => { dx: number; dy: number; alpha: number } | null): void => {
+      const n = s.points.length;
+      const last = s.closed ? n : n - 1;
+      let i = 0;
+      while (i < last) {
+        const tile = s.segTiles[i];
+        const m = motion(tile);
+        if (!m || m.alpha <= 0) {
+          i++;
+          continue;
+        }
+        const at = (p: Pt): Pt => ({ x: (p.x + m.dx) * cam.scale + cam.x, y: (p.y + m.dy) * cam.scale + cam.y });
+        ctx.globalAlpha = m.alpha;
+        ctx.beginPath();
+        const a = at(s.points[i]);
+        ctx.moveTo(a.x, a.y);
+        for (; i < last && s.segTiles[i] === tile; i++) {
+          const c = s.curves[i];
+          const c1 = at(c.c1);
+          const c2 = at(c.c2);
+          const q = at(s.points[(i + 1) % n]);
+          ctx.bezierCurveTo(c1.x, c1.y, c2.x, c2.y, q.x, q.y);
+        }
+        ctx.stroke();
+      }
+    };
+    for (const r of o.running) {
+      if (progressOf(r, o.now) >= 1 || !r.before) continue;
+      for (const s of r.before) {
+        const { width, colour } = strandStyle(s);
+        ctx.strokeStyle = colour;
+        ctx.lineWidth = width;
+        drawRuns(s, (tile) => {
+          const alpha = parentFade.get(tile);
+          return alpha === undefined ? null : { dx: 0, dy: 0, alpha };
+        });
+      }
+    }
+    for (const s of o.strands) {
+      const { width, colour } = strandStyle(s);
+      ctx.strokeStyle = colour;
+      ctx.lineWidth = width;
+      drawRuns(s, (tile) => childMotion.get(tile) ?? null);
+    }
+    ctx.globalAlpha = 1;
   }
 
   if (o.focus) {
