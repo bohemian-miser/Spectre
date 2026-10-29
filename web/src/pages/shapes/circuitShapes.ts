@@ -74,13 +74,16 @@ export class CircuitShapes {
   /** With `onePerLength`: where each family, level and length sits in `born`. */
   private readonly bornAt = new Map<string, number>();
 
+  /** The highest level built so far; `extend` adds levels above it. */
+  maxLevel = 0;
+
   constructor(
     readonly family: TileFamilyId,
     subset: readonly number[],
     digits: readonly number[],
-    readonly maxLevel: number,
+    maxLevel: number,
     /** Keep the walks of circuits born at least this long. */
-    keepAtLeast = 50,
+    private readonly keepAtLeast = 50,
     /** Keep one walk per family, level and length (a Delta's when there is one) rather than one per supertile type. */
     readonly onePerLength = false,
   ) {
@@ -108,7 +111,13 @@ export class CircuitShapes {
       };
     });
     this.levels.push(level0);
-    for (let n = 1; n <= maxLevel; n++) {
+    this.extend(maxLevel);
+  }
+
+  /** Builds the levels up to `toLevel`, one on top of the last; levels already built are kept. */
+  extend(toLevel: number): void {
+    const { family, keepAtLeast, onePerLength } = this;
+    for (let n = this.maxLevel + 1; n <= toLevel; n++) {
       const sys = buildSystem(family, n);
       const prev = this.levels[n - 1];
       const next: Record<string, Layer> = {};
@@ -231,6 +240,7 @@ export class CircuitShapes {
         };
       }
       this.levels.push(next);
+      this.maxLevel = n;
     }
   }
 

@@ -126,26 +126,30 @@ export interface Lineage {
   /** Indices into the circuits compared. */
   readonly a: number;
   readonly b: number;
-  /** Per level of A, whether B two levels up reads the same. */
-  readonly levels: readonly boolean[];
+  /** Per level of A (index = level), whether B two levels up reads the same; null where either was not read. */
+  readonly levels: readonly (boolean | null)[];
 }
 
 /**
  * Every pair where B is born two levels above A and reads the same at every
- * level but possibly the lowest. Readings longer than `maxTokens` are not
- * compared at that level and count as agreeing.
+ * level compared but possibly the lowest, with at least one level compared.
+ * Readings longer than `maxTokens` are compared by length only.
  */
 export function lineages(circuits: readonly { readonly level: number; readonly readings: readonly Reading[] }[], maxTokens = 60000): Lineage[] {
   const out: Lineage[] = [];
   circuits.forEach((b, bi) => {
     circuits.forEach((a, ai) => {
       if (a.level + 2 !== b.level) return;
-      const levels = a.readings.map((ra, k) => {
-        const rb = b.readings[k + 2];
-        if (!rb || ra.tokens.length > maxTokens || rb.tokens.length > maxTokens) return ra.tokens.length === rb?.tokens.length;
-        return sameCyclic(ra.tokens, rb.tokens);
-      });
-      if (levels.slice(1).every(Boolean)) out.push({ a: ai, b: bi, levels });
+      const levels: (boolean | null)[] = [];
+      for (let k = 0; k < a.level; k++) {
+        const ra = a.readings.find((r) => r.level === k);
+        const rb = b.readings.find((r) => r.level === k + 2);
+        if (!ra || !rb) { levels.push(null); continue; }
+        if (ra.tokens.length > maxTokens || rb.tokens.length > maxTokens) levels.push(ra.tokens.length === rb.tokens.length);
+        else levels.push(sameCyclic(ra.tokens, rb.tokens));
+      }
+      const compared = levels.slice(1).filter((x) => x !== null);
+      if (compared.length && compared.every(Boolean)) out.push({ a: ai, b: bi, levels });
     });
   });
   return out;

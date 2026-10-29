@@ -1,19 +1,24 @@
-/** Harmonics worker: one combination's circuits, readings and lineages per message (`harmonicsJob.ts`). */
+/** Harmonics worker: keeps one combination's renormalisation and answers `start` and `next` (`harmonicsJob.ts`). */
 
-import { harmonicsOf, type HarmonicsJob } from './harmonicsJob';
+import { HarmonicsEngine, type HarmonicsJob } from './harmonicsJob';
 
+type Message = { id: number; type: 'start'; job: HarmonicsJob } | { id: number; type: 'next' };
 type WorkerScope = {
-  onmessage: ((event: MessageEvent<{ id: number; job: HarmonicsJob }>) => void) | null;
+  onmessage: ((event: MessageEvent<Message>) => void) | null;
   postMessage(message: unknown): void;
 };
 
 const scope = globalThis as unknown as WorkerScope;
+let engine: HarmonicsEngine | null = null;
 
 scope.onmessage = (event) => {
-  const { id, job } = event.data;
+  const m = event.data;
   try {
-    scope.postMessage({ id, result: harmonicsOf(job) });
+    if (m.type === 'start') engine = new HarmonicsEngine(m.job);
+    else if (!engine) throw new Error('no combination started');
+    else engine.next();
+    scope.postMessage({ id: m.id, result: engine.result() });
   } catch (err) {
-    scope.postMessage({ id, error: err instanceof Error ? err.message : String(err) });
+    scope.postMessage({ id: m.id, error: err instanceof Error ? err.message : String(err) });
   }
 };
