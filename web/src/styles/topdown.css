@@ -221,3 +221,24 @@
     height: calc(100vh - 380px);
   }
 }
+
+/* Circuits mode: the rule controls run under the map, as on the Supertiles page. */
+.td-circuits {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+.td-circuits .explorer-matchings,
+.td-circuits .explorer-advanced {
+  grid-column: 1 / -1;
+}
+.td-circuits fieldset,
+.td-circuits details {
+  margin: 0;
+}
+.td-circuits .matching-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}

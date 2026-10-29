@@ -75,3 +75,34 @@ test('the spectre, from a link', async ({ page }) => {
   await expect(state(page)).toHaveAttribute('data-family', 'hex');
   await expect(page.getByTestId('td-hex-rule')).toBeVisible();
 });
+
+test('circuits: picking a strand and substituting its tiles', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(String(e)));
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto('topdown.html#family=hex&type=Delta&level=3&c=023468-111000100');
+  await expect(state(page)).toHaveAttribute('data-tile-count', '496', { timeout: 30000 });
+  await expect(page.getByTestId('td-circuits')).toBeChecked();
+  await expect(state(page)).toHaveAttribute('data-circuits', '10');
+  await page.getByTestId('td-speed').selectOption('0');
+
+  const box = await page.locator('.td-viewport').boundingBox();
+  if (!box) throw new Error('no viewport');
+  // click a grid of spots round the centre until one lands on a strand
+  let picked = '';
+  outer: for (let r = 0; r <= 60; r += 5) {
+    for (let dx = -r; dx <= r; dx += 5) {
+      for (const dy of [-r, r]) {
+        await page.mouse.click(box.x + box.width / 2 + dx, box.y + box.height / 2 + dy);
+        picked = (await state(page).getAttribute('data-picked')) ?? '';
+        if (picked) break outer;
+      }
+    }
+  }
+  expect(Number(picked)).toBeGreaterThan(0);
+  await expect(state(page)).toHaveAttribute('data-selected', picked);
+  await page.getByTestId('td-substitute-circuit').click();
+  await expect(state(page)).toHaveAttribute('data-steps', '1');
+  await expect(state(page)).toHaveAttribute('data-depth-max', '4');
+  expect(errors).toEqual([]);
+});

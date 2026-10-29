@@ -8,10 +8,11 @@
  * correctly at any zoom.
  */
 
-import type { Pt } from '../../core';
+import { TAIL_COLOR, circuitLengthRgb, type Pt } from '../../core';
 import type { Camera } from '../../lib/viewport';
 import { tileFrame } from './animate';
 import type { Batch, TopDownMap } from './map';
+import type { MapStrand } from './strands';
 import { clipToRect, type Placed } from './world';
 
 export interface Running {
@@ -30,6 +31,9 @@ export interface DrawOptions {
   readonly selected: ReadonlySet<string>;
   readonly focus: string | null;
   readonly outlines: boolean;
+  /** Strands to draw over the tiles, and the one picked out. */
+  readonly strands?: readonly MapStrand[];
+  readonly picked?: number | null;
   readonly colour: (type: string) => string;
   readonly accent: string;
   readonly ink: string;
@@ -114,6 +118,45 @@ export function drawMap(ctx: CanvasRenderingContext2D, o: DrawOptions): void {
     for (const [id, segs] of o.map.outlines) {
       const kids = o.running.find((r) => progressOf(r, o.now) < 1 && r.batch.children.has(id));
       if (!kids) drawSegments(segs, 0, 0);
+    }
+  }
+
+  // Strands are traced on the settled map: they wait for running changes to finish.
+  const settled = !o.running.some((r) => progressOf(r, o.now) < 1);
+  if (o.strands && settled) {
+    const drawStrand = (s: MapStrand, width: number, colour: string): void => {
+      const n = s.points.length;
+      const last = s.closed ? n : n - 1;
+      if (n < 2) return;
+      ctx.beginPath();
+      const at = (p: Pt): Pt => ({ x: p.x * cam.scale + cam.x, y: p.y * cam.scale + cam.y });
+      const p0 = at(s.points[0]);
+      ctx.moveTo(p0.x, p0.y);
+      for (let i = 0; i < last; i++) {
+        const c = s.curves[i];
+        const q = at(s.points[(i + 1) % n]);
+        const c1 = at(c.c1);
+        const c2 = at(c.c2);
+        ctx.bezierCurveTo(c1.x, c1.y, c2.x, c2.y, q.x, q.y);
+      }
+      ctx.strokeStyle = colour;
+      ctx.lineWidth = width;
+      ctx.stroke();
+    };
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    o.strands.forEach((s, i) => {
+      if (i === o.picked) return;
+      // strand weight follows its own depth's tile size
+      const width = Math.min(5, Math.max(0.6, s.edge * cam.scale * 0.12));
+      const [r, g, b] = circuitLengthRgb(s.length);
+      drawStrand(s, width, s.closed ? `rgb(${r},${g},${b})` : TAIL_COLOR);
+    });
+    const p = o.picked != null ? o.strands[o.picked] : undefined;
+    if (p) {
+      const width = Math.min(8, Math.max(2, p.edge * cam.scale * 0.25));
+      drawStrand(p, width + 3, o.ink);
+      drawStrand(p, width, o.accent);
     }
   }
 
