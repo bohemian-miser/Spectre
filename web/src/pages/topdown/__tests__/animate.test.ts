@@ -1,8 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { parentId } from '../../../core';
-import { TILE_SPAN, applySimilarity, fitSimilarity, planStep, similarityAffine, tileFrame } from '../animate';
-import { boardsFor, drawTiles } from '../board';
 import { transPt } from '../../../core';
+import { TILE_SPAN, applySimilarity, fitSimilarity, planClusters, similarityAffine, tileFrame } from '../animate';
 
 describe('fitSimilarity', () => {
   const pts = [
@@ -27,26 +25,20 @@ describe('fitSimilarity', () => {
   }
 });
 
-describe('planStep', () => {
-  for (const family of ['spectre', 'hex'] as const) {
-    it(`${family}: each supertile ends where the board puts it`, () => {
-      const boards = boardsFor(family, 'Delta', ['*', '*']);
-      const before = drawTiles(boards[1], family);
-      const after = drawTiles(boards[2], family);
-      const plan = planStep(before, after);
-      expect(plan.parents.map((p) => p.id).sort()).toEqual(before.map((t) => t.id).sort());
-      for (const p of plan.parents) {
-        const kids = after.filter((t) => parentId(t.id) === p.id);
-        const cx = kids.reduce((s, t) => s + t.centre.x, 0) / kids.length;
-        const cy = kids.reduce((s, t) => s + t.centre.y, 0) / kids.length;
-        const old = before.find((t) => t.id === p.id)!;
-        const at = transPt(plan.enlarge, old.centre);
-        expect(Math.hypot(at.x + p.offset.x - cx, at.y + p.offset.y - cy)).toBeLessThan(1e-9);
-        expect(p.start).toBeGreaterThanOrEqual(0);
-        expect(p.start).toBeLessThanOrEqual(1 - TILE_SPAN + 1e-12);
-      }
-    });
-  }
+describe('planClusters', () => {
+  it('sweeps left to right and slides each cluster from its tile to its place', () => {
+    const plan = planClusters([
+      { id: 'b', tileCentre: { x: 5, y: 0 }, clusterCentre: { x: 5.5, y: 1 } },
+      { id: 'a', tileCentre: { x: -5, y: 0 }, clusterCentre: { x: -4, y: 0 } },
+      { id: 'c', tileCentre: { x: 9, y: 0 }, clusterCentre: { x: 9, y: 0 } },
+    ]);
+    expect(plan.map((p) => [p.id, p.start])).toEqual([
+      ['b', (1 - TILE_SPAN) / 2],
+      ['a', 0],
+      ['c', 1 - TILE_SPAN],
+    ]);
+    expect(plan[0].offset).toEqual({ x: -0.5, y: -1 });
+  });
 });
 
 describe('tileFrame', () => {

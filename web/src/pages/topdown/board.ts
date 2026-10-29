@@ -1,112 +1,48 @@
 /**
- * The Top-down page's board: the boards a family, a start type and a list of
- * substitution steps produce, what to draw for each tile, picking tiles by
- * point and by lasso, and the outline of every previous-step tile's children.
+ * The Top-down page's small pieces: its URL, picking tiles by point and by
+ * lasso, and the characteristic polynomial it prints.
  *
  * Pure — no React, no DOM.
  */
 
-import {
-  TILE_NAMES,
-  leafPts,
-  parentId,
-  startBoard,
-  substituteBoard,
-  topDownLeaves,
-  transPt,
-  zApply,
-  zKey,
-  zLeafPts,
-  zToAffine,
-  zX,
-  zY,
-  type Affine,
-  type Pt,
-  type TileTypeId,
-  type TopDownFamily,
-  type TopDownTile,
-} from '../../core';
+import { TILE_NAMES, type Pt, type TileTypeId, type TopDownFamily } from '../../core';
+import type { Placed } from './world';
 
-/** A step substitutes the whole board (`'*'`) or the tiles with these slot paths. */
-export type Step = '*' | readonly string[];
-
-/** Past this many tiles a step is refused: the SVG stops being usable. */
-export const MAX_BOARD_TILES = 20_000;
-
-export const DEFAULT_FAMILY: TopDownFamily = 'spectre';
+export const DEFAULT_FAMILY: TopDownFamily = 'hex';
 export const DEFAULT_TYPE: TileTypeId = 'Delta';
-export const DEFAULT_STEPS: readonly Step[] = ['*'];
+export const DEFAULT_LEVEL = 2;
+export const MAX_START_LEVEL = 4;
 
-/** Child count per type: what substituting a tile adds. */
-export function childCount(type: TileTypeId): number {
-  return type === 'Gamma' ? 7 : 8;
-}
+// ---------------------------------------------------------------------------
+// URL
+// ---------------------------------------------------------------------------
 
-/** Every board along the way: `boards[0]` is the single start tile. */
-export function boardsFor(
-  family: TopDownFamily,
-  type: TileTypeId,
-  steps: readonly Step[],
-): TopDownTile[][] {
-  const boards: TopDownTile[][] = [startBoard(type)];
-  for (const step of steps) {
-    const prev = boards[boards.length - 1];
-    const picked = step === '*' ? null : new Set(step);
-    boards.push(substituteBoard(prev, picked ? (t) => picked.has(t.id) : undefined, family));
-  }
-  return boards;
-}
-
-export interface DrawLeaf {
+export interface TopDownUrlState {
+  readonly family: TopDownFamily;
   readonly type: TileTypeId;
-  readonly xform: Affine;
+  /** The level of the supertile the map starts as. */
+  readonly level: number;
 }
 
-export interface DrawTile {
-  readonly id: string;
-  readonly type: TileTypeId;
-  readonly leaves: readonly DrawLeaf[];
-  /** Leaf outlines in world coordinates, for picking. */
-  readonly polys: readonly (readonly Pt[])[];
-  readonly centre: Pt;
+/** `#family=hex&type=Delta&level=2`. */
+export function stateToHash(state: TopDownUrlState): string {
+  return `#family=${state.family}&type=${state.type}&level=${state.level}`;
 }
 
-export function drawTiles(board: readonly TopDownTile[], family: TopDownFamily): DrawTile[] {
-  return board.map((tile) => {
-    const leaves = topDownLeaves([tile], family).map((l) => ({ type: l.type, xform: zToAffine(l.z) }));
-    const polys = leaves.map((l) => leafPts(family, l.type).map((p) => transPt(l.xform, p)));
-    let x = 0;
-    let y = 0;
-    let n = 0;
-    for (const poly of polys) {
-      for (const p of poly) {
-        x += p.x;
-        y += p.y;
-        n++;
-      }
-    }
-    return { id: tile.id, type: tile.type, leaves, polys, centre: { x: x / n, y: y / n } };
-  });
+export function hashToState(hash: string): TopDownUrlState {
+  const params = new URLSearchParams(hash.replace(/^#/, ''));
+  const f = params.get('family');
+  const family: TopDownFamily = f === 'hex' || f === 'spectre' ? f : DEFAULT_FAMILY;
+  const raw = params.get('type') as TileTypeId | null;
+  const type = raw && TILE_NAMES.includes(raw) ? raw : DEFAULT_TYPE;
+  const n = Number(params.get('level'));
+  const level = params.has('level') && Number.isInteger(n) && n >= 0 && n <= MAX_START_LEVEL ? n : DEFAULT_LEVEL;
+  return { family, type, level };
 }
 
-export function boundsOf(tiles: readonly DrawTile[]): { min: Pt; max: Pt } {
-  let minX = Infinity;
-  let minY = Infinity;
-  let maxX = -Infinity;
-  let maxY = -Infinity;
-  for (const t of tiles) {
-    for (const poly of t.polys) {
-      for (const p of poly) {
-        if (p.x < minX) minX = p.x;
-        if (p.y < minY) minY = p.y;
-        if (p.x > maxX) maxX = p.x;
-        if (p.y > maxY) maxY = p.y;
-      }
-    }
-  }
-  if (!Number.isFinite(minX)) return { min: { x: 0, y: 0 }, max: { x: 1, y: 1 } };
-  return { min: { x: minX, y: minY }, max: { x: maxX, y: maxY } };
-}
+// ---------------------------------------------------------------------------
+// Picking
+// ---------------------------------------------------------------------------
 
 /** Even-odd ray test. */
 export function pointInPolygon(p: Pt, poly: readonly Pt[]): boolean {
@@ -121,88 +57,20 @@ export function pointInPolygon(p: Pt, poly: readonly Pt[]): boolean {
   return inside;
 }
 
-export function tileAt(tiles: readonly DrawTile[], p: Pt): DrawTile | null {
-  for (const t of tiles) if (t.polys.some((poly) => pointInPolygon(p, poly))) return t;
+export function tileAt(tiles: Iterable<Placed>, p: Pt): Placed | null {
+  for (const t of tiles) {
+    if (p.x < t.min.x || p.x > t.max.x || p.y < t.min.y || p.y > t.max.y) continue;
+    if (t.leaves.some((l) => pointInPolygon(p, l.poly))) return t;
+  }
   return null;
 }
 
 /** Slot paths of the tiles whose centre lies inside the lasso. */
-export function tilesInLasso(tiles: readonly DrawTile[], lasso: readonly Pt[]): string[] {
+export function tilesInLasso(tiles: Iterable<Placed>, lasso: readonly Pt[]): string[] {
   if (lasso.length < 3) return [];
-  return tiles.filter((t) => pointInPolygon(t.centre, lasso)).map((t) => t.id);
-}
-
-export interface SupertileOutline {
-  /** Slot path of the previous-step tile these children replaced. */
-  readonly id: string;
-  /** SVG path of the edges its children do not share with each other. */
-  readonly d: string;
-}
-
-/**
- * The boundary of each group of siblings: every leaf edge is keyed by its two
- * exact endpoints, and an edge that occurs once within its group is on the
- * group's outline.
- */
-export function supertileOutlines(board: readonly TopDownTile[], family: TopDownFamily): SupertileOutline[] {
-  const groups = new Map<string, TopDownTile[]>();
-  for (const tile of board) {
-    const pid = parentId(tile.id);
-    (groups.get(pid) ?? groups.set(pid, []).get(pid)!).push(tile);
-  }
-  const out: SupertileOutline[] = [];
-  for (const [id, tiles] of groups) {
-    const edges = new Map<string, { a: Pt; b: Pt; n: number }>();
-    for (const leaf of topDownLeaves(tiles, family)) {
-      const w = zLeafPts(family, leaf.type).map((p) => zApply(leaf.z, p));
-      for (let i = 0; i < w.length; i++) {
-        const a = w[i];
-        const b = w[(i + 1) % w.length];
-        const ka = zKey(a);
-        const kb = zKey(b);
-        const key = ka < kb ? `${ka}|${kb}` : `${kb}|${ka}`;
-        const hit = edges.get(key);
-        if (hit) hit.n++;
-        else edges.set(key, { a: { x: zX(a), y: zY(a) }, b: { x: zX(b), y: zY(b) }, n: 1 });
-      }
-    }
-    let d = '';
-    for (const e of edges.values()) {
-      if (e.n === 1) d += `M${e.a.x} ${e.a.y}L${e.b.x} ${e.b.y}`;
-    }
-    out.push({ id, d });
-  }
+  const out: string[] = [];
+  for (const t of tiles) if (pointInPolygon(t.centre, lasso)) out.push(t.tile.id);
   return out;
-}
-
-// ---------------------------------------------------------------------------
-// URL
-// ---------------------------------------------------------------------------
-
-export interface TopDownUrlState {
-  readonly family: TopDownFamily;
-  readonly type: TileTypeId;
-  readonly steps: readonly Step[];
-}
-
-/** `#family=hex&type=Delta&steps=*;1,3.0,7` — steps separated by `;`, slot paths by `,`. */
-export function stateToHash(state: TopDownUrlState): string {
-  const steps = state.steps.map((s) => (s === '*' ? '*' : s.join(','))).join(';');
-  return `#family=${state.family}&type=${state.type}&steps=${steps}`;
-}
-
-export function hashToState(hash: string): TopDownUrlState {
-  const params = new URLSearchParams(hash.replace(/^#/, ''));
-  const family: TopDownFamily = params.get('family') === 'hex' ? 'hex' : DEFAULT_FAMILY;
-  const raw = params.get('type') as TileTypeId | null;
-  const type = raw && TILE_NAMES.includes(raw) ? raw : DEFAULT_TYPE;
-  const stepsRaw = params.get('steps');
-  if (stepsRaw === null) return { family, type, steps: DEFAULT_STEPS };
-  if (stepsRaw === '') return { family, type, steps: [] };
-  const steps = stepsRaw
-    .split(';')
-    .map((s): Step => (s === '*' ? '*' : s.split(',').filter((id) => /^\d+(\.\d+)*$/.test(id))));
-  return { family, type, steps };
 }
 
 // ---------------------------------------------------------------------------
