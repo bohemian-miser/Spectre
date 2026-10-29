@@ -171,6 +171,14 @@ export const SITE_NAV: readonly NavItem[] = Object.freeze([
     blurb: 'Every circuit grouped by shape: Fourier terms compared over turn, start and mirror, clustered and mapped.',
   },
   {
+    id: 'harmonics',
+    label: 'Harmonics',
+    short: 'Harmonics',
+    entry: 'harmonics.html',
+    status: 'ready',
+    blurb: 'Which circuits are the same circuit two levels up: every circuit read at every level, and the lineages among them.',
+  },
+  {
     id: 'legacy',
     label: 'Legacy p5 app',
     short: 'Legacy',

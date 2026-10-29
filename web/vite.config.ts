@@ -40,6 +40,7 @@ export default defineConfig({
         circuits: resolve(__dirname, 'circuits.html'),
         corners: resolve(__dirname, 'corners.html'),
         shapes: resolve(__dirname, 'shapes.html'),
+        harmonics: resolve(__dirname, 'harmonics.html'),
         legacy: resolve(__dirname, 'legacy.html'),
         widgets: resolve(__dirname, 'widgets.html'),
       },

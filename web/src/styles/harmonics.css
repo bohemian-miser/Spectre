@@ -1,0 +1,100 @@
+/* Harmonics page: on top of the Shapes page's tokens. */
+
+.harm-chains {
+  margin: 0;
+  padding-left: 22px;
+  display: grid;
+  gap: 6px;
+}
+.harm-chains li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+}
+.harm-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.harm-arrow {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.harm-pick {
+  font: inherit;
+  padding: 3px 9px;
+  border: 1px solid var(--line, #8884);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.harm-pick small {
+  color: var(--muted);
+  margin-left: 3px;
+}
+.harm-picked {
+  border-color: var(--g1);
+  box-shadow: inset 0 0 0 1px var(--g1);
+}
+.harm-pair {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+}
+.harm-pair figure {
+  margin: 0;
+  display: grid;
+  gap: 4px;
+  max-width: 260px;
+}
+.harm-pair figcaption {
+  font-size: 12px;
+  color: var(--muted);
+}
+.harm-readings {
+  border-collapse: collapse;
+  font-size: 13px;
+  width: 100%;
+}
+.harm-readings th,
+.harm-readings td {
+  text-align: left;
+  vertical-align: top;
+  padding: 4px 8px;
+  border-top: 1px solid var(--line, #8884);
+}
+.harm-readings th {
+  color: var(--muted);
+  font-weight: 500;
+  border-top: 0;
+}
+.harm-row-a td {
+  color: var(--muted);
+}
+.harm-tokens {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px 6px;
+  font-size: 12px;
+}
+.harm-token-differs {
+  color: var(--g2);
+}
+.harm-more {
+  color: var(--muted);
+}
+.harm-same,
+.harm-differs {
+  display: inline-block;
+  margin-left: 10px;
+  font-size: 12px;
+}
+.harm-same {
+  color: var(--g3);
+}
+.harm-differs {
+  color: var(--g2);
+}

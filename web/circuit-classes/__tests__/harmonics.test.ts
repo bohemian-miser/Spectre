@@ -67,3 +67,23 @@ describe('harmonics', () => {
     expect(pairs).toEqual([[9, 189, true], [27, 513, true]]);
   });
 }, 60000);
+
+describe('readings from the renormalisation', () => {
+  it('agree with the readings traced tile by tile on a patch, for every circuit at every level', async () => {
+    const { CircuitShapes, distinctCircuits } = await import('../../src/pages/shapes/circuitShapes');
+    const { readings: fromArcs, sameCyclic } = await import('../../src/pages/harmonics/readings');
+    const cs = new CircuitShapes('hex', [0, 2, 3, 4, 6, 8], [0, 0, 0, 0, 0, 0, 0, 0, 0], LEVEL, 1, true);
+    const born = distinctCircuits(cs, 64);
+    expect(born.map((b) => b.length).sort((a, b) => a - b)).toEqual(circuits.map((c) => c.length));
+    for (const b of born) {
+      const traced = circuits.find((c) => c.length === b.length)!;
+      expect(b.level).toBe(traced.height);
+      const arcs = fromArcs(cs, b.circuit);
+      for (let k = 0; k < b.level; k++) {
+        const patch = readingAt(traced, k, LEVEL);
+        expect(arcs[k].raw).toBe(readingAt(traced, k, LEVEL, false).length);
+        expect(sameCyclic(arcs[k].tokens, patch.map((v) => v.tok))).toBe(true);
+      }
+    }
+  });
+}, 60000);

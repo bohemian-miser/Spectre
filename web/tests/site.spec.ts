@@ -114,6 +114,14 @@ test('the Shapes page groups the circuits and finds a circuit’s twins', async 
   await expect(page.locator('[data-testid="shapes-nearest"] tbody tr').first()).toContainText('0.00');
 });
 
+test('the Harmonics page reads the walker’s default combination into lineages', async ({ page }) => {
+  await page.goto('harmonics.html');
+  await expect(page.locator('[data-testid="harm-summary"]')).toContainText('11 distinct circuits in 5 lineages', { timeout: 90000 });
+  await expect(page.locator('[data-testid="harm-chains"]')).toContainText('441');
+  await expect(page.locator('[data-testid="harm-detail"] h2')).toContainText('8,784 tiles at level 6 is 441 at level 4, two levels up');
+  await expect(page.locator('[data-testid="harm-extras"]')).toContainText('24 extra runs');
+});
+
 test.describe('on a screen of pixel ratio 2', () => {
   test.use({ deviceScaleFactor: 2 });
   test('the Shapes page’s epicycles keep their size', async ({ page }) => {

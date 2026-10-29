@@ -35,6 +35,7 @@ describe('siteNav', () => {
       'circuits',
       'corners',
       'shapes',
+      'harmonics',
       'legacy',
     ]);
     expect(new Set(SITE_NAV.map((i) => i.id)).size).toBe(SITE_NAV.length);
@@ -59,6 +60,7 @@ describe('siteNav', () => {
       'circuits',
       'corners',
       'shapes',
+      'harmonics',
       'legacy',
     ]);
   });
