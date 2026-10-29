@@ -76,6 +76,8 @@ Where the triangles go: only rules that contain class 0 make them, rules that di
 
 Past level 7: [`docs/DEEP_ORBIT.md`](docs/DEEP_ORBIT.md) follows a combination's strands supertile by supertile, exactly, to level 11 and beyond (7 billion tiles), at the cost of the boundary rather than the area, for every family and rule. It sorts the pairings of a rule into classes that are the same pattern above a given level, and says which of a set of look-alikes is the odd one out. Hexagon `023468-111000100` and its five relatives turn out to be space-filling circuits born every other level from level 6 on, which no rooted patch could show.
 
+What the nested triangles share: a circuit read at level k is the sequence of level-k supertiles it runs through, and the triangle two levels up reads at level k + 2 exactly as the smaller one reads at level k, down to the tiles in the base combination and down to loops round junctions in the walker's default. Lineages, the walker's forks along them, and a rule that cuts the walker's search for a harmonic, in [`docs/HARMONICS.md`](docs/HARMONICS.md).
+
 The original intuition, kept for the record: I'm pretty sure I can make either an infinite line but haven't got a solid proof yet. I think I'd need to rework the generator to do a kind of substitution thing instead of the standard spectre algorithm and then I could show that you make a long line/circuit, and when you substitue all the tiles for the next superset you maintain all the paths (like a standard infinite line proof, like the hilbert curve).
 
 I plan on integrating some cool edge stuff from my [blog](https://substack.com/@theharderthanobsidiantower/p-156511066).
