@@ -2,9 +2,16 @@
  * The search in subtrees, against `explore` on the whole tree: walked to
  * the end within a tile limit, the records put together give the same tree,
  * landing for landing, with the same forks and the same ends. Following a
- * branch's landings from the start walks to the same end.
+ * branch's landings from the start walks to the same end. Cutting branches
+ * that are not a circuit's first reading keeps every circuit the whole tree
+ * closes on, each on one branch, and finds the circuits the circuit index
+ * lists.
  */
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+
+import { FRESH } from '../canon';
 
 import { circuitKey } from '../circuits';
 import { explore, makeWalker, reducePossible, startWalk, type PossibleWalk } from '../possible';
@@ -40,4 +47,33 @@ describe('the search in subtrees', () => {
     expect(again.stage.status).toBe('closed');
     expect(circuitKey(again.stage.seen)).toBe(circuitKey(closed.end!.seen!));
   }, 60000);
+});
+
+describe('one branch per circuit', () => {
+  const walkAll = (wk: ReturnType<typeof makeWalker>, tiles: number, oneReading: boolean) => {
+    const sub = new Subtrees(wk, 'w0', tiles);
+    sub.add([{ handle: '0', stage: startWalk(wk).stage, ...(oneReading ? { reading: FRESH } : {}) }]);
+    const data = new SearchTreeData();
+    while (sub.waiting > 0) data.put(sub.run(1000));
+    const closed = data.nodes.filter((n) => n.end?.status === 'closed').map((n) => circuitKey(n.end!.seen!));
+    return { data, closed };
+  };
+
+  it('closes on every circuit the whole tree closes on, each by one branch', () => {
+    const wk = makeWalker(triangle, 'Delta', 0, 5);
+    const all = walkAll(wk, 400, false);
+    const one = walkAll(wk, 400, true);
+    expect(new Set(all.closed).size).toBeGreaterThan(2);
+    expect(all.closed.length).toBeGreaterThan(new Set(all.closed).size);
+    expect(one.closed.sort()).toEqual([...new Set(all.closed)].sort());
+    expect(one.data.nodes.length).toBeLessThan(all.data.nodes.length);
+  }, 60000);
+
+  it('finds the circuits the circuit index lists for 023468 140000001, up to 5,000 tiles', () => {
+    const index = JSON.parse(readFileSync(resolve(__dirname, '../../../../public/data/corners/hex-023468/140000001.json'), 'utf8')) as { circuits: { length: number }[] };
+    const wk = makeWalker(patternOf([0, 2, 3, 4, 6, 8], '140000001'), 'Xi', 2, 5);
+    const one = walkAll(wk, 5000, true);
+    const lengths = one.closed.map((k) => k.split(' ').length).sort((a, b) => a - b);
+    expect(lengths).toEqual(index.circuits.map((c) => c.length).filter((n) => n <= 5000).sort((a, b) => a - b));
+  }, 120000);
 });

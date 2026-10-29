@@ -10,15 +10,23 @@
  * builds its tree from the records (`SearchTree`), and walks the stacks of
  * one branch again only when it is looked at (`followKeys`).
  *
+ * A branch that carries a `Reading` is cut as soon as it cannot be the first
+ * reading of a circuit (`canon.ts`), so each circuit is closed on by one
+ * branch; its record says it was cut.
+ *
  * Handles are `worker:index`, so records from several workers can be put in
  * one tree; the root is `0`.
  */
-import { chooseIn, forkOf, reducePossible, walkOn, type Fork, type PossibleWalk, type Seen, type Stage, type Status, type Walker } from './possible';
+import { firstReading, stillFirst, type Reading } from './canon';
+import { advance, chooseIn, forkOf, reducePossible, type Fork, type PossibleWalk, type Seen, type Stage, type Status, type Walker } from './possible';
 
 export type Handle = string;
 
 /** A branch handed to a walker of subtrees: its handle and the stage it starts from. */
-export interface Branch { readonly handle: Handle; readonly stage: Stage }
+export interface Branch { readonly handle: Handle; readonly stage: Stage; readonly reading?: Reading }
+
+/** How a branch ended: as the walk does, or cut as not the first reading of anything it closes on. */
+export type Ending = Status | 'cut';
 
 /** What walking a branch found. */
 export interface Walked {
@@ -27,8 +35,8 @@ export interface Walked {
   readonly tiles: number;
   /** Its fork, and the handle of the branch along each landing. */
   readonly fork?: { readonly fork: Fork; readonly children: readonly { readonly handle: Handle; readonly key: string }[] };
-  /** Where it ended: closed (with the circuit's tiles), open, stuck, or still walking after the tile limit. */
-  readonly end?: { readonly status: Status; readonly seen?: readonly Seen[] };
+  /** Where it ended: closed (with the circuit's tiles), open, stuck, still walking after the tile limit, or cut. */
+  readonly end?: { readonly status: Ending; readonly seen?: readonly Seen[] };
 }
 
 /** The branches one thread walks: a queue, nearest first, and the records of the branches walked. */
@@ -64,14 +72,31 @@ export class Subtrees {
   }
 
   private walk(b: Branch): Walked {
-    const st = walkOn(this.walker, b.stage, this.tiles);
+    const wk = this.walker;
+    let st = b.stage;
+    let reading = b.reading;
+    const cut = (): Walked => ({ handle: b.handle, tiles: st.seen.length, end: { status: 'cut' } });
+    while (st.status === 'walking' && st.seen.length < this.tiles) {
+      st = advance(wk, st);
+      if (reading && st.status !== 'choice') {
+        const next = stillFirst(wk, st.seen, reading);
+        if (!next) return cut();
+        reading = next;
+      }
+    }
+    if (st.status === 'closed' && reading && !firstReading(wk, st.seen)) return cut();
     if (st.status !== 'choice') return { handle: b.handle, tiles: st.seen.length, end: { status: st.status, seen: st.status === 'closed' ? st.seen : undefined } };
-    const fork = forkOf(this.walker, st);
-    const children = st.pending.map((o) => {
+    const fork = forkOf(wk, st);
+    const children: { handle: Handle; key: string }[] = [];
+    for (const o of st.pending) {
+      const stage = chooseIn(wk, st, o.key);
+      // a landing that cannot start a first reading is not walked
+      const next = reading ? stillFirst(wk, stage.seen, reading) : undefined;
+      if (reading && !next) continue;
       const handle = `${this.tag}:${this.made++}`;
-      this.queue.push({ handle, stage: chooseIn(this.walker, st, o.key) });
-      return { handle, key: o.key };
-    });
+      this.queue.push({ handle, stage, reading: next ?? undefined });
+      children.push({ handle, key: o.key });
+    }
     return { handle: b.handle, tiles: st.seen.length, fork: { fork, children } };
   }
 }
@@ -86,7 +111,7 @@ export interface SearchNode {
   depth: number;
   tiles?: number;
   fork?: Fork;
-  end?: { readonly status: Status; readonly seen?: readonly Seen[] };
+  end?: { readonly status: Ending; readonly seen?: readonly Seen[] };
 }
 
 export class SearchTreeData {
