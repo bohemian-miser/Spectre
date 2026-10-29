@@ -14,14 +14,15 @@ export interface ComboChoice {
 
 const LEVELS = [6, 7, 8, 9];
 
-export function ComboPicker(props: { busy: boolean; onAdd: (c: ComboChoice) => void }): JSX.Element {
+export function ComboPicker(props: { busy: boolean; onAdd: (c: ComboChoice) => void; levels?: readonly number[]; verb?: string; initialLevel?: number; initialCombo?: string }): JSX.Element {
+  const levels = props.levels ?? LEVELS;
   const rules = useMemo(() => validEdgeSubsets('hex').filter((r) => r.edges.length > 0), []);
   const [rule, setRule] = useState('023468');
   const subset = useMemo(() => [...rule].map(Number), [rule]);
   const counts = useMemo(() => comboOptionCounts('hex', subset), [subset]);
   const types = leafOrder('hex');
-  const [digits, setDigits] = useState<number[]>(() => types.map(() => 0));
-  const [level, setLevel] = useState(7);
+  const [digits, setDigits] = useState<number[]>(() => types.map((_, i) => parseInt(props.initialCombo?.[i] ?? '0', 36) || 0));
+  const [level, setLevel] = useState(props.initialLevel ?? 7);
   const safe = digits.map((d, i) => (d < counts[i] ? d : 0));
   const combo = safe.map((d) => comboDigitChar(d) ?? '0').join('');
   const total = counts.reduce((a, b) => a * Math.max(1, b), 1);
@@ -66,7 +67,7 @@ export function ComboPicker(props: { busy: boolean; onAdd: (c: ComboChoice) => v
       <label>
         Up to level
         <select value={level} onChange={(e) => setLevel(Number(e.target.value))} data-testid="shapes-combo-level">
-          {LEVELS.map((l) => (
+          {levels.map((l) => (
             <option key={l} value={l}>
               {l}
             </option>
@@ -77,9 +78,9 @@ export function ComboPicker(props: { busy: boolean; onAdd: (c: ComboChoice) => v
         Random
       </button>
       <button type="button" disabled={props.busy} onClick={() => props.onAdd({ subset, combo, level })} data-testid="shapes-combo-add">
-        {props.busy ? 'Computing…' : `Add ${rule} · ${combo}`}
+        {props.busy ? 'Computing…' : `${props.verb ?? 'Add'} ${rule} · ${combo}`}
       </button>
-      <span className="shapes-note">{total.toLocaleString('en-US')} combinations of this rule. Nothing changes below until you press Add.</span>
+      <span className="shapes-note">{total.toLocaleString('en-US')} combinations of this rule. Nothing changes below until you press {props.verb ?? 'Add'}.</span>
     </div>
   );
 }

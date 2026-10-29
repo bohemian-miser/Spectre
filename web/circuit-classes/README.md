@@ -336,7 +336,9 @@ another: the lineages of a triangle fractal, such as 27 → 513 → 10215 in
 `023468-000000000`. `chase-harmonic.ts` runs the Circuit walker's search for
 a harmonic with the rule that a fork decided at level 3 or above may only
 take a landing whose cells, two levels down, the fundamental's own stacks
-use. Write-up in [`docs/HARMONICS.md`](../../docs/HARMONICS.md).
+use. The Harmonics page (`harmonics.html`) does the same from the renormalisation,
+for any combination, in the browser. Write-up in
+[`docs/HARMONICS.md`](../../docs/HARMONICS.md).
 
     npx tsx circuit-classes/harmonics.ts 023468-000100000 6
     npx tsx circuit-classes/chase-harmonic.ts 023468-000100000 5 6 18 441 all

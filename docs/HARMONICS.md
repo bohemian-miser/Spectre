@@ -8,6 +8,9 @@ one, and that is how one is found from the other on the walker page. This
 note says exactly what the two have in common, in the walker's own terms
 (addresses, stacks, levels), and what that gives the walker's search.
 
+Page: `harmonics.html` reads any combination of any hexagon rule from the
+renormalisation (`web/src/pages/harmonics/readings.ts`), lists its lineages
+and lines a circuit's readings up with its fundamental's, level by level.
 Script: [`web/circuit-classes/harmonics.ts`](../web/circuit-classes/harmonics.ts)
 lists every circuit of a combination with its readings and lineages;
 [`web/circuit-classes/chase-harmonic.ts`](../web/circuit-classes/chase-harmonic.ts)
@@ -202,6 +205,16 @@ from each of the 22 starts that lie on one, in 113 to 406 forks; the other
   it as a walk to follow (`followWord`) rather than a branch to find.
 - Why the loops round junctions are always Xi, Phi in slot 6, Gamma in slot
   7, and only in combinations whose Xi pairing is the second option.
+
+## The page
+
+The readings on the Harmonics page come from the renormalisation
+(`shapes/circuitShapes.ts`), which keeps every arc's route through its
+children: a visit at level k is one arc through a level-k supertile, and a
+born circuit is read at every level without building a patch, so a
+combination is read to level 9 in a few seconds. The tests check the
+renormalisation's readings against the tile-by-tile trace for every circuit
+of the base combination at every level.
 
 ## Reproducing
 
