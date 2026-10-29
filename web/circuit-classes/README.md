@@ -342,3 +342,4 @@ for any combination, in the browser. Write-up in
 
     npx tsx circuit-classes/harmonics.ts 023468-000100000 6
     npx tsx circuit-classes/chase-harmonic.ts 023468-000100000 5 6 18 441 all
+    npx tsx circuit-classes/new-fundamentals.ts 023468 7     # per combination, births and new fundamentals per level

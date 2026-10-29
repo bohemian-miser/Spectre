@@ -206,6 +206,72 @@ from each of the 22 starts that lie on one, in 113 to 406 forks; the other
 - Why the loops round junctions are always Xi, Phi in slot 6, Gamma in slot
   7, and only in combinations whose Xi pairing is the second option.
 
+## When the walker's search can stop, and when it cannot
+
+The walker searches from one start tile and entry edge over every stack at
+once, so it finds every circuit that any tiling puts through that tile. A
+tile lies on a bigger harmonic in the tilings where it sits deep inside a
+bigger supertile, and there are infinitely many of those; their measure
+shrinks, since in `000100000` a tile is on a 441 with probability 441/3,840
+(11%) and on an 8,784 with probability 8,784/238,000 (3.7%), and by about a
+third more at each step up, but the search tree does not weigh branches by
+measure, so it keeps finding them. A search that stops needs a reason to
+believe that every circuit beyond some level is a harmonic of one it has.
+
+That reason can only come from the renormalisation, and it is checked per
+combination, not assumed. `new-fundamentals.ts` runs every combination of a
+rule up the renormalisation and counts, per level, the circuits born and how
+many are new (not a harmonic of a birth two levels below). For the 320
+combinations of rule `023468` to level 7
+([data](harmonics/new-fundamentals-023468-7.txt)):
+
+| last level with a new fundamental | combinations |
+|---|---|
+| 4 | 106 |
+| 5 | 24 |
+| 6 | 98 |
+| 7 | 92 |
+
+| combinations with | count |
+|---|---|
+| at least one harmonic pair by level 7 | 233 |
+| none | 87 |
+
+For the 106 combinations in the first row, including both of §2, every
+circuit born at levels 5, 6 and 7 is a harmonic of an earlier one, and the
+two of §2 keep that to level 8 (`000100000`: 4 born at level 8, 0 new;
+`000000000` the same). For those a search can stop at the last new level
+plus two, having seen one harmonic of each lineage, and lose nothing that
+levels 5 to 8 would show. For the 92 in the last row level 7 itself brings
+new fundamentals, and for the 98 in the third row level 6 was new and level
+8 has not been looked at. For those a stop rule has no basis yet.
+
+Two combinations show what "new" can mean. `111000100`, the space-filling
+family of [`DEEP_ORBIT.md`](DEEP_ORBIT.md), is born at levels 6 and 8; the
+level-8 circuits read the same as the level-6 ones at their top three
+levels and get denser below (669 visits at level 2 against 372 tiles), which
+is what a circuit of dimension 2 must do. `011000101`, a triangle fractal
+with births at every level, has its 11,790-tile triangle agree with its
+630-tile one only at the top level; below that the readings differ in
+length, not just in loops. So the exact relation of §2 belongs to some
+triangle combinations and not to others, and the walker cannot assume it.
+
+What follows for the walker:
+
+- Classify each closed circuit by its readings against those already found,
+  so the found list shows lineages rather than an ever longer list.
+- Take the level cap from the renormalisation of the combination in hand:
+  the last level with a new fundamental plus two, when the levels above it
+  have been run and bring none. The Harmonics page's summary line is that
+  check ("Level 6: 4 born, 0 new"), and Next level extends it.
+- Where the renormalisation still brings new fundamentals at its last level,
+  do not cap; say so.
+
+None of this is a proof that a combination's births stay harmonic for ever.
+It is the same standing as [`PLACEMENTS.md`](PLACEMENTS.md): exact as far as
+the renormalisation has been run, and the page lets that be as far as the
+machine allows.
+
 ## The page
 
 The readings on the Harmonics page come from the renormalisation
