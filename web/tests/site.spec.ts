@@ -122,6 +122,13 @@ test('the Harmonics page reads the walker’s default combination into lineages'
   await expect(page.locator('[data-testid="harm-extras"]')).toContainText('24 extra runs');
 });
 
+test('the Compare page lines two circuits of a combination up and compares their terms', async ({ page }) => {
+  await page.goto('compare.html#a=023468-140000001:4:303&b=023468-140000001:6:14679');
+  await expect(page.locator('[data-testid="compare-title"]')).toHaveText('A: 303 tiles at level 4 of 023468-140000001; B: 14,679 tiles at level 6', { timeout: 120000 });
+  await expect(page.locator('[data-testid="compare-summary"]')).toContainText('the same at 2 of the 4 levels compared, 2, 3');
+  await expect(page.locator('[data-testid="corners-compare-gap"]')).toContainText('B has 14,679 tiles to A’s 303');
+});
+
 test.describe('on a screen of pixel ratio 2', () => {
   test.use({ deviceScaleFactor: 2 });
   test('the Shapes page’s epicycles keep their size', async ({ page }) => {

@@ -240,6 +240,20 @@ differ the tokens the other reading does not share outlined, after the
 best rotation and direction (longest common subsequence, for readings up to
 2,500 tokens). Tokens are drawn as chips in their type's colour.
 
+### The Compare page
+
+`compare.html` takes two circuits in its URL, each named by its
+combination, the level it is born at and its length
+(`#a=023468-140000001:4:303&b=023468-140000001:6:14679`), computes both from
+the renormalisation and shows them side by side: drawn, compared through
+their Fourier terms as the Corners page compares circuits (the loop is the
+circuit's tiles, or the ends of its arcs at the finest level drawn, sampled
+evenly; B is turned, restarted and if need be mirrored onto A), and read
+level by level with the unshared tokens outlined. The view is a component
+(`web/src/pages/compare/CompareView.tsx`) any page can embed, and
+`compareHref` builds the link; the Harmonics page links each pair it lines
+up.
+
 ## When the walker's search can stop, and when it cannot
 
 The walker searches from one start tile and entry edge over every stack at
