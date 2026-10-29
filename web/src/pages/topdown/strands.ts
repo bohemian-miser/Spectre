@@ -81,6 +81,8 @@ export interface MapStrand {
   /** World points and, per segment, its curve handles in world coordinates. */
   readonly points: readonly Pt[];
   readonly curves: readonly { readonly c1: Pt; readonly c2: Pt }[];
+  /** The tile each segment lies in, aligned with `curves`. */
+  readonly segTiles: readonly string[];
   /** Slot paths of the tiles it runs through, each once, in order. */
   readonly tiles: readonly string[];
   /** The tile of every chord along it, in order, with repeats: a tile crossed twice appears twice. */
@@ -166,8 +168,10 @@ export function traceMap(map: TopDownMap, rule: StrandRule): MapStrands {
         const route: string[] = [];
         const seen = new Set<string>();
         const curves: { c1: Pt; c2: Pt }[] = [];
+        const segTiles: string[] = [];
         for (const seg of pathSegments(path)) {
           const c = info.get(segmentKey(seg));
+          segTiles.push(c ? c.tile : '');
           if (!c) {
             curves.push({ c1: transPt(world, seg[0]), c2: transPt(world, seg[1]) });
             continue;
@@ -190,6 +194,7 @@ export function traceMap(map: TopDownMap, rule: StrandRule): MapStrands {
           depth,
           points: path.points.map((p) => transPt(world, p)),
           curves,
+          segTiles,
           tiles,
           route,
           edge,

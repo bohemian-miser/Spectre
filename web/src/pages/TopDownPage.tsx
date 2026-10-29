@@ -290,11 +290,14 @@ export function TopDownPage(props: TopDownPageProps): JSX.Element {
         return next;
       });
       if (speed > 0) {
-        running.current = [...running.current, { batch: result.batch, t0: performance.now(), ms: speed }];
+        running.current = [
+          ...running.current,
+          { batch: result.batch, t0: performance.now(), ms: speed, before: traced?.strands },
+        ];
         setRunKey((k) => k + 1);
       }
     },
-    [map, speed],
+    [map, speed, traced],
   );
 
   /** Substitutes the picked circuit and a margin of two tiles round it, twice, and looks for its harmonic among the strands. */
