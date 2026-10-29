@@ -206,6 +206,8 @@ export function drawMap(ctx: CanvasRenderingContext2D, o: DrawOptions): void {
     }
   }
 
+  // The supertile outlines wait, like the strands, for running changes to finish.
+  const settled = !o.running.some((r) => progressOf(r, o.now) < 1);
   if (o.overlay && settled) {
     ctx.lineCap = 'round';
     for (const layer of o.overlay) {
