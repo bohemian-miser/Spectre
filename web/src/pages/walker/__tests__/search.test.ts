@@ -5,12 +5,14 @@
  * branch's landings from the start walks to the same end. Cutting branches
  * that are not a circuit's first reading keeps every circuit the whole tree
  * closes on, each on one branch, and finds the circuits the circuit index
- * lists.
+ * lists, under the keys the renormalisation's words give them.
  */
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
+import { circuitKey as keyOfWord } from '../../../core';
+import { CircuitShapes } from '../../shapes/circuitShapes';
 import { FRESH } from '../canon';
 
 import { circuitKey } from '../circuits';
@@ -55,8 +57,8 @@ describe('one branch per circuit', () => {
     sub.add([{ handle: '0', stage: startWalk(wk).stage, ...(oneReading ? { reading: FRESH } : {}) }]);
     const data = new SearchTreeData();
     while (sub.waiting > 0) data.put(sub.run(1000));
-    const closed = data.nodes.filter((n) => n.end?.status === 'closed').map((n) => circuitKey(n.end!.seen!));
-    return { data, closed };
+    const ends = data.nodes.filter((n) => n.end?.status === 'closed').map((n) => n.end!.seen!);
+    return { data, closed: ends.map(circuitKey), lengths: ends.map((s) => s.length) };
   };
 
   it('closes on every circuit the whole tree closes on, each by one branch', () => {
@@ -73,7 +75,15 @@ describe('one branch per circuit', () => {
     const index = JSON.parse(readFileSync(resolve(__dirname, '../../../../public/data/corners/hex-023468/140000001.json'), 'utf8')) as { circuits: { length: number }[] };
     const wk = makeWalker(patternOf([0, 2, 3, 4, 6, 8], '140000001'), 'Xi', 2, 5);
     const one = walkAll(wk, 5000, true);
-    const lengths = one.closed.map((k) => k.split(' ').length).sort((a, b) => a - b);
+    const lengths = [...one.lengths].sort((a, b) => a - b);
     expect(lengths).toEqual(index.circuits.map((c) => c.length).filter((n) => n <= 5000).sort((a, b) => a - b));
+  }, 120000);
+
+  it('names circuits by the same key as the renormalisation', () => {
+    const cs = new CircuitShapes('hex', [0, 2, 3, 4, 6, 8], [...'140000001'].map((c) => parseInt(c, 36)), 6, 1, false);
+    const renormalised = new Set(cs.born.filter((c) => c.length <= 1000).map((c) => keyOfWord(cs.word(c))));
+    const walked = walkAll(makeWalker(patternOf([0, 2, 3, 4, 6, 8], '140000001'), 'Xi', 2, 5), 1000, true);
+    expect(renormalised.size).toBeGreaterThan(2);
+    expect(new Set(walked.closed)).toEqual(renormalised);
   }, 120000);
 });

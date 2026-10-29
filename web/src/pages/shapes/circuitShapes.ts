@@ -18,8 +18,11 @@ import {
   leafOrder,
   mul,
   nonCrossingForTile,
+  slotsOfType,
+  tileLetter,
   transPt,
   type Affine,
+  type HexType,
   type MetaNode,
   type Pt,
   type TileFamilyId,
@@ -74,6 +77,9 @@ export class CircuitShapes {
   /** With `onePerLength`: where each family, level and length sits in `born`. */
   private readonly bornAt = new Map<string, number>();
 
+  /** Per tile type, the edge each crossing sits on. */
+  private readonly edges: Record<string, readonly number[]>;
+
   /** The highest level built so far; `extend` adds levels above it. */
   maxLevel = 0;
 
@@ -88,6 +94,7 @@ export class CircuitShapes {
     readonly onePerLength = false,
   ) {
     const sel = new Set(subset);
+    this.edges = Object.fromEntries(leafOrder(family).map((t) => [t, slotsOfType(family, t, subset).map((x) => x.edge)]));
     const options = ruleOptions(family, subset);
     const level0: Record<string, Layer> = {};
     leafOrder(family).forEach((t, ti) => {
@@ -265,6 +272,36 @@ export class CircuitShapes {
     };
     if (fwd) for (const i of s) enter(i, false);
     else for (let q = s.length - 1; q >= 0; q--) enter(s[q], true);
+  }
+
+  /** The tiles of a level-n arc entering crossing k, as letters (`core/circuitWord.ts`), appended to `out`. */
+  private letters(n: number, type: string, k: number, out: string[]): void {
+    const L = this.levels[n][type];
+    if (n === 0) {
+      out.push(tileLetter(type as HexType, this.edges[type][k], this.edges[type][L.mate[k]]));
+      return;
+    }
+    const meta = buildSystem(this.family, n)[type] as MetaNode;
+    const fwd = L.forward[k] === 1;
+    const from = fwd ? k : L.mate[k];
+    const s = L.routeSteps.subarray(L.routeStart[from], L.routeStart[from + 1]);
+    const prev = this.levels[n - 1];
+    const enter = (i: number, reversed: boolean) => {
+      const childType = meta.children[L.owner[i]].node.type;
+      this.letters(n - 1, childType, reversed ? prev[childType].mate[L.local[i]] : L.local[i], out);
+    };
+    if (fwd) for (const i of s) enter(i, false);
+    else for (let q = s.length - 1; q >= 0; q--) enter(s[q], true);
+  }
+
+  /** A born circuit's word: a letter per tile, the hexagon family only. */
+  word(c: BornCircuit): string[] {
+    if (this.family !== 'hex') throw new Error('circuit words are written for hexagon tiles');
+    const meta = buildSystem(this.family, c.level)[c.type] as MetaNode;
+    const L = this.levels[c.level][c.type];
+    const out: string[] = [];
+    for (const i of c.steps) this.letters(c.level - 1, meta.children[L.owner[i]].node.type, L.local[i], out);
+    return out;
   }
 
   /** The children of a level-n supertile of `type`: their types and slots, in child order. */

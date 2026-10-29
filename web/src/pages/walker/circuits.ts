@@ -8,27 +8,14 @@
  * apart by the word read round them from the tile where it reads least, in
  * the direction that reads least.
  */
-import { letter, reverseLetter } from '../../core';
+import { circuitKey as keyOfWord, tileLetter } from '../../core';
 import type { ChoiceNode, Fork, PossibleWalk, Seen, Stage } from './possible';
 
-/** The least of the word's rotations, read either way round. */
-export function circuitKey(seen: readonly Seen[]): string {
-  const word = seen.map((s) => letter(s.type, s.entry, s.exit));
-  const back = [...word].reverse().map(reverseLetter);
-  let best: string[] | null = null;
-  for (const w of [word, back]) {
-    for (let k = 0; k < w.length; k++) {
-      const r = [...w.slice(k), ...w.slice(0, k)];
-      if (!best || less(r, best)) best = r;
-    }
-  }
-  return (best ?? []).join(' ');
-}
+/** The circuit's word: a letter per tile (`core/circuitWord.ts`). */
+export const wordOf = (seen: readonly Seen[]): string[] => seen.map((s) => tileLetter(s.type, s.entry, s.exit));
 
-const less = (a: readonly string[], b: readonly string[]): boolean => {
-  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return a[i] < b[i];
-  return false;
-};
+/** The key every page names a circuit by: its word from the tile where it reads least, the way round it reads least. */
+export const circuitKey = (seen: readonly Seen[]): string => keyOfWord(wordOf(seen));
 
 /** Where a circuit's branch leaves a smaller circuit's branch. */
 export interface Branching {
