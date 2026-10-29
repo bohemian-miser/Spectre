@@ -20,7 +20,7 @@
  * stack again.
  */
 import {
-  HEX_TYPES, across, childType, climbOut, comeDown, growPair, meetingOf, neighbour, pairAlive, pairKey,
+  HEX_TYPES, across, childType, climbOut, comeDown, growPair, meetingOf, neighbourOf, pairAlive, pairKey,
   type Address, type HexType, type Link, type Pair,
 } from '../../core';
 import type { Pattern } from './walk';
@@ -51,6 +51,9 @@ const parentsOf = (t: HexType): Link[] => {
   return out;
 };
 
+const NONE: ReadonlySet<string> = new Set();
+const TYPE_INDEX = Object.fromEntries(HEX_TYPES.map((t, i) => [t, i])) as Record<HexType, number>;
+
 const topOf = (w: World, start: HexType): HexType => (w.chain.length ? w.chain[w.chain.length - 1].parent : start);
 
 const sameAddress = (a: Address, b: Address): boolean =>
@@ -64,11 +67,15 @@ export interface Walker {
   /** Whether crossings go over seams above `maxLevel`; without, a strand leaving a level-`maxLevel` stack is `open`. */
   readonly seams: boolean;
   readonly table: Map<HexType, Map<number, number>>;
+  /** `table` as arrays: per type, the exit for each entry edge (-1 where the pattern has none). */
+  readonly exits: Readonly<Record<HexType, readonly number[]>>;
 }
 
-export const makeWalker = (pattern: Pattern, start: HexType, startEdge: number, maxLevel: number, seams = true): Walker => ({
-  start, startEdge, maxLevel, seams, table: pairingTable(pattern),
-});
+export function makeWalker(pattern: Pattern, start: HexType, startEdge: number, maxLevel: number, seams = true): Walker {
+  const table = pairingTable(pattern);
+  const exits = Object.fromEntries(HEX_TYPES.map((t) => [t, [0, 1, 2, 3, 4, 5].map((e) => table.get(t)?.get(e) ?? -1)])) as Record<HexType, number[]>;
+  return { start, startEdge, maxLevel, seams, table, exits };
+}
 
 /** The world's tile one level up, on its side of the seam: the near side takes the link, the far side its own. */
 const raise = (a: Address, link: Link): Address => ({ leaf: a.leaf, path: [...a.path, link] });
@@ -94,17 +101,20 @@ export interface Corner {
 /** Every world after one step, grouped by what is seen; and the stacks that stop at a corner of two walls. */
 export function stepAll(wk: Walker, worlds: readonly World[]): { outcomes: Outcome[]; corner: Omit<Corner, 'step'> } {
   const corner = { stacks: 0, tiles: new Map<string, number>(), unforced: 0 };
-  const groups = new Map<string, { type: HexType | null; edge: number | null; worlds: World[] }>();
-  const add = (key: string, type: HexType | null, edge: number | null, w: World): void => {
-    (groups.get(key) ?? groups.set(key, { type, edge, worlds: [] }).get(key)!).worlds.push(w);
+  // by what is seen: a tile type and entry edge (type index * 6 + edge), or closes (-1), or open (-2)
+  const groups = new Map<number, { key: string; type: HexType | null; edge: number | null; worlds: World[] }>();
+  const add = (g: number, type: HexType | null, edge: number | null, w: World): void => {
+    let group = groups.get(g);
+    if (!group) groups.set(g, group = { key: g === -1 ? 'closes' : g === -2 ? 'open' : `${type} ${edge}`, type, edge, worlds: [] });
+    group.worlds.push(w);
   };
-  const isHome = (w: World): boolean => !w.far && sameAddress(w.at, { leaf: wk.start, path: w.chain }) && w.entry === wk.startEdge;
-  const land = (w: World): void => (isHome(w) ? add('closes', null, null, w) : add(`${w.at.leaf} ${w.entry}`, w.at.leaf, w.entry, w));
+  const isHome = (w: World): boolean => w.entry === wk.startEdge && !w.far && sameAddress(w.at, { leaf: wk.start, path: w.chain });
+  const land = (w: World): void => (isHome(w) ? add(-1, null, null, w) : add(TYPE_INDEX[w.at.leaf] * 6 + w.entry, w.at.leaf, w.entry, w));
   // `climbing`: on this crossing, the states the seam has been moved up through
-  const go = (w: World, climbing: ReadonlySet<string> = new Set()): void => {
-    const exit = wk.table.get(w.at.leaf)?.get(w.entry);
-    if (exit === undefined) return;
-    const nb = neighbour(w.at, exit);
+  const go = (w: World, climbing: ReadonlySet<string> = NONE): void => {
+    const exit = wk.exits[w.at.leaf][w.entry];
+    if (exit < 0) return;
+    const nb = neighbourOf(w.at, exit);
     if (nb.ok) { land({ ...w, at: nb.address, entry: nb.edge }); return; }
     if (w.seam) {
       const climb = climbOut(w.at, exit)!;
@@ -135,15 +145,14 @@ export function stepAll(wk: Walker, worlds: readonly World[]): { outcomes: Outco
     }
     if (w.chain.length >= wk.maxLevel) {
       // with no room above maxLevel, the strand is cut off as open
-      if (!wk.seams) { add('open', null, null, w); return; }
+      if (!wk.seams) { add(-2, null, null, w); return; }
       for (const o of across(w.at, exit)) land({ chain: w.chain, at: o.address, entry: o.edge, seam: o.pair, far: true });
       return;
     }
     for (const link of parentsOf(topOf(w, wk.start))) go({ chain: [...w.chain, link], at: raise(w.at, link), entry: w.entry });
   };
   for (const w of worlds) go(w);
-  const outcomes = [...groups.entries()]
-    .map(([key, g]) => ({ key, ...g }))
+  const outcomes = [...groups.values()]
     .sort((a, b) => b.worlds.length - a.worlds.length);
   const tiles = [...corner.tiles].map(([tile, stacks]) => ({ tile, stacks })).sort((a, b) => b.stacks - a.stacks);
   return { outcomes, corner: { stacks: corner.stacks, tiles, unforced: corner.unforced } };
@@ -328,7 +337,7 @@ export function replay(wk: Walker, world: World, steps: number): { at: Address[]
   const levels: number[] = [];
   for (let i = 0; i < steps; i++) {
     const exit = wk.table.get(at.leaf)!.get(entry)!;
-    const nb = neighbour(at, exit);
+    const nb = neighbourOf(at, exit);
     if (!nb.ok) break;
     at = nb.address;
     entry = nb.edge;

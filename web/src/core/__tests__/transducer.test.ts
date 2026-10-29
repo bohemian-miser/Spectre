@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
-  addressFromId, buildTransducer, formatAddress, hexTransducer, idOf, neighbour, parseAddress, runPeriodic, runTransducer,
+  addressFromId, buildTransducer, formatAddress, hexTransducer, idOf, neighbour, neighbourOf, parseAddress, runPeriodic, runTransducer,
   strandStep, symbolsOf, addressOfSymbols, walkStrand, sameAddress, HEX_TYPES, type HexType, type Address,
   buildSystem, flatten, leafPts, transPt, buildStrandGraph, strandComponents, strandWorkspace, comboToMatchingIndices, leafOrder,
   nonCrossingForTile,
@@ -40,7 +40,7 @@ describe('combinatorial coordinates', () => {
   });
 
   for (const root of ['Delta', 'Gamma'] as HexType[]) {
-    it(`neighbour() agrees with the geometry on every edge of a level-3 ${root} supertile`, () => {
+    it(`neighbour() and neighbourOf() agree with the geometry on every edge of a level-3 ${root} supertile`, () => {
       const { tiles, byMid } = patch(root, 3);
       let inside = 0, outside = 0;
       tiles.forEach((t, ti) => {
@@ -48,6 +48,12 @@ describe('combinatorial coordinates', () => {
           const here = byMid.get(t.mids[e])!;
           const other = here.find((o) => o.tile !== ti);
           const nb = neighbour(t.address, e);
+          const fast = neighbourOf(t.address, e);
+          expect(fast.ok).toBe(!!other);
+          if (fast.ok && other) {
+            expect(sameAddress(fast.address, tiles[other.tile].address) && fast.edge === other.edge).toBe(true);
+            expect(fast.level).toBe((nb as { level: number }).level);
+          }
           if (!other) {
             expect(nb.ok).toBe(false);
             outside++;
