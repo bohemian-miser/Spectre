@@ -14,11 +14,11 @@ import { explorerCircuitHref } from '../shapes/explorerLink';
 import { tileColor } from '../../lib/palette';
 import { startSearch, type Search } from '../../workers/searchClient';
 import { SearchTreeData, followKeys } from './search';
-import { choicesOf, concreteChain, circuitsAhead, followWord, makeWalker, reducePossible, replay, replayChoices, rotateWord, stageAfter, stageAhead, startWalk, type Ahead, type Limits, type Outcome, type PossibleWalk, type Seen, type Stage, type Walker, type World } from './possible';
+import { choicesOf, concreteChain, circuitsAhead, followWord, makeWalker, reducePossible, replay, replayChoices, rotateWord, stageAfter, stageAhead, startWalk, type Ahead, type Outcome, type PossibleWalk, type Seen, type Stage, type Walker, type World } from './possible';
 import { AncestorFlow } from './AncestorFlow';
 import { classLabel } from './landings';
 import { CircuitList, FoundList } from './CircuitList';
-import { circuitsOf, foundIn, type Circuit } from './circuits';
+import { circuitsIn, foundIn, type Circuit } from './circuits';
 import { ChoiceTree } from './ChoiceTree';
 import { SearchTree, circuitColor } from './SearchTree';
 import type { Choice } from './share';
@@ -184,8 +184,8 @@ export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial
   // the whole tree: off, beside the board, or across the page
   const [view, setView] = useState<'off' | 'split' | 'full'>(carry?.view ?? (initial?.whole ? 'split' : 'off'));
   const whole = view !== 'off';
-  const [limits, setLimits] = useState<Limits>({ forks: 60, tiles: 1000 });
-  const [exploring, setExploring] = useState(false);
+  // a branch of the search gives up after this many tiles
+  const [tileLimit, setTileLimit] = useState(1000);
   // a search: explore with no limit on forks, until stopped
   const [searching, setSearching] = useState(false);
   // the search: its workers, its tree as their records come in (shown every 200 ms), the branch each walked last, and what is left
@@ -222,28 +222,15 @@ export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial
   const toggle = (id: number): void => setFlipped((f) => { const g = new Set(f); if (g.has(id)) g.delete(id); else g.add(id); return g; });
   const onRoute = useMemo(() => { const r = new Set<number>(); for (let id: number | null = pw.current; id !== null; id = pw.nodes[id].parent) r.add(id); return r; }, [pw]);
   // while a search runs, the way down to the node it is walking: unfolded in the trees, and marked
-  const searchRoute = useMemo(() => {
-    const r = new Set<number>();
-    const at = exploring && pw.explored ? Math.min(pw.explored.next, pw.nodes.length - 1) : null;
-    for (let id: number | null = at; id !== null; id = pw.nodes[id].parent) r.add(id);
-    return r;
-  }, [pw, exploring]);
   const isCollapsed = useCallback((id: number): boolean => {
     let depth = 0;
     for (let at = pw.nodes[id].parent; at !== null; at = pw.nodes[at].parent) depth++;
-    const fold = depth >= 3 && !onRoute.has(id) && !searchRoute.has(id);
+    const fold = depth >= 3 && !onRoute.has(id);
     return flipped.has(id) ? !fold : fold;
-  }, [pw, onRoute, searchRoute, flipped]);
+  }, [pw, onRoute, flipped]);
   // a landing taken, or a node of the tree, walks on by itself to the next fork or the end
   const goto = (id: number): void => { setHover(null); dispatch({ type: 'goto', id }); dispatch({ type: 'run', cap: RUN_CAP }); };
   const take = (id: number, key: string): void => { setHover(null); dispatch({ type: 'chooseAt', id, key }); dispatch({ type: 'run', cap: RUN_CAP }); };
-  // take every landing a little at a time, so the page keeps drawing
-  useEffect(() => {
-    if (!exploring) return undefined;
-    if (pw.explored?.done) { setExploring(false); return undefined; }
-    const t = setTimeout(() => dispatch({ type: 'explore', limits, budgetMs: 250 }), 0);
-    return () => clearTimeout(t);
-  }, [exploring, pw, limits]);
   useEffect(() => () => search.current?.stop(), []);
   useEffect(() => {
     if (!searching) return undefined;
@@ -260,7 +247,7 @@ export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial
     const d = new SearchTreeData();
     data.current = d;
     latest.current = { at: [], waiting: 1 };
-    search.current = startSearch(pw.walker, pw.current === 0 ? pw.stage : pw.nodes[0].stage, limits.tiles, (u) => {
+    search.current = startSearch(pw.walker, pw.current === 0 ? pw.stage : pw.nodes[0].stage, tileLimit, (u) => {
       d.put(u.walked);
       latest.current = { at: u.at, waiting: u.waiting };
     });
@@ -288,8 +275,8 @@ export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial
     const forks = ns.filter((x) => x.fork).length;
     const closed = found.reduce((a, c) => a + c.branches, 0);
     const gaveUp = ns.filter((x) => x.end?.status === 'walking').length;
-    return `${searching ? `Searching on ${searchShown.workers} ${searchShown.workers === 1 ? 'worker' : 'workers'}: ` : ''}${forks.toLocaleString('en-US')} forks; ${closed} ${closed === 1 ? 'branch closes' : 'branches close'} on ${found.length} ${found.length === 1 ? 'circuit' : 'circuits'}; ${gaveUp.toLocaleString('en-US')} still open after ${limits.tiles} tiles; ${searchShown.waiting.toLocaleString('en-US')} waiting.`;
-  }, [searchShown, found, searching, limits.tiles]);
+    return `${searching ? `Searching on ${searchShown.workers} ${searchShown.workers === 1 ? 'worker' : 'workers'}: ` : ''}${forks.toLocaleString('en-US')} forks; ${closed} ${closed === 1 ? 'branch closes' : 'branches close'} on ${found.length} ${found.length === 1 ? 'circuit' : 'circuits'}; ${gaveUp.toLocaleString('en-US')} still open after ${tileLimit} tiles; ${searchShown.waiting.toLocaleString('en-US')} waiting.`;
+  }, [searchShown, found, searching, tileLimit]);
   const goSearch = (id: number): void => {
     const d = data.current;
     if (!d) return;
@@ -303,14 +290,8 @@ export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial
     setPeek(id === null || !d ? null : { id: 0, keys: d.keysTo(id), text, ...pointer.current });
   };
 
-  // how each circuit branches from the smaller ones compares every pair of branches, so it waits until the tree stops growing
-  const lastCircuits = useRef<Circuit[]>([]);
-  const circuits = useMemo(() => (exploring ? lastCircuits.current : (lastCircuits.current = circuitsOf(pw))), [pw, exploring]);
-  const forksOpen = pw.nodes.filter((x) => x.fork).length;
-  const unopened = pw.nodes.filter((x) => !x.fork && !x.end && x.id !== pw.current).length;
-  const long = pw.nodes.filter((x) => x.end?.status === 'walking').length;
-  const branchesClosed = circuits.reduce((a, c) => a + c.nodes.length, 0);
-  const exploredText = `${exploring ? 'Exploring: ' : ''}${forksOpen} ${forksOpen === 1 ? 'fork' : 'forks'}; ${branchesClosed} ${branchesClosed === 1 ? 'branch closes' : 'branches close'} on ${circuits.length} ${circuits.length === 1 ? 'circuit' : 'circuits'}${long ? `; ${long} still open after ${limits.tiles} tiles` : ''}${unopened && !exploring ? `; ${unopened} not walked yet` : ''}.`;
+  // how each circuit branches from the smaller ones compares every pair of branches, so it waits until the search stops
+  const circuits = useMemo<Circuit[]>(() => (!searching && data.current ? circuitsIn(data.current.nodes) : []), [searching, searchVersion]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { onState?.(choicesOf(pw), pw.current, whole); }, [pw, whole]); // eslint-disable-line react-hooks/exhaustive-deps
   const { stage } = pw;
   const n = stage.seen.length;
@@ -427,25 +408,6 @@ export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial
       for (const key of found.path) { dispatch({ type: 'choose', key }); dispatch({ type: 'run', cap: RUN_CAP }); }
     }, 20);
   };
-  const exploreBar = (
-    <div className="wk__explore">
-      <button
-        type="button"
-        className="td__chip"
-        onClick={() => {
-          if (exploring) { setExploring(false); return; }
-          dispatch({ type: 'explore', limits, budgetMs: 250, restart: true });
-          setExploring(true);
-        }}
-        data-testid="wk-explore"
-      >
-        {exploring ? 'Stop' : 'Explore every branch'}
-      </button>
-      <label>stop after <input type="number" min={1} value={limits.forks} onChange={(e) => setLimits((l) => ({ ...l, forks: Math.max(1, Number(e.target.value) || 1) }))} /> forks,</label>
-      <label>and a branch after <input type="number" min={1} value={limits.tiles} onChange={(e) => setLimits((l) => ({ ...l, tiles: Math.max(1, Number(e.target.value) || 1) }))} /> tiles</label>
-      <span className="td__hint">At every fork, walks each landing in turn, the nearest forks first, until the whole tree of choices is drawn or a limit is reached.</span>
-    </div>
-  );
 
   return (
     <>
@@ -543,9 +505,7 @@ export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial
         />
         {view === 'split' ? (
           <div className="wk__side wk__side--whole">
-            {exploreBar}
-            {pw.explored && <p className="td__hint" data-testid="wk-explored">{exploredText}</p>}
-            <ChoiceTree pw={pw} mode="full" onGoto={goto} onChooseAt={take} isCollapsed={isCollapsed} onToggle={toggle} searching={searchRoute} {...peekHandlers} />
+            <ChoiceTree pw={pw} mode="full" onGoto={goto} onChooseAt={take} isCollapsed={isCollapsed} onToggle={toggle} {...peekHandlers} />
           </div>
         ) : (
           <div className="wk__side">
@@ -573,8 +533,6 @@ export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial
           className="wk__fulltree"
           data-testid="wk-fulltree"
         >
-          {exploreBar}
-          {pw.explored && <p className="td__hint" data-testid="wk-explored">{exploredText}</p>}
           <ChoiceTree
             pw={pw}
             mode="full"
@@ -583,7 +541,6 @@ export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial
             {...peekHandlers}
             isCollapsed={isCollapsed}
             onToggle={toggle}
-            searching={searchRoute}
           />
         </div>
       )}
@@ -596,7 +553,7 @@ export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial
           <button type="button" className="td__chip" onClick={searching ? stopSearching : startSearching} data-testid="wk-search-go">
             {searching ? 'Stop' : 'Search breadth first'}
           </button>
-          <label>a branch gives up after <input type="number" min={1} value={limits.tiles} onChange={(e) => setLimits((l) => ({ ...l, tiles: Math.max(1, Number(e.target.value) || 1) }))} /> tiles</label>
+          <label>a branch gives up after <input type="number" min={1} value={tileLimit} onChange={(e) => setTileLimit(Math.max(1, Number(e.target.value) || 1))} /> tiles</label>
           <span className="td__hint" data-testid="wk-search-status">
             {searchText ?? 'Takes every landing at every fork, the nearest forks first, on every core but one, until stopped, and lists each circuit the first time a branch closes on it.'}
           </span>
@@ -631,7 +588,7 @@ export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial
         </svg>
       </section>
 
-      {circuits.length > 0 && <CircuitList circuits={circuits} onGoto={goto} />}
+      {circuits.length > 0 && <CircuitList circuits={circuits} onGoto={goSearch} />}
 
       {closed && <SidesView sides={sides} length={n} onHoverRun={setHoverRun} />}
 

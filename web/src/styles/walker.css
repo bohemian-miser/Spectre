@@ -336,9 +336,6 @@
 .wk-tree__row.is-current .wk-tree__hit {
   fill: rgba(47, 125, 109, 0.1);
 }
-.wk-tree__row.is-searching .wk-tree__hit {
-  fill: rgba(208, 138, 58, 0.18);
-}
 .wk-tree__halo {
   fill: none;
   stroke: var(--accent, #2f7d6d);
@@ -518,13 +515,6 @@
 .wk__side--whole {
   max-height: min(80vh, 900px);
 }
-.wk__side--whole .wk__explore {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  padding-bottom: 0.3rem;
-  background: var(--bg, #f4f2ec);
-}
 .wk__side--whole .td__hint {
   margin: 0.2rem 0 0.4rem;
 }
@@ -539,14 +529,6 @@
   border: 1px solid var(--rule, #2a3140);
   border-radius: 8px;
   padding: 0.4rem;
-  background: var(--panel, #fff);
-}
-.wk__fulltree .wk__explore {
-  position: sticky;
-  top: 0;
-  left: 0;
-  z-index: 1;
-  padding-bottom: 0.3rem;
   background: var(--panel, #fff);
 }
 .wk__peek {
