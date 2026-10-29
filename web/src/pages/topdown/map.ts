@@ -63,8 +63,8 @@ export type SubstituteResult =
   | { readonly ok: true; readonly map: TopDownMap; readonly batch: Batch }
   | { readonly ok: false; readonly reason: string };
 
-/** Replace the tiles with these slot paths by their clusters. */
-export function substitute(map: TopDownMap, ids: readonly string[]): SubstituteResult {
+/** Replace the tiles with these slot paths by their clusters; `limit` is the most tiles the map may then hold. */
+export function substitute(map: TopDownMap, ids: readonly string[], limit = MAX_MAP_TILES): SubstituteResult {
   const parents = ids.map((id) => map.tiles.get(id)).filter((p): p is Placed => p !== undefined);
   if (parents.length === 0) return { ok: false, reason: 'no tiles to substitute' };
   const deepest = Math.max(...parents.map((p) => p.depth));
@@ -72,8 +72,8 @@ export function substitute(map: TopDownMap, ids: readonly string[]): SubstituteR
     return { ok: false, reason: `depth ${deepest + 1} is past the deepest the page draws exactly (${MAX_DEPTH})` };
   }
   const added = parents.reduce((s, p) => s + (p.tile.type === 'Gamma' ? 7 : 8) - 1, 0);
-  if (map.tiles.size + added > MAX_MAP_TILES) {
-    return { ok: false, reason: `${(map.tiles.size + added).toLocaleString('en-US')} tiles is over ${MAX_MAP_TILES.toLocaleString('en-US')}` };
+  if (map.tiles.size + added > limit) {
+    return { ok: false, reason: `${(map.tiles.size + added).toLocaleString('en-US')} tiles is over ${limit.toLocaleString('en-US')}` };
   }
   // A depth reached for the first time gets its frame from these clusters.
   const frames = [...map.frames];

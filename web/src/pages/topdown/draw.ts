@@ -34,6 +34,8 @@ export interface DrawOptions {
   /** Strands to draw over the tiles, and the one picked out. */
   readonly strands?: readonly MapStrand[];
   readonly picked?: number | null;
+  /** Outlines drawn over everything, in world coordinates: the supertiles a circuit is read in. */
+  readonly overlay?: readonly { readonly segs: readonly (readonly [Pt, Pt])[]; readonly width: number; readonly colour: string }[];
   readonly colour: (type: string) => string;
   readonly accent: string;
   readonly ink: string;
@@ -157,6 +159,15 @@ export function drawMap(ctx: CanvasRenderingContext2D, o: DrawOptions): void {
       const width = Math.min(8, Math.max(2, p.edge * cam.scale * 0.25));
       drawStrand(p, width + 3, o.ink);
       drawStrand(p, width, o.accent);
+    }
+  }
+
+  if (o.overlay && settled) {
+    ctx.lineCap = 'round';
+    for (const layer of o.overlay) {
+      ctx.strokeStyle = layer.colour;
+      ctx.lineWidth = layer.width;
+      drawSegments(layer.segs, 0, 0);
     }
   }
 

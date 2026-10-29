@@ -37,7 +37,7 @@ import {
   tilesInLasso,
   type TopDownUrlState,
 } from './topdown/board';
-import { drawMap, progressOf, type Running } from './topdown/draw';
+import { drawMap, progressOf, type DrawOptions, type Running } from './topdown/draw';
 import {
   defaultRule,
   ruleFromShare,
@@ -48,6 +48,7 @@ import {
   type StrandRule,
 } from './topdown/strands';
 import { MAX_DEPTH, MAX_MAP_TILES, prune, startMap, substitute, tilesIn, undo, type TopDownMap } from './topdown/map';
+import { descendantOutlines, findHarmonic, growTwice, readUp, type HarmonicMatch } from './topdown/harmonic';
 import { FIT_LEVEL, QUAD_LEVEL, levelMap } from './topdown/world';
 import '../styles/topdown.css';
 
@@ -110,11 +111,12 @@ interface CanvasProps {
   readonly focus: string | null;
   readonly outlines: boolean;
   readonly strands?: readonly MapStrand[];
+  readonly overlay?: DrawOptions['overlay'];
   readonly picked: number | null;
 }
 
 function MapCanvas(props: CanvasProps): JSX.Element {
-  const { map, camera, size, running, runKey, selected, focus, outlines, strands, picked } = props;
+  const { map, camera, size, running, runKey, selected, focus, outlines, strands, picked, overlay } = props;
   const ref = useRef<HTMLCanvasElement | null>(null);
   const accent = useMemo(
     () =>
@@ -143,6 +145,7 @@ function MapCanvas(props: CanvasProps): JSX.Element {
         width: size.width,
         height: size.height,
         running: running.current,
+        overlay,
         now,
         selected,
         focus,
@@ -154,7 +157,7 @@ function MapCanvas(props: CanvasProps): JSX.Element {
         ink: INK,
       });
     },
-    [map, camera, size, running, selected, focus, outlines, strands, picked, accent],
+    [map, camera, size, running, selected, focus, outlines, strands, picked, overlay, accent],
   );
 
   useLayoutEffect(() => draw(performance.now()), [draw]);
@@ -202,6 +205,8 @@ export function TopDownPage(props: TopDownPageProps): JSX.Element {
   );
   const [circuitsOn, setCircuitsOn] = useState(Boolean(url.circuits));
   const [picked, setPicked] = useState<number | null>(null);
+  /** A circuit grown twice to find its harmonic: its route and tiles at its depth, and the margin grown with it. */
+  const [harmonic, setHarmonic] = useState<{ route: readonly string[]; tiles: readonly string[]; depth: number; length: number; margin: readonly string[] } | null>(null);
   const [fitKey, setFitKey] = useState(0);
   const running = useRef<Running[]>([]);
   const panRef = useRef<PanZoomApi | null>(null);
@@ -247,6 +252,20 @@ export function TopDownPage(props: TopDownPageProps): JSX.Element {
   // --- circuits ---------------------------------------------------------------
   const traced = useMemo(() => (circuitsOn ? traceMap(map, strandRule) : null), [circuitsOn, map, strandRule]);
   useEffect(() => setPicked(null), [traced]);
+  const found: HarmonicMatch | null = useMemo(() => (traced && harmonic ? findHarmonic(traced.strands, harmonic.route, harmonic.depth) : null), [traced, harmonic]);
+  useEffect(() => {
+    if (found) setPicked(found.strand);
+  }, [found]);
+  const overlay = useMemo(
+    () => (harmonic ? descendantOutlines(map, harmonic.tiles, 2).map((segs) => ({ segs, width: 3, colour: 'rgba(230, 80, 40, 0.9)' })) : undefined),
+    [map, harmonic],
+  );
+  const reading = useMemo(() => {
+    if (!harmonic || !found || !traced) return null;
+    const b = traced.strands[found.strand];
+    const index = new Map(harmonic.route.map((id, i) => [id, i]));
+    return readUp(b.route, 2, new Set(harmonic.tiles)).ids.map((id) => (index.has(id) ? `${index.get(id)! + 1}` : 'margin'));
+  }, [harmonic, found, traced]);
   const pickedStrand = picked !== null && traced ? traced.strands[picked] ?? null : null;
   const changeRule = (next: Partial<StrandRule>): void => {
     setStrandRule((r) => {
@@ -277,6 +296,25 @@ export function TopDownPage(props: TopDownPageProps): JSX.Element {
     },
     [map, speed],
   );
+
+  /** Substitutes the picked circuit and a margin of two tiles round it, twice, and looks for its harmonic among the strands. */
+  const growHarmonic = (): void => {
+    if (!pickedStrand || !pickedStrand.closed) return;
+    const result = growTwice(map, pickedStrand.tiles);
+    if (!result.ok) {
+      setMessage(`Not grown: ${result.reason}.`);
+      return;
+    }
+    setMessage(null);
+    setHarmonic({ route: pickedStrand.route, tiles: pickedStrand.tiles, depth: pickedStrand.depth, length: pickedStrand.length, margin: result.margin });
+    setMap(result.map);
+    setSelected(new Set<string>());
+    if (speed > 0) {
+      const t0 = performance.now();
+      running.current = [...running.current, { batch: result.batches[0], t0, ms: speed }, { batch: result.batches[1], t0: t0 + speed, ms: speed }];
+      setRunKey((k) => k + 1);
+    }
+  };
 
   const viewRect = (): { min: Pt; max: Pt } | null => {
     const api = panRef.current;
@@ -592,6 +630,7 @@ export function TopDownPage(props: TopDownPageProps): JSX.Element {
                 focus={focus}
                 outlines={outlines}
                 strands={traced?.strands}
+                overlay={overlay}
                 picked={picked}
               />
               <span
@@ -680,6 +719,42 @@ export function TopDownPage(props: TopDownPageProps): JSX.Element {
                 With “Click picks a circuit”, click a strand to select its tiles; Shift adds another.
               </p>
             )}
+            {family === 'hex' && pickedStrand?.closed && !(harmonic && found && picked === found.strand) ? (
+              <button type="button" className="td-primary" data-testid="td-grow-harmonic" onClick={growHarmonic}>
+                Grow its harmonic: substitute it and a margin of two tiles, twice
+              </button>
+            ) : null}
+            {harmonic ? (
+              <div className="td-harmonic" data-testid="td-harmonic">
+                <h3>Harmonic of the {fmt(harmonic.length)}-tile circuit</h3>
+                {found && traced ? (
+                  <p data-testid="td-harmonic-result">
+                    {found.exact
+                      ? `The ${fmt(traced.strands[found.strand].length)}-tile circuit two depths down reads as the ${fmt(harmonic.length)}-tile one: its chords run through its ${fmt(harmonic.tiles.length)} tiles in its order`
+                      : `No closed strand two depths down reads as the ${fmt(harmonic.length)}-tile circuit; the nearest, ${fmt(traced.strands[found.strand].length)} tiles, runs through ${fmt(found.covered)} of its ${fmt(harmonic.tiles.length)} tiles`}
+                    {found.loops ? `, with ${fmt(found.loops)} ${found.loops === 1 ? 'loop' : 'loops'} into the margin round a junction cancelled` : ''}.
+                    {' '}The outlines drawn are the circuit's tiles, now level-2 supertiles; the picked strand is the harmonic.
+                  </p>
+                ) : (
+                  <p className="muted">Tracing…</p>
+                )}
+                {reading ? (
+                  <p className="td-reading" data-testid="td-harmonic-reading">
+                    Read two levels up: {reading.join(' ')}
+                  </p>
+                ) : null}
+                <div className="td-row">
+                  {found?.exact ? (
+                    <button type="button" data-testid="td-grow-again" onClick={growHarmonic} disabled={picked !== found.strand}>
+                      Grow again, two levels further
+                    </button>
+                  ) : null}
+                  <button type="button" onClick={() => setHarmonic(null)}>
+                    Clear
+                  </button>
+                </div>
+              </div>
+            ) : null}
           </section>
           <StrandRuleControls
             family={family}
