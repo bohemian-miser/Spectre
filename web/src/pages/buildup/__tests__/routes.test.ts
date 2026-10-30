@@ -122,5 +122,8 @@ describe('composition', () => {
     expect(composition(['Xi', 'Delta', 'Delta', 'Phi', 'Delta'])).toBe('Xi Delta×2 Phi Delta');
     expect(routeName(['Xi', 'Delta', 'Delta'])).toEqual(routeName(['Delta', 'Delta', 'Xi']));
     expect(routeName(['Xi', 'Delta', 'Delta']).shape).toBe('Delta Xi');
+    expect(composition(['Pi', 'Delta', 'Gamma', 'Delta', 'Gamma', 'Delta', 'Gamma', 'Pi'])).toBe('Pi (Delta Gamma)×3 Pi');
+    const nested = [...Array(3)].flatMap(() => ['Xi', 'Delta', 'Gamma', 'Delta', 'Gamma']);
+    expect(composition(nested)).toBe('(Xi (Delta Gamma)×2)×3');
   });
 });

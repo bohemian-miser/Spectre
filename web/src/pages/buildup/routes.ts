@@ -4,9 +4,9 @@
  *
  * A route of a level-n supertile runs through a sequence of its children,
  * entering each at one of the child's places and leaving at that place's
- * mate. Its composition is the sequence of child types, runs of one type
- * written once with their count (`Xi Delta×2 Phi`); its shape is the same
- * sequence with the counts dropped (`Xi Delta Phi`).
+ * mate. Its composition is the sequence of child types, repeats written
+ * once with their count (`Xi Delta×2 Phi`, `(Delta Gamma)×40`); its shape is
+ * the same with the counts dropped (`Xi Delta Phi`, `(Delta Gamma)`).
  */
 import { buildSystem, transPt, type Affine, type HexType, type MetaNode, type Pt } from '../../core';
 import { hexCorners } from '../../core/multiEdge';
@@ -106,21 +106,43 @@ export function childArcs(cs: CircuitShapes, n: number, type: string, k: number)
   });
 }
 
-const runs = (types: readonly string[]): [string, number][] => {
-  const out: [string, number][] = [];
-  for (const t of types) {
-    const last = out[out.length - 1];
-    if (last && last[0] === t) last[1]++;
-    else out.push([t, 1]);
+/** Longest block of tokens a repeat is looked for in. */
+const BLOCK = 6;
+
+/**
+ * Tokens with repeats written once with their count (`Delta×2`,
+ * `(Delta Gamma)×40`): blocks of one token first, then of two, and so on up
+ * to `BLOCK`, starting again from one after any change, so repeats of
+ * repeats are found too.
+ */
+function compress(tokens: readonly string[], counts: boolean): string[] {
+  let cur = [...tokens];
+  for (let L = 1; L <= BLOCK; L++) {
+    const out: string[] = [];
+    let i = 0;
+    while (i < cur.length) {
+      let r = 1;
+      while (i + (r + 1) * L <= cur.length && cur.slice(i + r * L, i + (r + 1) * L).every((t, j) => t === cur[i + j])) r++;
+      if (r === 1) {
+        out.push(cur[i++]);
+        continue;
+      }
+      const block = L === 1 ? cur[i] : `(${cur.slice(i, i + L).join(' ')})`;
+      out.push(counts ? `${block}×${r}` : block);
+      i += L * r;
+    }
+    // a change can make new repeats of shorter blocks: start again from the shortest
+    if (out.length !== cur.length) L = 0;
+    cur = out;
   }
-  return out;
-};
+  return cur;
+}
 
-/** Child types in order, runs of one type written once with their count. */
-export const composition = (types: readonly string[]): string => runs(types).map(([t, c]) => (c > 1 ? `${t}×${c}` : t)).join(' ');
+/** Child types in order, repeats written once with their count. */
+export const composition = (types: readonly string[]): string => compress(types, true).join(' ');
 
-/** Child types in order, runs of one type written once. */
-export const shapeOf = (types: readonly string[]): string => runs(types).map(([t]) => t).join(' ');
+/** Child types in order, repeats written once without their count. */
+export const shapeOf = (types: readonly string[]): string => compress(types, false).join(' ');
 
 /** A route read from either end: the composition of the direction that sorts first, so a route has one name. */
 export function routeName(types: readonly string[]): { composition: string; shape: string } {

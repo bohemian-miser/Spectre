@@ -5,15 +5,27 @@
  * with identical tables drawn once, and the circuits that close at that
  * level, new ones marked. Tables and circuits come from the renormalisation
  * (`shapes/circuitShapes.ts`), read by `buildup/buildup.ts`.
+ *
+ * The tables can also be read as the level's common table plus each type's
+ * own entries; a route picked on a table is taken apart into its child arcs
+ * (`buildup/routes.ts`); a type's routes are compared level by level by
+ * composition; and a circuit picked shows the routes it uses at every level
+ * below its own (`buildup/circuitRoutes.ts`).
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { tileColor } from '../lib/palette';
-import type { TileTypeId } from '../core';
+import type { HexType, TileTypeId } from '../core';
 import { CircuitShapes } from './shapes/circuitShapes';
 import { ComboPicker, type ComboChoice } from './shapes/ComboPicker';
 import { explorerCircuitHref } from './shapes/explorerLink';
-import { closingsByLevel, groupsAt, tablesAt, type Closing, type Table } from './buildup/buildup';
+import { closingsByLevel, groupsAt, tablesAt, type Closing } from './buildup/buildup';
+import { CircuitRoutes } from './buildup/CircuitRoutes';
+import { circuitUse, type LevelUse } from './buildup/circuitRoutes';
+import { CommonOwn } from './buildup/CommonOwn';
+import { LevelByLevel } from './buildup/LevelByLevel';
+import { RouteBreakdown, type Pick } from './buildup/RouteBreakdown';
+import { TableFigure, bounds } from './buildup/TableFigure';
 import '../styles/shapes.css';
 import '../styles/buildup.css';
 
@@ -21,80 +33,16 @@ const nf = (n: number) => n.toLocaleString('en-US');
 const DEFAULT: ComboChoice = { subset: [0, 2, 3, 4, 6, 8], combo: '140000001', level: 6 };
 /** Most points a circuit is drawn with; longer circuits are drawn through evenly spaced tiles. */
 const MAX_POINTS = 4000;
-/** Tables with more routes than this are drawn on a canvas, without a reading per route. */
-const SVG_ROUTES = 1500;
 
-const bounds = (xs: readonly number[]): [number, number] => {
-  let lo = Infinity, hi = -Infinity;
-  for (const x of xs) { if (x < lo) lo = x; if (x > hi) hi = x; }
-  return [lo, hi];
-};
-
-/** A large table, drawn on a canvas in the page's colours. */
-function TableCanvas(props: { table: Table; shade: (n: number) => number; frame: { cx: number; cy: number; size: number } }): JSX.Element {
-  const ref = useRef<HTMLCanvasElement | null>(null);
-  useEffect(() => {
-    const c = ref.current;
-    if (!c) return;
-    const px = 600;
-    c.width = px;
-    c.height = px;
-    const g = c.getContext('2d')!;
-    const css = getComputedStyle(c);
-    const { cx, cy, size } = props.frame;
-    const X = (x: number) => ((x - cx) / size + 0.5) * px, Y = (y: number) => ((cy - y) / size + 0.5) * px;
-    g.clearRect(0, 0, px, px);
-    g.strokeStyle = css.getPropertyValue('--accent').trim() || '#2f7d6d';
-    g.lineWidth = 1;
-    for (const [a, b, n] of props.table.routes) {
-      const p = props.table.pts[a], q = props.table.pts[b];
-      const mx = (p.x + q.x) / 2, my = (p.y + q.y) / 2;
-      g.globalAlpha = props.shade(n);
-      g.beginPath();
-      g.moveTo(X(p.x), Y(p.y));
-      g.quadraticCurveTo(X(mx + (cx - mx) * 0.55), Y(my + (cy - my) * 0.55), X(q.x), Y(q.y));
-      g.stroke();
-    }
-  }, [props.table, props.shade, props.frame]);
-  return <canvas ref={ref} className="bu-canvas" aria-label="Border table, drawn as an image" />;
+/** A circuit's passes over a group's routes at a level, by lower place. */
+function usesOf(use: LevelUse | undefined, types: readonly HexType[]): Map<number, number> | null {
+  if (!use) return null;
+  const out = new Map<number, number>();
+  for (const t of types) for (const [k, p] of use.byType.get(t) ?? []) out.set(k, (out.get(k) ?? 0) + p);
+  return out;
 }
 
-function TableCard(props: { table: Table; names: readonly string[]; logMin: number; logMax: number }): JSX.Element {
-  const { table, names } = props;
-  const [minX, maxX] = bounds(Array.from(table.crossings, (k) => table.pts[k].x)), [minY, maxY] = bounds(Array.from(table.crossings, (k) => table.pts[k].y));
-  const span = Math.max(maxX - minX, maxY - minY) || 1;
-  const size = span * 1.16;
-  const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
-  const frame = useMemo(() => ({ cx, cy, size }), [cx, cy, size]);
-  const { logMin, logMax } = props;
-  const shade = useMemo(() => (n: number) => (logMax > logMin ? 0.25 + 0.75 * (Math.log(n) - logMin) / (logMax - logMin) : 1), [logMin, logMax]);
-  return (
-    <figure className={`bu-table${names.length > 1 ? ' is-shared' : ''}`} data-testid="bu-table">
-      <div className="bu-names">
-        {names.map((n) => <span key={n} className="bu-name" style={{ background: tileColor(n) }}>{n}</span>)}
-      </div>
-      {table.routes.length > SVG_ROUTES ? <TableCanvas table={table} shade={shade} frame={frame} /> : (
-      <svg viewBox={`${cx - size / 2} ${-cy - size / 2} ${size} ${size}`} role="img" aria-label={`Border table of ${names.join(', ')}`}>
-        {table.routes.map(([a, b, n], i) => {
-          const p = table.pts[a], q = table.pts[b];
-          const mx = (p.x + q.x) / 2, my = (p.y + q.y) / 2;
-          // bend toward the middle so routes between neighbouring crossings stay near the border
-          const qx = mx + (cx - mx) * 0.55, qy = my + (cy - my) * 0.55;
-          return (
-            <path key={i} d={`M${p.x} ${-p.y} Q${qx} ${-qy} ${q.x} ${-q.y}`} className="bu-route" strokeOpacity={shade(n)} vectorEffect="non-scaling-stroke">
-              <title>{`Crossing ${a} to crossing ${b}: ${nf(n)} tiles`}</title>
-            </path>
-          );
-        })}
-        {Array.from(table.crossings, (k) => <circle key={k} cx={table.pts[k].x} cy={-table.pts[k].y} r={span * 0.008 + 0.02} className="bu-crossing" />)}
-      </svg>
-      )}
-      <figcaption>{nf(table.crossings.length)} crossings, {nf(table.routes.length)} routes</figcaption>
-    </figure>
-  );
-}
-
-function CircuitCard(props: { cs: CircuitShapes; c: Closing; level: number; href: string }): JSX.Element {
+function CircuitCard(props: { cs: CircuitShapes; c: Closing; level: number; href: string; selected: boolean; onSelect: () => void }): JSX.Element {
   const { cs, c } = props;
   const d = useMemo(() => {
     const pts = cs.sampled(c.circuit, MAX_POINTS);
@@ -105,7 +53,7 @@ function CircuitCard(props: { cs: CircuitShapes; c: Closing; level: number; href
   }, [cs, c]);
   const isNew = c.first === props.level;
   return (
-    <figure className={`bu-circuit${isNew ? ' is-new' : ''}`} data-testid="bu-circuit">
+    <figure className={`bu-circuit${isNew ? ' is-new' : ''}${props.selected ? ' is-selected' : ''}`} data-testid="bu-circuit">
       <svg viewBox={`-4 -4 ${d.w + 8} ${d.h + 8}`} role="img" aria-label={`Circuit of ${c.length} tiles`}>
         <path d={d.path} className="bu-outline" vectorEffect="non-scaling-stroke" />
       </svg>
@@ -114,6 +62,11 @@ function CircuitCard(props: { cs: CircuitShapes; c: Closing; level: number; href
         <span>{isNew ? 'new at this level' : `also at level ${c.first}`}</span>
         <span>in a {c.circuit.type}, through children {c.family}</span>
         <a href={props.href}>Open in the Explorer</a>
+        {props.level > 0 && (
+          <button type="button" aria-pressed={props.selected} onClick={props.onSelect} data-testid="bu-circuit-select">
+            {props.selected ? 'Hide its routes' : 'Show its routes'}
+          </button>
+        )}
       </figcaption>
     </figure>
   );
@@ -127,6 +80,10 @@ export default function BuildUpPage(): JSX.Element {
   const [level, setLevel] = useState(1);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [view, setView] = useState<'type' | 'common'>('type');
+  const [pick, setPick] = useState<Pick | null>(null);
+  const [lblType, setLblType] = useState<HexType>('Delta');
+  const [selected, setSelected] = useState<Closing | null>(null);
 
   // builds a level at a time, each in its own task so the page can draw between them
   const buildTo = (target: number, fresh?: ComboChoice): void => {
@@ -150,6 +107,8 @@ export default function BuildUpPage(): JSX.Element {
         try {
           cs.current = new CircuitShapes('hex', fresh.subset, [...fresh.combo].map((ch) => parseInt(ch, 36)), 1, 1, true);
           setChoice(fresh);
+          setPick(null);
+          setSelected(null);
           setBuilt(1);
           setLevel(1);
           step();
@@ -170,6 +129,19 @@ export default function BuildUpPage(): JSX.Element {
   const tables = useMemo(() => (cs.current && level <= built ? tablesAt(cs.current, level) : null), [built, level]); // eslint-disable-line react-hooks/exhaustive-deps
   const closings = useMemo(() => (cs.current ? closingsByLevel(cs.current) : []), [built]); // eslint-disable-line react-hooks/exhaustive-deps
   const [logMin, logMax] = tables ? bounds(tables.tables.flatMap((t) => t.routes.map((r) => Math.log(r[2])))) : [0, 0];
+  const shade = useMemo(() => (n: number) => (logMax > logMin ? 0.25 + 0.75 * (Math.log(n) - logMin) / (logMax - logMin) : 1), [logMin, logMax]);
+  const picked = pick && pick.level === level ? pick : null;
+  const use = useMemo(() => (selected && cs.current ? circuitUse(cs.current, selected.circuit) : null), [selected]); // eslint-disable-line react-hooks/exhaustive-deps
+  const levelUse = use?.[level];
+  const maxUse = levelUse ? Math.max(...[...levelUse.byType.values()].flatMap((m) => [...m.values()])) : 0;
+  const groupUses = useMemo(() => (tables ? tables.groups.map((g) => usesOf(levelUse, g)) : []), [tables, levelUse]);
+  const usesCaption = (u: Map<number, number> | null) => {
+    if (!u) return null;
+    let passes = 0;
+    for (const p of u.values()) passes += p;
+    return <span className="bu-uses"> · uses {nf(u.size)}, {nf(passes)} passes</span>;
+  };
+  const pickAt = (types: readonly HexType[], type: HexType, from: number) => setPick({ level, types, type, from });
   // a built level never changes, so each level's count is worked out once
   const counted = useRef<{ cs: CircuitShapes | null; counts: number[] }>({ cs: null, counts: [] });
   const groupCounts = useMemo(() => {
@@ -215,18 +187,56 @@ export default function BuildUpPage(): JSX.Element {
         <span className="bu-muted">{choice.subset.join('')} · {choice.combo}</span>
       </div>
 
-      {tables && (
+      {tables && cs.current && (
         <section className="bu-section">
-          <h2>Border tables at {level === 0 ? 'the tiles' : `level ${level}`}</h2>
-          <p className="bu-muted" data-testid="bu-summary">
-            {tables.groups.length} different tables among the {tables.tables.length} types. Fainter routes pass fewer tiles; point at one to read it.
-          </p>
-          <div className="bu-tables">
-            {tables.groups.map((g) => {
-              const t = tables.tables.find((x) => x.type === g[0])!;
-              return <TableCard key={g.join()} table={t} names={g} logMin={logMin} logMax={logMax} />;
-            })}
+          <div className="bu-section-head">
+            <h2>Border tables at {level === 0 ? 'the tiles' : `level ${level}`}</h2>
+            <div className="bu-toggle" role="group" aria-label="Tables shown" data-testid="bu-view">
+              <button type="button" aria-pressed={view === 'type'} className={view === 'type' ? 'is-active' : ''} onClick={() => setView('type')}>By type</button>
+              <button type="button" aria-pressed={view === 'common'} className={view === 'common' ? 'is-active' : ''} onClick={() => setView('common')}>Common + own</button>
+            </div>
           </div>
+          <p className="bu-muted" data-testid="bu-summary">
+            {tables.groups.length} different tables among the {tables.tables.length} types.{' '}
+            {view === 'type'
+              ? 'Fainter routes pass fewer tiles; point at one to read it, pick one to take it apart.'
+              : 'Each type is the common table with its own entries (highlighted) in place of the common ones, less the places it does not have (faint).'}
+          </p>
+          {view === 'type' ? (
+            <div className="bu-tables">
+              {tables.groups.map((g, gi) => {
+                const t = tables.tables.find((x) => x.type === g[0])!;
+                return (
+                  <TableFigure
+                    key={g.join()}
+                    className={g.length > 1 ? 'is-shared' : undefined}
+                    pts={t.pts}
+                    dots={t.crossings}
+                    routes={t.routes}
+                    shade={shade}
+                    uses={groupUses[gi]}
+                    maxUse={maxUse}
+                    picked={picked && g.includes(picked.type) ? picked.from : null}
+                    onPick={level > 0 ? (from) => pickAt(g, g[0], from) : undefined}
+                    label={`Border table of ${g.join(', ')}`}
+                    head={<div className="bu-names">{g.map((n) => <span key={n} className="bu-name" style={{ background: tileColor(n) }}>{n}</span>)}</div>}
+                    caption={<>{nf(t.crossings.length)} crossings, {nf(t.routes.length)} routes{usesCaption(groupUses[gi])}</>}
+                  />
+                );
+              })}
+            </div>
+          ) : (
+            <CommonOwn cs={cs.current} level={level} groups={tables.groups} shade={shade} picked={picked} onPick={pickAt} use={levelUse} maxUse={maxUse} />
+          )}
+          {selected && (
+            <p className="bu-uses" data-testid="bu-uses-note">
+              {levelUse
+                ? `The ${nf(selected.length)}-tile circuit closing at level ${selected.circuit.level} uses ${nf(levelUse.routes)} routes here, ${nf(levelUse.passes)} passes; thicker for more.`
+                : `The ${nf(selected.length)}-tile circuit closes at level ${selected.circuit.level}; its routes show at the levels below.`}
+              {' '}<button type="button" className="bu-clear" onClick={() => setSelected(null)}>Clear</button>
+            </p>
+          )}
+          {picked && <RouteBreakdown key={`${picked.type} ${picked.level} ${picked.from}`} cs={cs.current} pick={picked} onType={(t) => setPick({ ...picked, type: t })} />}
         </section>
       )}
 
@@ -236,10 +246,27 @@ export default function BuildUpPage(): JSX.Element {
           <p className="bu-muted">None: every strand reaches the border of its {level === 0 ? 'tile' : 'supertile'}.</p>
         ) : (
           <div className="bu-circuits">
-            {cs.current && here.map((c) => <CircuitCard key={c.key} cs={cs.current!} c={c} level={level} href={hrefOf(c)} />)}
+            {cs.current && here.map((c) => (
+              <CircuitCard key={c.key} cs={cs.current!} c={c} level={level} href={hrefOf(c)}
+                selected={selected?.key === c.key && selected.circuit.level === level}
+                onSelect={() => setSelected(selected?.key === c.key && selected.circuit.level === level ? null : c)} />
+            ))}
           </div>
         )}
       </section>
+
+      {cs.current && built >= 1 && (
+        <section className="bu-section">
+          <h2>{lblType} routes level by level</h2>
+          <LevelByLevel cs={cs.current} built={built} type={lblType} onType={setLblType} onPick={(n, from) => { setLevel(n); setPick({ level: n, types: [lblType], type: lblType, from }); }} />
+        </section>
+      )}
+
+      {selected && use && cs.current && (
+        <section className="bu-section">
+          <CircuitRoutes cs={cs.current} c={selected} use={use} closings={closings} />
+        </section>
+      )}
 
       <section className="bu-section">
         <h2>Every level so far</h2>
