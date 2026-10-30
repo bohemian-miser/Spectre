@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildSystem, countTiles, flatten, levelMirror, mul } from '../../../core';
+import { buildSystem, countTiles, flatten, leafPts, levelMirror, mul } from '../../../core';
+import { polygonArea } from '../../map/glyphs';
 import {
   DEFAULT_OUTLINE_BUDGET,
   MAX_DEPTH,
@@ -200,3 +201,50 @@ describe('explode inputs', () => {
     expect(clampGap(Number.NaN)).toBeGreaterThan(0);
   });
 });
+
+for (const family of ['hex', 'spectre'] as const) {
+  describe(`${family}: each piece's outline`, () => {
+    const tileArea = (node: Parameters<typeof flatten>[0]): number =>
+      flatten(node, [1, 0, 0, 0, 1, 0]).reduce(
+        (sum, inst) => sum + Math.abs(polygonArea(leafPts(family, inst.type))),
+        0,
+      );
+
+    it('encloses exactly the area of its tiles', () => {
+      for (const level of [1, 2, 3]) {
+        // A budget large enough that no outline is thinned.
+        const layout = explodeSupertile({ family, level, depth: 1, outlineBudget: 1e7 });
+        for (const island of layout.leaves) {
+          expect(Math.abs(polygonArea(island.outline))).toBeCloseTo(tileArea(island.node), 6);
+        }
+      }
+    });
+
+    it('frames the tiling itself at gap 0, as deep as the page goes', () => {
+      for (const level of [3, 5]) {
+        const layout = explodeSupertile({ family, level, depth: 1, gap: 0 });
+        let minX = Infinity;
+        let minY = Infinity;
+        let maxX = -Infinity;
+        let maxY = -Infinity;
+        for (const inst of flatten(buildSystem(family, level).Delta, levelMirror(level))) {
+          for (const p of leafPts(family, inst.type)) {
+            const x = inst.xform[0] * p.x + inst.xform[1] * p.y + inst.xform[2];
+            const y = inst.xform[3] * p.x + inst.xform[4] * p.y + inst.xform[5];
+            minX = Math.min(minX, x);
+            minY = Math.min(minY, y);
+            maxX = Math.max(maxX, x);
+            maxY = Math.max(maxY, y);
+          }
+        }
+        // Drawn outlines are thinned to a point budget, which may shave a
+        // corner: within 1% of the tiling's width.
+        const slack = (maxX - minX) / 100;
+        expect(Math.abs(layout.bounds.min.x - minX)).toBeLessThan(slack);
+        expect(Math.abs(layout.bounds.max.x - maxX)).toBeLessThan(slack);
+        expect(Math.abs(layout.bounds.min.y - minY)).toBeLessThan(slack);
+        expect(Math.abs(layout.bounds.max.y - maxY)).toBeLessThan(slack);
+      }
+    });
+  });
+}

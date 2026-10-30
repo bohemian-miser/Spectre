@@ -183,8 +183,8 @@ const boxCenter = (b: Box): Pt => ({
 });
 
 /** Where a node placed by `xform` sits, without keeping its whole outline. */
-function placedCenter(node: TileNode, xform: Affine): Pt {
-  return boxCenter(boxOfPoints(boundaryLoop(node).map((p) => transPt(xform, p))));
+function placedCenter(node: TileNode, xform: Affine, family: TileFamilyId): Pt {
+  return boxCenter(boxOfPoints(boundaryLoop(node, family).map((p) => transPt(xform, p))));
 }
 
 interface Placement {
@@ -207,6 +207,7 @@ function planPlacements(
   root: Placement,
   gap: number,
   explodeDepth: number,
+  family: TileFamilyId,
 ): { readonly order: Placement[]; readonly childrenOfId: Map<string, Placement[]> } {
   const order: Placement[] = [];
   const childrenOfId = new Map<string, Placement[]>();
@@ -218,12 +219,12 @@ function planPlacements(
       childrenOfId.set(p.id, []);
       return;
     }
-    const center = placedCenter(p.node, p.xform);
+    const center = placedCenter(p.node, p.xform, family);
     const push = gap * NESTED_GAP_FALLOFF ** p.depth;
     const placed = kids.map((child) => {
       const placedHere = mul(p.xform, child.xform);
       // Push straight out from the parent's centre towards the child's own.
-      const at = placedCenter(child.node, placedHere);
+      const at = placedCenter(child.node, placedHere, family);
       const shift = ttrans((at.x - center.x) * push, (at.y - center.y) * push);
       return {
         node: child.node,
@@ -265,6 +266,7 @@ export function explodeSupertile(opts: ExplodeOptions): ExplodedLayout {
     { node, xform: view, trueXform: view, id: '', slot: -1, depth: 0, level },
     gap,
     depth,
+    family,
   );
 
   const drawnCount = order.filter((p) => (childrenOfId.get(p.id) ?? []).length === 0).length;
@@ -278,7 +280,7 @@ export function explodeSupertile(opts: ExplodeOptions): ExplodedLayout {
   for (let i = order.length - 1; i >= 0; i--) {
     const p = order[i];
     const kids = (childrenOfId.get(p.id) ?? []).map((c) => built.get(c.id)!);
-    const loop = boundaryLoop(p.node);
+    const loop = boundaryLoop(p.node, family);
     // Only drawn pieces pay for detail; a parent's outline is bookkeeping.
     const outline = (kids.length === 0 ? decimateLoop(loop, pointsPerIsland) : loop).map((q) =>
       transPt(p.xform, q),
