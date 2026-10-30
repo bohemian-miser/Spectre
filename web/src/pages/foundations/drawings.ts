@@ -1,8 +1,8 @@
 /**
  * Drawings of a combination's foundational circuits, from a fresh build of
- * the renormalisation (`buildShapes`) to the highest level asked for. A
- * closing's id is its place in `closingGroups`, the numbering of the sweep,
- * so the circuit drawn is the one the data names; its level, tiles and
+ * the renormalisation (`buildShapes`) to the highest level asked for. Each
+ * circuit is drawn at the place the data names (its index in
+ * `closingGroups`, the numbering of the sweep); the place's level, tiles and
  * family are checked against the data before it is drawn. Runs in a worker
  * (`drawings.worker.ts`) with a main-thread fallback.
  */
@@ -12,8 +12,8 @@ import type { CircuitShapes } from '../shapes/circuitShapes';
 export interface DrawJob {
   readonly subset: readonly number[];
   readonly combo: string;
-  /** The closings to draw: id, level, tiles and family as the data has them. */
-  readonly want: readonly { readonly id: number; readonly level: number; readonly length: number; readonly family: string }[];
+  /** The circuits to draw: id, the place drawn (its index in `closingGroups`), and its level, tiles and family as the data has them. */
+  readonly want: readonly { readonly id: number; readonly place: number; readonly level: number; readonly length: number; readonly family: string }[];
 }
 
 export interface Drawing {
@@ -40,8 +40,8 @@ export function drawCircuits(job: DrawJob): Drawing[] {
   const cs = last.cs;
   const groups = closingGroups(cs);
   return job.want.map((w) => {
-    const g = groups[w.id];
-    if (!g || g.level !== w.level || g.length !== w.length || g.family !== w.family) throw new Error(`closing ${w.id} of ${job.combo} is not the ${w.length}-tile circuit at level ${w.level}`);
+    const g = groups[w.place];
+    if (!g || g.level !== w.level || g.length !== w.length || g.family !== w.family) throw new Error(`place ${w.place} of ${job.combo} is not the ${w.length}-tile circuit at level ${w.level}`);
     const { pts } = cs.coarse(g.rep, SHARE);
     const xy = new Float64Array(2 * pts.length);
     pts.forEach((p, i) => { xy[2 * i] = p.x; xy[2 * i + 1] = p.y; });

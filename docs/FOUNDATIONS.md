@@ -1,12 +1,14 @@
 # Foundational circuits
 
-Every circuit a combination closes, at every level the renormalisation
-reaches, is one of three things: a **foundational** circuit, a **harmonic**
-of a circuit closing two levels lower, or a **reborn** copy of a circuit that
-closed lower down. The foundational circuits of a combination are finitely
-many as far as it has been built, and nearly every harmonic is predicted
-from the levels below it before its own level is built. An account of every
-chord of every supertile says how much room is left for anything else.
+A circuit is its tile word: every closing with that word, in any place of a
+supertile and at any level, is the same circuit. Where it first closes, a
+circuit is a **harmonic** of a circuit closing two levels lower, or
+**foundational**. A foundational circuit with harmonics starts a **chain**;
+one without is a **nugget**, which only closes again, in more places. The
+foundational circuits of a combination are few and close early as far as it
+has been built, and nearly every harmonic is predicted from the levels below
+it before its own level is built. An account of every chord of every
+supertile says how much room is left for anything else.
 
 Module: [`foundations.ts`](../web/src/pages/foundations/foundations.ts).
 Scripts: [`foundations-sweep.ts`](../web/circuit-classes/foundations-sweep.ts)
@@ -14,7 +16,9 @@ Scripts: [`foundations-sweep.ts`](../web/circuit-classes/foundations-sweep.ts)
 [`foundations-predict.ts`](../web/circuit-classes/foundations-predict.ts)
 (predict, then build, level by level),
 [`foundations-index.ts`](../web/circuit-classes/foundations-index.ts)
-(the summary),
+(the summary), all running
+[`comboAnalysis.ts`](../web/src/pages/foundations/comboAnalysis.ts) per
+combination,
 [`foundations-recurrence.ts`](../web/circuit-classes/foundations-recurrence.ts)
 (the lengths along a chain). Data: `web/circuit-classes/data/foundations/hex-023468/`. Tests:
 [`foundations.test.ts`](../web/src/pages/foundations/__tests__/foundations.test.ts).
@@ -25,7 +29,7 @@ sweep's output in `web/public/data/foundations/hex-023468/`
 ([`foundations-page.ts`](../web/circuit-classes/foundations-page.ts),
 [`pageData.ts`](../web/src/pages/foundations/pageData.ts)). It marks as
 monsters the foundational circuits that start a chain at floor + 4 or later
-(§6) and the 19 of at least 100,000 tiles.
+or are nuggets there (§6), and the 19 of at least 100,000 tiles.
 
 ## 1. Harmonics above a floor
 
@@ -61,31 +65,37 @@ top two levels built close nothing foundational. It is 1 for 000100000 and
 000000000 (the exact lineages of [`HARMONICS.md`](HARMONICS.md)), 2 for
 140000001, 3 or 4 for others (§6).
 
-## 2. Foundational, harmonic, reborn
+## 2. Chains and nuggets
 
-Copies of a circuit with the same length, family and cyclic sequence of
-child slots are one closing. A closing is **reborn** when its tile word is
-one that closed lower down: the 57-tile circuit of 140000001 first closes
-across a seam between two level-4 supertiles, and closes again across seams
-of every bigger supertile, in more places each time. A closing is
-**harmonic** when it is a harmonic of a closing two levels down, and
-**foundational** otherwise.
+A place is a closing with its own child slots: the same circuit closes
+across different pairs of children, in different places of a supertile, and
+again across the seams of every bigger supertile. The places with one word
+are one circuit (`wordKey`, the word read where it reads least, hashed, as
+`circuitKey` does with letters; tested against `circuitKey` on four
+combinations). A circuit is sorted where it first closes. It is a harmonic
+of the circuit two levels down that the most of its places there read as,
+each against a place with the same family. In 2,142 of the 2,246 harmonics
+of 023468 every place does; in the other 104 some places read as no place of
+the parent (the 66-tile harmonic of the 15 in 000000001 closes in 10 places
+at level 5, the 15 in 7 at level 3).
 
-140000001 to level 11 (the level-12 lengths from the tables up to level 11,
-§3):
+140000001, classified to level 9 (the level-10 to 12 lengths from the tables
+up to one level below, §3):
 
-| foundational | level | family | child crossings | chain, two levels at a time |
-|---|---|---|---|---|
-| 60 | 3 | 147 | 6 | none |
-| 303 | 4 | 147 | 21 | 14,679; 734,256; 36,701,253; 1,834,460,910 |
-| 2,079 | 5 | 147 | 74 | 103,851; 5,191,191; 259,474,518 |
-| 57 | 5 | 07 12 13 14 17 45 46 47 | 2 | 3,090; 153,327; 7,662,954 |
-| 447 | 6 | 07 12 13 14 17 45 46 47 | 10 | 21,705; 1,083,894; 54,176,298 |
+| foundational | level | places at its level, in all to 9 | chain, two levels at a time |
+|---|---|---|---|
+| 60 | 3 | 1, 1 | nugget |
+| 303 | 4 | 1, 1 | 14,679; 734,256; 36,701,253; 1,834,460,910 |
+| 2,079 | 5 | 1, 1 | 103,851; 5,191,191; 259,474,518 |
+| 57 | 5 | 8, 60 | 3,090; 153,327; 7,662,954 |
+| 447 | 6 | 8, 47 | 21,705; 1,083,894; 54,176,298 |
 
-Nineteen foundational closings by level 6 (the 57 and the 447 once for each
-of eight families), and nothing foundational closes at levels 7 to 11. Each
-family of the 57 and of the 447 has its own chain; their lengths are equal
-level by level.
+Five foundational circuits, four of them chains, and nothing foundational
+closes at levels 7 to 9; at level 10 every closing is a known circuit (65
+places) or a predicted harmonic (9 places). The 57 first closes in eight
+places at level 5, one per pair of children of families 07, 12, 13, 14, 17,
+45, 46 and 47, then in 13 more places at each level above; its harmonics
+close in the same eight places where they first close.
 
 ## 3. Predicting a harmonic
 
@@ -173,33 +183,115 @@ does not close stays a tail:
 ```
 chords(t, n) = closed(t, n) + tails(t, n)
 room(t, n)   = Σ_u M[t][u] tails(u, n-1)
-tails(t, n)  = room(t, n) - closing at n (foundational + harmonic + reborn)
+tails(t, n)  = room(t, n) - closing at n (nuggets + chains' foundational + harmonics)
 ```
 
 The counts are integers and both identities hold exactly at every level and
-type (tested). A Delta of 140000001, level by level (the 60 closing at
-level 3 is the only closing below level 4):
+type (tested). A closing counts towards its circuit's class at whatever
+level it closes. A Delta of 140000001, level by level:
 
-| level | chords | room | harmonic, predicted | harmonic, built | reborn | foundational | tails | tails' share |
-|---|---|---|---|---|---|---|---|---|
-| 4 | 6,818 | 6,338 | 0 | 0 | 0 | 303 | 6,035 | 0.885 |
-| 5 | 53,679 | 47,475 | 0 | 0 | 0 | 3,105 | 44,370 | 0.827 |
-| 6 | 422,606 | 349,031 | 14,679 | 14,679 | 5,358 | 8,046 | 320,948 | 0.759 |
-| 7 | 3,327,171 | 2,524,680 | 159,471 | 159,471 | 65,730 | 0 | 2,299,479 | 0.691 |
-| 8 | 26,194,754 | 18,088,034 | 1,124,946 | 1,124,946 | 577,872 | 0 | 16,385,216 | 0.626 |
-| 9 | 206,230,863 | 128,886,945 | 7,951,077 | 7,951,077 | 4,552,176 | 0 | 116,383,692 | 0.564 |
-| 10 | 1,623,652,142 | 915,473,498 | 56,211,345 | 56,211,345 | 34,146,582 | 0 | 825,115,571 | 0.508 |
-| 11 | 12,782,986,275 | 6,490,327,356 | 397,407,690 | 397,407,690 | 249,714,198 | 0 | 5,843,205,468 | 0.457 |
+| level | chords | room | nuggets | chains: foundational | chains: harmonics | tails | tails' share |
+|---|---|---|---|---|---|---|---|
+| 3 | 867 | 867 | 60 | 0 | 0 | 807 | 0.931 |
+| 4 | 6,818 | 6,338 | 0 | 303 | 0 | 6,035 | 0.885 |
+| 5 | 53,679 | 47,475 | 0 | 3,105 | 0 | 44,370 | 0.827 |
+| 6 | 422,606 | 349,031 | 0 | 13,404 | 14,679 | 320,948 | 0.759 |
+| 7 | 3,327,171 | 2,524,680 | 0 | 65,730 | 159,471 | 2,299,479 | 0.691 |
+| 8 | 26,194,754 | 18,088,034 | 0 | 287,412 | 1,415,406 | 16,385,216 | 0.626 |
+| 9 | 206,230,863 | 128,886,945 | 0 | 1,226,466 | 11,276,787 | 116,383,692 | 0.564 |
 
-From level 7 the harmonics predicted from two levels down take exactly the
-chords the build closes as harmonics, the rest of what closes is reborn
-copies of known circuits, and nothing foundational closes: the residual is
-0 at every level from 7 to 11.
+From level 7 everything that closes is a chain's circuit closing again or a
+harmonic; nothing foundational first closes. The page stacks these per
+level, each type weighted by how often a supertile of that type occurs, with
+the harmonics split by order or the chains shown one by one on request.
 
 Any circuit not yet seen closes above level 11, so it is made of chords
-that are on tails at level 11: at most 45.7% of a Delta's chords there, and
-the tails' share falls by a factor of about 0.90 a level. That is a bound,
-not an estimate.
+that are on tails at level 11: at most 45.7% of a Delta's chords there
+(the prediction run of §3), and the tails' share falls by a factor of about
+0.90 a level. That is a bound, not an estimate.
+
+### What the tails become
+
+Every chord on a tail at level L is on a circuit closing above L or on an
+infinite strand. A circuit closing at level m is made of chords on tails at
+every level below m, so the tails at L of a level-N supertile, less its tails
+at N, are exactly the chords of the circuits closing at levels L + 1 to N
+inside it (tested in integers, per type, on three combinations, against the
+tables' arc lengths). Weighted by type frequency, the share of the tails at
+L that close by L + k into each chain, into nuggets, into circuits at level
+10 that are no known word and no predicted harmonic (unseen), or are still
+open, for 140000001 and L = 5:
+
+| by level | chain of 303 | chain of 2,079 | chain of 57 | chain of 447 | nuggets | unseen | still open |
+|---|---|---|---|---|---|---|---|
+| 6 | 4.3% | 0.0% | 1.5% | 2.3% | 0.0% | 0.0% | 91.9% |
+| 7 | 4.3% | 3.8% | 4.4% | 3.8% | 0.0% | 0.0% | 83.6% |
+| 8 | 7.7% | 3.8% | 6.2% | 6.5% | 0.0% | 0.0% | 75.7% |
+| 9 | 7.7% | 6.9% | 8.9% | 8.2% | 0.0% | 0.0% | 68.3% |
+| 10 | 10.5% | 6.9% | 10.5% | 10.6% | 0.0% | 0.0% | 61.5% |
+
+No combination of 023468 has anything unseen at level 10.
+
+### Back-test
+
+At each level L, the circuits known by L (with their chains' later members)
+against what the tails at L close into, to level 10. The share left to
+circuits found later drops, at each level, by exactly what the foundational
+circuits found at the next level close, and is 0 from the last of them on.
+
+| L | 140000001: known by L | found later | still open at 10 | found at L + 1 |
+|---|---|---|---|---|
+| 2 | 0.0% | 49.2% | 50.8% | 60 (7.0%) |
+| 3 | 0.0% | 45.4% | 54.6% | 303 (14.2%) |
+| 4 | 9.8% | 32.8% | 57.4% | 57 (12.0%), 2,079 (10.9%) |
+| 5 | 28.0% | 10.6% | 61.5% | 447 (10.6%) |
+| 6 | 33.1% | 0.0% | 66.9% | |
+| 7 | 26.5% | 0.0% | 73.5% | |
+| 8 | 18.8% | 0.0% | 81.2% | |
+| 9 | 10.0% | 0.0% | 90.0% | |
+
+| L | 000001100 (floor 4): known by L | found later | still open at 10 | found at L + 1 |
+|---|---|---|---|---|
+| 2 | 0.0% | 89.3% | 10.7% | 6, 6 |
+| 3 | 12.0% | 76.6% | 11.5% | 69, 81 |
+| 4 | 17.7% | 69.1% | 13.2% | 93, 1,707, 7,899 |
+| 5 | 26.8% | 54.1% | 19.1% | |
+| 6 | 16.6% | 61.6% | 21.8% | 4,143, 22,389, 54,759, 150,153 |
+| 7 | 68.7% | 0.0% | 31.3% | |
+| 8 | 57.1% | 0.0% | 42.9% | |
+| 9 | 32.8% | 0.0% | 67.2% | |
+
+### Forecast
+
+From a level L, with what is known by L only: each chain with two members
+first closed by L goes on two levels at a time, each member taking q times
+its predecessor's share where it first closes, q the ratio of the last two.
+That is the place counts per supertile of each type (a harmonic closing in
+as many places as its parent two levels down) times the tiles (growing as
+over the last two members) over a supertile's chords (growing by
+(4 + √15)² every two levels). A chain stops when a member due by L is
+missing, or when its last member's harmonic, predicted from the tables up
+to L, is a circuit seen lower down: the chain closes into itself. The
+forecast of the next members, against the build:
+
+| forecast from | 140000001: forecast | in the build |
+|---|---|---|
+| 6 | 4.92% | 5.15% |
+| 7 | 8.94% | 9.05% |
+| 8 | 7.49% | 7.40% |
+| 9 | 3.47% | 3.50% |
+
+From level 10 the known chains of 140000001 are expected to take 30.6% of
+all chords, 60% of the 50.8% still on tails there; the rest is room for its
+known circuits closing again in more places (the 57 and the 447 close in 13
+more places every level), for new circuits and for open strands.
+
+The forecast's one assumption fails in places: a harmonic closes in a
+different number of places per supertile of some type than its parent two
+levels down in 891 of 20,214 checks, in 71 combinations. In 82
+combinations a chain closes into itself one level after its last member,
+so the forecast made at that level takes more than the build shows. The
+page flags both, per combination.
 
 ## 5. Shares in the limit
 
@@ -208,7 +300,7 @@ the members can be carried on past the build and their share of a Delta's
 chords summed level by level in integers. The chain of family 147 (the 60,
 303 and 2,079 and their harmonics, one copy in every supertile of every
 type) and the harmonics of the 57 in family 07 (two copies in every type,
-reborn copies left out):
+its other closings left out):
 
 | chain | share at level 10 | at level 40 | at level 100 | at level 200 |
 |---|---|---|---|---|
@@ -220,26 +312,26 @@ like λ^n with λ = 7.0699… against the supertile's (4 + √15)^n = 7.8730^n,
 so each level adds a share smaller by about 0.898, and the sum converges.
 The tails' share is 0.508 at level 10 and shrinks by about 0.90 a level; if
 that ratio holds, every chord but a share 0 lies on a closed circuit in the
-limit, and the other half belongs to the seam chains (the 57 and 447 in their eight
-families) and their reborn copies, whose counts are accounted for level by
-level but not yet carried on by a formula.
+limit, and the other half belongs to the seam chains (the 57 and 447 and
+their harmonics), closing again in more places every level, counts the
+account has level by level but no formula carries on yet.
 
 ## 6. Every combination of 023468
 
-The sweep builds each of the 320 combinations to level 9, sorts every
-closing at floors 1 to 4, takes the combination's floor, predicts every
-harmonic from level f + 2 up and checks it against the build.
+The sweep classifies each of the 320 combinations to level 9 at floors 1 to
+4, takes the combination's floor, predicts every harmonic from level f + 2
+up, checks it against the build, and builds level 10 to see what the tails
+close into. 4,714 circuits in all; 2,468 foundational, 1,309 of them chains
+and 1,159 nuggets, 2 to 12 per combination.
 
-Combinations built to level 9, and to level 10 where level 9 still
-showed a foundational closing at level 6 or 7: 205 to level 9, 115 to
-level 10. 9,740 foundational closings in all, 13 to 64 per combination.
-
-| floor | last level with a foundational closing | combinations |
+| floor | last level a foundational circuit first closes at | combinations |
 |---|---|---|
+| 1 | 3 | 20 |
 | 1 | 4 | 110 |
-| 1 | 5 | 22 |
+| 1 | 5 | 2 |
+| 2 | 4 | 7 |
 | 2 | 5 | 71 |
-| 2 | 6 | 15 |
+| 2 | 6 | 8 |
 | 3 | 5 | 2 |
 | 3 | 6 | 81 |
 | 3 | 7 | 2 |
@@ -248,42 +340,41 @@ level 10. 9,740 foundational closings in all, 13 to 64 per combination.
 With a floor f, a circuit can be a harmonic only from level f + 4 up: its
 circuit two levels down must agree at two levels from f up. So a
 foundational circuit at level f + 3 or below is one the definition cannot
-place in a chain yet, and the question is what closes from f + 4 up:
+place in a chain yet, and the question is what first closes from f + 4 up:
 
 | highest foundational level, less the floor | combinations |
 |---|---|
-| 2 | 2 |
+| 2 | 29 |
 | 3 | 279 |
-| 4 | 39 |
+| 4 | 12 |
 | 5 or more | 0 |
 
-In 39 combinations a new chain starts at level f + 4, after harmonics have
-begun: the 447 seam circuits of 140000001 at level 6, a single circuit of
-family 147 at level 5 in 22 combinations of floor 1 (321 tiles in
-000000001), sixteen seam circuits at level 6 in 111000100 and its
-neighbours, 24 circuits at level 7 in 120000001 and 121000001 (floor 3).
-These are the latest starts found; no combination has a foundational
-closing at f + 5 or above, to level 9 or 10. The largest foundational
-circuits are the 100,000 to 171,000-tile ones of family 013467 at level 7
-in the floor-4 combinations (031001001: 170,976 tiles), each followed only
-by its harmonics and reborn copies at levels 8 to 10.
+The 24 foundational circuits at f + 4, in 12 combinations: the 447 of
+140000001 and the 438 of 141000001 (one circuit each, in 8 places at level
+6 and 47 to level 9); two seam circuits at level 6 in 111000100 and five
+neighbours; the 57 and 60 at level 5 in 100000001 and 101000001; and three
+at level 7 in each of 120000001 and 121000001: the 8,454 (8,274) nugget,
+closing in 98 places through 13 families, and two chains of family 147.
+Every closing at level 10, in every combination, is a known circuit or a
+predicted harmonic: none is unseen. The largest foundational circuits are
+the 100,000 to 171,000-tile ones of family 013467 at level 7 in the floor-4
+combinations (031001001: 170,976 tiles), each followed only by its
+harmonics and its own closings again at levels 8 and 9.
 
-Every closing from level f + 2 up that repeats nothing has its harmonic
-predicted, from the tables up to one level above it:
+Every circuit from level f + 2 up has its harmonic predicted, from the
+tables up to one level above it:
 
 | prediction | count |
 |---|---|
-| closes two levels up and is the harmonic found there | 10,827 |
-| closes there as a reborn copy of an earlier circuit | 1,694 |
-| none predicted, and the build has none | 522 |
-| none predicted, but the build has a harmonic | 38 |
-| closes there as the harmonic of another circuit | 24 |
-| forecast for the level above the build | 2,211 |
+| closes two levels up and is the harmonic found there | 2,179 |
+| closes there, as a circuit that first closed lower down | 215 |
+| none predicted, and the build has none | 68 |
+| none predicted, but the build has a harmonic | 4 |
+| closes there as the harmonic of another circuit | 2 |
+| forecast for the level above the build | 806 |
 
-The 38 misses are in four combinations (120000001, 121000001, 011001001,
-031001001) and the 24 others in four (111000001, 110000001, 120000001,
-121000001): the window at the first visit holds no walk, or holds the
-harmonic of a sibling of the same family.
+The 4 misses are in 011001001, 031001001, 120000001 and 121000001, the 2
+others in 110000001 and 111000001.
 
 ## 7. Open strands
 
@@ -293,18 +384,18 @@ the tiling. Its tiles are on tails at every level, so the tails' share at
 level n bounds the share of chords on infinite strands, and of chords on
 circuits closing above n.
 
-| tails' share at the top level over the level below | combinations |
+| tails' share at level 10 over level 9 | combinations |
 |---|---|
 | under 0.7 | 307 |
-| 0.90 to 0.94 | 13 |
+| 0.90 to 0.96 | 13 |
 
-| combination | levels | floor | tails' share at the top | over the level below |
+| combination | floor | tails' share at level 9 | at level 10 | ratio |
 |---|---|---|---|---|
-| 000100000 | 9 | 1 | 0.058 | 0.649 |
-| 001001000 | 10 | 3 | 0.090 | 0.615 |
-| 140000001 | 10 | 2 | 0.508 | 0.900 |
-| 111000100 | 10 | 2 | 0.650 | 0.936 |
-| 100000001 | 9 | 1 | 0.795 | 0.937 |
+| 000100000 | 1 | 0.058 | 0.035 | 0.602 |
+| 001001000 | 3 | 0.147 | 0.090 | 0.615 |
+| 140000001 | 2 | 0.564 | 0.508 | 0.900 |
+| 111000100 | 2 | 0.694 | 0.650 | 0.936 |
+| 100000001 | 1 | 0.795 | 0.762 | 0.959 |
 
 In every combination of 023468 the tails' share falls at every level built,
 by a ratio that has settled; if it holds, open strands take a share 0 in
@@ -335,8 +426,9 @@ Observed, not proved:
 
 - That the floor stays where it is: a harmonic pair's readings disagree at
   the same bottom levels at every level built.
-- That nothing foundational closes from level f + 5 up: none does in any
-  combination of 023468 to level 9 or 10.
+- That nothing foundational first closes from level f + 5 up: none does in
+  any combination of 023468 to level 9, and nothing unseen closes at
+  level 10.
 - The recurrence of §3, past level 12, and so the limiting shares of §5.
 
 What a proof needs: a finite substitution on kinds of route, fixed from
@@ -358,10 +450,10 @@ a finite automaton on crossing addresses.
   recurrence and of the last new level.
 - The recurrence for other combinations and chains: whether every chain's
   lengths satisfy one, and which polynomials occur.
-- The reborn closings: their copies grow each level (the 57 of family 07
-  in 140000001: 18, 54, 252, 1,044 copies at levels 5 to 8, all types
-  together) and the count is not yet predicted, only accounted for.
-- The 38 predictions of §6 that find no walk where the build has a
+- The closings of a circuit above where it first closes: their places grow
+  each level (the 57 of 140000001: 8, then 13 more at each of levels 6 to
+  9) and the count is not yet predicted, only accounted for.
+- The 4 predictions of §6 that find no walk where the build has a
   harmonic: a window at another visit than the first would be tried next.
 
 ## Reproducing
@@ -376,6 +468,5 @@ node --max-old-space-size=12000 node_modules/.bin/vite-node circuit-classes/foun
 npx vitest run src/pages/foundations
 ```
 
-The sweep takes about 10 s a combination at level 9 and 25 s at level 10
-(the late ones were rerun with level 10 as the second argument and their
-names as the fifth); the prediction run to level 11 about 20 minutes.
+The sweep takes 15 to 40 s a combination at level 9 (building level 10
+too); the prediction run to level 11 about 20 minutes.

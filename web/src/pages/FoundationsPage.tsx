@@ -59,10 +59,11 @@ export default function FoundationsPage(props: { forceSync?: boolean }): JSX.Ele
       <header className="fd-intro">
         <h1>Foundations</h1>
         <p>
-          Every circuit of a combination closes at some level as one of three things: a <b>harmonic</b> (a circuit from two levels down with each tile grown
-          into a level-2 supertile, read the same from the <b>floor</b> up), a <b>reborn</b> copy of a circuit that closed lower down, or a{' '}
-          <b>foundational</b> circuit, which starts a chain of harmonics. A <b>monster</b> is a foundational circuit that starts its chain at floor + 4 or later,
-          after harmonics have begun, or has at least 100,000 tiles. All 320 combinations of rule 023468, built to level 9 or 10.{' '}
+          A circuit is its word: wherever and at whatever level it closes, it is the same circuit. Where it first closes it is a <b>harmonic</b> (a circuit
+          from two levels down with each tile grown into a level-2 supertile, read the same from the <b>floor</b> up) or a <b>foundational</b> circuit. A
+          foundational circuit with harmonics starts a <b>chain</b>; one without is a <b>nugget</b>, which only closes again, in more places. A{' '}
+          <b>monster</b> is a foundational circuit at floor + 4 or later, after harmonics have begun, or one of at least 100,000 tiles. All 320 combinations
+          of rule 023468, sorted to level 9 and built to level 10.{' '}
           <a href={`${REPO_URL}/blob/main/docs/FOUNDATIONS.md`}>Write-up</a>
         </p>
         <div className="fd-tabs" role="tablist">

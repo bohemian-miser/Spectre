@@ -91,7 +91,7 @@ for (let n = 2; n + 2 <= L; n++) {
   console.log(`level ${n + 2}: ${pending.length} predicted from level ${n}; building`);
   cs.extend(n + 2);
   const f = foundations(cs, { floor: FLOOR });
-  const byKey = new Map(f.closings.map((c) => [c.key, c] as const));
+  const byKey = new Map(f.closings.flatMap((c) => c.keys.map((k) => [k, c] as const)));
   const acc = tileAccount(cs, f).find((r) => r.level === n + 2 && r.type === 'Delta')!;
   levelRows.push({
     level: n + 2, chords: acc.chords, room: acc.room,

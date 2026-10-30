@@ -1,18 +1,13 @@
 /**
- * Where a supertile's chords are, level by level: on chains (foundational
- * circuits and their harmonics), on reborn copies, or on tails. One stacked
- * column per level, shares of 100%; hovering a column gives its figures and
- * its three largest chains.
+ * Where a supertile's chords are, level by level, each counted once: on
+ * nuggets, on chains (split into foundational circuits and harmonics, by
+ * harmonic order, or by chain), on circuits at the level above the build no
+ * known circuit explains, or on tails. One stacked column per level, shares
+ * of 100%; hovering a column gives each segment's share.
  */
-import { useState } from 'react';
-import type { PageCombo } from './pageData';
-import { compact, pct } from './data';
-
-const SEGMENTS = [
-  { key: 0, label: 'On chains', className: 'fd-seg-chain' },
-  { key: 1, label: 'Reborn copies', className: 'fd-seg-reborn' },
-  { key: 2, label: 'Tails', className: 'fd-seg-tails' },
-] as const;
+import { Fragment, useMemo, useState } from 'react';
+import { expectedTails, segments, type PageCombo, type Split } from './pageData';
+import { pct } from './data';
 
 const H = 150;
 const TOP = 8;
@@ -21,30 +16,53 @@ const COL = 34;
 const BAR = 20;
 const GAP = 2;
 
+const SPLITS: readonly { key: Split; label: string }[] = [
+  { key: 'class', label: 'Off' },
+  { key: 'order', label: 'By order' },
+  { key: 'chain', label: 'By chain' },
+];
+
+/** A segment's class, by its key: the colour follows the segment's identity. */
+const classOf = (key: string): string => {
+  if (key.startsWith('order')) return `fd-seg-${key.split('-')[0]}`;
+  if (key.startsWith('chain')) return `fd-seg-${key}`;
+  return `fd-seg-${key}`;
+};
+
 export function AccountChart(props: { data: PageCombo }): JSX.Element {
   const { data } = props;
   const [hover, setHover] = useState<number | null>(null);
-  const levels = data.account.map((_, n) => n);
+  const [split, setSplit] = useState<Split>('class');
+  const segs = useMemo(() => segments(data, split).filter((s) => s.key === 'tails' || s.values.some((v) => v > 0)), [data, split]);
+  const levels = data.tails.map((_, n) => n);
   const W = LEFT + COL * levels.length + 4;
   const y = (share: number): number => TOP + H * (1 - share);
-  const nameOf = (root: number): string => {
-    const f = data.found.find((x) => x[0] === root);
-    return f ? `${compact(f[2])} at level ${f[1]}, children ${f[3]}` : `closing ${root}`;
-  };
-  const L = data.levels;
-  const shown = hover ?? L;
-  const a = data.account[shown];
+  const top = levels.length - 1;
+  const shown = hover ?? top;
+  const exp = useMemo(() => expectedTails(data), [data]);
+  // the known chains' expected share, drawn into the top column's tails from below
+  const mark = 1 - data.tails[top] + exp.expected;
   return (
     <figure className="fd-chart" data-testid="fd-chart">
+      <div className="fd-chart-tools">
+        <span className="fd-muted">Harmonics</span>
+        <div className="fd-toggle" role="radiogroup" aria-label="Split the chains">
+          {SPLITS.map((s) => (
+            <button key={s.key} type="button" role="radio" aria-checked={split === s.key} className={split === s.key ? 'fd-on' : undefined} onClick={() => setSplit(s.key)}>
+              {s.label}
+            </button>
+          ))}
+        </div>
+      </div>
       <div className="fd-legend">
-        {SEGMENTS.map((s) => (
+        {segs.map((s) => (
           <span key={s.key}>
-            <i className={s.className} /> {s.label}
+            <i className={classOf(s.key)} /> {s.label}
           </span>
         ))}
       </div>
       <div className="fd-chart-body">
-        <svg viewBox={`0 0 ${W} ${TOP + H + 22}`} width={W} height={TOP + H + 22} role="img" aria-label={`Share of chords on tails falls from 100% to ${pct(data.account[L][2])} by level ${L}`}>
+        <svg viewBox={`0 0 ${W} ${TOP + H + 22}`} width={W} height={TOP + H + 22} role="img" aria-label={`Share of chords on tails falls from 100% to ${pct(data.tails[top])} by level ${top}`}>
           {[0, 0.5, 1].map((t) => (
             <g key={t}>
               <line x1={LEFT - 4} x2={W} y1={y(t)} y2={y(t)} className="fd-grid" />
@@ -56,10 +74,9 @@ export function AccountChart(props: { data: PageCombo }): JSX.Element {
           {levels.map((n) => {
             const x = LEFT + COL * n + (COL - BAR) / 2;
             let base = 0;
-            const parts = SEGMENTS.map((s) => {
-              const v = data.account[n][s.key];
-              const r = { s, from: base, to: base + v };
-              base += v;
+            const parts = segs.map((s) => {
+              const r = { s, from: base, to: base + s.values[n] };
+              base += s.values[n];
               return r;
             });
             return (
@@ -67,7 +84,7 @@ export function AccountChart(props: { data: PageCombo }): JSX.Element {
                 <rect x={LEFT + COL * n} y={TOP} width={COL} height={H} className="fd-hit" />
                 {parts.map(({ s, from, to }) => {
                   const h = H * (to - from) - (to < 0.9999 && to - from > 0 ? GAP : 0);
-                  return h > 0.3 ? <rect key={s.key} x={x} y={y(to) + (to < 0.9999 ? GAP : 0)} width={BAR} height={h} className={s.className} rx={to >= 0.9999 ? 3 : 0} /> : null;
+                  return h > 0.3 ? <rect key={s.key} x={x} y={y(to) + (to < 0.9999 ? GAP : 0)} width={BAR} height={h} className={classOf(s.key)} rx={to >= 0.9999 ? 3 : 0} /> : null;
                 })}
                 <text x={x + BAR / 2} y={TOP + H + 16} textAnchor="middle" className="fd-axis">
                   {n}
@@ -75,35 +92,34 @@ export function AccountChart(props: { data: PageCombo }): JSX.Element {
               </g>
             );
           })}
+          <line
+            x1={LEFT + COL * top + 3}
+            x2={LEFT + COL * top + COL - 3}
+            y1={y(mark)}
+            y2={y(mark)}
+            className="fd-expected"
+          >
+            <title>{`known chains expected to take ${pct(exp.expected)} of the chords on tails at level ${top}`}</title>
+          </line>
         </svg>
         <div className="fd-chart-read" aria-live="polite">
           <strong>Level {shown}</strong>
           {hover === null ? <span className="fd-muted"> (top built; hover a column)</span> : null}
           <dl>
-            <dt>On chains</dt>
-            <dd>{pct(a[0])}</dd>
-            <dt>Reborn copies</dt>
-            <dd>{pct(a[1])}</dd>
-            <dt>Tails</dt>
-            <dd>{pct(a[2])}</dd>
+            {segs.map((s) => (
+              <Fragment key={s.key}>
+                <dt>
+                  <i className={classOf(s.key)} /> {s.label}
+                </dt>
+                <dd>{pct(s.values[shown])}</dd>
+              </Fragment>
+            ))}
           </dl>
-          {data.topChains[shown]?.length ? (
-            <>
-              <div className="fd-muted">Largest chains, with their reborn copies</div>
-              <ol>
-                {data.topChains[shown].map(([root, share]) => (
-                  <li key={root}>
-                    {nameOf(root)}: {pct(share)}
-                  </li>
-                ))}
-              </ol>
-            </>
-          ) : null}
         </div>
       </div>
       <figcaption className="fd-muted">
-        Shares of a supertile&apos;s chords by the level it is built to, each type weighted by how often it occurs. A new foundational circuit above
-        level {L} can only be made of what is still on tails.
+        Shares of a supertile&apos;s chords by the level it is built to, each type weighted by how often it occurs; level {top} is built one past the
+        circuits sorted, to see what the tails close into. A circuit not seen yet can only be made of what is still on tails.
       </figcaption>
     </figure>
   );

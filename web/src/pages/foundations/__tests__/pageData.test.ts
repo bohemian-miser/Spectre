@@ -7,9 +7,9 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { buildShapes, foundations } from '../foundations';
+import { buildShapes, foundations, substitutionMatrix } from '../foundations';
 import { drawCircuits } from '../drawings';
-import { chainOf, pageCombo, pageIndex, type PageCombo, type PageIndex, type SweepFile } from '../pageData';
+import { backTest, chainOf, forecastChecks, pageCombo, pageIndex, segments, tailFates, type PageCombo, type PageIndex, type SweepFile } from '../pageData';
 
 const web = resolve(__dirname, '../../../..');
 const sweepDir = resolve(web, 'circuit-classes/data/foundations/hex-023468');
@@ -27,16 +27,26 @@ describe('the page data', () => {
     expect(readdirSync(pageDir).filter((f) => f !== 'index.json').sort()).toEqual([...names].sort());
   });
 
+  it("splits every level's chords into nuggets, chains and tails, adding up to all of them, in every setting", () => {
+    for (const d of sweep) {
+      const p = pageCombo(d);
+      for (const split of ['class', 'order', 'chain'] as const) {
+        const segs = segments(p, split);
+        for (let n = 0; n < p.tails.length; n++) expect(Math.abs(segs.reduce((s, x) => s + x.values[n], 0) - 1)).toBeLessThan(1e-5);
+      }
+    }
+  });
+
   it('has an index that agrees with the sweep index', () => {
     const index = read<PageIndex>(resolve(pageDir, 'index.json'));
     expect(index).toEqual(pageIndex('023468', sweep.map(pageCombo)));
-    const full = read<{ combos: { combo: string; levels: number; floor: number; settled: boolean; lastNew: number; foundational: [number, number, string, number][]; tails: number }[] }>(
+    const full = read<{ combos: { combo: string; levels: number; floor: number; settled: boolean; lastNew: number; foundational: [number, number, string, number, number][]; tails: number }[] }>(
       resolve(sweepDir, 'index.json'),
     );
     expect(index.combos.map((r) => r.combo)).toEqual(full.combos.map((r) => r.combo));
     full.combos.forEach((f, i) => {
       const r = index.combos[i];
-      expect([r.levels, r.floor, r.settled, r.lastNew, r.found]).toEqual([f.levels, f.floor, f.settled, f.lastNew, f.foundational.length]);
+      expect([r.levels, r.floor, r.settled, r.lastNew, r.found, r.nuggets]).toEqual([f.levels, f.floor, f.settled, f.lastNew, f.foundational.length, f.foundational.filter((x) => x[4]).length]);
       expect(r.largest).toBe(Math.max(...f.foundational.map((x) => x[1])));
       expect(r.tails).toBeCloseTo(f.tails, 4);
     });
@@ -47,17 +57,18 @@ describe('the page data', () => {
 });
 
 describe('the circuits the page shows', () => {
-  // floors 1 to 4; built afresh to level 8
+  // floors 1 to 4; built afresh to level 8 (circuits first closing by level 8 keep their ids at any higher level)
   for (const combo of ['000000000', '140000001', '001001001', '031001001']) {
     it(`of ${combo} are what foundations finds on a fresh build to level 8`, () => {
       const p = read<PageCombo>(resolve(pageDir, `${combo}.json`));
       const cs = buildShapes(subset, combo, 8);
       const f = foundations(cs, { floor: p.floor });
       const found = f.closings.filter((c) => c.status === 'foundational');
-      expect(p.found).toEqual(
-        found.map((c) => [c.id, c.level, c.length, c.family, c.steps, Object.values(c.copies).reduce((s, x) => s + x, 0), Object.keys(c.copies).length]),
+      expect(p.found.filter((x) => x[1] <= 8).map((x) => x.slice(0, 5))).toEqual(found.map((c) => [c.id, c.level, c.length, c.families.join(' '), c.steps]));
+      expect(p.found.filter((x) => x[1] <= 8).map((x) => x[7])).toEqual(found.map((c) => c.places[0]));
+      expect(p.harm.filter((h) => h[1] <= 8).map((h) => h.slice(0, 7))).toEqual(
+        f.closings.filter((c) => c.status === 'harmonic').map((c) => [c.id, c.level, c.length, c.of, c.root, c.families.length, c.matched]),
       );
-      expect(p.harm.filter((h) => h[1] <= 8)).toEqual(f.closings.filter((c) => c.status === 'harmonic').map((c) => [c.id, c.level, c.length, c.of, c.root]));
       // each chain, up to level 8, is the harmonics of the fresh build linked by `of`
       for (const c of found) {
         const want: string[] = [];
@@ -71,8 +82,55 @@ describe('the circuits the page shows', () => {
         expect(got).toEqual(want);
       }
       // the drawings name the same circuits
-      const drawn = drawCircuits({ subset, combo, want: p.found.map(([id, level, length, family]) => ({ id, level, length, family })) });
-      expect(drawn.map((d) => d.types.length)).toEqual(p.found.map((x) => x[6]));
+      const drawn = drawCircuits({ subset, combo, want: p.found.filter((x) => x[1] <= 8).map(([id, level, length, families, , , , place]) => ({ id, place, level, length, family: families.split(' ')[0] })) });
+      expect(drawn.map((d) => d.id)).toEqual(p.found.filter((x) => x[1] <= 8).map((x) => x[0]));
     }, 300000);
   }
+});
+
+describe('what the tails become', () => {
+  // an independent count: the chords on tails at level L of a Delta's level-(L + k) supertile, from the tables' arc lengths,
+  // less the tails at L + k, against the circuits closing between, from the closed walks' lengths and copies
+  for (const combo of ['140000001', '000100000', '001001000']) {
+    it(`in ${combo}, the tails at L that close by L + k are exactly the circuits closing between`, () => {
+      const cs = buildShapes(subset, combo, 8);
+      const M = substitutionMatrix('hex').map((r) => r.map(BigInt));
+      const types = Object.keys(cs.levels[0]);
+      const D = types.indexOf('Delta');
+      const tails = (n: number): bigint[] =>
+        types.map((t) => {
+          const T = cs.levels[n][t];
+          let s = 0;
+          for (const k of T.crossings()) s += T.len(k);
+          return BigInt(s / 2);
+        });
+      const born = (n: number): bigint[] => types.map((t) => cs.born.filter((c) => c.level === n && c.type === t).reduce((s, c) => s + BigInt(c.length * cs.copiesOf(c)), 0n));
+      const mul = (v: bigint[]): bigint[] => types.map((_, t) => types.reduce((s, _u, u) => s + M[t][u] * v[u], 0n));
+      for (let L = 3; L <= 6; L++) {
+        let fromTails = tails(L);
+        let closed = types.map(() => 0n);
+        for (let k = 1; L + k <= 8; k++) {
+          fromTails = mul(fromTails);
+          const b = born(L + k);
+          closed = mul(closed).map((x, t) => x + b[t]);
+          expect(fromTails[D] - tails(L + k)[D]).toBe(closed[D]);
+        }
+      }
+      // the page's rows add up to all the tails
+      const p = read<PageCombo>(resolve(pageDir, `${combo}.json`));
+      for (let L = 3; L < p.tails.length - 1; L++) {
+        for (const f of tailFates(p, L)) expect(Math.abs(f.chains.reduce((s, c) => s + c[1], 0) + f.nuggets + f.unseen + f.open - 1)).toBeLessThan(1e-4);
+      }
+    }, 300000);
+  }
+
+  it('back-tests to nothing unexplained once the last foundational circuit is found, and forecasts the next members of known chains', () => {
+    for (const combo of ['140000001', '000100000']) {
+      const p = read<PageCombo>(resolve(pageDir, `${combo}.json`));
+      for (const b of backTest(p)) if (b.level >= p.lastNew) expect(b.unexplained).toBeLessThan(1e-9);
+      const checks = forecastChecks(p).filter((c) => c.actual > 0);
+      expect(checks.length).toBeGreaterThan(1);
+      for (const c of checks) expect(Math.abs(c.forecast - c.actual) / c.actual).toBeLessThan(0.15);
+    }
+  });
 });

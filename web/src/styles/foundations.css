@@ -1,10 +1,26 @@
-/* Foundations page. Shell tokens come from widgets.css; the chart's two
-   series take the first two categorical slots of shapes.css, stepped for
-   the dark surface. */
+/* Foundations page. Shell tokens come from widgets.css. The chart: nuggets
+   take the orange categorical slot, chains blue (foundational deeper than
+   harmonics); by order, one blue ramp light to dark (validated ordinal, both
+   surfaces); by chain, the categorical slots in order after orange (validated
+   adjacent, both surfaces); circuits nothing explains, red. */
 
 .fd-page {
+  --fd-found: #17457d;
   --fd-chain: #2a78d6;
-  --fd-reborn: #eb6834;
+  --fd-nugget: #eb6834;
+  --fd-unseen: #e34948;
+  --fd-other: #8a8984;
+  --fd-o0: #86b6ef;
+  --fd-o1: #3987e5;
+  --fd-o2: #256abf;
+  --fd-o3: #184f95;
+  --fd-o4: #0d366b;
+  --fd-c0: #2a78d6;
+  --fd-c1: #1baf7a;
+  --fd-c2: #eda100;
+  --fd-c3: #e87ba4;
+  --fd-c4: #008300;
+  --fd-c5: #6250d6;
   --fd-tails: color-mix(in srgb, var(--muted) 45%, var(--bg));
   --fd-monster: #c0392b;
   display: grid;
@@ -14,8 +30,22 @@
 }
 @media (prefers-color-scheme: dark) {
   .fd-page {
+    --fd-found: #9cc3f2;
     --fd-chain: #3987e5;
-    --fd-reborn: #d95926;
+    --fd-nugget: #d95926;
+    --fd-unseen: #e66767;
+    --fd-other: #8f8e88;
+    --fd-o0: #cde2fb;
+    --fd-o1: #9ec5f4;
+    --fd-o2: #5598e7;
+    --fd-o3: #2a78d6;
+    --fd-o4: #1c5cab;
+    --fd-c0: #3987e5;
+    --fd-c1: #199e70;
+    --fd-c2: #c98500;
+    --fd-c3: #d55181;
+    --fd-c4: #008300;
+    --fd-c5: #9085e9;
     --fd-tails: color-mix(in srgb, var(--muted) 40%, var(--bg));
     --fd-monster: #ff7a6b;
   }
@@ -119,7 +149,7 @@
 }
 .fd-row {
   display: grid;
-  grid-template-columns: 1fr 34px 30px 40px 48px 26px;
+  grid-template-columns: 1fr 34px 30px 40px 48px 26px 22px;
   gap: 4px;
   align-items: center;
   padding: 2px 8px;
@@ -165,6 +195,10 @@
   margin: 0;
   font-size: 11px;
   color: var(--muted);
+}
+.fd-flag {
+  color: var(--fd-monster);
+  font-size: 11px;
 }
 .fd-badge {
   display: inline-block;
@@ -233,9 +267,37 @@
   display: grid;
   gap: 6px;
 }
+.fd-chart-tools {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 12px;
+}
+.fd-toggle {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.fd-toggle button {
+  background: none;
+  border: 0;
+  padding: 3px 9px;
+  font: inherit;
+  color: var(--muted);
+  cursor: pointer;
+}
+.fd-toggle button + button {
+  border-left: 1px solid var(--line);
+}
+.fd-toggle button.fd-on {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--text);
+}
 .fd-legend {
   display: flex;
-  gap: 14px;
+  flex-wrap: wrap;
+  gap: 4px 14px;
   font-size: 12px;
   color: var(--muted);
 }
@@ -257,17 +319,141 @@
   height: auto;
   overflow: visible;
 }
-.fd-seg-chain {
+.fd-seg-found {
+  fill: var(--fd-found);
+  background: var(--fd-found);
+}
+.fd-seg-harm {
   fill: var(--fd-chain);
   background: var(--fd-chain);
 }
-.fd-seg-reborn {
-  fill: var(--fd-reborn);
-  background: var(--fd-reborn);
+.fd-seg-nugget {
+  fill: var(--fd-nugget);
+  background: var(--fd-nugget);
+}
+.fd-seg-unseen {
+  fill: var(--fd-unseen);
+  background: var(--fd-unseen);
+}
+.fd-seg-chains-other {
+  fill: var(--fd-other);
+  background: var(--fd-other);
+}
+.fd-seg-order0 {
+  fill: var(--fd-o0);
+  background: var(--fd-o0);
+}
+.fd-seg-order1 {
+  fill: var(--fd-o1);
+  background: var(--fd-o1);
+}
+.fd-seg-order2 {
+  fill: var(--fd-o2);
+  background: var(--fd-o2);
+}
+.fd-seg-order3 {
+  fill: var(--fd-o3);
+  background: var(--fd-o3);
+}
+.fd-seg-order4 {
+  fill: var(--fd-o4);
+  background: var(--fd-o4);
+}
+.fd-seg-chain0 {
+  fill: var(--fd-c0);
+  background: var(--fd-c0);
+}
+.fd-seg-chain1 {
+  fill: var(--fd-c1);
+  background: var(--fd-c1);
+}
+.fd-seg-chain2 {
+  fill: var(--fd-c2);
+  background: var(--fd-c2);
+}
+.fd-seg-chain3 {
+  fill: var(--fd-c3);
+  background: var(--fd-c3);
+}
+.fd-seg-chain4 {
+  fill: var(--fd-c4);
+  background: var(--fd-c4);
+}
+.fd-seg-chain5 {
+  fill: var(--fd-c5);
+  background: var(--fd-c5);
 }
 .fd-seg-tails {
   fill: var(--fd-tails);
   background: var(--fd-tails);
+}
+.fd-expected {
+  stroke: var(--text);
+  stroke-width: 2;
+  stroke-dasharray: 3 2;
+}
+.fd-tails {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px 32px;
+  align-items: flex-start;
+}
+.fd-tails-block {
+  min-width: 0;
+  max-width: 100%;
+  font-size: 12px;
+}
+.fd-tails h3 {
+  margin: 0 0 6px;
+  font-size: 14px;
+}
+.fd-tails-block p {
+  max-width: 60ch;
+}
+.fd-fates td,
+.fd-forecast td {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.fd-small {
+  border-collapse: collapse;
+  font-size: 12px;
+  margin: 4px 0;
+  display: block;
+  overflow-x: auto;
+  max-width: 100%;
+}
+.fd-small th {
+  font-weight: 500;
+  color: var(--muted);
+  text-align: right;
+  padding: 2px 8px;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+.fd-small td {
+  padding: 2px 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 50%, transparent);
+}
+.fd-small th:first-child,
+.fd-small td:first-child {
+  text-align: left;
+}
+.fd-warn {
+  color: var(--fd-monster);
+}
+.fd-line {
+  fill: none;
+  stroke: var(--fd-chain);
+  stroke-width: 2;
+}
+.fd-dot {
+  fill: var(--fd-chain);
+  stroke: var(--bg);
+  stroke-width: 2;
+}
+.fd-dot-found {
+  fill: var(--fd-found);
 }
 .fd-grid {
   stroke: var(--line);
@@ -302,6 +488,12 @@
 }
 .fd-chart-read dt {
   color: var(--muted);
+}
+.fd-chart-read dt i {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
 }
 .fd-chart-read dd {
   margin: 0;
