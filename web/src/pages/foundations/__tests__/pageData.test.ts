@@ -9,6 +9,7 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { buildShapes, foundations, substitutionMatrix } from '../foundations';
 import { drawCircuits } from '../drawings';
+import { comboCount, combosOf, runLive } from '../liveAnalysis';
 import { backTest, chainOf, forecastChecks, pageCombo, pageIndex, segments, tailFates, type PageCombo, type PageIndex, type SweepFile } from '../pageData';
 
 const web = resolve(__dirname, '../../../..');
@@ -132,5 +133,23 @@ describe('what the tails become', () => {
       expect(checks.length).toBeGreaterThan(1);
       for (const c of checks) expect(Math.abs(c.forecast - c.actual) / c.actual).toBeLessThan(0.15);
     }
+  });
+});
+
+describe('the live analysis', () => {
+  // the page's worker runs analyseCombo as the sweep does: run afresh, it gives the precomputed files
+  for (const combo of ['140000001', '000100000']) {
+    it(`of ${combo} at level 9 is the precomputed data`, () => {
+      const p = read<PageCombo>(resolve(pageDir, `${combo}.json`));
+      const live = runLive({ rule: '023468', level: 9, combos: [combo] }, () => undefined, () => undefined);
+      expect(live).toEqual([p]);
+    }, 300000);
+  }
+
+  it('counts and lists the combinations of any rule', () => {
+    expect(comboCount('023468')).toBe(320);
+    expect(combosOf('023468')).toHaveLength(320);
+    expect(combosOf('023468')).toContain('140000001');
+    expect(combosOf('15')).toHaveLength(comboCount('15'));
   });
 });

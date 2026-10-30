@@ -1,4 +1,4 @@
-/** The 320 combinations, sortable and filtered, one compact row each. */
+/** A rule's combinations, sortable and filtered, one compact row each. */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { FLAG_TEXT, type IndexRow } from './pageData';
 import { compact } from './data';

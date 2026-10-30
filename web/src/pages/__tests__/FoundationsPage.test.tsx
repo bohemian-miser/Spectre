@@ -55,4 +55,15 @@ describe('FoundationsPage', () => {
     expect(location.search).toMatch(/^\?combo=031001001&circuit=\d+$/);
     expect(screen.getAllByTestId('fd-card').find((c) => c.className.includes('fd-card-on'))!.textContent).toMatch(/^170,976 tiles/);
   }, 60000);
+
+  it('analyses a rule with no precomputed data live, and sweeps it', async () => {
+    history.replaceState(null, '', '/Spectre/foundations.html?rule=15&level=6');
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('', { status: 404 })));
+    render(<FoundationsPage forceSync />);
+    await waitFor(() => expect(screen.getByTestId('fd-summary').textContent).toMatch(/Floor \d/), { timeout: 60000 });
+    expect(screen.getByTestId('fd-live').textContent).toMatch(/Rule 15: \d+ combinations · level 6, analysed here/);
+    fireEvent.click(screen.getByTestId('fd-sweep'));
+    await waitFor(() => expect(screen.getByTestId('fd-rows').textContent).toMatch(/\d{9}/), { timeout: 120000 });
+    expect(location.search).toMatch(/rule=15/);
+  }, 180000);
 });

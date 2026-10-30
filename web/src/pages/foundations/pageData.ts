@@ -558,8 +558,9 @@ export function provenNote(p: PageCombo): string[] {
     ].filter(Boolean);
     out.push(`Of ${checked} predictions checked against the build, ${parts.join(', ')}.`);
   }
-  out.push(
-    `The forecast's one assumption, that a harmonic closes in as many places per supertile of each type as its parent two levels down, held in ${p.assumption.checked - p.assumption.exceptions} of ${p.assumption.checked} checks${p.assumption.exceptions ? '' : ''}.`,
-  );
+  if (p.assumption.checked)
+    out.push(
+      `The forecast's one assumption, that a harmonic closes in as many places per supertile of each type as its parent two levels down, held in ${p.assumption.checked - p.assumption.exceptions} of ${p.assumption.checked} checks.`,
+    );
   return out;
 }
