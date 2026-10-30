@@ -19,7 +19,7 @@
  * A tie that runs back past the start is settled when the path closes
  * (`firstReading`), with the whole circuit known.
  */
-import { HEX_TYPES } from '../../core';
+import { HEX_TYPES, type HexType } from '../../core';
 import type { Seen, Walker } from './possible';
 
 /** How far a path's reading has been checked, and the period the forward check has found so far. */
@@ -29,45 +29,72 @@ export const FRESH: Reading = { n: 0, p: 1 };
 
 const TYPE_INDEX = new Map(HEX_TYPES.map((t, i) => [t, i]));
 
-/** A tile's rank in the order readings are compared by: the start's type and edge first. */
-const rankOf = (wk: Walker, type: string, entry: number): number =>
-  (type === wk.start && entry === wk.startEdge ? 0 : 1 + TYPE_INDEX.get(type as never)! * 6 + entry);
+/** A walked tile as one byte: its type's index times 6, plus the edge it is entered by. */
+export const tileCode = (type: HexType, entry: number): number => TYPE_INDEX.get(type)! * 6 + entry;
 
-const forward = (wk: Walker, s: Seen): number => rankOf(wk, s.type, s.entry);
-const backward = (wk: Walker, s: Seen): number => rankOf(wk, s.type, s.exit);
+/** The tile a code stands for, left by the edge the pattern pairs with its entry. */
+export const seenOf = (wk: Walker, code: number): Seen => {
+  const type = HEX_TYPES[(code / 6) | 0], entry = code % 6;
+  return { type, entry, exit: wk.exits[type][entry] };
+};
 
-/** The reading after the path has walked on to `seen`, or null when the path can no longer be a first reading. */
-export function stillFirst(wk: Walker, seen: readonly Seen[], r: Reading): Reading | null {
+/**
+ * Each code's rank in the order readings are compared by, the start's type
+ * and edge first: read forwards (by the entry edge) and backwards (by the exit edge).
+ */
+interface Ranks { readonly fw: Uint8Array; readonly bw: Uint8Array }
+
+const ranksOf = new WeakMap<Walker, Ranks>();
+
+function ranks(wk: Walker): Ranks {
+  const hit = ranksOf.get(wk);
+  if (hit) return hit;
+  const fw = new Uint8Array(HEX_TYPES.length * 6), bw = new Uint8Array(HEX_TYPES.length * 6);
+  const rankOf = (type: HexType, edge: number): number => (type === wk.start && edge === wk.startEdge ? 0 : 1 + tileCode(type, edge));
+  HEX_TYPES.forEach((type, t) => {
+    for (let e = 0; e < 6; e++) {
+      fw[t * 6 + e] = rankOf(type, e);
+      const exit = wk.exits[type][e];
+      bw[t * 6 + e] = exit < 0 ? 255 : rankOf(type, exit);
+    }
+  });
+  const r = { fw, bw };
+  ranksOf.set(wk, r);
+  return r;
+}
+
+/** The reading after the path (its first `n` codes) has walked on, or null when the path can no longer be a first reading. */
+export function stillFirst(wk: Walker, codes: Uint8Array, n: number, r: Reading): Reading | null {
+  const { fw, bw } = ranks(wk);
   let p = r.p;
-  for (let i = Math.max(1, r.n); i < seen.length; i++) {
-    const a = forward(wk, seen[i]), b = forward(wk, seen[i - p]);
+  for (let i = Math.max(1, r.n); i < n; i++) {
+    const a = fw[codes[i]], b = fw[codes[i - p]];
     if (a < b) return null;
     if (a > b) p = i + 1;
   }
-  for (let j = r.n; j < seen.length; j++) {
-    if (backward(wk, seen[j]) !== 0) continue;
+  for (let j = r.n; j < n; j++) {
+    if (bw[codes[j]] !== 0) continue;
     // back from tile j to the start, against on from the start
     for (let k = 1; k <= j; k++) {
-      const a = backward(wk, seen[j - k]), b = forward(wk, seen[k]);
+      const a = bw[codes[j - k]], b = fw[codes[k]];
       if (a < b) return null;
       if (a > b) break;
     }
   }
-  return { n: seen.length, p };
+  return { n, p };
 }
 
-/** Whether a closed circuit, read from the start, is its first reading: from every tile of the start's type and edge, either way round. */
-export function firstReading(wk: Walker, seen: readonly Seen[]): boolean {
-  const N = seen.length;
-  const fw = seen.map((s) => forward(wk, s));
-  const bw = seen.map((s) => backward(wk, s));
+/** Whether a closed circuit (its `n` codes), read from the start, is its first reading: from every tile of the start's type and edge, either way round. */
+export function firstReading(wk: Walker, codes: Uint8Array, n: number): boolean {
+  const { fw: F, bw: B } = ranks(wk);
+  const N = n;
   // the reading from tile j: forwards, or backwards (tile j, then j - 1, …)
-  const at = (j: number, k: number, back: boolean): number => (back ? bw[(((j - k) % N) + N) % N] : fw[(j + k) % N]);
+  const at = (j: number, k: number, back: boolean): number => (back ? B[codes[(((j - k) % N) + N) % N]] : F[codes[(j + k) % N]]);
   for (let j = 0; j < N; j++) {
     for (const back of [false, true]) {
-      if ((back ? bw[j] : fw[j]) !== 0 || (j === 0 && !back)) continue;
+      if ((back ? B[codes[j]] : F[codes[j]]) !== 0 || (j === 0 && !back)) continue;
       for (let k = 0; k < N; k++) {
-        const a = at(j, k, back), b = fw[k];
+        const a = at(j, k, back), b = F[codes[k]];
         if (a < b) return false;
         if (a > b) break;
       }
