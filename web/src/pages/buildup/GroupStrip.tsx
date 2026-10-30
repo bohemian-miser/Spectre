@@ -144,12 +144,19 @@ export function GroupStrip(props: {
   const items = useMemo((): Item[] => {
     const routesOf = (t: HexType) => Array.from(g.cs.levels[level][t].crossings()).filter((k) => g.cs.levels[level][t].mate(k) > k).length;
     const dimOf = (gr: readonly HexType[]) => use !== null && !gr.some((t) => use.byType.has(t));
+    // the group's types share one table, so a route counts as used when the circuit takes it in any of them
+    const usedOf = (gr: readonly HexType[]) => new Set(gr.flatMap((t) => [...(use?.byType.get(t)?.keys() ?? [])])).size;
+    const countOf = (gr: readonly HexType[]) => {
+      const all = routesOf(gr[0]);
+      if (!use) return plural(all, 'route');
+      const used = usedOf(gr);
+      return `uses ${used.toLocaleString('en-US')} of ${plural(all, 'route')} (${all ? Math.round((100 * used) / all) : 0}%)`;
+    };
     if (!adds) {
       return groups.map((gr) => {
-        const T = g.cs.levels[level][gr[0]];
         return {
           key: gr.join(), drawing: { type: gr[0], strong: null, use, types: gr }, names: gr, label: `Routes of ${gr.join(', ')}`,
-          count: `${plural(routesOf(gr[0]), 'route')} · ${plural(T.crossings().length, 'crossing')}`, pick: gr[0], dim: dimOf(gr),
+          count: countOf(gr), pick: gr[0], dim: dimOf(gr),
         };
       });
     }
@@ -162,7 +169,7 @@ export function GroupStrip(props: {
       if (!(CORE_TYPES as readonly string[]).includes(gr[0])) {
         out.push({
           key: gr.join(), drawing: { type: gr[0], strong: null, use, types: gr }, names: gr, label: `Routes of ${gr.join(', ')}`,
-          count: `not in the shared routes: all ${plural(routesOf(gr[0]), 'route')}`, pick: gr[0], dim: dimOf(gr),
+          count: `not in the shared routes: ${countOf(gr)}`, pick: gr[0], dim: dimOf(gr),
         });
         continue;
       }
