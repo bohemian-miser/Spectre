@@ -149,7 +149,8 @@ export function tableRows(r: HarmonicsResult): { family: string; rows: { chain: 
 }
 
 /** A score as a share: exactly 100%, else rounded down to a tenth of a percent after ≈. */
-export const percent = (s: number): string => (s >= 1 ? '100%' : `≈ ${(Math.floor(s * 1000) / 10).toFixed(1)}%`);
+export const percent = (s: number): string => (s >= 1 ? '100%' : `≈ ${tenths(s)}%`);
+const tenths = (s: number): string => (Math.floor(s * 1000) / 10).toFixed(1);
 
 /** A link's similarity at every level compared. */
 function scoreTitle(s: Scored, circuits: readonly CircuitInfo[]): string {
@@ -158,7 +159,7 @@ function scoreTitle(s: Scored, circuits: readonly CircuitInfo[]): string {
   const lines = s.levels.map((l) =>
     l.similarity === null
       ? `level ${l.level} against ${l.level + 2}: not read`
-      : `level ${l.level} against ${l.level + 2}: ${l.bound === 'exact' ? '' : `${l.bound} `}${(l.similarity * 100).toFixed(1)}% (${nf(l.lengths[0])} and ${nf(l.lengths[1])} visits)`,
+      : `level ${l.level} against ${l.level + 2}: ${l.bound === 'exact' ? '' : `${l.bound} `}${l.similarity >= 1 ? '100' : tenths(l.similarity)}% (${nf(l.lengths[0])} and ${nf(l.lengths[1])} visits)`,
   );
   return `The ${nf(a.length)} at level ${a.level} and the ${nf(b.length)} at level ${b.level} read ${percent(s.score)} alike at the least:\n${lines.join('\n')}`;
 }
@@ -747,6 +748,7 @@ function RunSummary(props: {
                       j: first,
                       d: l.d,
                       after: r.after,
+                      fold: r.fold,
                       nth: r.nth,
                     })
                   }
@@ -789,7 +791,7 @@ function ReadingRows(props: {
   /** Each run's line, by member, row and the kept visit before it. */
   const lineOf = useMemo(() => {
     const m = new Map<string, RunLine>();
-    for (const l of lines) l.runs.forEach((r, j) => r && m.set(`${j} ${l.d} ${r.after} ${r.nth}`, l));
+    for (const l of lines) l.runs.forEach((r, j) => r && m.set(`${j} ${l.d} ${r.after} ${r.fold} ${r.nth}`, l));
     return m;
   }, [lines]);
   const [open, setOpen] = useState<ReadonlySet<RunLine>>(new Set());
@@ -860,7 +862,7 @@ function ReadingRows(props: {
                           </span>
                         );
                       }
-                      const line = lineOf.get(`${j} ${d} ${it.after} ${it.nth}`);
+                      const line = lineOf.get(`${j} ${d} ${it.after} ${it.fold} ${it.nth}`);
                       const nb = neighbour(j);
                       const alone = nb >= 0 && (!line || !line.runs[nb]);
                       const isOpen = !!line && open.has(line);
@@ -902,7 +904,7 @@ function ReadingRows(props: {
         lines={lines}
         members={members}
         circuits={circuits}
-        onOpen={(at) => toggle(lineOf.get(`${at.j} ${at.d} ${at.after} ${at.nth}`))}
+        onOpen={(at) => toggle(lineOf.get(`${at.j} ${at.d} ${at.after} ${at.fold} ${at.nth}`))}
       />
     </>
   );
@@ -994,9 +996,11 @@ export function ChainWorkspace(props: {
       </div>
       <p className="shapes-note">
         Each member read level by level, from the children of its birth supertile down to the level drawn above: every visit to a supertile in order, as type
-        and slot, the runs of visits back and forth across a seam (which the reading cancels) folded into ↔ chips. Hovering a visit lights the visits it expands
-        into below and the supertiles it reaches in the drawing, in every member through the readings. Clicking a ↔ chip opens the run and the runs matched with
-        it in the other members; a dashed red ↔ has no match in the neighbouring member.
+        and slot, with what the fold removes gathered into chips: ↔ for weaving back and forth across a seam, a dotted ⤳ for a detour that leaves and comes back
+        the same way. Folding weaving only keeps the detours as visits, dotted, and outlines in dashed red those the neighbouring member has no visit to match.
+        Hovering a visit lights the visits it expands into below and the supertiles it reaches in the drawing, in every member through the readings. Clicking a
+        chip opens the run and the runs matched with it in the other members, between the same two kept visits; a dashed red chip has no match in the
+        neighbouring member.
       </p>
       {error ? <p className="shapes-note">Could not read the rows: {error}</p> : null}
       {current ? (

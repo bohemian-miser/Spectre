@@ -226,6 +226,20 @@
   flex-wrap: wrap;
   gap: 12px 20px;
 }
+.harm-link-controls .harm-threshold,
+.harm-link-controls .harm-show {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.harm-link-controls .harm-check {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+}
 .harm-threshold input[type='range'] {
   width: 180px;
   vertical-align: middle;
@@ -475,4 +489,11 @@ button.harm-run {
   outline-offset: -1px;
   opacity: 1;
   background: color-mix(in srgb, var(--g1) 22%, transparent);
+}
+
+/* rows and runs off screen are not laid out while the views above resize */
+.harm-run-summary,
+.harm-rows {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 1500px;
 }

@@ -145,9 +145,11 @@ describe.each(['000100000', '140000001'])('rows of 023468 / %s', (combo) => {
         const y = line.runs[j + 1];
         if (!x || !y) return;
         const p = rows.pairs[j][line.d]!;
-        expect(p.ab[x.after]).toBe(y.after);
         const nx = rows.members[j].levels[line.d].keep.length, ny = rows.members[j + 1].levels[line.d].keep.length;
-        expect(p.ab[(x.after + 1) % nx]).toBe((y.after + 1) % ny);
+        // the two kept visits either side of one pair with the two either side of the other, in order or reversed
+        const ends = [p.ab[x.after], p.ab[(x.after + 1) % nx]].sort((u, v) => u - v).join(' ');
+        expect([[y.after, (y.after + 1) % ny].sort((u, v) => u - v).join(' ')]).toContain(ends);
+        expect(y.fold).toBe(x.fold);
         matched++;
       });
     }
@@ -198,8 +200,13 @@ describe.each(['000100000', '140000001'])('rows of 023468 / %s', (combo) => {
         const a = r.circuits[chain.members[j]], b = r.circuits[chain.members[j + 1]];
         const ta = r.circuits[chain.members[j]].readings.find((x) => x.level === a.level - 1 - d)!.tokens;
         const tb = r.circuits[chain.members[j + 1]].readings.find((x) => x.level === b.level - 1 - d)!.tokens;
-        expect(p).toEqual(pairReadings(ta, tb));
+        if (!sameCyclic(ta, tb)) expect(p).toEqual(pairReadings(ta, tb));
         if (!p) return;
+        // the same readings: a rotation, either way round
+        if (sameCyclic(ta, tb)) {
+          const step = (p.ab[1 % ta.length] - p.ab[0] + tb.length) % tb.length;
+          p.ab.forEach((q, i) => expect(q).toBe((p.ab[0] + i * step) % tb.length));
+        }
         p.ab.forEach((q, i) => { if (q >= 0) { expect(tb[q]).toBe(ta[i]); paired++; } });
         if (!sameCyclic(ta, tb)) expect(Array.from(p.ab, (q) => q >= 0)).toEqual(alignReadings(ta, tb)!.matchedA);
       }),

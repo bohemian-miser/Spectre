@@ -75,12 +75,24 @@ interface Row {
   readonly folds: Partial<Record<Fold, Folded>>;
 }
 
-/** Each visit kept by the reading paired with one of the other row's by the reading alignment: a rotation (either way round) when the readings are the same, else `alignReadings`. Null when too long to align. */
-export function pairReadings(a: readonly string[], b: readonly string[]): { ab: Int32Array; ba: Int32Array } | null {
+/**
+ * Each visit kept by the reading paired with one of the other row's by the
+ * reading alignment: a rotation (either way round) when the readings are the
+ * same, else `alignReadings`. Null when too long to align. A reading that
+ * repeats itself is the same at several rotations; given `gaps`, the visits
+ * each reading folds after each kept one, the rotation is the one whose
+ * gaps go up and down together most (correlation of log(1 + gap)).
+ */
+export function pairReadings(a: readonly string[], b: readonly string[], gaps?: readonly [ArrayLike<number>, ArrayLike<number>]): { ab: Int32Array; ba: Int32Array } | null {
   const ab = new Int32Array(a.length).fill(-1);
   const ba = new Int32Array(b.length).fill(-1);
   const n = a.length;
   if (n === b.length && n > 0) {
+    let best: { back: boolean; r: number; fit: number } | null = null;
+    const la = gaps ? Array.from(gaps[0], (g) => Math.log1p(g)) : null;
+    const lb = gaps ? Array.from(gaps[1], (g) => Math.log1p(g)) : null;
+    const mean = (x: number[]) => x.reduce((s, v) => s + v, 0) / x.length;
+    const ma = la ? mean(la) : 0, mb = lb ? mean(lb) : 0;
     for (const back of [false, true]) {
       const at = (q: number) => (back ? n - 1 - q : q);
       for (let r = 0; r < n; r++) {
@@ -88,12 +100,25 @@ export function pairReadings(a: readonly string[], b: readonly string[]): { ab: 
         let ok = true;
         for (let q = 1; q < n && ok; q++) if (a[q] !== b[at((r + q) % n)]) ok = false;
         if (!ok) continue;
-        for (let q = 0; q < n; q++) {
-          ab[q] = at((r + q) % n);
-          ba[ab[q]] = q;
+        if (!la || !lb) {
+          best = { back, r, fit: 0 };
+          break;
         }
-        return { ab, ba };
+        // the gap after A's q-th kept visit lies, read backwards, after B's visit one further on
+        let fit = 0;
+        for (let q = 0; q < n; q++) fit += (la[q] - ma) * (lb[back ? at((r + q + 1) % n) : at((r + q) % n)] - mb);
+        if (!best || fit > best.fit + 1e-9) best = { back, r, fit };
       }
+      if (best && (!la || !lb)) break;
+    }
+    if (best) {
+      const { back, r } = best;
+      const at = (q: number) => (back ? n - 1 - q : q);
+      for (let q = 0; q < n; q++) {
+        ab[q] = at((r + q) % n);
+        ba[ab[q]] = q;
+      }
+      return { ab, ba };
     }
   }
   const al = alignReadings(a, b);
@@ -164,8 +189,18 @@ export class CircuitRows {
   /** Its reading's visits at `level` paired with the other's at the level as far below the other's birth, under a fold. */
   pairing(level: number, other: CircuitRows, fold: Fold = 'fixpoint'): { ab: Int32Array; ba: Int32Array } | null {
     const key = `${level} ${fold} ${other.c.level} ${other.c.type} ${other.c.length}`;
-    if (!this.pairs.has(key)) this.pairs.set(key, pairReadings(this.fold(level, fold).tokens, other.fold(level + other.c.level - this.c.level, fold).tokens));
+    if (!this.pairs.has(key)) {
+      const lo = level + other.c.level - this.c.level;
+      this.pairs.set(key, pairReadings(this.fold(level, fold).tokens, other.fold(lo, fold).tokens, [this.gaps(level, fold), other.gaps(lo, fold)]));
+    }
     return this.pairs.get(key)!;
+  }
+
+  /** Per kept visit, the visits folded after it before the next kept one (the row read as a loop). */
+  gaps(level: number, fold: Fold): Int32Array {
+    const keep = this.fold(level, fold).keep;
+    const n = this.row(level).v.type.length;
+    return Int32Array.from(keep, (i, q) => (q + 1 < keep.length ? keep[q + 1] : keep[0] + n) - i - 1);
   }
 
   /** Where each visit's run starts in the row below, and the row's length at the end. */
@@ -194,7 +229,8 @@ export interface Stop {
  * mostly between two supertiles `a` and `b`; or `detour`, an excursion that
  * leaves and comes back the same way. `after` is the kept visit before it
  * (its index among the kept; for a run at the start of the row, the last,
- * the row being a loop) and `nth` its place among the runs after that visit.
+ * the row being a loop) and `nth` its place among the runs of its kind
+ * after that visit.
  * `head` and `tail` are its first and last visits (all of them when short),
  * `odd` the visits that are neither `a` nor `b` (where in the run, and
  * which), `oddCount` of them in all.
@@ -304,7 +340,9 @@ function itemsOf(m: CircuitRows, level: number, fold: Fold): { items: RowItem[];
   const items: RowItem[] = [];
   let count = 0;
   const lastKept = f.keep.length - 1;
-  let after = -1, nth = 0;
+  let after = -1;
+  // runs of each kind since the last kept visit
+  const nth = { weave: 0, detour: 0 };
   const leading: Run[] = [];
   for (let i = 0; i < n; ) {
     const q = f.keptAt[i];
@@ -312,7 +350,7 @@ function itemsOf(m: CircuitRows, level: number, fold: Fold): { items: RowItem[];
       if (items.length < ROW_ITEMS) items.push({ kind: 'visit', i, q, type: v.type[i], slot: v.slot[i], detour: fold === 'weave' && isDetour(i) });
       count++;
       after = q;
-      nth = 0;
+      nth.weave = nth.detour = 0;
       i++;
       continue;
     }
@@ -320,7 +358,7 @@ function itemsOf(m: CircuitRows, level: number, fold: Fold): { items: RowItem[];
     const kind = weave[i] < 0 ? 'weave' : 'detour';
     let j = i;
     while (j < n && f.keptAt[j] < 0 && (weave[j] < 0 ? 'weave' : 'detour') === kind) j++;
-    const run = runOf(v, kind, i, j, after < 0 ? lastKept : after, nth++);
+    const run = runOf(v, kind, i, j, after < 0 ? lastKept : after, nth[kind]++);
     if (after < 0) leading.push(run);
     if (items.length < ROW_ITEMS) items.push(run);
     count++;
@@ -328,10 +366,9 @@ function itemsOf(m: CircuitRows, level: number, fold: Fold): { items: RowItem[];
   }
   // the row is a loop: runs before the first kept visit follow those after the last one
   if (leading.length && after >= 0) {
-    const shift = nth;
     for (let q = 0; q < items.length; q++) {
       const it = items[q];
-      if (it.kind === 'run' && leading.includes(it)) items[q] = { ...it, nth: it.nth + shift };
+      if (it.kind === 'run' && leading.includes(it)) items[q] = { ...it, nth: it.nth + nth[it.fold] };
     }
   }
   return { items, more: count - items.length, keep: f.keep, detours, detourRuns };
@@ -459,16 +496,17 @@ export function lit(rows: ChainRows, hovered: Hovered, tilePaths: readonly (read
   return { ranges, tiles };
 }
 
-/** Where a run sits: member, row, and the kept visit before it with its place among the runs there. */
+/** Where a run sits: member, row, the kept visit before it, and its kind and place among the runs of that kind there. */
 export interface RunAt {
   readonly j: number;
   readonly d: number;
   readonly after: number;
+  readonly fold: 'weave' | 'detour';
   readonly nth: number;
 }
 
-const runAt = (rows: ChainRows, j: number, d: number, after: number, nth: number): Run | null =>
-  (rows.members[j].levels[d].items.find((it) => it.kind === 'run' && it.after === after && it.nth === nth) as Run | undefined) ?? null;
+const runsAfter = (rows: ChainRows, j: number, d: number, after: number, fold: 'weave' | 'detour'): Run[] =>
+  rows.members[j].levels[d].items.filter((it): it is Run => it.kind === 'run' && it.after === after && it.fold === fold).sort((x, y) => x.nth - y.nth);
 
 /**
  * The runs matched with a run in every member: the run in the same place
@@ -478,19 +516,26 @@ const runAt = (rows: ChainRows, j: number, d: number, after: number, nth: number
  */
 export function matchedRuns(rows: ChainRows, at: RunAt): (Run | null)[] {
   const out: (Run | null)[] = rows.members.map(() => null);
-  out[at.j] = runAt(rows, at.j, at.d, at.after, at.nth);
+  out[at.j] = runsAfter(rows, at.j, at.d, at.after, at.fold).find((r) => r.nth === at.nth) ?? null;
   for (const dir of [1, -1]) {
-    let q = at.after;
-    for (let m = at.j + dir; m >= 0 && m < rows.members.length; m += dir) {
-      if (q < 0) break;
+    let cur = out[at.j];
+    for (let m = at.j + dir; m >= 0 && m < rows.members.length && cur; m += dir) {
       const p = rows.pairs[dir > 0 ? m - 1 : m][at.d];
       const map = p ? (dir > 0 ? p.ab : p.ba) : null;
       const n = rows.members[m - dir].levels[at.d].keep.length, n2 = rows.members[m].levels[at.d].keep.length;
-      const prev = q;
-      q = map ? map[q] : -1;
-      // the kept visit after it paired too, so the run sits between the same two
-      if (q >= 0 && map![(prev + 1) % n] !== (q + 1) % n2) q = -1;
-      out[m] = q >= 0 ? runAt(rows, m, at.d, q, at.nth) : null;
+      const x = map ? map[cur.after] : -1, y = map ? map[(cur.after + 1) % n] : -1;
+      let next: Run | null = null;
+      if (x >= 0 && y >= 0) {
+        // the same two kept visits on either side: in order, or in reverse when the readings pair the other way round
+        const here = runsAfter(rows, m - dir, at.d, cur.after, at.fold).length;
+        if (y === (x + 1) % n2) next = runsAfter(rows, m, at.d, x, at.fold).find((r) => r.nth === cur!.nth) ?? null;
+        else if (x === (y + 1) % n2) {
+          const there = runsAfter(rows, m, at.d, y, at.fold);
+          next = there.length === here ? there[there.length - 1 - cur.nth] ?? null : null;
+        }
+      }
+      out[m] = next;
+      cur = next;
     }
   }
   return out;
@@ -513,9 +558,9 @@ export function runLines(rows: ChainRows): RunLine[] {
   rows.members.forEach((m, j) =>
     m.levels.forEach((lv, d) => {
       for (const it of lv.items) {
-        if (it.kind !== 'run' || seen[j].has(`${d} ${it.after} ${it.nth}`)) continue;
-        const runs = matchedRuns(rows, { j, d, after: it.after, nth: it.nth });
-        runs.forEach((r, q) => r && seen[q].add(`${d} ${r.after} ${r.nth}`));
+        if (it.kind !== 'run' || seen[j].has(`${d} ${it.after} ${it.fold} ${it.nth}`)) continue;
+        const runs = matchedRuns(rows, { j, d, after: it.after, fold: it.fold, nth: it.nth });
+        runs.forEach((r, q) => r && seen[q].add(`${d} ${r.after} ${r.fold} ${r.nth}`));
         const lengths = runs.map((r) => (r ? r.to - r.from : null));
         const ratios = lengths.slice(1).map((l, q) => (l !== null && lengths[q] !== null ? l / lengths[q]! : null));
         const known = ratios.filter((x): x is number => x !== null);

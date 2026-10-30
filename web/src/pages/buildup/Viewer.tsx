@@ -252,10 +252,10 @@ export function Viewer(props: {
   // draws the lines for the camera as it is now, a slice per animation frame
   const redraw = useCallback(() => {
     const size = sizeRef.current;
-    if (size.width <= 0) return;
+    if (size.width <= 0 || !host.current) return;
     const { lines, frame } = live.current;
     const c = { ...camRef.current };
-    const css = getComputedStyle(host.current!);
+    const css = getComputedStyle(host.current);
     const view: Box = {
       min: { x: (-0.25 * size.width - c.x) / c.scale, y: (c.y - 1.25 * size.height) / c.scale },
       max: { x: (1.25 * size.width - c.x) / c.scale, y: (c.y + 0.25 * size.height) / c.scale },

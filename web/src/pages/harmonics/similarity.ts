@@ -17,11 +17,12 @@
  * Bounds, per level (`bound`):
  *
  * - `exact`: every rotation tried, while the work stays within `EXACT_WORK`.
- * - `at least`: past that, the least distance over the rotations that start
- *   at a token equal to A's first (at most `ROTATIONS`, spread out), each
- *   within a band of the diagonal `BAND` wider than the lengths' difference.
+ * - `at least`: past that, the least distance over the `ROTATIONS`
+ *   rotations of B that run longest with A's opening tokens, each within a
+ *   band of the diagonal `BAND` wider than the lengths' difference.
  *   That distance is an upper bound, so the similarity is at least the one
- *   given.
+ *   given; it is exact when it comes to the lengths' difference, which no
+ *   distance is under.
  * - `at most`: when even the banded work passes `BAND_WORK`, or a reading
  *   is over `TOKEN_BUDGET` tokens, only the lengths count: the distance is
  *   at least their difference (at least 1 when the readings are not the
@@ -38,7 +39,7 @@ import { sameCyclic } from './readings';
 export const EXACT_WORK = 4e6;
 export const ROTATIONS = 12;
 export const BAND = 64;
-export const BAND_WORK = 6e7;
+export const BAND_WORK = 2.5e8;
 export const TOKEN_BUDGET = 60000;
 /** As `chains.ts` compares them: lengths only past this. */
 export const LENGTHS_ONLY = 60000;
@@ -82,18 +83,22 @@ export function cyclicDistance(a: readonly string[], b: readonly string[]): { di
     return { distance: best, bound: 'exact' };
   }
   const band = Math.abs(n - m) + BAND;
+  // the rotations that agree longest with A's opening tokens
   const starts = ways.map((bb) => {
-    const all = bb.flatMap((t, r) => (t === a[0] ? [r] : []));
-    const step = Math.max(1, Math.ceil(all.length / ROTATIONS));
-    const some = all.filter((_, q) => q % step === 0);
-    return some.length ? some : [0];
+    const run = (r: number) => {
+      let q = 0;
+      while (q < BAND && q < n && a[q] === bb[(r + q) % m]) q++;
+      return q;
+    };
+    const best = bb.flatMap((t, r) => (t === a[0] ? [{ r, q: run(r) }] : [])).sort((x, y) => y.q - x.q).slice(0, ROTATIONS);
+    return best.length ? best.map((x) => x.r) : [0];
   });
   if (n * (2 * band + 1) * (starts[0].length + starts[1].length) > BAND_WORK) return byLength;
   let best = Infinity;
   ways.forEach((bb, w) => {
     for (const r of starts[w]) best = Math.min(best, editDistance(a, [...bb.slice(r), ...bb.slice(0, r)], band));
   });
-  return { distance: best, bound: 'at least' };
+  return { distance: best, bound: best === Math.max(1, Math.abs(n - m)) ? 'exact' : 'at least' };
 }
 
 /** A level compared: A's level, the two readings' lengths, the similarity (null where either is not read), and how it bounds the true one. */

@@ -46,16 +46,22 @@ describe('cyclic edit distance', () => {
     }
   });
 
-  it('gives an upper bound past the exact budget, and the lengths when banded work is too much', () => {
+  it('past the exact budget, gives an upper bound on the distance, exact when it meets the lengths\' difference', () => {
     let seed = 5;
     const rand = (n: number) => ((seed = (seed * 1103515245 + 12345) % 2 ** 31), seed % n);
     const a = Array.from({ length: 400 }, () => 'ABC'[rand(3)]);
     const b = [...a.slice(150), ...a.slice(0, 150)];
     b.splice(30, 3);
-    const c = cyclicDistance(a, b);
+    // three deleted: banded, it finds the lengths' difference, which is then exact
+    expect(cyclicDistance(a, b)).toEqual({ distance: 3, bound: 'exact' });
+    // two substituted as well: at most five
+    const c2 = [...b];
+    c2[100] = c2[100] === 'A' ? 'B' : 'A';
+    c2[200] = c2[200] === 'A' ? 'B' : 'A';
+    const c = cyclicDistance(a, c2);
     expect(c.bound).toBe('at least');
-    expect(c.distance).toBeGreaterThanOrEqual(3);
-    expect(c.distance).toBeLessThanOrEqual(3 + 2);
+    expect(c.distance).toBeGreaterThan(3);
+    expect(c.distance).toBeLessThanOrEqual(5);
   });
 });
 
