@@ -36,8 +36,8 @@ const VERDICTS: Record<SweepVerdict, Verdict> = {
  * level, and whether it is a nugget (1) or starts a chain (0).
  */
 export type FoundRow = [id: number, level: number, length: number, families: string, steps: number, copies: number, types: number, place: number, places: number, nugget: number];
-/** A harmonic: id, level it first closes at, tiles, the circuit two levels down it is the harmonic of, the foundational circuit its chain starts at, its places at that level, how many of them read as a place of `of`, its order (1 two levels above the foundational circuit). */
-export type HarmRow = [id: number, level: number, length: number, of: number, root: number, places: number, matched: number, order: number];
+/** A harmonic: id, level it first closes at, tiles, the circuit two levels down it is the harmonic of, the foundational circuit its chain starts at, its places at that level, how many of them read as a place of `of`, its order (1 two levels above the foundational circuit), and the place drawn (its index in `closingGroups`). */
+export type HarmRow = [id: number, level: number, length: number, of: number, root: number, places: number, matched: number, order: number, place: number];
 /** A prediction: the circuit predicted from, its level, the verdict, and the predicted circuit's tiles (0 when none). */
 export type PredRow = [from: number, level: number, verdict: Verdict, length: number];
 /** Shares closing at each level, 0 to levels + 1: the chain's root, class (0 nugget, 1 foundational, 2 harmonic), harmonic order, and the shares. */
@@ -129,7 +129,7 @@ export function pageCombo(d: SweepFile): PageCombo {
   const harm: HarmRow[] = [];
   for (const c of d.closings) {
     if (c.status === 'foundational') found.push([c.id, c.level, c.length, c.families.join(' '), c.steps, c.copies, c.types, c.place, c.places, c.nugget ? 1 : 0]);
-    else harm.push([c.id, c.level, c.length, c.of!, c.root, c.families.length, c.matched, orderOf(c.id)]);
+    else harm.push([c.id, c.level, c.length, c.of!, c.root, c.families.length, c.matched, orderOf(c.id), c.place]);
   }
   const pred: PredRow[] = d.predictions.map((p) => [p.from, p.level, VERDICTS[p.verdict], p.walk?.length ?? 0]);
   const shares: ShareRow[] = [];

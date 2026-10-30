@@ -2,8 +2,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { loadCombo, loadIndex } from '../data';
 
-const fresh = { found: [[0, 3, 60, '147', 6, 9, 9, 0, 1, 1]], tails: [1] };
+const fresh = { found: [[0, 3, 60, '147', 6, 9, 9, 0, 1, 1]], harm: [[5, 6, 14679, 1, 1, 1, 1, 1, 32]], tails: [1] };
 const stale = { found: [[0, 3, 60, '147', 6, 9, 9]] };
+// harmonic rows without the place drawn
+const staleHarm = { ...fresh, harm: [[5, 6, 14679, 1, 1, 1, 1, 1]] };
 
 describe('loading the data', () => {
   afterEach(() => vi.unstubAllGlobals());
@@ -19,6 +21,11 @@ describe('loading the data', () => {
     );
     expect(await loadCombo('/', '140000001')).toEqual(fresh);
     expect(calls).toEqual(['no-cache', 'reload']);
+  });
+
+  it('reads a file whose harmonic rows have no place once more past the cache', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init: RequestInit) => new Response(JSON.stringify(init.cache === 'reload' ? fresh : staleHarm))));
+    expect(await loadCombo('/', '140000001')).toEqual(fresh);
   });
 
   it('says so when the file is still old', async () => {

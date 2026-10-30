@@ -7,6 +7,7 @@
  */
 import { comboDigitChar, comboOptionCounts } from '../../core';
 import { analyseCombo } from './comboAnalysis';
+import { freshCombo } from './data';
 import { pageCombo, type PageCombo } from './pageData';
 
 export interface LiveJob {
@@ -123,14 +124,14 @@ function openDb(): Promise<IDBDatabase | null> {
 
 const key = (rule: string, level: number): string => `hex-${rule}@${level}`;
 
-/** The results kept for a rule at a level, by combination; empty when nothing is kept or IndexedDB is not there. */
+/** The results kept for a rule at a level, by combination, those in an older shape than the page reads left out; empty when nothing is kept or IndexedDB is not there. */
 export async function loadKept(rule: string, level: number): Promise<Record<string, PageCombo>> {
   try {
     const db = await openDb();
     if (!db) return {};
     return await new Promise((resolve) => {
       const req = db.transaction(STORE, 'readonly').objectStore(STORE).get(key(rule, level));
-      req.onsuccess = () => resolve((req.result as Record<string, PageCombo> | undefined) ?? {});
+      req.onsuccess = () => resolve(Object.fromEntries(Object.entries((req.result as Record<string, PageCombo> | undefined) ?? {}).filter(([, p]) => freshCombo(p))));
       req.onerror = () => resolve({});
     });
   } catch {
