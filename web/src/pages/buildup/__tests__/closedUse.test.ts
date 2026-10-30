@@ -35,12 +35,13 @@ describe('routes on circuits closing above a level', () => {
       const perLevel: Set<string>[][] = [];
       for (let n = 1; n <= top; n++) {
         perLevel[n] = Array.from({ length: top + 1 }, () => new Set());
-        for (const [type, walks] of cs.closed[n]) {
-          for (const w of walks) {
-            for (const s of w) {
-              const ch = cs.childOf(n, type, s);
-              descend(cs, n - 1, ch.type, ch.k, perLevel[n]);
-            }
+        for (const [type, steps] of cs.closed[n]) {
+          // every closed walk again, from each of its child crossings, through the tables below
+          for (const s of steps) {
+            const again = cs.walkAbove(type, s, n - 1);
+            expect(again.closed).toBe(true);
+            const ch = cs.childOf(n, type, s);
+            descend(cs, n - 1, ch.type, ch.k, perLevel[n]);
           }
         }
       }

@@ -35,6 +35,8 @@ const BUDGET = 150000;
 const SHADES = 6;
 /** Most passes of a circuit drawn at one level. */
 const MAX_PASSES = 250000;
+/** Most routes of a table drawn: the longest. */
+const MAX_ROUTES = 30000;
 
 const boxOf = (xs: Iterable<{ x: number; y: number }>): Box => {
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
@@ -69,7 +71,7 @@ function fromAddress(): { choice: ComboChoice; level: number | null; circuit: nu
 
 /** Routes of every type at a level, once per pair. */
 const routesAt = (cs: CircuitShapes, n: number): number =>
-  Object.values(cs.levels[n]).reduce((s, T) => s + Array.from(T.crossings()).filter((k) => T.mate(k) > k).length, 0);
+  Object.values(cs.levels[n]).reduce((s, T) => s + T.routes(), 0);
 
 export default function BuildUpPage(): JSX.Element {
   const asked = useRef(fromAddress());
@@ -179,7 +181,7 @@ export default function BuildUpPage(): JSX.Element {
 
   const shownType: HexType = type;
   const T = ready ? now!.levels[level][shownType] : null;
-  const rs = useMemo(() => (ready ? routeSet(now!, level, shownType) : null), [ready, now, level, shownType]);
+  const rs = useMemo(() => (ready ? routeSet(now!, level, shownType, MAX_ROUTES) : null), [ready, now, level, shownType]);
   const perStop = useMemo(() => (g && rs ? linesPerStop(g, rs) : []), [g, rs]);
   const frame = useMemo(() => (ready && g ? ringBox(ringOf(g, level, shownType).pts) : null), [ready, g, level, shownType]);
   const span = useMemo(() => {
@@ -227,6 +229,8 @@ export default function BuildUpPage(): JSX.Element {
     if (hover !== null && hover !== selRoute) out.push({ i: hover, color: '--text', width: 2.5 });
     return out;
   }, [selRoute, hover]);
+  // at the deep levels only the longest routes are drawn
+  const routesLine = rs ? (rs.total > rs.from.length ? `${nf(rs.total)} routes, the longest ${nf(rs.from.length)} drawn` : `${nf(rs.total)} routes`) : '';
   const routeInfo = useMemo(() => {
     if (!g || !T || routeSel === null || level === 0) return null;
     const steps = g.enters(level, shownType, routeSel);
@@ -243,8 +247,8 @@ export default function BuildUpPage(): JSX.Element {
   // every route of the supertile as its children's routes
   const allPasses = useMemo(() => {
     if (!g || !now || !ready || level === 0 || mode !== 'children') return null;
-    return Array.from(routeSet(now, level, shownType).from).flatMap((k) => routePasses(g, level, shownType, k));
-  }, [g, now, ready, level, shownType, mode]);
+    return Array.from(rs!.from).flatMap((k) => routePasses(g, level, shownType, k));
+  }, [g, now, ready, level, shownType, mode, rs]);
 
   // ---- a selected circuit, level by level ----
   const twin = useMemo(() => {
@@ -401,14 +405,14 @@ export default function BuildUpPage(): JSX.Element {
             : <p className="bu-muted bu-none">The other circuit has no level {level + (twin ? twin.circuit.level - circ!.circuit.level : 0)}.</p>)}
           {!circuitView && showing === 'children' && allPasses && frame && g && (
             <div className="bu-side-by">
-              <p className="bu-line">{`A level-${level} ${shownType}: ${nf(rs?.from.length ?? 0)} routes, made of ${nf(allPasses.length)} routes of its children`}</p>
+              <p className="bu-line">{`A level-${level} ${shownType}: ${routesLine}, made of ${nf(allPasses.length)} routes of its children`}</p>
               <PassesPane g={g} frame={{ outline: ringOf(g, level, shownType).pts, box: frame }} fitKey={`${choice.combo} ${level} ${shownType}`} passes={allPasses}
                 apiRef={leftApi} hovered={hoverL} onHover={setHoverL} label={`A level-${level} ${shownType} built from its children's routes`} testId="bu-children" />
             </div>
           )}
           {!circuitView && showing === 'paths' && routeLines && frame && (
             <div className="bu-side-by">
-              <p className="bu-line">{`A level-${level} ${shownType}: ${nf(rs?.from.length ?? 0)} routes, each drawn as the strand's path`}</p>
+              <p className="bu-line">{`A level-${level} ${shownType}: ${routesLine}, each drawn as the strand's path`}</p>
               <Viewer
                 frame={frame}
                 fitKey={`${choice.combo} ${level} ${shownType}`}

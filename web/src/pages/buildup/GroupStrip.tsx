@@ -18,6 +18,9 @@ import type { LevelUse } from './circuitRoutes';
 import { CORE_TYPES, coreRoutes, extraRoutes } from './routes';
 import { IDENTITY, ringOf, routeSet, type Geometry } from './viewer';
 
+/** Most routes drawn per table: the longest. */
+const MAX_ROUTES = 30000;
+
 const nf = (n: number) => n.toLocaleString('en-US');
 const plural = (n: number, one: string) => `${nf(n)} ${one}${n === 1 ? '' : 's'}`;
 
@@ -64,7 +67,7 @@ function draw(c: HTMLCanvasElement, px: number, g: Geometry, level: number, d: D
   };
   // routes walked one level down at the deep levels, two at the others; each keeps inside the outline
   const stop = level >= 7 ? level - 1 : Math.max(0, level - 2);
-  const rs = routeSet(g.cs, level, d.type);
+  const rs = routeSet(g.cs, level, d.type, MAX_ROUTES);
   const most = Math.log(rs.tiles[rs.tiles.length - 1] || 1) || 1;
   const used = new Set<number>();
   if (d.use) for (const t of d.types) for (const k of d.use.byType.get(t)?.keys() ?? []) used.add(k);
@@ -150,18 +153,22 @@ export function GroupStrip(props: {
   const [adds, setAdds] = useState(false);
   const px = typeof window !== 'undefined' && window.innerWidth < 640 ? 200 : 260;
   const items = useMemo((): Item[] => {
-    const routesOf = (t: HexType) => Array.from(g.cs.levels[level][t].crossings()).filter((k) => g.cs.levels[level][t].mate(k) > k).length;
+    const routesOf = (t: HexType) => g.cs.levels[level][t].routes();
     const dimOf = (gr: readonly HexType[]) => use !== null && !gr.some((t) => use.byType.has(t));
     // the group's types share one table, so a route counts as used when the circuit takes it in any of them
     const usedOf = (gr: readonly HexType[]) => new Set(gr.flatMap((t) => [...(use?.byType.get(t)?.keys() ?? [])])).size;
-    const pct = (x: number, of: number) => `${of ? Math.round((100 * x) / of) : 0}%`;
+    // two figures below 10%, so a small share does not read as none
+    const pct = (x: number, of: number) => {
+      const p = of ? (100 * x) / of : 0;
+      return `${p === 0 || p >= 10 ? Math.round(p) : Number(p.toPrecision(2))}%`;
+    };
     const countOf = (gr: readonly HexType[]) => {
       const all = routesOf(gr[0]);
       if (use) {
         const used = usedOf(gr);
         return `uses ${nf(used)} of ${plural(all, 'route')} (${pct(used, all)})`;
       }
-      if (joins && gr.some((t) => joins.types.includes(t))) return `joins ${nf(joins.joined)} of its children's ${plural(joins.of, 'route')} (${pct(joins.joined, joins.of)})`;
+      if (joins && gr.some((t) => joins.types.includes(t))) return `joins ${nf(joins.joined)} of ${nf(joins.of)} child routes (${pct(joins.joined, joins.of)})`;
       const used = new Set(gr.flatMap((t) => [...(closed?.get(t) ?? [])])).size;
       return `${plural(all, 'route')} · ${nf(used)} used (${pct(used, all)})`;
     };

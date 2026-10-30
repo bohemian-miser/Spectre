@@ -52,12 +52,21 @@ const hashOf = (xs: Float64Array): number => {
 export function groupsAt(cs: CircuitShapes, level: number): HexType[][] {
   const byHash = new Map<number, { content: Float64Array; types: HexType[] }[]>();
   for (const type of Object.keys(cs.levels[level]) as HexType[]) {
-    const crossings = cs.levels[level][type].crossings();
-    const routes = routesOf(cs, level, type);
-    const content = new Float64Array(crossings.length + 1 + 3 * routes.length);
+    const T = cs.levels[level][type];
+    const crossings = T.crossings();
+    let routes = 0;
+    for (const k of crossings) if (T.mate(k) > k) routes++;
+    const content = new Float64Array(crossings.length + 1 + 3 * routes);
     content.set(crossings);
     content[crossings.length] = -1;
-    routes.forEach((r, i) => content.set(r, crossings.length + 1 + 3 * i));
+    let at = crossings.length + 1;
+    for (const k of crossings) {
+      const m = T.mate(k);
+      if (m <= k) continue;
+      content[at++] = k;
+      content[at++] = m;
+      content[at++] = T.len(k);
+    }
     const h = hashOf(content);
     const bucket = byHash.get(h) ?? byHash.set(h, []).get(h)!;
     const same = bucket.find((g) => g.content.length === content.length && g.content.every((x, i) => x === content[i]));
@@ -100,10 +109,70 @@ export interface Closing {
   readonly first: number;
 }
 
-/** The circuits closing at each level up to the last built, keyed by their words (`core/circuitWord.ts`). */
 /** Each circuit's key, worked out once: a big circuit's word runs to millions of tiles. */
 const keyOf = new WeakMap<BornCircuit, string>();
+const codesKeyOf = new WeakMap<BornCircuit, string>();
 
+/** Index of the least rotation of `s` (Booth's algorithm, as `leastRotation` in `core/circuitWord.ts`). */
+function leastRotationOf(s: Uint16Array): number {
+  const n = s.length;
+  const f = new Int32Array(2 * n).fill(-1);
+  let k = 0;
+  for (let j = 1; j < 2 * n; j++) {
+    const sj = s[j % n];
+    let i = f[j - k - 1];
+    while (i !== -1 && sj !== s[(k + i + 1) % n]) {
+      if (sj < s[(k + i + 1) % n]) k = j - i - 1;
+      i = f[i];
+    }
+    if (sj !== s[(k + i + 1) % n]) {
+      if (sj < s[k % n]) k = j;
+      f[j - k] = -1;
+    } else f[j - k] = i + 1;
+  }
+  return k % n;
+}
+
+/** A word as numbers (`CircuitShapes.wordCodes`) from the tile where it reads least, in the direction that reads least: equal exactly when the circuits' words are (`circuitKey`). */
+export function canonicalCodes(w: Uint16Array): Uint16Array {
+  const n = w.length;
+  const rotated = (s: Uint16Array, r: number) => {
+    const out = new Uint16Array(n);
+    out.set(s.subarray(r));
+    out.set(s.subarray(0, r), n - r);
+    return out;
+  };
+  // walked the other way round: the tiles in reverse, each entered by its exit
+  const back = new Uint16Array(n);
+  for (let i = 0; i < n; i++) {
+    const c = w[n - 1 - i];
+    back[i] = (c & ~63) | ((c & 7) << 3) | ((c >> 3) & 7);
+  }
+  const f = rotated(w, leastRotationOf(w));
+  const b = rotated(back, leastRotationOf(back));
+  for (let i = 0; i < n; i++) if (f[i] !== b[i]) return f[i] < b[i] ? f : b;
+  return f;
+}
+
+/** Canonical words met so far, by length and hash, so a key stands for one word only. */
+const wordsByHash = new Map<string, Uint16Array[]>();
+
+/** A circuit's key: its length and a hash of its canonical word, told apart from any other word with the same hash. */
+export function codeKey(w: Uint16Array): string {
+  const c = canonicalCodes(w);
+  let h1 = 2166136261, h2 = 0x9e3779b9;
+  for (let i = 0; i < c.length; i++) {
+    h1 = Math.imul(h1 ^ c[i], 16777619);
+    h2 = Math.imul(h2 ^ c[i], 0x85ebca6b) + i;
+  }
+  const at = `${c.length}:${(h1 >>> 0).toString(36)}${(h2 >>> 0).toString(36)}`;
+  const seen = wordsByHash.get(at) ?? wordsByHash.set(at, []).get(at)!;
+  let i = seen.findIndex((o) => o.length === c.length && o.every((x, q) => x === c[q]));
+  if (i < 0) i = seen.push(c) - 1;
+  return i === 0 ? at : `${at}/${i}`;
+}
+
+/** The circuits closing at each level up to the last built, keyed by their words (`codeKey`). */
 export function closingsByLevel(cs: CircuitShapes): Closing[][] {
   const firstSeen = new Map<string, number>();
   const out: Closing[][] = [];
@@ -111,8 +180,8 @@ export function closingsByLevel(cs: CircuitShapes): Closing[][] {
     const at = new Map<string, { circuit: BornCircuit; types: Set<HexType>; copies: number }>();
     for (const c of cs.born) {
       if (c.level !== n) continue;
-      const key = keyOf.get(c) ?? circuitKey(cs.word(c));
-      keyOf.set(c, key);
+      const key = codesKeyOf.get(c) ?? codeKey(cs.wordCodes(c));
+      codesKeyOf.set(c, key);
       const e = at.get(key) ?? at.set(key, { circuit: c, types: new Set(), copies: 0 }).get(key)!;
       e.types.add(c.type as HexType);
       e.copies++;

@@ -75,12 +75,10 @@ export function closedUse(cs: CircuitShapes, k: number): Map<HexType, Set<number
   for (let n = cs.maxLevel; n > k; n--) {
     const next = new Map<string, Set<number>>();
     for (const [type, places] of cur) for (const p of places) for (const e of cs.enters(n, type, p)) add(next, e.type, e.k);
-    for (const [type, walks] of cs.closed[n]) {
-      for (const w of walks) {
-        for (const s of w) {
-          const ch = cs.childOf(n, type, s);
-          add(next, ch.type, ch.k);
-        }
+    for (const [type, steps] of cs.closed[n]) {
+      for (const s of steps) {
+        const ch = cs.childOf(n, type, s);
+        add(next, ch.type, ch.k);
       }
     }
     cur = next;
