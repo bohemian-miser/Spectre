@@ -11,7 +11,6 @@
  */
 import type { HexType } from '../../core';
 import type { BornCircuit, CircuitShapes } from '../shapes/circuitShapes';
-import { routeName } from './routes';
 
 /** The routes a circuit uses at one level: per type, the route's lower place to its passes. */
 export interface LevelUse {
@@ -58,35 +57,4 @@ export function circuitUse(cs: CircuitShapes, c: BornCircuit): LevelUse[] {
     cur = next;
   }
   return out;
-}
-
-/** A used route described by type, places, tiles, passes and composition (its child types, `routes.ts`). */
-export interface UsedRoute {
-  readonly type: HexType;
-  readonly from: number;
-  readonly to: number;
-  readonly tiles: number;
-  readonly passes: number;
-  readonly composition: string;
-}
-
-/** The routes used at one level, most passes first. */
-export function usedRoutes(cs: CircuitShapes, use: LevelUse): UsedRoute[] {
-  const n = use.level;
-  const out: UsedRoute[] = [];
-  for (const [type, m] of use.byType) {
-    const T = cs.levels[n][type];
-    for (const [from, passes] of m) {
-      const composition = n === 0 ? `${type} ${from}–${T.mate(from)}` : routeName(cs.enters(n, type, from).map((e) => e.type)).composition;
-      out.push({ type, from, to: T.mate(from), tiles: T.len(from), passes, composition });
-    }
-  }
-  return out.sort((a, b) => b.passes - a.passes || b.tiles - a.tiles);
-}
-
-/** Per composition (type and composition), the passes of the routes with it. */
-export function byComposition(routes: readonly UsedRoute[]): Map<string, number> {
-  const m = new Map<string, number>();
-  for (const r of routes) m.set(`${r.type}: ${r.composition}`, (m.get(`${r.type}: ${r.composition}`) ?? 0) + r.passes);
-  return m;
 }
