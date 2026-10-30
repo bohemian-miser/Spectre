@@ -7,9 +7,9 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { buildShapes, foundations } from '../foundations';
+import { buildShapes, foundations, substitutionMatrix } from '../foundations';
 import { drawCircuits } from '../drawings';
-import { chainOf, pageCombo, pageIndex, segments, type PageCombo, type PageIndex, type SweepFile } from '../pageData';
+import { backTest, chainOf, forecastChecks, pageCombo, pageIndex, segments, tailFates, type PageCombo, type PageIndex, type SweepFile } from '../pageData';
 
 const web = resolve(__dirname, '../../../..');
 const sweepDir = resolve(web, 'circuit-classes/data/foundations/hex-023468');
@@ -86,4 +86,51 @@ describe('the circuits the page shows', () => {
       expect(drawn.map((d) => d.id)).toEqual(p.found.filter((x) => x[1] <= 8).map((x) => x[0]));
     }, 300000);
   }
+});
+
+describe('what the tails become', () => {
+  // an independent count: the chords on tails at level L of a Delta's level-(L + k) supertile, from the tables' arc lengths,
+  // less the tails at L + k, against the circuits closing between, from the closed walks' lengths and copies
+  for (const combo of ['140000001', '000100000', '001001000']) {
+    it(`in ${combo}, the tails at L that close by L + k are exactly the circuits closing between`, () => {
+      const cs = buildShapes(subset, combo, 8);
+      const M = substitutionMatrix('hex').map((r) => r.map(BigInt));
+      const types = Object.keys(cs.levels[0]);
+      const D = types.indexOf('Delta');
+      const tails = (n: number): bigint[] =>
+        types.map((t) => {
+          const T = cs.levels[n][t];
+          let s = 0;
+          for (const k of T.crossings()) s += T.len(k);
+          return BigInt(s / 2);
+        });
+      const born = (n: number): bigint[] => types.map((t) => cs.born.filter((c) => c.level === n && c.type === t).reduce((s, c) => s + BigInt(c.length * cs.copiesOf(c)), 0n));
+      const mul = (v: bigint[]): bigint[] => types.map((_, t) => types.reduce((s, _u, u) => s + M[t][u] * v[u], 0n));
+      for (let L = 3; L <= 6; L++) {
+        let fromTails = tails(L);
+        let closed = types.map(() => 0n);
+        for (let k = 1; L + k <= 8; k++) {
+          fromTails = mul(fromTails);
+          const b = born(L + k);
+          closed = mul(closed).map((x, t) => x + b[t]);
+          expect(fromTails[D] - tails(L + k)[D]).toBe(closed[D]);
+        }
+      }
+      // the page's rows add up to all the tails
+      const p = read<PageCombo>(resolve(pageDir, `${combo}.json`));
+      for (let L = 3; L < p.tails.length - 1; L++) {
+        for (const f of tailFates(p, L)) expect(Math.abs(f.chains.reduce((s, c) => s + c[1], 0) + f.nuggets + f.unseen + f.open - 1)).toBeLessThan(1e-4);
+      }
+    }, 300000);
+  }
+
+  it('back-tests to nothing unexplained once the last foundational circuit is found, and forecasts the next members of known chains', () => {
+    for (const combo of ['140000001', '000100000']) {
+      const p = read<PageCombo>(resolve(pageDir, `${combo}.json`));
+      for (const b of backTest(p)) if (b.level >= p.lastNew) expect(b.unexplained).toBeLessThan(1e-9);
+      const checks = forecastChecks(p).filter((c) => c.actual > 0);
+      expect(checks.length).toBeGreaterThan(1);
+      for (const c of checks) expect(Math.abs(c.forecast - c.actual) / c.actual).toBeLessThan(0.15);
+    }
+  });
 });

@@ -299,41 +299,117 @@ export function backTest(p: PageCombo): BackTest[] {
   return out;
 }
 
+/** One chain's forecast from a level: what its next members are expected to take. */
+export interface ChainForecast {
+  readonly root: number;
+  /** The level its last member known by then first closes at, and that member's share there. */
+  readonly level: number;
+  readonly share: number;
+  /** The share falls by q a member (two levels). */
+  readonly q: number;
+}
+
 /**
- * The tails at the level above the build that the chains' future harmonics
- * are expected to take. A chain's next member closes in as many places per
- * birth supertile as its last (the one assumption, checked at every level
- * built in `assumption`), with tiles growing as they did over its last two
- * levels, while a supertile's chords grow by `growth` squared every two
- * levels: its share shrinks by q = (tile ratio) / growth² a member, and the
- * members still to come add up to share · q / (1 - q). Chains with one
- * member built, and nuggets, add nothing here; nor do repeat closings of
- * known circuits.
+ * Where a chain's members first close, with their shares there: per
+ * harmonic order, the first level its bucket (`ShareRow`) takes chords, to
+ * the level above the build (where a member is a predicted harmonic). A
+ * member's later closings, in more places, are not counted here.
+ */
+function births(p: PageCombo, root: number): [level: number, order: number, share: number][] {
+  const f = p.found.find((x) => x[0] === root);
+  if (!f || f[9]) return [];
+  const byOrder = new Map<number, number[]>();
+  for (const r of p.shares) {
+    if (r[0] !== root || r[1] === 0) continue;
+    const acc = byOrder.get(r[2]) ?? byOrder.set(r[2], new Array<number>(r[3].length).fill(0)).get(r[2])!;
+    r[3].forEach((v, m) => (acc[m] += v));
+  }
+  const out: [number, number, number][] = [];
+  for (const [order, v] of [...byOrder].sort((a, b) => a[0] - b[0])) {
+    const level = v.findIndex((x) => x > 0);
+    if (level >= 0) out.push([level, order, v[level]]);
+  }
+  return out;
+}
+
+/**
+ * The forecast from level L, made from what is known by L: each chain known
+ * by L (foundational by L, at least two members first closed by L, no
+ * member due by L missing, and the last member's predicted harmonic not a
+ * circuit seen lower down, which would close the chain into itself) goes on
+ * with members two levels apart, each taking q times its predecessor's
+ * share where it first closes, q the ratio of its last two members. That
+ * is the place counts (a harmonic closing in as many places per supertile of
+ * each type as its parent, the one assumption, checked in `assumption`)
+ * times the tiles (growing as over the last two members) over the chords of
+ * a supertile (growing by the substitution's growth squared every two
+ * levels). Nuggets and the later closings of known circuits are not
+ * forecast.
+ */
+export function forecastChains(p: PageCombo, L: number): ChainForecast[] {
+  const out: ChainForecast[] = [];
+  for (const f of p.found) {
+    if (f[1] > L || f[9]) continue;
+    const known = births(p, f[0]).filter(([level]) => level <= L);
+    if (known.length < 2) continue;
+    const [lv, order, s] = known[known.length - 1];
+    // a member due by L that did not close ends the chain
+    if (lv + 2 <= L) continue;
+    // so does a last member whose harmonic, predicted from the tables up to L, is a circuit seen lower down: the chain closes into itself
+    const last = order === 0 ? f[0] : p.harm.find((h) => h[4] === f[0] && h[7] === order && h[1] === lv)?.[0];
+    if (last !== undefined && lv + 1 <= L && p.pred.some((x) => x[0] === last && x[2] === 'built')) continue;
+    const prev = known[known.length - 2][2];
+    const q = prev > 0 ? s / prev : NaN;
+    if (s > 0 && q > 0 && q < 1) out.push({ root: f[0], level: lv, share: s, q });
+  }
+  return out;
+}
+
+/** The forecast's members first closing in (L, upTo]: their expected shares, summed. Above `upTo`, the rest of the geometric series. */
+export function forecastBetween(fc: readonly ChainForecast[], upTo: number): { within: number; beyond: number } {
+  let within = 0, beyond = 0;
+  for (const c of fc) {
+    // members at c.level + 2, + 4, ...: share · q^j
+    const inside = Math.max(0, Math.floor((upTo - c.level) / 2));
+    const total = (c.share * c.q) / (1 - c.q);
+    const w = (c.share * c.q * (1 - c.q ** inside)) / (1 - c.q);
+    within += w;
+    beyond += total - w;
+  }
+  return { within, beyond };
+}
+
+export interface ForecastCheck {
+  readonly level: number;
+  /** Shares of chords: the chains known by `level`, their members first closing above it to the top built, forecast and actual. */
+  readonly forecast: number;
+  readonly actual: number;
+}
+
+/** The forecast made at each level, against what the build shows above it: the members of chains known then, first closing between that level and the top. */
+export function forecastChecks(p: PageCombo): ForecastCheck[] {
+  const top = p.tails.length - 1;
+  const out: ForecastCheck[] = [];
+  for (let L = 2; L < top; L++) {
+    const fc = forecastChains(p, L);
+    if (!fc.length) continue;
+    let actual = 0;
+    for (const c of fc) for (const [level, , s] of births(p, c.root)) if (level > c.level && level <= top) actual += s;
+    out.push({ level: L, forecast: forecastBetween(fc, top).within, actual });
+  }
+  return out;
+}
+
+/**
+ * The tails at the top level built that the known chains are expected to
+ * take, with their members forecast from the top level: against the tails
+ * there, the rest is room for later closings of known circuits, for new
+ * circuits and for open strands.
  */
 export function expectedTails(p: PageCombo): { expected: number; actual: number; chains: [root: number, share: number][] } {
   const top = p.tails.length - 1;
-  const chains: [number, number][] = [];
-  for (const f of p.found) {
-    if (f[9]) continue;
-    const members = [[f[0], f[1], f[2]] as const, ...p.harm.filter((h) => h[4] === f[0]).map((h) => [h[0], h[1], h[2]] as const)];
-    // the last two members of the line through the longest harmonics, two levels apart
-    const byLevel = new Map<number, number>();
-    for (const [, level, len] of members) byLevel.set(level, Math.max(byLevel.get(level) ?? 0, len));
-    const levels = [...byLevel.keys()].sort((a, b) => a - b);
-    const last = levels[levels.length - 1];
-    if (levels.length < 2 || !byLevel.has(last - 2)) continue;
-    const q = byLevel.get(last)! / byLevel.get(last - 2)! / p.growth ** 2;
-    if (!(q > 0 && q < 1)) continue;
-    // the share of chords the newest members took where they first closed, at the last two levels
-    let share = 0;
-    for (const lv of [last - 1, last]) {
-      if (lv > top) continue;
-      for (const r of p.shares) if (r[0] === f[0] && r[1] === 2 && lv - 2 * r[2] === f[1]) share += r[3][lv];
-    }
-    // their successors past the build's top: q per member, two levels at a time, each counted from where it first closes
-    const sharePast = share * q / (1 - q);
-    if (sharePast > 0) chains.push([f[0], sharePast]);
-  }
+  const fc = forecastChains(p, top);
+  const chains: [number, number][] = fc.map((c) => [c.root, forecastBetween([c], top).beyond]);
   return { expected: sum(chains.map((c) => c[1])), actual: p.tails[top], chains: chains.sort((a, b) => b[1] - a[1]) };
 }
 
@@ -344,7 +420,7 @@ export const FLAG_TEXT: Record<Flag, string> = {
   open: 'the tails not closed do not shrink',
   nuggets: 'only nuggets, and the tails stay large',
   gap: 'circuits found at the top levels close tails no known chain explains',
-  forecast: 'the chains are expected to take more tails than there are',
+  forecast: "a chain's forecast from some level takes more than the build shows: the chain closes into itself one level later",
   assumption: "a harmonic closes in a different number of places than its parent",
 };
 
@@ -358,7 +434,7 @@ export function flagsOf(p: PageCombo): Flag[] {
   const bt = backTest(p).filter((b) => b.level >= p.levels - 1);
   if (bt.some((b) => b.unexplained > 1e-9)) out.push('gap');
   const e = expectedTails(p);
-  if (e.expected > e.actual) out.push('forecast');
+  if (e.expected > e.actual || forecastChecks(p).some((c) => c.forecast > 1.25 * c.actual + 1e-6)) out.push('forecast');
   if (p.assumption.exceptions) out.push('assumption');
   return out;
 }

@@ -1,9 +1,9 @@
 /** The 320 combinations, sortable and filtered, one compact row each. */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { IndexRow } from './pageData';
+import { FLAG_TEXT, type IndexRow } from './pageData';
 import { compact } from './data';
 
-type SortKey = 'combo' | 'floor' | 'lastNew' | 'found' | 'largest' | 'monsters';
+type SortKey = 'combo' | 'floor' | 'lastNew' | 'found' | 'largest' | 'monsters' | 'flags';
 
 const COLUMNS: readonly { key: SortKey; label: string; title: string }[] = [
   { key: 'combo', label: 'Combination', title: 'Combination digits' },
@@ -12,6 +12,7 @@ const COLUMNS: readonly { key: SortKey; label: string; title: string }[] = [
   { key: 'found', label: 'Found.', title: 'Foundational circuits' },
   { key: 'largest', label: 'Largest', title: 'Tiles of the largest foundational circuit' },
   { key: 'monsters', label: '', title: 'Monsters' },
+  { key: 'flags', label: '⚑', title: 'Flags' },
 ];
 
 export interface Filters {
@@ -20,9 +21,10 @@ export interface Filters {
   readonly lastNew: number | null;
   readonly monsters: boolean;
   readonly misses: boolean;
+  readonly flagged: boolean;
 }
 
-export const NO_FILTERS: Filters = { search: '', floor: null, lastNew: null, monsters: false, misses: false };
+export const NO_FILTERS: Filters = { search: '', floor: null, lastNew: null, monsters: false, misses: false, flagged: false };
 
 export function filterRows(rows: readonly IndexRow[], f: Filters): IndexRow[] {
   const digits = f.search.replace(/[^0-9a-z]/gi, '').toLowerCase();
@@ -32,7 +34,8 @@ export function filterRows(rows: readonly IndexRow[], f: Filters): IndexRow[] {
       (f.floor === null || r.floor === f.floor) &&
       (f.lastNew === null || r.lastNew === f.lastNew) &&
       (!f.monsters || r.monsters > 0) &&
-      (!f.misses || r.misses > 0),
+      (!f.misses || r.misses > 0) &&
+      (!f.flagged || r.flags.length > 0),
   );
 }
 
@@ -45,7 +48,7 @@ export function ComboList(props: { rows: readonly IndexRow[]; selected: string |
     const out = filterRows(props.rows, filters);
     const k = sort.key;
     return out.sort((a, b) => {
-      const d = k === 'combo' ? a.combo.localeCompare(b.combo) : (a[k] as number) - (b[k] as number);
+      const d = k === 'combo' ? a.combo.localeCompare(b.combo) : k === 'flags' ? a.flags.length - b.flags.length : (a[k] as number) - (b[k] as number);
       return (sort.desc ? -d : d) || a.combo.localeCompare(b.combo);
     });
   }, [props.rows, filters, sort]);
@@ -120,6 +123,10 @@ export function ComboList(props: { rows: readonly IndexRow[]; selected: string |
           <input type="checkbox" checked={filters.misses} onChange={(e) => set({ misses: e.target.checked })} title="Combinations with a prediction that missed" />
           Misses
         </label>
+        <label className="fd-check">
+          <input type="checkbox" checked={filters.flagged} onChange={(e) => set({ flagged: e.target.checked })} data-testid="fd-only-flagged" />
+          Flagged
+        </label>
       </div>
       <div className="fd-rows" role="listbox" aria-label="Combinations" ref={body} data-testid="fd-rows">
         <div className="fd-row fd-head" role="presentation">
@@ -151,6 +158,9 @@ export function ComboList(props: { rows: readonly IndexRow[]; selected: string |
             <span>{r.found}</span>
             <span>{compact(r.largest)}</span>
             <span>{r.monsters ? <span className="fd-badge" title={`${r.monsters} monsters`}>{r.monsters}</span> : null}</span>
+            <span title={r.flags.map((f) => FLAG_TEXT[f]).join('; ')} data-testid="fd-flags">
+              {r.flags.length ? <span className="fd-flag">⚑{r.flags.length > 1 ? r.flags.length : ''}</span> : null}
+            </span>
           </div>
         ))}
       </div>
