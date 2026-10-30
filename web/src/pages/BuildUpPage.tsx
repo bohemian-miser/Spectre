@@ -172,7 +172,7 @@ export default function BuildUpPage(): JSX.Element {
         <p className="bu-muted">Types whose tables are identical are drawn once with all their names: from outside they behave the same, though they are built differently inside.</p>
       </header>
 
-      <ComboPicker busy={busy} onAdd={(c) => buildTo(c.level, c)} levels={[4, 5, 6, 7, 8, 9, 10]} verb="Build" initialLevel={DEFAULT.level} initialCombo={DEFAULT.combo} />
+      <ComboPicker busy={busy} onAdd={(c) => buildTo(c.level, c)} levels="any" verb="Build" initialLevel={DEFAULT.level} initialCombo={DEFAULT.combo} />
       {error && <p className="bu-error">{error}</p>}
 
       <div className="bu-levels" role="group" aria-label="Level" data-testid="bu-levels">

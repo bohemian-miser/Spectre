@@ -17,7 +17,9 @@ scope.onmessage = (event) => {
     if (m.type === 'start') engine = new HarmonicsEngine(m.job);
     if (!engine) throw new Error('no combination started');
     if (m.type === 'next') engine.next();
-    scope.postMessage({ id: m.id, result: m.type === 'compare' ? engine.compare(m.a, m.b) : engine.result() });
+    const result =
+      m.type === 'compare' ? engine.compare(m.a, m.b) : m.type === 'picture' ? engine.picture(m.a, m.b, m.k) : m.type === 'expansion' ? engine.expansion(m.a, m.b, m.depth) : engine.result();
+    scope.postMessage({ id: m.id, result });
   } catch (err) {
     scope.postMessage({ id: m.id, error: err instanceof Error ? err.message : String(err) });
   }
