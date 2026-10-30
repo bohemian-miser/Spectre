@@ -10,7 +10,8 @@ import { useMemo } from 'react';
 import { leafOrder, type Pt } from '../../core';
 import type { Box } from '../../lib/viewport';
 import { Viewer, type Lines, type Mark, type ViewerApi } from './Viewer';
-import { fixedSource, mapBox, type Geometry, type Pass } from './viewer';
+import type { CircuitShapes } from '../shapes/circuitShapes';
+import { fixedSource, mapBox, type Pass } from './viewer';
 
 const nf = (n: number) => n.toLocaleString('en-US');
 
@@ -33,6 +34,12 @@ const tint = (hex: string, alpha: number): string => {
   return `rgba(${v >> 16},${(v >> 8) & 255},${v & 255},${alpha})`;
 };
 
+/** What the pane reads of the renormalisation: outlines and boxes of the children, and (for `rest`) their tables. A `Geometry` (`viewer.ts`) is one. */
+export interface PaneGeometry {
+  readonly cs: { outline(n: number, type: string): readonly Pt[]; readonly levels?: CircuitShapes['levels'] };
+  box(n: number, type: string): Box;
+}
+
 /** The supertile drawn in: its outline and a box to frame. */
 export interface Frame {
   readonly outline: readonly Pt[];
@@ -47,7 +54,7 @@ const flat = (pts: readonly Pt[]): Float64Array => {
 };
 
 export function PassesPane(props: {
-  g: Geometry;
+  g: PaneGeometry;
   frame: Frame;
   /** Changes when the view should frame `frame.box` again. */
   fitKey: string;
@@ -77,10 +84,11 @@ export function PassesPane(props: {
     return [...m.values()];
   }, [passes]);
   const rest = useMemo(() => {
-    if (!props.rest || kids.length > MAX_FILLS) return [] as [Pt, Pt][];
+    const levels = g.cs.levels;
+    if (!props.rest || !levels || kids.length > MAX_FILLS) return [] as [Pt, Pt][];
     const out: [Pt, Pt][] = [];
     for (const p of kids) {
-      const T = g.cs.levels[p.level][p.type];
+      const T = levels[p.level][p.type];
       for (const k of T.crossings()) {
         const m = T.mate(k);
         if (m <= k) continue;

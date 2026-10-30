@@ -7,8 +7,11 @@
  */
 import type { TileFamilyId } from '../../core';
 import { CircuitShapes, distinctCircuits, familyOf, type BornCircuit } from '../shapes/circuitShapes';
-import { expansion, pairPicture, ROW_SHOWN, type Expansion, type PairPicture } from './pairView';
-import { alignReadings, extraRuns, lineages, readDown, sameCyclic, type Alignment, type Lineage, type Reading } from './readings';
+import { Geometry } from '../buildup/viewer';
+import { CircuitFocus, type FocusNode, type Sel } from './focus';
+import { chainPicture, type ChainPicture } from './pairView';
+import { chainsOf, closestInFamily, harmonicLinks, nearLinks, type Chain, type Link, type Near } from './chains';
+import { alignReadings, extraRuns, readDown, sameCyclic, type Alignment, type Reading } from './readings';
 
 export interface HarmonicsJob {
   readonly family: TileFamilyId;
@@ -36,8 +39,13 @@ export interface CircuitInfo {
 export interface HarmonicsResult {
   readonly level: number;
   readonly circuits: readonly CircuitInfo[];
-  readonly lineages: readonly Lineage[];
-  /** For lineages that differ at the tiles: the harmonic's extra runs of visits at level 2, keyed `a-b`. */
+  /** Every harmonic pair (`chains.ts`), the chains they make, and near links into the chains' lowest members. */
+  readonly links: readonly Link[];
+  readonly chains: readonly Chain[];
+  readonly near: readonly Near[];
+  /** For a circuit in a chain of its own: the circuit of its family two levels away agreeing at most top levels, by circuit index. */
+  readonly closest: Readonly<Record<number, { other: number; top: number }>>;
+  /** For pairs that differ at the tiles: the harmonic's extra runs of visits at level 2, keyed `a-b`. */
   readonly extras: Readonly<Record<string, { unmatched: number; runs: string[][] }>>;
   /** Seconds the last level took. */
   readonly seconds: number;
@@ -116,18 +124,32 @@ export class HarmonicsEngine {
     return this.circuits.list;
   }
 
-  /** Circuits `ai` (A, at level k) and `bi` (B, at level k + offset) of the last result over their supertiles. */
-  picture(ai: number, bi: number, k: number): PairPicture {
+  /** Circuits of the last result (a chain's members, by level) over their supertiles, the lowest at level k. */
+  picture(members: readonly number[], k: number): ChainPicture {
     const list = this.list();
     const born = this.circuits!.born;
-    return pairPicture(this.cs, { circuit: born[ai], readings: list[ai].readings }, { circuit: born[bi], readings: list[bi].readings }, k);
+    return chainPicture(this.cs, members.map((i) => ({ circuit: born[i], readings: list[i].readings })), k);
   }
 
-  /** Circuits `ai` and `bi` of the last result expanded from their birth supertiles, `depth` levels down. */
-  expansion(ai: number, bi: number, depth: number): Expansion {
+  private geometry: Geometry | null = null;
+  private readonly focuses = new Map<BornCircuit, CircuitFocus>();
+
+  private focusOf(ci: number): CircuitFocus {
     this.list();
-    const born = this.circuits!.born;
-    return expansion(this.cs, born[ai], born[bi], depth, ROW_SHOWN);
+    const c = this.circuits!.born[ci];
+    let f = this.focuses.get(c);
+    if (!f) this.focuses.set(c, (f = new CircuitFocus(this.cs, (this.geometry ??= new Geometry(this.cs)), c)));
+    return f;
+  }
+
+  /** A supertile of circuit `ci` of the last result, picked by its visit, with the visit circuit `other`'s reading pairs it with. */
+  node(ci: number, sel: Sel, other: number | null): FocusNode {
+    return this.focusOf(ci).node(sel, other === null ? null : this.focusOf(other));
+  }
+
+  /** Circuit `ci` of the last result as a closed line in its birth supertile's frame, runs of tiles within `share` of its radius of gyration drawn as one point. */
+  drawing(ci: number, share: number): Float64Array {
+    return this.focusOf(ci).drawing(share);
   }
 
   /** Circuits `ai` and `bi` of the last result lined up, B's level k + offset against A's level k. */
@@ -136,21 +158,29 @@ export class HarmonicsEngine {
     return { a: ai, b: bi, ...lineUp(circuits[ai], circuits[bi]) };
   }
 
-  /** The circuits, lineages and extra runs up to the level built; the seconds count the level's build and its reading. */
+  /** The circuits, their chains and extra runs up to the level built; the seconds count the level's build and its reading. */
   result(): HarmonicsResult {
     if (this.last?.level === this.cs.maxLevel) return this.last;
     const t0 = Date.now();
     const circuits = this.list();
-    const ls = lineages(circuits);
+    const links = harmonicLinks(circuits);
+    const chains = chainsOf(circuits, links);
+    const near = nearLinks(circuits, chains);
+    const closest: Record<number, { other: number; top: number }> = {};
+    for (const ch of chains) {
+      if (ch.members.length > 1) continue;
+      const c = closestInFamily(circuits, ch.members[0]);
+      if (c) closest[ch.members[0]] = c;
+    }
     const extras: Record<string, { unmatched: number; runs: string[][] }> = {};
-    for (const l of ls) {
-      if (l.levels[0] !== false) continue;
+    for (const l of links) {
+      if (l.from === 0) continue;
       const a = circuits[l.a].readings.find((r) => r.level === 0);
       const b = circuits[l.b].readings.find((r) => r.level === 2);
       const e = a && b ? extraRuns(a.tokens, b.tokens) : null;
       if (e) extras[`${l.a}-${l.b}`] = e;
     }
-    this.last = { level: this.cs.maxLevel, circuits, lineages: ls, extras, seconds: this.seconds + (Date.now() - t0) / 1000 };
+    this.last = { level: this.cs.maxLevel, circuits, links, chains, near, closest, extras, seconds: this.seconds + (Date.now() - t0) / 1000 };
     return this.last;
   }
 }
@@ -189,8 +219,9 @@ export type WorkerMessage =
   | { type: 'start'; job: HarmonicsJob }
   | { type: 'next' }
   | { type: 'compare'; a: number; b: number }
-  | { type: 'picture'; a: number; b: number; k: number }
-  | { type: 'expansion'; a: number; b: number; depth: number };
+  | { type: 'picture'; members: readonly number[]; k: number }
+  | { type: 'node'; c: number; sel: Sel; other: number | null }
+  | { type: 'drawing'; c: number; share: number };
 
 export interface HarmonicsClient {
   /** Starts a combination afresh. */
@@ -200,9 +231,11 @@ export interface HarmonicsClient {
   /** Two circuits of the last result lined up. */
   compare(a: number, b: number): Promise<Comparison>;
   /** Two circuits of the last result over their supertiles, A at level k. */
-  picture(a: number, b: number, k: number): Promise<PairPicture>;
-  /** Two circuits of the last result expanded from their birth supertiles. */
-  expansion(a: number, b: number, depth: number): Promise<Expansion>;
+  picture(members: readonly number[], k: number): Promise<ChainPicture>;
+  /** A supertile of a circuit of the last result, picked by its visit, with the visit circuit `other` pairs it with. */
+  node(c: number, sel: Sel, other: number | null): Promise<FocusNode>;
+  /** A circuit of the last result as a closed line, runs of tiles within `share` of its radius of gyration as one point. */
+  drawing(c: number, share: number): Promise<Float64Array>;
   dispose(): void;
 }
 
@@ -257,13 +290,17 @@ export function createHarmonicsClient(opts: { forceSync?: boolean } = {}): Harmo
       if (!worker) return sync(() => need().compare(a, b));
       return ask({ type: 'compare', a, b });
     },
-    picture(a, b, k) {
-      if (!worker) return sync(() => need().picture(a, b, k));
-      return ask({ type: 'picture', a, b, k });
+    picture(members, k) {
+      if (!worker) return sync(() => need().picture(members, k));
+      return ask({ type: 'picture', members, k });
     },
-    expansion(a, b, depth) {
-      if (!worker) return sync(() => need().expansion(a, b, depth));
-      return ask({ type: 'expansion', a, b, depth });
+    node(c, sel, other) {
+      if (!worker) return sync(() => need().node(c, sel, other));
+      return ask({ type: 'node', c, sel, other });
+    },
+    drawing(c, share) {
+      if (!worker) return sync(() => need().drawing(c, share));
+      return ask({ type: 'drawing', c, share });
     },
     dispose() {
       worker?.terminate();

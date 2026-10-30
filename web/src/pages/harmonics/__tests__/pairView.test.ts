@@ -1,14 +1,15 @@
 /**
- * The side-by-side views against independent sources: the expansion rows
- * against each level traced from the top (`visitsAt`), backtracks cancelled
- * one at a time; the supertiles drawn against the slot paths visited and
- * the supertile tree (`buildSystem`).
+ * A chain's members drawn over their supertiles, against independent
+ * sources: the supertiles drawn against the slot paths visited at each level
+ * traced from the top (`visitsAt`) and the supertile tree (`buildSystem`);
+ * the supertiles marked against the visits whose tokens the neighbouring
+ * member's reading lacks, backtracks cancelled one at a time.
  */
 import { describe, expect, it } from 'vitest';
 
 import { buildSystem, mul, transPt, type Affine, type MetaNode } from '../../../core';
 import { CircuitShapes, familyOf, type BornCircuit } from '../../shapes/circuitShapes';
-import { expansion, pairPicture, sharedTokens, SUPERTILE_CAP } from '../pairView';
+import { chainPicture, sharedTokens, SUPERTILE_CAP } from '../pairView';
 import { readings, token, visitsAt, type Visit } from '../readings';
 
 const RULE = [0, 2, 3, 4, 6, 8];
@@ -59,64 +60,43 @@ describe.each(['000100000', '140000001'])('023468 / %s', (combo) => {
   const b = big[0];
   const a = big.find((c) => c.level === b.level - 2 && familyOf(c) === familyOf(b)) ?? big.find((c) => c.level === b.level - 2)!;
 
-  it('expands each circuit into the visits traced from the top, backtracks marked as cancelling them one at a time marks them', () => {
-    const x = expansion(cs, a, b, 99);
-    expect(x.rows.length).toBeGreaterThan(1);
-    for (const r of x.rows) {
-      for (const [row, c] of [[r.a, a], [r.b, b]] as const) {
-        expect(row.level).toBe(c.level - r.depth);
-        const raw = visitsAt(cs, c, row.level).map((v, at) => ({ ...v, at }));
-        expect(row.visits).toBe(raw.length);
-        expect(row.raw.map((v) => v.type)).toEqual(raw.map((v) => v.type));
-        expect(row.raw.map((v) => v.slot)).toEqual(raw.map((v) => v.slot));
-        if (r.depth > 1) {
-          const above = visitsAt(cs, c, row.level + 1);
-          raw.forEach((v, i) => expect(v.id).toBe(`${above[row.raw[i].up].id}.${v.slot}`));
-        }
-        const kept = cancelOneByOne(raw);
-        const keptAt = new Set(kept.map((v) => v.at));
-        row.raw.forEach((v, i) => expect(v.mark === 'cancelled').toBe(!keptAt.has(i)));
-        expect(row.kept).toEqual(kept.map((v) => row.raw[v.at]));
-        expect(row.cancelled).toBe(raw.length - kept.length);
-      }
-      const short = expansion(cs, a, b, r.depth, 5).rows[r.depth - 1];
-      expect(short.b.raw).toEqual(r.b.raw.slice(0, 5));
-      expect(short.b.kept).toEqual(r.b.kept.slice(0, 5));
-      const ra = readings(cs, a).find((q) => q.level === r.a.level)!;
-      const rb = readings(cs, b).find((q) => q.level === r.b.level)!;
-      expect(r.same).toBe(sharedTokens(ra.tokens, rb.tokens).state === 'same');
-    }
-  });
-
-  it('draws the supertiles visited, each where the supertile tree puts it, the unshared ones marked', () => {
+  it('draws every member over the supertiles it visits, each where the supertile tree puts it, those the neighbour lacks marked', () => {
+    // members two levels apart in one family, down from the biggest circuit
+    const members: BornCircuit[] = [b];
+    for (let m = big.find((c) => c.level === b.level - 2 && familyOf(c) === familyOf(b)); m; m = big.find((c) => c.level === m!.level - 2 && familyOf(c) === familyOf(b))) members.unshift(m);
+    if (members.length === 1) members.unshift(a);
     const withReadings = (c: BornCircuit) => ({ circuit: c, readings: readings(cs, c) });
     let marked = 0;
-    for (let k = 0; k < a.level; k++) {
-      const p = pairPicture(cs, withReadings(a), withReadings(b), k);
-      for (const [side, c] of [[p.a, a], [p.b, b]] as const) {
+    for (let k = 0; k < members[0].level; k++) {
+      const p = chainPicture(cs, members.map(withReadings), k);
+      expect(p.sides.map((x) => x.level)).toEqual(members.map((c) => k + c.level - members[0].level));
+      p.sides.forEach((side, j) => {
+        const c = members[j];
         const raw = visitsAt(cs, c, side.level).map((v, at) => ({ ...v, at }));
-        if (raw.length > 30000) continue;
+        if (raw.length > 30000) return;
         const paths = [...new Set(raw.map((v) => v.id))];
         expect(side.count).toBe(paths.length);
-        expect(side.supertiles.map((s) => s.path)).toEqual(paths.slice(0, SUPERTILE_CAP));
-        for (const s of side.supertiles) {
-          const at = supertileAt(c, s.path);
-          expect(s.type).toBe(at.type);
-          const q = transPt(at.xform, cs.corner(side.level, s.type, 0));
-          expect(Math.hypot(s.outline[0] - q.x, s.outline[1] - q.y)).toBeLessThan(1e-9);
+        expect(side.supertiles.map((x) => x.path)).toEqual(paths.slice(0, SUPERTILE_CAP));
+        for (const x of side.supertiles) {
+          const at = supertileAt(c, x.path);
+          expect(x.type).toBe(at.type);
+          const q = transPt(at.xform, cs.corner(side.level, x.type, 0));
+          expect(Math.hypot(x.outline[0] - q.x, x.outline[1] - q.y)).toBeLessThan(1e-9);
         }
-        // the unshared supertiles: those holding a kept visit whose token the other reading lacks
-        const other = side === p.a ? p.b : p.a;
-        const kept = cancelOneByOne(raw);
-        const otherC = side === p.a ? b : a;
-        const otherKept = cancelOneByOne(visitsAt(cs, otherC, other.level).map((v, at) => ({ ...v, at })));
+        // marked: the supertiles holding a kept visit whose token the neighbour's reading lacks (the member below, or above for the lowest)
+        const nb = j > 0 ? j - 1 : 1;
+        const o = members[nb];
+        const oLevel = p.sides[nb].level;
         const tokens = (vs: Tagged[], cc: BornCircuit, lvl: number) => vs.map((v) => token(v, lvl, cc.level));
-        const m = side === p.a ? sharedTokens(tokens(kept, c, side.level), tokens(otherKept, otherC, other.level)) : sharedTokens(tokens(otherKept, otherC, other.level), tokens(kept, c, side.level));
-        const mine = side === p.a ? m.a : m.b;
+        const kept = cancelOneByOne(raw);
+        const otherKept = cancelOneByOne(visitsAt(cs, o, oLevel).map((v, at) => ({ ...v, at })));
+        const lower = nb < j;
+        const m = lower ? sharedTokens(tokens(otherKept, o, oLevel), tokens(kept, c, side.level)) : sharedTokens(tokens(kept, c, side.level), tokens(otherKept, o, oLevel));
+        const mine = lower ? m.b : m.a;
         const unshared = new Set(kept.filter((_, q) => mine && !mine[q]).map((v) => v.id));
         marked += unshared.size;
-        expect(side.supertiles.filter((s) => s.unshared).map((s) => s.path).sort()).toEqual(side.supertiles.map((s) => s.path).filter((id) => unshared.has(id)).sort());
-      }
+        expect(side.supertiles.filter((x) => x.unshared).map((x) => x.path).sort()).toEqual(side.supertiles.map((x) => x.path).filter((id) => unshared.has(id)).sort());
+      });
     }
     if (combo === '000100000') expect(marked).toBeGreaterThan(0);
   }, 60000);

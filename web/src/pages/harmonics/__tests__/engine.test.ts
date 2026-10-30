@@ -7,7 +7,8 @@ import { describe, expect, it } from 'vitest';
 
 import { CircuitShapes, familyOf, tileLoop, type BornCircuit } from '../../shapes/circuitShapes';
 import { HarmonicsEngine, type CircuitInfo, type HarmonicsResult } from '../harmonicsJob';
-import { cancelBacktracks, cancelBacktracksAt, extraRuns, lineages, readDown, token, visitsAt, type Reading, type Visit } from '../readings';
+import { chainsOf, closestInFamily, harmonicLinks, nearLinks } from '../chains';
+import { cancelBacktracks, cancelBacktracksAt, extraRuns, readDown, token, visitsAt, type Reading, type Visit } from '../readings';
 
 const RULE = [0, 2, 3, 4, 6, 8];
 
@@ -75,16 +76,22 @@ function reference(combo: string, level: number): Omit<HarmonicsResult, 'seconds
       };
     })
     .sort((a, b) => a.length - b.length || a.level - b.level);
-  const ls = lineages(circuits);
+  const links = harmonicLinks(circuits);
+  const chains = chainsOf(circuits, links);
+  const closest: Record<number, { other: number; top: number }> = {};
+  for (const ch of chains) {
+    const c = ch.members.length === 1 ? closestInFamily(circuits, ch.members[0]) : null;
+    if (c) closest[ch.members[0]] = c;
+  }
   const extras: Record<string, { unmatched: number; runs: string[][] }> = {};
-  for (const l of ls) {
-    if (l.levels[0] !== false) continue;
+  for (const l of links) {
+    if (l.from === 0) continue;
     const a = circuits[l.a].readings.find((r) => r.level === 0);
     const b = circuits[l.b].readings.find((r) => r.level === 2);
     const e = a && b ? extraRuns(a.tokens, b.tokens) : null;
     if (e) extras[`${l.a}-${l.b}`] = e;
   }
-  return { level, circuits, lineages: ls, extras };
+  return { level, circuits, links, chains, near: nearLinks(circuits, chains), closest, extras };
 }
 
 describe('cancelling backtracks', () => {

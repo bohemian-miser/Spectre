@@ -1,13 +1,12 @@
 /**
- * A circuit and the circuit it is lined up with, shown supertile for
- * supertile: B at level k + offset beside A at level k, each over the
- * outlines of the supertiles it runs through, those holding a visit the
- * other reading does not share marked; and the two expanded from their birth
- * supertiles level by level, as the raw visits (`readings.ts`).
+ * The members of a chain shown supertile for supertile: each member over
+ * the outlines of the supertiles it runs through, each two levels above the
+ * member before, those holding a visit the neighbouring member's reading
+ * does not share marked.
  */
 import { mul, transPt, type Affine } from '../../core';
 import type { BornCircuit, CircuitShapes } from '../shapes/circuitShapes';
-import { alignReadings, cancelBacktracksAt, expandVisits, pathOf, sameCyclic, token, topVisits, type Reading, type VisitColumns } from './readings';
+import { alignReadings, cancelBacktracksAt, expandVisits, pathOf, sameCyclic, topVisits, type Reading, type VisitColumns } from './readings';
 
 /** Supertiles are drawn for a level while the circuit has at most this many raw visits there. */
 export const VISIT_CAP = 400000;
@@ -15,10 +14,6 @@ export const VISIT_CAP = 400000;
 const CIRCUIT_POINTS = 20000;
 /** At most this many supertiles are drawn per picture, the first the circuit enters. */
 export const SUPERTILE_CAP = 600;
-/** Levels are expanded while both circuits have at most this many raw visits there. */
-export const ROW_CAP = 400000;
-/** Visits sent per row of an expansion, of all and of those kept. */
-export const ROW_SHOWN = 72;
 
 export interface Supertile {
   /** Slot path from the birth supertile down. */
@@ -41,13 +36,14 @@ export interface Side {
   readonly circuit: Float64Array;
 }
 
-export interface PairPicture {
+export type Agreement = 'same' | 'differs' | 'long' | 'unread';
+
+export interface ChainPicture {
+  /** The level the lowest member is drawn at; member j at k plus its birth level less the lowest's. */
   readonly k: number;
-  readonly offset: number;
-  /** 'same' (the readings agree), 'differs' (with the unshared visits marked), 'long' (too long to align), 'unread'. */
-  readonly state: 'same' | 'differs' | 'long' | 'unread';
-  readonly a: Side;
-  readonly b: Side;
+  readonly sides: readonly Side[];
+  /** Per member from the second: how its reading compares with the member below's: 'same', 'differs' (unshared visits marked on both), 'long' (too long to align), 'unread'. */
+  readonly steps: readonly Agreement[];
 }
 
 /** Per token of each reading, whether the other shares it, in the readings' own order; null when they are too long to align. */
@@ -108,101 +104,25 @@ export function sideAt(cs: CircuitShapes, c: BornCircuit, level: number, reading
   return { level, visits: v.type.length, count: first.size, supertiles, circuit };
 }
 
-/** A at level k and B at level k + offset (offset = B's birth level less A's), each over its supertiles, unshared visits marked. */
-export function pairPicture(cs: CircuitShapes, a: { circuit: BornCircuit; readings: readonly Reading[] }, b: { circuit: BornCircuit; readings: readonly Reading[] }, k: number): PairPicture {
-  const offset = b.circuit.level - a.circuit.level;
-  const ra = a.readings.find((r) => r.level === k);
-  const rb = b.readings.find((r) => r.level === k + offset);
-  const m = ra && rb ? sharedTokens(ra.tokens, rb.tokens) : null;
-  return {
-    k,
-    offset,
-    state: m?.state ?? 'unread',
-    a: sideAt(cs, a.circuit, k, ra, m?.a ?? null),
-    b: sideAt(cs, b.circuit, k + offset, rb, m?.b ?? null),
-  };
-}
-
-export type Mark = 'cancelled' | 'shared' | 'unshared' | 'kept';
-
-/** A visit of an expanded row: the supertile's type and slot, the visit of the row above it came from, and its mark. */
-export interface Visited {
-  readonly type: string;
-  readonly slot: number;
-  readonly up: number;
-  /**
-   * 'cancelled' (a backtrack, gone from the reading), 'shared' or 'unshared'
-   * (whether the other circuit's reading at its level shares the visit's
-   * token), or 'kept' (the readings are too long to align).
-   */
-  readonly mark: Mark;
-}
-
-export interface ExpandedRow {
-  readonly level: number;
-  readonly visits: number;
-  readonly cancelled: number;
-  readonly unshared: number;
-  /** The first visits in order, backtracks included, and the first of those kept in the reading. */
-  readonly raw: readonly Visited[];
-  readonly kept: readonly Visited[];
-}
-
-/** Each visit's mark, from the reading made of its kept visits and, per token of that reading, whether the other reading shares it. */
-function marksOf(v: VisitColumns, keep: Int32Array, shared: readonly boolean[] | null): Mark[] {
-  const marks: Mark[] = v.type.map(() => 'cancelled');
-  keep.forEach((i, q) => { marks[i] = shared ? (shared[q] ? 'shared' : 'unshared') : 'kept'; });
-  return marks;
-}
-
-export interface Expansion {
-  /** Rows by depth below the birth supertiles, from 1: B's level birth − depth beside A's, with whether their readings agree. */
-  readonly rows: readonly { readonly depth: number; readonly same: boolean; readonly a: ExpandedRow; readonly b: ExpandedRow }[];
-  /** Whether one level more can be expanded within `ROW_CAP`. */
-  readonly more: boolean;
-}
-
-/** A and B expanded from their birth supertiles down to `depth` levels below, row against row. */
-export function expansion(cs: CircuitShapes, a: BornCircuit, b: BornCircuit, depth: number, shown = Infinity): Expansion {
-  const rows: Expansion['rows'][number][] = [];
-  let va = topVisits(cs, a);
-  let vb = topVisits(cs, b);
-  const lowest = Math.min(a.level, b.level);
-  for (let d = 1; d <= Math.min(depth, lowest); d++) {
-    if (d > 1) {
-      if (Math.max(estimate(cs, va), estimate(cs, vb)) > ROW_CAP) break;
-      va = expandVisits(cs, va);
-      vb = expandVisits(cs, vb);
-    }
-    const read = (v: VisitColumns, birth: number) => {
-      const { keep } = cancelBacktracksAt(v.id, v.tiles);
-      return { keep, tokens: Array.from(keep, (i) => token({ id: '', type: v.type[i], slot: v.slot[i], parent: v.parent[i], tiles: 0 }, v.level, birth)) };
-    };
-    const ra = read(va, a.level);
-    const rb = read(vb, b.level);
-    const m = sharedTokens(ra.tokens, rb.tokens);
-    const row = (v: VisitColumns, keep: Int32Array, shared: boolean[] | null): ExpandedRow => {
-      const marks = marksOf(v, keep, shared);
-      const at = (i: number): Visited => ({ type: v.type[i], slot: v.slot[i], up: v.up[i], mark: marks[i] });
-      return {
-        level: v.level,
-        visits: v.type.length,
-        cancelled: v.type.length - keep.length,
-        unshared: marks.filter((m) => m === 'unshared').length,
-        raw: Array.from({ length: Math.min(shown, v.type.length) }, (_, i) => at(i)),
-        kept: Array.from(keep.subarray(0, Math.min(shown, keep.length)), at),
-      };
-    };
-    rows.push({ depth: d, same: m.state === 'same', a: row(va, ra.keep, m.a), b: row(vb, rb.keep, m.b) });
+/**
+ * The members of a chain over their supertiles, the lowest at level k and
+ * each member two levels above the one before; a member's supertiles holding
+ * a visit the member below does not share are marked (the lowest member's,
+ * against the member above).
+ */
+export function chainPicture(cs: CircuitShapes, members: readonly { circuit: BornCircuit; readings: readonly Reading[] }[], k: number): ChainPicture {
+  const base = members[0].circuit.level;
+  const reading = (j: number) => members[j].readings.find((r) => r.level === k + members[j].circuit.level - base);
+  const steps: Agreement[] = [];
+  const shared: (boolean[] | null)[] = members.map(() => null);
+  for (let j = 1; j < members.length; j++) {
+    const lo = reading(j - 1), hi = reading(j);
+    if (!lo || !hi) { steps.push('unread'); continue; }
+    const m = sharedTokens(lo.tokens, hi.tokens);
+    steps.push(m.state);
+    shared[j] = m.b;
+    if (j === 1) shared[0] = m.a;
   }
-  const last = rows[rows.length - 1];
-  const more = rows.length < lowest && (!last || Math.max(estimate(cs, va), estimate(cs, vb)) <= ROW_CAP);
-  return { rows, more };
-}
-
-/** How many visits the level below would have. */
-function estimate(cs: CircuitShapes, v: VisitColumns): number {
-  let n = 0;
-  for (let i = 0; i < v.type.length; i++) n += cs.levels[v.level][v.type[i]].route(v.cross[i]).steps.length;
-  return n;
+  const sides = members.map((m, j) => sideAt(cs, m.circuit, k + m.circuit.level - base, reading(j), shared[j]));
+  return { k, sides, steps };
 }
