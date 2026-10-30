@@ -26,6 +26,9 @@ const MAX_FILLS = 600;
 const MAX_REST = 120000;
 /** Widths a route is drawn at, by how often it is passed. */
 const WIDTHS = [1.6, 2.6, 3.8];
+/** With `strong`: widths for the bold passes, and the faint ones' width and opacity. */
+const STRONG = [3, 4, 5.2];
+const FAINT = { width: 0.8, alpha: 0.18 };
 let drawings = 0;
 
 const tint = (hex: string, alpha: number): string => {
@@ -66,6 +69,8 @@ export function PassesPane(props: {
   rest?: boolean;
   /** Passes the other side has a match for: drawn faint, the rest bold. */
   matched?: readonly boolean[] | null;
+  /** Draw the bold passes thicker and the faint ones fainter, for a small pane. */
+  strong?: boolean;
   apiRef?: React.MutableRefObject<ViewerApi | null>;
   hovered: number | null;
   onHover: (i: number | null) => void;
@@ -124,13 +129,13 @@ export function PassesPane(props: {
       styles: [
         { color: '--muted', width: 0.8, alpha: 0.35 },
         ...TYPES.flatMap((t) => [
-          ...WIDTHS.map((w) => ({ color: TYPE_STROKE[t], width: w, alpha: 1 })),
-          ...WIDTHS.map((w) => ({ color: TYPE_STROKE[t], width: Math.max(1.2, w - 0.8), alpha: 0.5 })),
+          ...(props.strong ? STRONG : WIDTHS).map((w) => ({ color: TYPE_STROKE[t], width: w, alpha: 1 })),
+          ...WIDTHS.map((w) => ({ color: TYPE_STROKE[t], ...(props.strong ? FAINT : { width: Math.max(1.2, w - 0.8), alpha: 0.5 }) })),
         ]),
       ],
       stop: () => 0,
     };
-  }, [passes, matched, rest, R, most, props.testId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [passes, matched, rest, R, most, props.testId, props.strong]); // eslint-disable-line react-hooks/exhaustive-deps
   const marks = useMemo(() => {
     const out: Mark[] = [];
     if (kids.length <= MAX_FILLS) {

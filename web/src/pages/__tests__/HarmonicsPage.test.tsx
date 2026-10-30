@@ -34,11 +34,15 @@ describe('HarmonicsPage', () => {
     // Chips across the chain: the birth supertiles' children, the back-and-forth runs as one chip each.
     await waitFor(() => expect(screen.getAllByTestId('harm-row')).toHaveLength(2), { timeout: 10000 });
     expect(screen.getAllByTestId('harm-row')[1].textContent).toMatch(/^183 visits at level 5; 180 back and forth across seams, in 4 runs the reading cancels/);
-    // Picking the 8,784's Delta picks the 441's Delta paired with it, and both open a level further.
-    fireEvent.click(screen.getAllByTestId('harm-row')[1].querySelector('[data-testid="harm-item"]')!);
-    await waitFor(() => expect(screen.getAllByTestId('harm-row')).toHaveLength(4), { timeout: 10000 });
-    expect(screen.getAllByTestId('harm-row')[0].querySelector('.harm-chip-picked')!.textContent).toBe('Delta 1');
+    // Hovering the 8,784's Delta previews it; clicking pins it and the 441's Delta paired with it, and both open a level further.
+    const delta = screen.getAllByTestId('harm-row')[1].querySelector('[data-testid="harm-item"]')!;
+    fireEvent.mouseEnter(delta);
+    await waitFor(() => expect(screen.getByTestId('harm-pop').textContent).toMatch(/^106 visits at level 4/), { timeout: 10000 });
+    fireEvent.mouseLeave(delta);
+    fireEvent.click(delta);
+    await waitFor(() => expect(screen.getAllByTestId('harm-row')[0].querySelector('.harm-chip-picked')?.textContent).toBe('Delta 1'), { timeout: 10000 });
     expect(screen.getAllByTestId('harm-row')[1].querySelector('.harm-chip-picked')!.textContent).toBe('Delta 1');
+    await waitFor(() => expect(screen.getAllByTestId('harm-children').map((c) => c.textContent!.split(';')[0])).toEqual(['17 visits at level 2', '106 visits at level 4']), { timeout: 10000 });
     // Any other circuit can be lined up with the picked one.
     fireEvent.change(screen.getByTestId('harm-partner'), { target: { value: '5' } });
     await waitFor(() => expect(screen.getByTestId('harm-readings').textContent).toMatch(/differs/), { timeout: 10000 });

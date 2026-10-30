@@ -243,22 +243,10 @@
   stroke: var(--g2);
   stroke-width: 2.4;
 }
-.harm-check {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 13px;
-}
 
 /* A chain supertile by supertile. */
 .harm-explore {
   position: relative;
-}
-.harm-variants {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 16px;
-  margin-bottom: 4px;
 }
 .harm-cols {
   display: grid;
@@ -347,23 +335,4 @@
 .harm-mini {
   width: 100%;
   height: 140px;
-}
-.harm-panel-layout {
-  display: grid;
-  grid-template-columns: minmax(180px, 1fr) 3fr;
-  gap: 12px;
-  margin-top: 8px;
-}
-.harm-panel-left {
-  display: grid;
-  gap: 10px;
-  align-content: start;
-}
-.harm-panel {
-  margin-top: 0;
-}
-@media (max-width: 760px) {
-  .harm-panel-layout {
-    grid-template-columns: 1fr;
-  }
 }

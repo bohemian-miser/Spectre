@@ -1,18 +1,15 @@
 /**
  * A chain's members side by side, expanded supertile by supertile from their
- * birth supertiles (`focus.ts`). Each member is a column. Picking a
- * supertile chip in one column picks the chip the readings pair it with in
- * every other column, neighbour by neighbour; each column then shows that
+ * birth supertiles (`focus.ts`). Each member is a column. Hovering a
+ * supertile chip previews where it is and what it holds; clicking pins it,
+ * and the chip the readings pair it with in every other column, neighbour by
+ * neighbour. Each column then shows that
  * supertile's visits one level down, where it is in the circuit, and its
  * route table built from its children's (the Build-up page's
  * `buildup/PassesPane.tsx`) with the circuit's routes through it in bold.
  * Visits a neighbouring member lacks are outlined, and the runs of visits
  * back and forth across a seam, which the reading cancels, are shown as one
  * chip each.
- *
- * Three ways to move through it, behind a switch: the chips opening as a
- * tree; hovering a chip to preview it and clicking to pin it; or a panel
- * that shows the supertile picked.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -30,13 +27,6 @@ const nf = (n: number) => n.toLocaleString('en-US');
 const SHOWN = 160;
 /** How finely a circuit is drawn: runs of tiles within this share of its radius of gyration are one point. */
 const SHARE = 0.002;
-
-export type Variant = 'tree' | 'pin' | 'panel';
-export const VARIANTS: readonly { id: Variant; name: string }[] = [
-  { id: 'tree', name: 'A. Open as a tree' },
-  { id: 'pin', name: 'B. Hover, click to pin' },
-  { id: 'panel', name: 'C. Focus panel' },
-];
 
 const keyOf = (ci: number, s: Sel) => `${ci} ${s.level} ${s.i}`;
 
@@ -268,7 +258,7 @@ function Routes(props: { table: RouteTable | null; fitKey: string }): JSX.Elemen
   const birth = table.routes === 0;
   return (
     <div className="harm-routes" data-testid="harm-routes">
-      <PassesPane g={g} frame={frame} fitKey={props.fitKey} passes={table.passes} matched={faint} hovered={hover} onHover={setHover} label={`A level-${table.level} ${table.type} built from its children's routes`} testId="harm-route-table" />
+      <PassesPane g={g} frame={frame} fitKey={props.fitKey} passes={table.passes} matched={faint} strong hovered={hover} onHover={setHover} label={`A level-${table.level} ${table.type} built from its children's routes`} testId="harm-route-table" />
       <p className="harm-xhead">
         {birth
           ? `The circuit closing in this level-${table.level} ${table.type}: ${nf(table.passes.length)} routes of its children.`
@@ -307,7 +297,7 @@ function Trail(props: { f: Focus; j: number; ci: number }): JSX.Element {
 }
 
 /** Member j's picked supertile: where it is, its visits one level down (pick one to go further), its route table. */
-function FocusColumn(props: { f: Focus; j: number; members: readonly number[]; circuits: readonly CircuitInfo[] }): JSX.Element {
+function FocusColumn(props: { f: Focus; j: number; members: readonly number[]; onHover: Hover }): JSX.Element {
   const { f, j, members } = props;
   const depth = f.trails[j].length - 1;
   const node = f.nodeAt(j, depth);
@@ -318,7 +308,7 @@ function FocusColumn(props: { f: Focus; j: number; members: readonly number[]; c
       <Trail f={f} j={j} ci={members[j]} />
       {lost ? <p className="shapes-note">No supertile here pairs with the one picked in the other members.</p> : null}
       <Location drawing={f.drawingOf(members[j])} node={node} fitKey={`${members[j]}`} />
-      <Items node={node} other={other} picked={null} onPick={(s) => void f.select(j, depth, s)} testId="harm-children" />
+      <Items node={node} other={other} picked={null} onPick={(s) => void f.select(j, depth, s)} onHover={(s, at) => props.onHover(j, s, at)} testId="harm-children" />
       <Routes table={node?.routes ?? null} fitKey={`${members[j]} ${node?.sel.level} ${node?.sel.i}`} />
     </div>
   );
@@ -330,10 +320,11 @@ const head = (c: CircuitInfo) => (
   </div>
 );
 
-/** The chain's members expanded supertile by supertile, in the variant chosen. */
+type Hover = (j: number, sel: Sel | null, at: DOMRect | null) => void;
+
+/** The chain's members expanded supertile by supertile: hovering a chip previews it, clicking pins it in every member. */
 export function ChainExplorer(props: { client: HarmonicsClient; level: number; members: readonly number[]; circuits: readonly CircuitInfo[] }): JSX.Element {
   const { members, circuits } = props;
-  const [variant, setVariant] = useState<Variant>('tree');
   const f = useChainFocus(props.client, props.level, members, circuits);
   const cols = { gridTemplateColumns: `repeat(${members.length}, minmax(0, 1fr))` };
   const [hover, setHover] = useState<{ j: number; sel: Sel; x: number; y: number } | null>(null);
@@ -343,110 +334,47 @@ export function ChainExplorer(props: { client: HarmonicsClient; level: number; m
     if (hover) void f.fetchNode(members[hover.j], hover.sel, null).catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hover]);
-  const neighbourAt = (j: number, d: number) => neighbour(f, j, d);
-  const row = (j: number, d: number, testId?: string, hoverable = false) => (
-    <Items
-      node={f.nodeAt(j, d)}
-      other={neighbourAt(j, d)}
-      picked={f.trails[j][d + 1]?.i ?? null}
-      onPick={(s) => void f.select(j, d, s)}
-      onHover={
-        hoverable
-          ? (s, at) => {
-              const box = host.current?.getBoundingClientRect();
-              setHover(s && at && box ? { j, sel: s, x: at.left - box.left, y: at.bottom - box.top + 4 } : null);
-            }
-          : undefined
-      }
-      testId={testId}
-    />
-  );
-  const deepest = Math.max(...f.trails.map((t) => t.length));
+  const onHover: Hover = (j, s, at) => {
+    const box = host.current?.getBoundingClientRect();
+    setHover(s && at && box ? { j, sel: s, x: at.left - box.left, y: at.bottom - box.top + 4 } : null);
+  };
   return (
     <div className="harm-explore" ref={host} data-testid="harm-explore">
       <h3>Supertile by supertile</h3>
-      <div className="harm-variants" role="radiogroup" aria-label="How to move through the supertiles">
-        {VARIANTS.map((v) => (
-          <label key={v.id} className="harm-check">
-            <input type="radio" name="harm-variant" checked={variant === v.id} onChange={() => setVariant(v.id)} data-testid={`harm-variant-${v.id}`} /> {v.name}
-          </label>
-        ))}
-      </div>
       <p className="shapes-note">
-        Each column is a member of the chain, from its birth supertile down. Picking a supertile picks the one the readings pair with it in every member. ↔
-        chips are runs of visits back and forth across a seam, which the reading cancels; outlined chips are visits the neighbouring member has no match
-        for. The route table is the supertile built from its children&apos;s routes, those the circuit takes through it in bold.
+        Each column is a member of the chain, from its birth supertile down. Hover a supertile to see where it is and what it holds; click to pin it, and
+        the one the readings pair with it in every member. ↔ chips are runs of visits back and forth across a seam, which the reading cancels; outlined
+        chips are visits the neighbouring member has no match for. The route table is the supertile built from its children&apos;s routes, those the
+        circuit takes through it in bold.
       </p>
       {f.error ? <p className="shapes-note">Could not expand: {f.error}</p> : null}
-      {variant === 'tree' ? (
-        <>
-          <div className="harm-cols" style={cols}>
-            {members.map((m) => (
-              <div key={m}>{head(circuits[m])}</div>
-            ))}
-            {Array.from({ length: deepest }, (_, d) =>
-              members.map((m, j) => (
-                <div key={`${m} ${d}`} className="harm-col" data-testid={`harm-tree-${d}`}>
-                  {f.trails[j].length > d ? (
-                    <>
-                      <Trail f={{ ...f, trails: f.trails.map((t) => t.slice(0, d + 1)) }} j={j} ci={m} />
-                      {row(j, d, 'harm-row')}
-                    </>
-                  ) : null}
-                </div>
-              )),
-            )}
-            {members.map((m, j) => (
-              <div key={`loc ${m}`} className="harm-col">
-                <Location drawing={f.drawingOf(m)} node={f.nodeAt(j, f.trails[j].length - 1)} fitKey={`${m}`} />
-                <Routes table={f.nodeAt(j, f.trails[j].length - 1)?.routes ?? null} fitKey={`${m} ${f.trails[j].length}`} />
-              </div>
-            ))}
+      <div className="harm-cols" style={cols}>
+        {members.map((m, j) => (
+          <div key={m} className="harm-col">
+            {head(circuits[m])}
+            <Items
+              node={f.nodeAt(j, 0)}
+              other={neighbour(f, j, 0)}
+              picked={f.trails[j][1]?.i ?? null}
+              onPick={(s) => void f.select(j, 0, s)}
+              onHover={(s, at) => onHover(j, s, at)}
+              testId="harm-row"
+            />
           </div>
-        </>
-      ) : variant === 'pin' ? (
-        <>
-          <div className="harm-cols" style={cols}>
-            {members.map((m, j) => (
-              <div key={m} className="harm-col">
-                {head(circuits[m])}
-                {row(j, 0, 'harm-row', true)}
-              </div>
-            ))}
-          </div>
-          {hover ? (
-            <div className="harm-pop" style={{ left: Math.max(0, hover.x - 40), top: hover.y }} data-testid="harm-pop">
-              <MiniLocation drawing={f.drawingOf(members[hover.j])} node={hoverNode} />
-              {hoverNode ? <Items node={hoverNode} other={null} picked={null} /> : <p className="shapes-note">…</p>}
-              <p className="harm-xhead">Click to pin.</p>
-            </div>
-          ) : null}
-          <div className="harm-cols" style={cols}>
-            {members.map((m, j) => (
-              <FocusColumn key={m} f={f} j={j} members={members} circuits={circuits} />
-            ))}
-          </div>
-        </>
-      ) : (
-        <div className="harm-panel-layout">
-          <div className="harm-panel-left">
-            {members.map((m, j) => (
-              <div key={m} className="harm-col">
-                {head(circuits[m])}
-                {row(j, 0, 'harm-row')}
-              </div>
-            ))}
-          </div>
-          <div className="harm-cols harm-panel" style={cols}>
-            {members.map((m, j) => (
-              <div key={m}>
-                {head(circuits[m])}
-                <FocusColumn f={f} j={j} members={members} circuits={circuits} />
-              </div>
-            ))}
-          </div>
+        ))}
+      </div>
+      {hover ? (
+        <div className="harm-pop" style={{ left: Math.max(0, hover.x - 40), top: hover.y }} data-testid="harm-pop">
+          <MiniLocation drawing={f.drawingOf(members[hover.j])} node={hoverNode} />
+          {hoverNode ? <Items node={hoverNode} other={null} picked={null} /> : <p className="shapes-note">…</p>}
+          <p className="harm-xhead">Click to pin.</p>
         </div>
-      )}
+      ) : null}
+      <div className="harm-cols" style={cols}>
+        {members.map((m, j) => (
+          <FocusColumn key={m} f={f} j={j} members={members} onHover={onHover} />
+        ))}
+      </div>
     </div>
   );
 }
