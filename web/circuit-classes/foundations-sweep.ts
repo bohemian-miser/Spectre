@@ -15,7 +15,7 @@
  *
  *   node --max-old-space-size=12000 node_modules/.bin/vite-node circuit-classes/foundations-sweep.ts -- 023468 9 [shard shards] [combo,...]
  *
- * Writes `public/data/foundations/hex-<rule>/<combo>.json`; `foundations-index.ts`
+ * Writes `circuit-classes/data/foundations/hex-<rule>/<combo>.json`; `foundations-index.ts`
  * gathers them into `index.json`.
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -51,7 +51,7 @@ const build = (i: number, acc: string): void => {
   for (let d = 0; d < counts[i]; d++) build(i + 1, acc + comboDigitChar(d));
 };
 build(0, '');
-const outDir = resolve(__dirname, `../public/data/foundations/hex-${rule}`);
+const outDir = resolve(__dirname, `data/foundations/hex-${rule}`);
 mkdirSync(outDir, { recursive: true });
 
 interface Prediction {
