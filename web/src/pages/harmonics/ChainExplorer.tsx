@@ -16,10 +16,9 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { Pt } from '../../core';
 import { tileColor } from '../../lib/palette';
 import type { Box } from '../../lib/viewport';
-import { PassesPane, type PaneGeometry } from '../buildup/PassesPane';
+import { PassesPane, type DrawnPasses } from '../buildup/PassesPane';
 import { Viewer, type Lines, type Mark, type ViewerApi } from '../buildup/Viewer';
 import { fixedSource } from '../buildup/viewer';
 import { commonRun, type ChildItem, type FocusNode, type RouteTable, type Sel } from './focus';
@@ -55,7 +54,6 @@ const grow = (b: Box, f: number): Box => {
   const m = f * Math.max(b.max.x - b.min.x, b.max.y - b.min.y);
   return { min: { x: b.min.x - m, y: b.min.y - m }, max: { x: b.max.x + m, y: b.max.y + m } };
 };
-const flatPts = (pts: readonly Pt[]): number[] => pts.flatMap((p) => [p.x, p.y]);
 const closed = (xy: ArrayLike<number>): Float64Array => {
   const out = new Float64Array(xy.length + 2);
   out.set(xy as ArrayLike<number>);
@@ -258,14 +256,15 @@ function Location(props: { drawing: Float64Array | undefined; node: FocusNode | 
 function Routes(props: { table: RouteTable | null; fitKey: string }): JSX.Element {
   const { table } = props;
   const [hover, setHover] = useState<number | null>(null);
-  const g: PaneGeometry | null = useMemo(() => {
+  const g: DrawnPasses | null = useMemo(() => {
     if (!table) return null;
-    const outline = (n: number, t: string) => (n === table.level ? table.outline : table.kidOutlines[t]);
-    return { cs: { outline }, box: (n, t) => grow(boxOf(flatPts(outline(n, t))), 0.1) };
+    const lines = new Map(table.passes.map((p, i) => [p, table.lines[i]]));
+    const ring = (n: number, t: string) => (n === table.level ? table.outline : table.rings[t]);
+    return { line: (p) => lines.get(p)!, ring, box: (n, t) => grow(boxOf(ring(n, t)), 0.1) };
   }, [table]);
   const faint = useMemo(() => (table ? table.uses.map((u) => u === 0) : null), [table]);
   if (!table || !g) return <div className="harm-routes shapes-note">A tile has no route table.</div>;
-  const frame = { outline: table.outline, box: grow(boxOf(flatPts(table.outline)), 0.06) };
+  const frame = { outline: table.outline, box: grow(boxOf(table.outline), 0.06) };
   const birth = table.routes === 0;
   return (
     <div className="harm-routes" data-testid="harm-routes">

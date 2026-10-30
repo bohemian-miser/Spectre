@@ -38,13 +38,15 @@ describe('siteNav', () => {
       'harmonics',
       'compare',
       'buildup',
+      'foundations',
       'period',
+      'limit',
       'legacy',
     ]);
     expect(new Set(SITE_NAV.map((i) => i.id)).size).toBe(SITE_NAV.length);
   });
 
-  it('ships all eighteen destinations', () => {
+  it('ships every destination', () => {
     expect(readyNav().map((i) => i.id)).toEqual([
       'explorer',
       'tails',
@@ -66,7 +68,9 @@ describe('siteNav', () => {
       'harmonics',
       'compare',
       'buildup',
+      'foundations',
       'period',
+      'limit',
       'legacy',
     ]);
   });

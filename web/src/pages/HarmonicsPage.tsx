@@ -14,7 +14,9 @@
  * (`harmonics/ChainViews.tsx`), and expanded supertile by supertile with the
  * members side by side (`harmonics/ChainExplorer.tsx`). The chosen circuit's
  * readings are lined up with the member below it, or with any circuit
- * chosen by hand. Any circuit opens in the Explorer's infinite view.
+ * chosen by hand. Any circuit opens in the Explorer's infinite view. The
+ * address can name the combination and the level to read to
+ * (`?rule=023468&combo=140000001&level=7`).
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -32,6 +34,14 @@ import '../styles/harmonics.css';
 
 const nf = (n: number) => n.toLocaleString('en-US');
 const DEFAULT: ComboChoice = { subset: [0, 2, 3, 4, 6, 8], combo: '000100000', level: 6 };
+
+/** The rule, combination and level asked for in the address (`?rule=023468&combo=140000001&level=7`), else the default. */
+function fromAddress(): ComboChoice {
+  const q = new URLSearchParams(typeof location === 'undefined' ? '' : location.search);
+  const rule = q.get('rule') ?? '023468', combo = q.get('combo'), level = Number(q.get('level'));
+  if (!combo || !/^\d+$/.test(rule) || !/^[0-9a-z]{9}$/.test(combo)) return DEFAULT;
+  return { subset: [...rule].map(Number), combo, level: Number.isInteger(level) && level >= 2 && level <= 12 ? level : DEFAULT.level };
+}
 
 function explorerHref(base: string, choice: ComboChoice, c: CircuitInfo): string {
   return explorerCircuitHref(base, {
@@ -53,7 +63,7 @@ const describe = describeCircuit;
 export default function HarmonicsPage(props: { forceSync?: boolean }): JSX.Element {
   const base = import.meta.env.BASE_URL;
   const client = useRef(createHarmonicsClient({ forceSync: props.forceSync }));
-  const [choice, setChoice] = useState<ComboChoice>(DEFAULT);
+  const [choice, setChoice] = useState<ComboChoice>(fromAddress);
   const [result, setResult] = useState<HarmonicsResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -136,7 +146,7 @@ export default function HarmonicsPage(props: { forceSync?: boolean }): JSX.Eleme
         runs across seams at the lowest levels. Harmonics link into chains. Every circuit of the combination born up to the level chosen is read from the
         renormalisation, so nothing is traced tile by tile; the renormalisation can be taken one level further at a time, as far as the machine allows.
       </p>
-      <ComboPicker busy={busy} onAdd={(c) => { setChoice(c); setPicked(null); setPartnerChoice(null); }} levels="any" verb="Read" initialLevel={DEFAULT.level} initialCombo={DEFAULT.combo} />
+      <ComboPicker busy={busy} onAdd={(c) => { setChoice(c); setPicked(null); setPartnerChoice(null); }} levels="any" verb="Read" initialLevel={choice.level} initialCombo={choice.combo} initialRule={choice.subset.join('')} />
       {error ? <p className="shapes-note">Could not compute: {error}</p> : null}
       {busy && !result ? <p className="shapes-note">Computing…</p> : null}
       {result ? (

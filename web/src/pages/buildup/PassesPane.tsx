@@ -10,8 +10,7 @@ import { useMemo } from 'react';
 import { leafOrder, type Pt } from '../../core';
 import type { Box } from '../../lib/viewport';
 import { Viewer, type Lines, type Mark, type ViewerApi } from './Viewer';
-import type { CircuitShapes } from '../shapes/circuitShapes';
-import { fixedSource, mapBox, type Pass } from './viewer';
+import { bentPass, fixedSource, mapBox, ringOf, type Geometry, type Pass } from './viewer';
 
 const nf = (n: number) => n.toLocaleString('en-US');
 
@@ -34,27 +33,29 @@ const tint = (hex: string, alpha: number): string => {
   return `rgba(${v >> 16},${(v >> 8) & 255},${v & 255},${alpha})`;
 };
 
-/** What the pane reads of the renormalisation: outlines and boxes of the children, and (for `rest`) their tables. A `Geometry` (`viewer.ts`) is one. */
-export interface PaneGeometry {
-  readonly cs: { outline(n: number, type: string): readonly Pt[]; readonly levels?: CircuitShapes['levels'] };
+/**
+ * Passes worked out elsewhere (in a worker, `harmonics/focus.ts`): each
+ * pass's line and each child's outline as `bentPass` and `ringOf` give
+ * them, and a box round each child.
+ */
+export interface DrawnPasses {
+  line(p: Pass): Float64Array;
+  ring(n: number, type: string): Float64Array;
   box(n: number, type: string): Box;
 }
 
+const isGeometry = (g: Geometry | DrawnPasses): g is Geometry => 'cs' in g;
+
 /** The supertile drawn in: its outline and a box to frame. */
 export interface Frame {
-  readonly outline: readonly Pt[];
+  /** x, y pairs, closed. */
+  readonly outline: Float64Array;
   readonly box: Box;
 }
 
-const flat = (pts: readonly Pt[]): Float64Array => {
-  const out = new Float64Array(2 * pts.length + 2);
-  pts.forEach((p, i) => { out[2 * i] = p.x; out[2 * i + 1] = p.y; });
-  if (pts.length) { out[2 * pts.length] = pts[0].x; out[2 * pts.length + 1] = pts[0].y; }
-  return out;
-};
 
 export function PassesPane(props: {
-  g: PaneGeometry;
+  g: Geometry | DrawnPasses;
   frame: Frame;
   /** Changes when the view should frame `frame.box` again. */
   fitKey: string;
@@ -84,11 +85,10 @@ export function PassesPane(props: {
     return [...m.values()];
   }, [passes]);
   const rest = useMemo(() => {
-    const levels = g.cs.levels;
-    if (!props.rest || !levels || kids.length > MAX_FILLS) return [] as [Pt, Pt][];
+    if (!props.rest || !isGeometry(g) || kids.length > MAX_FILLS) return [] as [Pt, Pt][];
     const out: [Pt, Pt][] = [];
     for (const p of kids) {
-      const T = levels[p.level][p.type];
+      const T = g.cs.levels[p.level][p.type];
       for (const k of T.crossings()) {
         const m = T.mate(k);
         if (m <= k) continue;
@@ -113,8 +113,8 @@ export function PassesPane(props: {
       count: R + passes.length,
       points: (i) => {
         if (i < R) return fixedSource(Float64Array.of(rest[i][0].x, rest[i][0].y, rest[i][1].x, rest[i][1].y));
-        const p = passes[i - R];
-        return fixedSource(Float64Array.of(p.a.x, p.a.y, p.b.x, p.b.y));
+        // straight where that stays inside the child, bent through its own children where not
+        return fixedSource(isGeometry(g) ? bentPass(g, passes[i - R]) : g.line(passes[i - R]));
       },
       style: (i) => {
         if (i < R) return 0;
@@ -135,11 +135,16 @@ export function PassesPane(props: {
     const out: Mark[] = [];
     if (kids.length <= MAX_FILLS) {
       for (const p of kids) {
-        const pts = g.cs.outline(p.level, p.type).map((q) => ({ x: p.x[0] * q.x + p.x[1] * q.y + p.x[2], y: p.x[3] * q.x + p.x[4] * q.y + p.x[5] }));
-        out.push({ pts: flat(pts), color: tint(TYPE_STROKE[p.type], 0.45), width: 0.8, fill: tint(TYPE_STROKE[p.type], 0.1) });
+        const r = isGeometry(g) ? ringOf(g, p.level, p.type).pts : g.ring(p.level, p.type);
+        const pts = new Float64Array(r.length);
+        for (let i = 0; i < r.length; i += 2) {
+          pts[i] = p.x[0] * r[i] + p.x[1] * r[i + 1] + p.x[2];
+          pts[i + 1] = p.x[3] * r[i] + p.x[4] * r[i + 1] + p.x[5];
+        }
+        out.push({ pts, color: tint(TYPE_STROKE[p.type], 0.45), width: 0.8, fill: tint(TYPE_STROKE[p.type], 0.1) });
       }
     }
-    out.push({ pts: flat(frame.outline), color: '--muted', width: 1 });
+    out.push({ pts: frame.outline, color: '--muted', width: 1 });
     return () => out;
   }, [g, frame, kids]);
   const present = useMemo(() => [...new Set(passes.map((p) => p.type))].sort((a, b) => TYPES.indexOf(a) - TYPES.indexOf(b)), [passes]);

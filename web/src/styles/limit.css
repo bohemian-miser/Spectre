@@ -1,0 +1,28 @@
+.lm-morph { display: grid; gap: 8px; max-width: 760px; }
+.lm-controls { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; font-size: 0.9rem; }
+.lm-controls > button { padding: 4px 12px; border-radius: 99px; border: 1px solid var(--line); background: var(--panel); color: var(--text); cursor: pointer; }
+.lm-chips { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.lm-chips button { padding: 2px 10px; border-radius: 99px; border: 1px solid var(--line); background: var(--panel); color: var(--text); cursor: pointer; font-size: 0.82rem; }
+.lm-chips button.is-active { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.lm-canvas { width: 100%; height: auto; aspect-ratio: 720 / 520; display: block; border: 1px solid var(--line); border-radius: var(--radius); background: var(--canvas-bg); }
+.lm-scrub { flex: 1 1 200px; min-width: 120px; }
+.lm-check { display: inline-flex; gap: 4px; align-items: center; }
+.lm-figure { display: block; max-width: 100%; height: auto; border: 1px solid var(--line); border-radius: var(--radius); background: var(--canvas-bg); }
+.lm-strip { display: flex; flex-wrap: wrap; gap: 8px; }
+.lm-strip figure, .lm-pair figure { margin: 0; display: grid; gap: 2px; }
+.lm-strip figcaption, .lm-pair figcaption { font-size: 0.8rem; color: var(--muted); }
+.lm-pair { display: flex; flex-wrap: wrap; gap: 12px; }
+.lm-table { display: block; overflow-x: auto; max-width: 100%; }
+.lm-notes { max-width: 820px; font-size: 0.88rem; }
+.lm-prose { max-width: 820px; }
+.lm-prose p { font-size: 0.92rem; }
+.lm-key { font-weight: 600; }
+.lm-key-hex { color: #2a78d6; }
+.lm-key-spectre { color: #eb6834; }
+@media (prefers-color-scheme: dark) {
+  .lm-key-hex { color: #3987e5; }
+  .lm-key-spectre { color: #d95926; }
+}
+.lm-page > * { min-width: 0; }
+.lm-strip figure { width: 150px; max-width: calc(50% - 4px); }
+.lm-pair figure { width: 260px; max-width: 100%; }

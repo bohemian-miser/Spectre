@@ -10,8 +10,8 @@
  * its index in its row. The supertile picked first is the birth supertile:
  * its children are the circuit's top-level chips.
  */
-import { mul, transPt, type Affine, type Pt } from '../../core';
-import { circuitPasses, Geometry, routePasses, type Pass } from '../buildup/viewer';
+import { mul, transPt, type Affine } from '../../core';
+import { bentPass, circuitPasses, Geometry, ringOf, routePasses, type Pass } from '../buildup/viewer';
 import type { BornCircuit, CircuitShapes } from '../shapes/circuitShapes';
 import { alignReadings, cancelBacktracksAt, expandVisits, pathOf, token, topVisits, type VisitColumns } from './readings';
 
@@ -53,11 +53,12 @@ export type ChildItem =
 export interface RouteTable {
   readonly level: number;
   readonly type: string;
-  /** The supertile's outline, and its children's outlines by type, in their own frames. */
-  readonly outline: readonly Pt[];
-  readonly kidOutlines: Readonly<Record<string, readonly Pt[]>>;
-  /** Its routes as its children's routes (`routePasses`), in its frame; pass i belongs to the route from crossing `route[i]` (the lower of its two), which the circuit takes `uses[i]` times. */
+  /** The supertile's outline, and the outlines of the children its routes run through, by type, each in its own frame (`ringOf`: x, y pairs, closed). */
+  readonly outline: Float64Array;
+  readonly rings: Readonly<Record<string, Float64Array>>;
+  /** Its routes as its children's routes (`routePasses`), in its frame, each pass drawn as `lines[i]` (`bentPass`); pass i belongs to the route from crossing `route[i]` (the lower of its two), which the circuit takes `uses[i]` times. */
   readonly passes: readonly Pass[];
+  readonly lines: readonly Float64Array[];
   readonly route: readonly number[];
   readonly uses: readonly number[];
   /** Routes in its table, and routes the circuit takes through it. */
@@ -257,17 +258,18 @@ export class CircuitFocus {
     return { sel: { level, i: sel.i }, type, path, arcs: arcs.length, outline, items: items.slice(0, MAX_ITEMS), childCount, cancelled, routes, partner };
   }
 
-  private kidOutlines(level: number): Record<string, readonly Pt[]> {
-    const out: Record<string, readonly Pt[]> = {};
-    for (const t of Object.keys(this.cs.levels[level])) out[t] = this.cs.outline(level, t);
-    return out;
+  /** What a route table draws besides its passes: its outline, its children's outlines and each pass's line. */
+  private drawn(n: number, type: string, passes: readonly Pass[]): Pick<RouteTable, 'outline' | 'rings' | 'lines'> {
+    const rings: Record<string, Float64Array> = {};
+    for (const p of passes) rings[p.type] ??= ringOf(this.g, n - 1, p.type).pts;
+    return { outline: ringOf(this.g, n, type).pts, rings, lines: passes.map((p) => bentPass(this.g, p)) };
   }
 
   /** The circuit's passes through the birth supertile's children: all of them taken once. */
   private birthRoutes(): RouteTable {
     const { c } = this;
     const passes = circuitPasses(this.g, c);
-    return { level: c.level, type: c.type, outline: this.cs.outline(c.level, c.type), kidOutlines: this.kidOutlines(c.level - 1), passes, route: passes.map(() => -1), uses: passes.map(() => 1), routes: 0, taken: 0, all: true };
+    return { level: c.level, type: c.type, ...this.drawn(c.level, c.type, passes), passes, route: passes.map(() => -1), uses: passes.map(() => 1), routes: 0, taken: 0, all: true };
   }
 
   /** A level-n supertile's route table built from its children's, with how often the circuit takes each route (entered at `entered`). */
@@ -298,7 +300,7 @@ export class CircuitFocus {
         route.push(k);
       }
     }
-    return { level: n, type, outline: this.cs.outline(n, type), kidOutlines: this.kidOutlines(n - 1), passes, route, uses, routes: all.length, taken: taken.size, all: drawAll };
+    return { level: n, type, ...this.drawn(n, type, passes), passes, route, uses, routes: all.length, taken: taken.size, all: drawAll };
   }
 
   /** The circuit as a closed line in the birth supertile's frame, each run of tiles within `share` of its radius of gyration drawn at its mean (`coarse`). */
