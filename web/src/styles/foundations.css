@@ -73,6 +73,42 @@
   letter-spacing: 0.02em;
 }
 
+/* rule, level and sweep */
+.fd-intro .shapes-combo {
+  margin-top: 10px;
+}
+.fd-live {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  align-items: center;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.fd-live button {
+  font: inherit;
+  font-size: 12px;
+  padding: 3px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel-2);
+  color: var(--text);
+  cursor: pointer;
+}
+.fd-live button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.fd-progress {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+}
+.fd-progress progress {
+  width: 160px;
+}
+
 /* tabs */
 .fd-tabs {
   display: flex;

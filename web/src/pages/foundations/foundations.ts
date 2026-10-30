@@ -550,8 +550,10 @@ export interface AccountRow {
   /** Chords on circuits closed inside, by bucket, and the ones closing at this level. */
   readonly closed: Readonly<Record<string, number>>;
   readonly closedHere: Readonly<Record<string, number>>;
-  /** Chords on open arcs: the table's arc lengths, once per arc. */
+  /** Chords on no circuit closed inside: chords less closed. */
   readonly tails: number;
+  /** The table's arc lengths, once per arc: the tails, for a rule that pairs every crossing of every tile (otherwise strands that end at a tile with unpaired crossings are left out). */
+  readonly arcs: number;
   /** The children's tails: what the closings at this level are made of. */
   readonly room: number;
 }
@@ -561,9 +563,9 @@ export interface AccountRow {
  * built: on a circuit closed inside it (counted with its copies, by the
  * level it closes at, in the bucket `bucketOf` puts it in), or on an open
  * arc. The level-n supertile holds M^(n-m)[t][u] level-m supertiles of type
- * u (M the substitution matrix). Counts are integers and the account
- * balances exactly, `closed + tails = chords`, when the renormalisation is
- * right; the test checks it.
+ * u (M the substitution matrix). Counts are integers; the tails are chords
+ * less closed, and the test checks them against the tables' arc lengths
+ * (`arcs`), an independent count, for a rule that pairs every crossing.
  */
 export function account(cs: CircuitShapes, bucketOf: (c: BornCircuit) => string): AccountRow[] {
   const M = substitutionMatrix(cs.family);
@@ -583,11 +585,16 @@ export function account(cs: CircuitShapes, bucketOf: (c: BornCircuit) => string)
     return s / 2;
   };
   const rows: AccountRow[] = [];
-  let chords = TYPES.map((t) => cs.levels[0][t].crossings().length / 2);
-  let tails = TYPES.map((t) => tailsAt(0, t));
+  // a tile's chords: its crossings paired by the combination (a tile whose crossings the rule cannot pair has none)
+  let chords = TYPES.map((t) => {
+    const T = cs.levels[0][t];
+    return Array.from(T.crossings()).filter((k) => T.mate(k) >= 0).length / 2;
+  });
+  let tails = chords.slice();
   let closed: Map<string, number>[] = TYPES.map(() => new Map());
   const plain = (m: Map<string, number>): Record<string, number> => Object.fromEntries([...buckets].map((b) => [b, m.get(b) ?? 0]));
-  for (let t = 0; t < nT; t++) rows.push({ level: 0, type: TYPES[t], chords: chords[t], closed: plain(closed[t]), closedHere: plain(born[0][t]), tails: tails[t], room: 0 });
+  const total = (m: Map<string, number>): number => [...m.values()].reduce((a, b) => a + b, 0);
+  for (let t = 0; t < nT; t++) rows.push({ level: 0, type: TYPES[t], chords: chords[t], closed: plain(closed[t]), closedHere: plain(born[0][t]), tails: tails[t], arcs: tailsAt(0, TYPES[t]), room: 0 });
   for (let n = 1; n <= cs.maxLevel; n++) {
     const nc = new Array<number>(nT).fill(0);
     const room = new Array<number>(nT).fill(0);
@@ -601,8 +608,8 @@ export function account(cs: CircuitShapes, bucketOf: (c: BornCircuit) => string)
       }
       if (!Number.isSafeInteger(nc[t])) throw new Error('chord counts past exact integers');
     }
-    const nt = TYPES.map((t) => tailsAt(n, t));
-    for (let t = 0; t < nT; t++) rows.push({ level: n, type: TYPES[t], chords: nc[t], closed: plain(ncl[t]), closedHere: plain(born[n][t]), tails: nt[t], room: room[t] });
+    const nt = TYPES.map((_, t) => nc[t] - total(ncl[t]));
+    for (let t = 0; t < nT; t++) rows.push({ level: n, type: TYPES[t], chords: nc[t], closed: plain(ncl[t]), closedHere: plain(born[n][t]), tails: nt[t], arcs: tailsAt(n, TYPES[t]), room: room[t] });
     chords = nc;
     closed = ncl;
     tails = nt;

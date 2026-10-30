@@ -75,6 +75,8 @@ describe('the account of chords', () => {
     for (const r of rows) {
       expect(Object.keys(r.closed).sort()).toEqual(['foundational', 'harmonic', 'nugget']);
       expect(sum(r.closed) + r.tails).toBe(r.chords);
+      // the tails, against the tables' arc lengths
+      expect(r.arcs).toBe(r.tails);
     }
     // the closings at a level come out of the children's tails
     for (const r of rows) if (r.level > 0) expect(r.room - sum(r.closedHere)).toBe(r.tails);

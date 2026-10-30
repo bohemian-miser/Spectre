@@ -8,7 +8,7 @@ import type { TileTypeId } from '../../core';
 import { explorerCircuitHref } from '../shapes/explorerLink';
 import { AccountChart } from './AccountChart';
 import { TailsPanel } from './TailsPanel';
-import { buildupHref, compact, harmonicsHref, nf, pct, slots, SUBSET } from './data';
+import { buildupHref, compact, harmonicsHref, nf, pct, slots, subsetOf } from './data';
 import type { DrawClient, Drawing } from './drawings';
 import { chainOf, isGiant, isLate, provenNote, type ChainMember, type FoundRow, type PageCombo } from './pageData';
 
@@ -57,7 +57,7 @@ function Card(props: { data: PageCombo; f: FoundRow; drawing: Drawing | undefine
   const explorer = drawing
     ? explorerCircuitHref(base, {
         family: 'hex',
-        subset: SUBSET,
+        subset: subsetOf(data.rule),
         combo: data.combo,
         type: drawing.type as TileTypeId,
         level,
@@ -120,8 +120,8 @@ function Card(props: { data: PageCombo; f: FoundRow; drawing: Drawing | undefine
         </div>
         <div className="fd-links" onClick={(e) => e.stopPropagation()}>
           {explorer ? <a href={explorer}>Explorer</a> : <span className="fd-muted">Explorer</span>}
-          <a href={harmonicsHref(base, data.combo, Math.min(level + 2, 9))}>Harmonics</a>
-          <a href={buildupHref(base, data.combo, level, length)}>Build-up</a>
+          <a href={harmonicsHref(base, data.combo, Math.min(level + 2, 9), data.rule)}>Harmonics</a>
+          <a href={buildupHref(base, data.combo, level, length, data.rule)}>Build-up</a>
         </div>
       </div>
     </article>
@@ -136,7 +136,7 @@ export function ComboView(props: { data: PageCombo; client: DrawClient; circuit:
     let on = true;
     setError(null);
     props.client
-      .draw({ subset: SUBSET, combo: data.combo, want: data.found.map(([id, level, length, families, , , , place]) => ({ id, place, level, length, family: families.split(' ')[0] })) })
+      .draw({ subset: subsetOf(data.rule), combo: data.combo, want: data.found.map(([id, level, length, families, , , , place]) => ({ id, place, level, length, family: families.split(' ')[0] })) })
       .then((ds) => on && setDrawings({ combo: data.combo, byId: new Map(ds.map((d) => [d.id, d])) }))
       .catch((e: unknown) => on && setError(e instanceof Error ? e.message : String(e)));
     return () => {
