@@ -372,6 +372,53 @@ export class CircuitShapes {
     }
     return out;
   }
+
+  /**
+   * A born circuit as a closed polyline through `samples` of its tiles, the
+   * crossing it enters each by (the points `shape(c, 0)` draws), at tiles
+   * round(j L / n). Arcs holding no sampled tile are passed over by their
+   * tile counts, so the work grows with the samples, not the circuit.
+   */
+  sampled(c: BornCircuit, samples: number): Pt[] {
+    const n = Math.min(c.length, samples);
+    const out: Pt[] = [];
+    let passed = 0;
+    let next = 0;
+    const visit = (lvl: number, type: string, k: number, x: Affine): void => {
+      const L = this.levels[lvl][type];
+      if (out.length === n || passed + L.arcLen[k] <= next) {
+        passed += L.arcLen[k];
+        return;
+      }
+      if (lvl === 0) {
+        out.push(transPt(x, L.pts[k]));
+        passed++;
+        next = Math.round((out.length * c.length) / n);
+        return;
+      }
+      const meta = buildSystem(this.family, lvl)[type] as MetaNode;
+      const fwd = L.forward[k] === 1;
+      const from = fwd ? k : L.mate[k];
+      const s = L.routeSteps.subarray(L.routeStart[from], L.routeStart[from + 1]);
+      const prev = this.levels[lvl - 1];
+      const enter = (i: number, reversed: boolean) => {
+        const ch = meta.children[L.owner[i]];
+        let loc = L.local[i];
+        if (reversed) loc = prev[ch.node.type].mate[loc];
+        visit(lvl - 1, ch.node.type, loc, mul(x, ch.xform as Affine));
+      };
+      if (fwd) for (const i of s) enter(i, false);
+      else for (let q = s.length - 1; q >= 0; q--) enter(s[q], true);
+    };
+    const meta = buildSystem(this.family, c.level)[c.type] as MetaNode;
+    const top = this.levels[c.level][c.type];
+    for (const i of c.steps) {
+      if (out.length === n) break;
+      const ch = meta.children[top.owner[i]];
+      visit(c.level - 1, ch.node.type, top.local[i], ch.xform as Affine);
+    }
+    return out;
+  }
 }
 
 

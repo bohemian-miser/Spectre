@@ -20,7 +20,7 @@ import '../styles/buildup.css';
 const nf = (n: number) => n.toLocaleString('en-US');
 const DEFAULT: ComboChoice = { subset: [0, 2, 3, 4, 6, 8], combo: '140000001', level: 6 };
 const MAX_LEVEL = 8;
-/** Most points a circuit is drawn with; longer circuits are drawn with each level-k route as a chord. */
+/** Most points a circuit is drawn with; longer circuits are drawn through evenly spaced tiles. */
 const MAX_POINTS = 4000;
 /** Tables with more routes than this are drawn on a canvas, without a reading per route. */
 const SVG_ROUTES = 1500;
@@ -98,11 +98,7 @@ function TableCard(props: { table: Table; names: readonly string[]; logMin: numb
 function CircuitCard(props: { cs: CircuitShapes; c: Closing; level: number; href: string }): JSX.Element {
   const { cs, c } = props;
   const d = useMemo(() => {
-    // the finest level at which the outline stays within the point budget
-    let stop = 0;
-    while (stop < c.circuit.level - 1 && c.length / 7 ** stop > MAX_POINTS) stop++;
-    let pts = cs.shape(c.circuit, stop);
-    while (pts.length > 2 * MAX_POINTS && stop < c.circuit.level - 1) pts = cs.shape(c.circuit, ++stop);
+    const pts = cs.sampled(c.circuit, MAX_POINTS);
     const [minX, maxX] = bounds(pts.map((p) => p.x)), [minY, maxY] = bounds(pts.map((p) => p.y));
     const span = Math.max(maxX - minX, maxY - minY) || 1;
     const path = pts.map((p, i) => `${i ? 'L' : 'M'}${((p.x - minX) / span * 100).toFixed(2)} ${((maxY - p.y) / span * 100).toFixed(2)}`).join('') + 'Z';
