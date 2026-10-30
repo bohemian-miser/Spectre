@@ -24,7 +24,7 @@ import '../styles/shapes.css';
 import '../styles/harmonics.css';
 
 const nf = (n: number) => n.toLocaleString('en-US');
-const LEVELS = [4, 5, 6, 7, 8, 9];
+const LEVELS = [4, 5, 6, 7, 8, 9, 10];
 const DEFAULT: ComboChoice = { subset: [0, 2, 3, 4, 6, 8], combo: '000100000', level: 6 };
 
 interface Chain {
