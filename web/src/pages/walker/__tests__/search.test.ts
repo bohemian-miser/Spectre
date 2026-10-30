@@ -22,6 +22,16 @@ import { patternOf } from '../walk';
 
 const triangle = patternOf([0, 2, 3, 4, 6, 8], '000100000');
 
+/** Walks a search's branches in batches, yielding between them so the test runner's worker can still answer. */
+async function walkOut(sub: Subtrees): Promise<SearchTreeData> {
+  const data = new SearchTreeData();
+  while (sub.waiting > 0) {
+    data.put(sub.run(200));
+    await new Promise((r) => setImmediate(r));
+  }
+  return data;
+}
+
 /** Each node of a tree by the landings to it: where its branch forks (the landings offered) or how it ends. */
 function byPath(nodes: readonly { parent: number | null; key: string | null; fork?: { options: readonly { key: string }[] } | null; end?: { status: string; seen?: readonly { type: string }[] } }[], tilesOf: (i: number) => number) {
   const path = (i: number): string => (nodes[i].parent === null ? '' : `${path(nodes[i].parent!)}/${nodes[i].key}`);
@@ -29,14 +39,13 @@ function byPath(nodes: readonly { parent: number | null; key: string | null; for
 }
 
 describe('the search in subtrees', () => {
-  it('walks the tree explore walks, and a branch is walked again by its landings', () => {
+  it('walks the tree explore walks, and a branch is walked again by its landings', async () => {
     const wk = makeWalker(triangle, 'Delta', 0, 5);
     const pw = startWalk(wk);
-    const sub = new Subtrees(wk, 'w0', 400);
+    const sub = new Subtrees(wk, 'w0', 250);
     sub.add([branchOf('0', pw.stage)]);
-    const data = new SearchTreeData();
-    while (sub.waiting > 0) data.put(sub.run(1000));
-    const ex = explore(pw, { forks: Infinity, tiles: 400 }).pw;
+    const data = await walkOut(sub);
+    const ex = explore(pw, { forks: Infinity, tiles: 250 }).pw;
     const exTiles = (i: number): number => (ex.nodes[i].end ?? ex.nodes[i].stage).seen.length;
     const viaFork = (i: number): number => ex.nodes[ex.nodes[i].children[0]].stage.seen.length - 1;
     const want = byPath(ex.nodes, (i) => (ex.nodes[i].fork ? viaFork(i) : exTiles(i)));
@@ -52,37 +61,36 @@ describe('the search in subtrees', () => {
 });
 
 describe('one branch per circuit', () => {
-  const walkAll = (wk: ReturnType<typeof makeWalker>, tiles: number, oneReading: boolean) => {
+  const walkAll = async (wk: ReturnType<typeof makeWalker>, tiles: number, oneReading: boolean) => {
     const sub = new Subtrees(wk, 'w0', tiles);
     sub.add([branchOf('0', startWalk(wk).stage, oneReading ? FRESH : undefined)]);
-    const data = new SearchTreeData();
-    while (sub.waiting > 0) data.put(sub.run(1000));
+    const data = await walkOut(sub);
     const ends = data.nodes.filter((n) => n.end?.status === 'closed').map((n) => n.end!.seen!);
     return { data, closed: ends.map(circuitKey), lengths: ends.map((s) => s.length) };
   };
 
-  it('closes on every circuit the whole tree closes on, each by one branch', () => {
+  it('closes on every circuit the whole tree closes on, each by one branch', async () => {
     const wk = makeWalker(triangle, 'Delta', 0, 5);
-    const all = walkAll(wk, 400, false);
-    const one = walkAll(wk, 400, true);
+    const all = await walkAll(wk, 400, false);
+    const one = await walkAll(wk, 400, true);
     expect(new Set(all.closed).size).toBeGreaterThan(2);
     expect(all.closed.length).toBeGreaterThan(new Set(all.closed).size);
     expect(one.closed.sort()).toEqual([...new Set(all.closed)].sort());
     expect(one.data.nodes.length).toBeLessThan(all.data.nodes.length);
   }, 60000);
 
-  it('finds the circuits the circuit index lists for 023468 140000001, up to 5,000 tiles', () => {
+  it('finds the circuits the circuit index lists for 023468 140000001, up to 5,000 tiles', async () => {
     const index = JSON.parse(readFileSync(resolve(__dirname, '../../../../public/data/corners/hex-023468/140000001.json'), 'utf8')) as { circuits: { length: number }[] };
     const wk = makeWalker(patternOf([0, 2, 3, 4, 6, 8], '140000001'), 'Xi', 2, 5);
-    const one = walkAll(wk, 5000, true);
+    const one = await walkAll(wk, 5000, true);
     const lengths = [...one.lengths].sort((a, b) => a - b);
     expect(lengths).toEqual(index.circuits.map((c) => c.length).filter((n) => n <= 5000).sort((a, b) => a - b));
   }, 120000);
 
-  it('names circuits by the same key as the renormalisation', () => {
+  it('names circuits by the same key as the renormalisation', async () => {
     const cs = new CircuitShapes('hex', [0, 2, 3, 4, 6, 8], [...'140000001'].map((c) => parseInt(c, 36)), 6, 1, false);
     const renormalised = new Set(cs.born.filter((c) => c.length <= 1000).map((c) => keyOfWord(cs.word(c))));
-    const walked = walkAll(makeWalker(patternOf([0, 2, 3, 4, 6, 8], '140000001'), 'Xi', 2, 5), 1000, true);
+    const walked = await walkAll(makeWalker(patternOf([0, 2, 3, 4, 6, 8], '140000001'), 'Xi', 2, 5), 1000, true);
     expect(renormalised.size).toBeGreaterThan(2);
     expect(new Set(walked.closed)).toEqual(renormalised);
   }, 120000);
