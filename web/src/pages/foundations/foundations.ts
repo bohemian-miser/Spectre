@@ -1,6 +1,6 @@
 /**
  * The foundational circuits of a combination, the harmonic chains grown from
- * them, and an account of every tile of every supertile.
+ * them, and an account of every chord of every supertile.
  *
  * Built on the renormalisation (`shapes/circuitShapes.ts`). A circuit closing
  * at level n is read at every level below it as in `harmonics/readings.ts`:
@@ -10,10 +10,9 @@
  * Circuit B closing at level n + 2 is a harmonic of circuit A closing at
  * level n above level `floor` when the two run through the same child slots
  * (the same family) and B read at level k + 2 is A read at level k for every
- * k from `floor` up to A's top, and for at least A's top two levels. Read this way, the circuits of
- * 023468 / 140000001 fall into four chains whose members agree from A's
- * level 2 up and differ at levels 0 and 1, at every level built; `floor`
- * defaults to 2.
+ * k from `floor` up to A's top, and for at least A's top two levels. In
+ * 023468 / 140000001 every pair agrees from A's level 2 up and differs at
+ * levels 0 and 1; other combinations need a floor of 1, 3 or 4.
  *
  * A circuit closing at a level is one of three things:
  *
@@ -23,9 +22,9 @@
  * - harmonic: a harmonic of a circuit closing two levels down;
  * - foundational: neither. A foundational circuit starts a chain.
  *
- * The account (`tileAccount`) splits the strand through every tile of a
- * level-n supertile into the circuits closed inside it, by the level they
- * close at and what they are, and the open arcs (tails) that leave it.
+ * `account` splits the chords of every level-n supertile into the circuits
+ * closed inside it, by the level they close at and what they are, and the
+ * open arcs (tails) that leave it.
  */
 import { buildSystem, circuitKey, connectionPoints, leafOrder, type HexType, type MetaNode, type TileFamilyId } from '../../core';
 import { CircuitShapes, familyOf, placeOf, slotOf, type BornCircuit } from '../shapes/circuitShapes';
@@ -239,6 +238,12 @@ export interface Foundations {
   readonly lastNew: number;
 }
 
+/** Words and readings of the closings, kept between calls of `foundations` on the same renormalisation. */
+export interface FoundationsCache {
+  readonly words: Map<BornCircuit, string>;
+  readonly reads: Map<BornCircuit, TopReadings>;
+}
+
 /** What makes copies of a born circuit one closing: level, length, family and the cyclic sequence of child slots. */
 export const closingKey = (c: BornCircuit): string => `${c.level}/${c.length}/${familyOf(c)}/${canonicalCycle(c.steps.map(slotOf)).join('')}`;
 
@@ -268,7 +273,7 @@ interface Group {
  * read (the Delta's when there is one). Two circuits are compared by their
  * words when one is at most `wordCap` tiles.
  */
-export function foundations(cs: CircuitShapes, opts: { floor?: number; maxRaw?: number; wordCap?: number } = {}): Foundations {
+export function foundations(cs: CircuitShapes, opts: { floor?: number; maxRaw?: number; wordCap?: number; cache?: FoundationsCache } = {}): Foundations {
   const floor = opts.floor ?? 2;
   const maxRaw = opts.maxRaw ?? 3e6;
   const wordCap = opts.wordCap ?? 4e6;
@@ -281,8 +286,8 @@ export function foundations(cs: CircuitShapes, opts: { floor?: number; maxRaw?: 
     if (c.type === 'Delta' && g.rep.type !== 'Delta') g.rep = c;
   }
   const list = [...groups.values()].sort((a, b) => a.level - b.level || a.length - b.length || a.family.localeCompare(b.family));
-  const words = new Map<Group, string>();
-  const wordOf = (g: Group): string => words.get(g) ?? words.set(g, circuitKey(cs.word(g.rep))).get(g)!;
+  const cache = opts.cache ?? { words: new Map(), reads: new Map() };
+  const wordOf = (g: Group): string => cache.words.get(g.rep) ?? cache.words.set(g.rep, circuitKey(cs.word(g.rep))).get(g.rep)!;
   const reads = new Map<Group, TopReadings>();
   const out: Closing[] = [];
   list.forEach((g, id) => {
@@ -294,7 +299,8 @@ export function foundations(cs: CircuitShapes, opts: { floor?: number; maxRaw?: 
         if (e.level < g.level && e.length === g.length && wordOf(e) === wordOf(g)) of = out[j].status === 'reborn' ? out[j].of! : j;
       }
     }
-    const r = readCircuit(cs, g.rep, 0, maxRaw, floor + 2);
+    let r = cache.reads.get(g.rep);
+    if (!r || r.lowest > floor + 2) cache.reads.set(g.rep, (r = readCircuit(cs, g.rep, 0, maxRaw, floor + 2)));
     reads.set(g, r);
     const base = { id, key: g.key, level: g.level, length: g.length, family: g.family, steps: g.steps, copies: g.copies, visits: r.raw, lowest: r.lowest };
     if (of >= 0) {
@@ -314,25 +320,26 @@ export function foundations(cs: CircuitShapes, opts: { floor?: number; maxRaw?: 
   return { levels: cs.maxLevel, floor, closings: out, lastNew };
 }
 
-/** A closing as a born circuit to read: the walk `walkAbove` found, at the level above the top built. */
-export function bornAbove(cs: CircuitShapes, type: string, walk: { steps: number[]; length: number }): BornCircuit {
+/** A closed walk `walkAbove` found, as a circuit closing at `level` in a supertile of `type`. */
+export function bornAbove(level: number, type: string, walk: { steps: number[]; length: number }): BornCircuit {
   const slots: number[] = [];
   for (const s of walk.steps) if (!slots.includes(slotOf(s))) slots.push(slotOf(s));
-  return { level: cs.maxLevel + 1, type: type as never, length: walk.length, slots, steps: walk.steps };
+  return { level, type: type as never, length: walk.length, slots, steps: walk.steps };
 }
 
 /**
- * The harmonic of a born circuit A, two levels up, found before that level is
- * built (`cs` built to A's level + 1). A read at level `floor` runs first
- * through the level-`floor` supertile at slot path P from its supertile; its
- * harmonic runs through the level-(floor + 2) supertile at the same path in a
+ * The harmonic of a born circuit A, two levels up, from the tables up to one
+ * level above A alone: nothing of the level the harmonic closes at is read,
+ * so it may be built or not. A read at level `floor` runs first through the
+ * level-`floor` supertile at slot path P from its supertile; its harmonic
+ * runs through the level-(floor + 2) supertile at the same path in a
  * supertile of A's type two levels up. Every arc of the child at P's first
  * slot that passes through that supertile is followed through the children
- * (`walkAbove`); the closed walks through the same children as A that
- * read as A from `floor` up are the predictions.
+ * (`walkAbove`); the closed walks through the same children as A that read
+ * as A from `floor` up are the predictions.
  */
 export function predictHarmonic(cs: CircuitShapes, a: BornCircuit, floor: number, maxRaw = 3e6): { predicted: BornCircuit[]; tried: number; reading: TopReadings } {
-  if (cs.maxLevel !== a.level + 1) throw new Error(`predicting from level ${a.level} needs the build at level ${a.level + 1}`);
+  if (cs.maxLevel < a.level + 1) throw new Error(`predicting from level ${a.level} needs the build at level ${a.level + 1}`);
   const ra = readCircuit(cs, a, floor, maxRaw);
   // A's first visit at level `floor`: its slots from the birth down
   const path: number[] = [];
@@ -372,10 +379,10 @@ export function predictHarmonic(cs: CircuitShapes, a: BornCircuit, floor: number
     if (m < 0 || m < k || seen.has(k)) continue;
     if (!passes(top - 1, typeIndex.get(child)!, k, 1)) continue;
     tried++;
-    const w = cs.walkAbove(a.type, k * 8 + path[0]);
+    const w = cs.walkAbove(a.type, k * 8 + path[0], top - 1);
     for (const s of w.steps) if (slotOf(s) === path[0]) { seen.add(placeOf(s)); seen.add(cs.levels[top - 1][child].mate(placeOf(s))); }
     if (!w.closed) continue;
-    const b = bornAbove(cs, a.type, w);
+    const b = bornAbove(top, a.type, w);
     const rb = readCircuit(cs, b, floor + 2, maxRaw);
     const { floor: f } = agreement(ra, a.level, rb);
     if (familyOf(b) === familyOf(a) && isHarmonic(f, a.level, floor)) predicted.push(b);

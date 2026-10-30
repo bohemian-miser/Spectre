@@ -207,6 +207,8 @@ export class CircuitShapes {
   }
   /** The top level's crossings on each edge of each type, in order round the supertile: what the next level is glued by. */
   private rows: Record<string, Int32Array[]> = {};
+  /** `rows` at every level built. */
+  private readonly rowsAt: Record<string, Int32Array[]>[] = [];
 
   /** The highest level built so far; `extend` adds levels above it. */
   maxLevel = 0;
@@ -236,6 +238,7 @@ export class CircuitShapes {
         mate[edges[b]] = edges[a];
       }
       this.rows[t] = Array.from({ length: 6 }, (_, j) => Int32Array.from(edges.includes(j) ? [j] : []));
+      this.rowsAt[0] = this.rows;
       const places = Int32Array.from([...edges].sort((x, y) => x - y));
       return {
         type: t,
@@ -339,7 +342,7 @@ export class CircuitShapes {
       const built: Built[] = [];
       const rows: Record<string, Int32Array[]> = {};
       for (const [t, node] of Object.entries(sys)) {
-        const { kids, childAt, tables, total, across } = this.glue(t, node as MetaNode);
+        const { kids, childAt, tables, total, across } = this.glue(t, node as MetaNode, n - 1);
         const outer: number[] = [];
         tables.forEach((T, ci) => {
           for (let q = 0; q < Q; q++) if (T.has(q) && across[ci * Q + q] < 0) outer.push(ci * Q + q);
@@ -447,20 +450,20 @@ export class CircuitShapes {
           }
         }
       }
-      this.rows = rows;
+      this.rows = this.rowsAt[n] = rows;
       this.levels.push(this.share(n, Int32Array.from(under), built, this.placer(n)));
       this.maxLevel = n;
     }
   }
 
   /**
-   * The children of a supertile one level above the top built, with the top
-   * level's tables: child crossing g is `child * Q + its place`, and
-   * `across[g]` is the crossing of the neighbouring child it is glued to (-1
-   * on the outline).
+   * The children of a level-(below + 1) supertile, with the level-`below`
+   * tables: child crossing g is `child * Q + its place`, and `across[g]` is
+   * the crossing of the neighbouring child it is glued to (-1 on the outline).
    */
-  private glue(t: string, node: MetaNode) {
-    const prev = this.levels[this.maxLevel];
+  private glue(t: string, node: MetaNode, below: number) {
+    const prev = this.levels[below];
+    const rowsBelow = this.rowsAt[below];
     const Q = Object.values(prev)[0].size;
     const kids = node.children;
     const childAt = new Int32Array(8).fill(-1);
@@ -471,8 +474,8 @@ export class CircuitShapes {
     // two children glued along an edge meet crossing for crossing, in reverse order
     for (const [a, b] of gluedPairs(t as HexType)) {
       const ca = childAt[a.s], cb = childAt[b.s];
-      const A = this.rows[kids[ca].node.type][a.e];
-      const B = this.rows[kids[cb].node.type][b.e];
+      const A = rowsBelow[kids[ca].node.type][a.e];
+      const B = rowsBelow[kids[cb].node.type][b.e];
       if (A.length !== B.length) throw new Error(`${t} glues ${A.length} crossings to ${B.length}`);
       for (let i = 0, m = A.length; i < m; i++) {
         const x = ca * Q + A[i], y = cb * Q + B[m - 1 - i];
@@ -485,17 +488,18 @@ export class CircuitShapes {
 
   /**
    * The strand through child crossing `step` (`childPlace * 8 + slot`) of a
-   * supertile of `type` one level above the top built, followed through the
-   * children without building that level: the child crossings it enters, the
-   * tiles on the way, and whether it closes inside the supertile. An open
-   * strand is followed from `step` until it reaches the outline.
+   * level-(below + 1) supertile of `type`, followed through its children from
+   * the level-`below` tables alone, so `below` may be the top level built: the
+   * child crossings it enters, the tiles on the way, and whether it closes
+   * inside the supertile. An open strand is followed from `step` until it
+   * reaches the outline.
    */
-  walkAbove(type: string, step: number): { closed: boolean; steps: number[]; length: number } {
-    const key = `${this.maxLevel}/${type}`;
+  walkAbove(type: string, step: number, below = this.maxLevel): { closed: boolean; steps: number[]; length: number } {
+    const key = `${below}/${type}`;
     let glued = this.glued.get(key);
     if (!glued) {
       this.glued.clear();
-      glued = this.glue(type, buildSystem(this.family, this.maxLevel + 1)[type] as MetaNode);
+      glued = this.glue(type, buildSystem(this.family, below + 1)[type] as MetaNode, below);
       this.glued.set(key, glued);
     }
     const { kids, childAt, tables, across, Q } = glued;

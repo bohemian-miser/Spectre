@@ -2,13 +2,16 @@
  * The foundational circuits of every combination of a hexagon rule
  * (`src/pages/foundations/foundations.ts`), written for a page to show.
  *
- * Per combination, building up one level at a time: before level n + 1 is
- * built, each circuit closing at level n - 1 has its harmonic predicted
- * (`predictHarmonic`); once built, every closing is sorted into
- * foundational, harmonic and reborn, every prediction is checked against the
- * build, and every chord of every supertile is accounted for, by status and
- * by chain. The predictions from the top level's closings are kept as a
- * forecast of the level above.
+ * Per combination: every closing is sorted into foundational, harmonic and
+ * reborn at each floor of `FLOORS`, and the combination's floor is the lowest
+ * after which its top two levels close nothing foundational (or, when none
+ * does, the one with the earliest last foundational closing, marked
+ * unsettled). At that floor each closing that repeats nothing has its
+ * harmonic predicted from the tables up to one level above it
+ * (`predictHarmonic`) and the prediction is looked up among the closings
+ * two levels up; predictions from the top level's closings are kept as a
+ * forecast of the level above. Every chord of every supertile is accounted
+ * for, by status and by chain.
  *
  *   node --max-old-space-size=12000 node_modules/.bin/vite-node circuit-classes/foundations-sweep.ts -- 023468 9 [shard shards] [combo,...]
  *
@@ -38,7 +41,8 @@ const shard = Number(args[2] ?? 0), shards = Number(args[3] ?? 1);
 const only = args[4]?.split(',');
 const subset = [...rule].map(Number);
 const L = Number(lvArg);
-const FLOOR = 2;
+/** The floors tried; a combination's floor is the lowest after which its top two levels close nothing foundational. */
+const FLOORS = [1, 2, 3, 4];
 
 const counts = comboOptionCounts('hex', subset);
 const combos: string[] = [];
@@ -51,6 +55,7 @@ const outDir = resolve(__dirname, `../public/data/foundations/hex-${rule}`);
 mkdirSync(outDir, { recursive: true });
 
 interface Prediction {
+  floor: number;
   /** The closing predicted from, and the type it was read in. */
   from: string;
   type: string;
@@ -80,34 +85,33 @@ const weighted = (rows: AccountRow[], level: number) => {
 combos.forEach((combo, ci) => {
   if (ci % shards !== shard || (only && !only.includes(combo))) return;
   const t0 = Date.now();
-  const cs = buildShapes(subset, combo, 1);
-  const predictions: Prediction[] = [];
-  const seenLengths = new Set<number>();
-  for (let n = 1; n < L; n++) {
-    // closings at level n, one per closing (a Delta's when there is one), before level n + 1 is built
-    cs.extend(n + 1);
-    const reps = new Map<string, BornCircuit>();
-    for (const c of cs.born) {
-      if (c.level !== n || seenLengths.has(c.length)) continue;
-      const k = closingKey(c);
-      if (!reps.has(k) || c.type === 'Delta') reps.set(k, c);
-    }
-    for (const c of cs.born) if (c.level === n) seenLengths.add(c.length);
-    for (const [k, a] of reps) {
-      if (n < FLOOR + 1) continue;
-      const tp = Date.now();
-      const p = predictHarmonic(cs, a, FLOOR);
-      if (process.env.FOUNDATIONS_TRACE) console.log(`  predict ${k} in ${a.type}: ${(Date.now() - tp) / 1000}s, ${p.tried} arcs`);
-      predictions.push({
-        from: k, type: a.type, level: n,
-        walks: p.predicted.sort((x, y) => y.length - x.length).map((b) => ({ key: closingKey(b), length: b.length, steps: b.steps.length, seams: seamCrossings(b) })),
-        tried: p.tried,
-      });
-    }
-  }
+  const cs = buildShapes(subset, combo, L);
   const built = (Date.now() - t0) / 1000;
-  const f = foundations(cs, { floor: FLOOR });
+  const cache = { words: new Map(), reads: new Map() };
+  const byFloor = FLOORS.map((floor) => foundations(cs, { floor, cache }));
+  const settledAt = byFloor.findIndex((x) => x.lastNew <= L - 2);
+  const pick = settledAt >= 0 ? settledAt : byFloor.reduce((b, x, i) => (x.lastNew < byFloor[b].lastNew ? i : b), 0);
+  const f = byFloor[pick];
+  const FLOOR = f.floor;
   const byKey = new Map(f.closings.map((c) => [c.key, c] as const));
+  // each closing that repeats nothing, predicted two levels up from the tables up to one level above it
+  const predictions: Prediction[] = [];
+  const reps = new Map<string, BornCircuit>();
+  for (const c of cs.born) {
+    const k = closingKey(c);
+    if (byKey.get(k)?.status === 'reborn' || c.level < FLOOR + 2 || c.level + 1 > L) continue;
+    if (!reps.has(k) || c.type === 'Delta') reps.set(k, c);
+  }
+  for (const [k, a] of reps) {
+    const tp = Date.now();
+    const p = predictHarmonic(cs, a, FLOOR);
+    if (process.env.FOUNDATIONS_TRACE) console.log(`  predict ${k} in ${a.type}: ${(Date.now() - tp) / 1000}s, ${p.tried} arcs`);
+    predictions.push({
+      floor: FLOOR, from: k, type: a.type, level: a.level,
+      walks: p.predicted.sort((x, y) => y.length - x.length).map((b) => ({ key: closingKey(b), length: b.length, steps: b.steps.length, seams: seamCrossings(b) })),
+      tried: p.tried,
+    });
+  }
   const checked = predictions.map((p) => {
     const a = byKey.get(p.from);
     const top = p.walks[0];
@@ -125,7 +129,9 @@ combos.forEach((combo, ci) => {
   const levels = Array.from({ length: L + 1 }, (_, n) => n);
   const arcs = longestArcs(cs);
   const out = {
-    family: 'hex', rule, combo, levels: L, floor: FLOOR, lastNew: f.lastNew,
+    family: 'hex', rule, combo, levels: L, floor: FLOOR, settled: settledAt >= 0, lastNew: f.lastNew,
+    /** Per floor tried: the last level with a foundational closing, and how many foundational closings. */
+    floors: byFloor.map((x) => ({ floor: x.floor, lastNew: x.lastNew, foundational: x.closings.filter((c) => c.status === 'foundational').length })),
     seconds: { build: built, total: (Date.now() - t0) / 1000 },
     closings: f.closings.filter((c) => c.status !== 'reborn').map((c) => ({
       id: c.id, level: c.level, length: c.length, family: c.family, steps: c.steps, status: c.status, of: c.of, floor: c.floor, root: c.root,
@@ -160,5 +166,5 @@ combos.forEach((combo, ci) => {
   writeFileSync(resolve(outDir, `${combo}.json`), JSON.stringify(out));
   const verdicts = checked.reduce<Record<string, number>>((m, p) => ((m[p.verdict] = (m[p.verdict] ?? 0) + 1), m), {});
   const fnd = f.closings.filter((c) => c.status === 'foundational');
-  console.log(`${combo} lastNew=${f.lastNew} foundational=${fnd.length} closings=${f.closings.length} tails@${L}=${out.account.byStatus[L].tails.toFixed(4)} predictions=${JSON.stringify(verdicts)} ${out.seconds.total.toFixed(1)}s`);
+  console.log(`${combo} floor=${FLOOR}${settledAt >= 0 ? '' : ' unsettled'} lastNew=${f.lastNew} foundational=${fnd.length} closings=${f.closings.length} tails@${L}=${out.account.byStatus[L].tails.toFixed(4)} predictions=${JSON.stringify(verdicts)} ${out.seconds.total.toFixed(1)}s`);
 });

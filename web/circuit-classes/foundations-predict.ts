@@ -17,7 +17,7 @@
 import { writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { familyOf, type BornCircuit } from '../src/pages/shapes/circuitShapes';
-import { agreement, buildShapes, closingKey, foundations, predictHarmonic, readCircuit, seamCrossings } from '../src/pages/foundations/foundations';
+import { agreement, buildShapes, closingKey, foundations, predictHarmonic, readCircuit, seamCrossings, tileAccount } from '../src/pages/foundations/foundations';
 
 const args = process.argv.slice(2).filter((a) => a !== '--');
 const [rule, combo, lvArg] = args;
@@ -38,7 +38,22 @@ interface Row {
   built: 'closes there' | 'not among the closings' | 'not built';
   status: string | null;
   seconds: number;
+  /** Copies of the circuit predicted from in a Delta supertile. */
+  copies: number;
 }
+
+/** A level of a Delta supertile: its room (the children's tails), what closes there, the chords the predictions say harmonics take, and the tails left. */
+interface LevelRow {
+  level: number;
+  chords: number;
+  room: number;
+  predictedHarmonic: number;
+  harmonic: number;
+  reborn: number;
+  foundational: number;
+  tails: number;
+}
+const levelRows: LevelRow[] = [];
 
 const cs = buildShapes(subset, combo, 2);
 const rows: Row[] = [];
@@ -53,7 +68,7 @@ for (let n = 2; n + 2 <= L; n++) {
   }
   for (const c of cs.born) if (c.level === n) seen.add(c.length);
   const pending: { row: Row; key: string | null }[] = [];
-  for (const a of reps.values()) {
+  for (const a of [...reps.values()].filter((x) => x.type === 'Delta')) {
     if (n <= FLOOR) continue;
     const t0 = Date.now();
     const p = predictHarmonic(cs, a, FLOOR);
@@ -68,7 +83,7 @@ for (let n = 2; n + 2 <= L; n++) {
     const row: Row = {
       fromLevel: n, fromLength: a.length, family: familyOf(a), type: a.type,
       predicted: b ? { length: b.length, steps: b.steps.length, seams: seamCrossings(b) } : null,
-      floor, visits, built: 'not built', status: null, seconds: (Date.now() - t0) / 1000,
+      floor, visits, built: 'not built', status: null, seconds: (Date.now() - t0) / 1000, copies: cs.copiesOf(a),
     };
     pending.push({ row, key: b ? closingKey(b) : null });
     rows.push(row);
@@ -77,6 +92,13 @@ for (let n = 2; n + 2 <= L; n++) {
   cs.extend(n + 2);
   const f = foundations(cs, { floor: FLOOR });
   const byKey = new Map(f.closings.map((c) => [c.key, c] as const));
+  const acc = tileAccount(cs, f).find((r) => r.level === n + 2 && r.type === 'Delta')!;
+  levelRows.push({
+    level: n + 2, chords: acc.chords, room: acc.room,
+    predictedHarmonic: pending.reduce((s, { row }) => s + (row.predicted ? row.predicted.length * row.copies : 0), 0),
+    harmonic: acc.closedHere.harmonic ?? 0, reborn: acc.closedHere.reborn ?? 0, foundational: acc.closedHere.foundational ?? 0, tails: acc.tails,
+  });
+  console.log(`  Delta at ${n + 2}: room ${acc.room}, harmonics predicted ${levelRows[levelRows.length - 1].predictedHarmonic}, built ${acc.closedHere.harmonic}, reborn ${acc.closedHere.reborn}, new ${acc.closedHere.foundational}, tails ${acc.tails}`);
   for (const { row, key } of pending) {
     const c = key ? byKey.get(key) : undefined;
     row.built = c ? 'closes there' : 'not among the closings';
@@ -84,4 +106,4 @@ for (let n = 2; n + 2 <= L; n++) {
     console.log(`  ${row.fromLength}@${n} ${row.family} -> ${row.predicted ? `${row.predicted.length} tiles, ${row.predicted.steps} steps` : 'none'}: ${row.built}${c ? ` (${c.status})` : ''}, agrees from level ${row.floor} of ${n}`);
   }
 }
-writeFileSync(resolve(__dirname, `../public/data/foundations/hex-${rule}/${combo}-predicted.json`), JSON.stringify({ family: 'hex', rule, combo, floor: FLOOR, levels: L, rows }));
+writeFileSync(resolve(__dirname, `../public/data/foundations/hex-${rule}/${combo}-predicted.json`), JSON.stringify({ family: 'hex', rule, combo, floor: FLOOR, levels: L, rows, levelRows }));
