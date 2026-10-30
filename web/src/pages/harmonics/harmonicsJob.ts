@@ -7,6 +7,7 @@
  */
 import type { TileFamilyId } from '../../core';
 import { CircuitShapes, distinctCircuits, familyOf, type BornCircuit } from '../shapes/circuitShapes';
+import { expansion, pairPicture, ROW_SHOWN, type Expansion, type PairPicture } from './pairView';
 import { alignReadings, extraRuns, lineages, readDown, sameCyclic, type Alignment, type Lineage, type Reading } from './readings';
 
 export interface HarmonicsJob {
@@ -51,7 +52,7 @@ export class HarmonicsEngine {
   private readonly cs: CircuitShapes;
   private readonly cache = new Map<string, CircuitInfo>();
   /** The circuits of the level last read, in the order of the result. */
-  private circuits: { level: number; list: CircuitInfo[] } | null = null;
+  private circuits: { level: number; list: CircuitInfo[]; born: BornCircuit[] } | null = null;
   private last: HarmonicsResult | null = null;
   private seconds = 0;
 
@@ -107,12 +108,26 @@ export class HarmonicsEngine {
   /** The distinct circuits up to the level built, shortest first, worked out once per level. */
   private list(): CircuitInfo[] {
     if (this.circuits?.level !== this.cs.maxLevel) {
-      const list = distinctCircuits(this.cs, 1)
-        .map((d) => this.info(d.circuit))
-        .sort((a, b) => a.length - b.length || a.level - b.level);
-      this.circuits = { level: this.cs.maxLevel, list };
+      const pairs = distinctCircuits(this.cs, 1)
+        .map((d) => ({ info: this.info(d.circuit), born: d.circuit }))
+        .sort((a, b) => a.info.length - b.info.length || a.info.level - b.info.level);
+      this.circuits = { level: this.cs.maxLevel, list: pairs.map((p) => p.info), born: pairs.map((p) => p.born) };
     }
     return this.circuits.list;
+  }
+
+  /** Circuits `ai` (A, at level k) and `bi` (B, at level k + offset) of the last result over their supertiles. */
+  picture(ai: number, bi: number, k: number): PairPicture {
+    const list = this.list();
+    const born = this.circuits!.born;
+    return pairPicture(this.cs, { circuit: born[ai], readings: list[ai].readings }, { circuit: born[bi], readings: list[bi].readings }, k);
+  }
+
+  /** Circuits `ai` and `bi` of the last result expanded from their birth supertiles, `depth` levels down. */
+  expansion(ai: number, bi: number, depth: number): Expansion {
+    this.list();
+    const born = this.circuits!.born;
+    return expansion(this.cs, born[ai], born[bi], depth, ROW_SHOWN);
   }
 
   /** Circuits `ai` and `bi` of the last result lined up, B's level k + offset against A's level k. */
@@ -170,7 +185,12 @@ export interface Comparison {
   }[];
 }
 
-export type WorkerMessage = { type: 'start'; job: HarmonicsJob } | { type: 'next' } | { type: 'compare'; a: number; b: number };
+export type WorkerMessage =
+  | { type: 'start'; job: HarmonicsJob }
+  | { type: 'next' }
+  | { type: 'compare'; a: number; b: number }
+  | { type: 'picture'; a: number; b: number; k: number }
+  | { type: 'expansion'; a: number; b: number; depth: number };
 
 export interface HarmonicsClient {
   /** Starts a combination afresh. */
@@ -179,6 +199,10 @@ export interface HarmonicsClient {
   next(): Promise<HarmonicsResult>;
   /** Two circuits of the last result lined up. */
   compare(a: number, b: number): Promise<Comparison>;
+  /** Two circuits of the last result over their supertiles, A at level k. */
+  picture(a: number, b: number, k: number): Promise<PairPicture>;
+  /** Two circuits of the last result expanded from their birth supertiles. */
+  expansion(a: number, b: number, depth: number): Promise<Expansion>;
   dispose(): void;
 }
 
@@ -232,6 +256,14 @@ export function createHarmonicsClient(opts: { forceSync?: boolean } = {}): Harmo
     compare(a, b) {
       if (!worker) return sync(() => need().compare(a, b));
       return ask({ type: 'compare', a, b });
+    },
+    picture(a, b, k) {
+      if (!worker) return sync(() => need().picture(a, b, k));
+      return ask({ type: 'picture', a, b, k });
+    },
+    expansion(a, b, depth) {
+      if (!worker) return sync(() => need().expansion(a, b, depth));
+      return ask({ type: 'expansion', a, b, depth });
     },
     dispose() {
       worker?.terminate();

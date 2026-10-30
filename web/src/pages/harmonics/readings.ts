@@ -126,33 +126,61 @@ export interface Reading {
 /**
  * The raw visits at one level, as columns: the arc through the supertile
  * (its type and the place entered), the supertile's slot path from the birth
- * supertile down as one number (base 8), its slot, its parent's type, and
- * the tiles on the arc.
+ * supertile down as one number (base 8), its slot, its parent's type, the
+ * tiles on the arc, and the visit of the level above it came from.
  */
-interface VisitColumns {
+export interface VisitColumns {
+  readonly level: number;
   readonly type: string[];
   readonly cross: number[];
   readonly id: number[];
   readonly slot: number[];
   readonly parent: string[];
   readonly tiles: number[];
+  readonly up: number[];
+}
+
+const noVisits = (level: number): VisitColumns => ({ level, type: [], cross: [], id: [], slot: [], parent: [], tiles: [], up: [] });
+
+/** The visits of a born circuit at the level below its birth: the children of the birth supertile it runs through, in order. */
+export function topVisits(cs: CircuitShapes, c: BornCircuit): VisitColumns {
+  const v = noVisits(c.level - 1);
+  for (const s of c.steps) {
+    const ch = cs.childOf(c.level, c.type, s);
+    v.type.push(ch.type);
+    v.cross.push(ch.k);
+    v.id.push(ch.pos);
+    v.slot.push(ch.pos);
+    v.parent.push(c.type);
+    v.tiles.push(cs.levels[v.level][ch.type].len(ch.k));
+    v.up.push(-1);
+  }
+  return v;
 }
 
 /** The visits of the level below: each arc's route through the children of its supertile. */
-function expand(cs: CircuitShapes, n: number, v: VisitColumns): VisitColumns {
-  const out: VisitColumns = { type: [], cross: [], id: [], slot: [], parent: [], tiles: [] };
-  const below = cs.levels[n - 1];
+export function expandVisits(cs: CircuitShapes, v: VisitColumns): VisitColumns {
+  const out = noVisits(v.level - 1);
+  const below = cs.levels[out.level];
   for (let i = 0; i < v.type.length; i++) {
-    for (const e of cs.enters(n, v.type[i], v.cross[i])) {
+    for (const e of cs.enters(v.level, v.type[i], v.cross[i])) {
       out.type.push(e.type);
       out.cross.push(e.k);
       out.id.push(v.id[i] * 8 + e.slot);
       out.slot.push(e.slot);
       out.parent.push(v.type[i]);
       out.tiles.push(below[e.type].len(e.k));
+      out.up.push(i);
     }
   }
   return out;
+}
+
+/** The slot path a visit's id stands for, from the birth supertile down (`1.7.0`). */
+export function pathOf(id: number, depth: number): string {
+  const slots: number[] = [];
+  for (let d = 0; d < depth; d++, id = Math.floor(id / 8)) slots.unshift(id % 8);
+  return slots.join('.');
 }
 
 /**
@@ -165,18 +193,9 @@ export function readDown(cs: CircuitShapes, c: BornCircuit, stopAbove = Infinity
   const names = new Map<string, string>();
   const name = (t: string): string => names.get(t) ?? (names.set(t, t), t);
   let k = c.level - 1;
-  let v: VisitColumns = { type: [], cross: [], id: [], slot: [], parent: [], tiles: [] };
-  for (const s of c.steps) {
-    const ch = cs.childOf(c.level, c.type, s);
-    v.type.push(ch.type);
-    v.cross.push(ch.k);
-    v.id.push(ch.pos);
-    v.slot.push(ch.pos);
-    v.parent.push(c.type);
-    v.tiles.push(cs.levels[k][ch.type].len(ch.k));
-  }
+  let v = topVisits(cs, c);
   for (; k >= 0; k--) {
-    if (k < c.level - 1) v = expand(cs, k + 1, v);
+    if (k < c.level - 1) v = expandVisits(cs, v);
     const cut = cancelBacktracksAt(v.id, v.tiles);
     const at = v;
     const tokens = Array.from(cut.keep, (i) => name(token({ id: '', type: at.type[i], slot: at.slot[i], parent: at.parent[i], tiles: 0 }, k, c.level)));

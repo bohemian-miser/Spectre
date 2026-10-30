@@ -18,6 +18,7 @@ import {
   enumerateMatchings,
   gluedPairs,
   leafOrder,
+  leafPts,
   mul,
   nonCrossingForTile,
   slotsOfType,
@@ -210,6 +211,9 @@ export class CircuitShapes {
   private readonly bornAt = new Map<string, number>();
   /** rows[n][type][edge]: a level-n type's places on each edge, in order round the supertile; what level n + 1 is glued by. */
   private readonly rows: Record<string, Int32Array[]>[] = [{}];
+  /** Per level, each type's border crossings on each edge, in order, at most `BORDER_SAMPLES` of them evenly spaced: what outlines are drawn through. */
+  private readonly borders: Record<string, Int32Array[]>[] = [];
+  private readonly corners = new Map<string, Pt>();
 
   /** The highest level built so far; `extend` adds levels above it. */
   maxLevel = 0;
@@ -255,6 +259,7 @@ export class CircuitShapes {
       };
     });
     this.levels.push(this.share(0, Int32Array.from([0, 1, 2, 3, 4, 5]), built, (p) => corners[p]));
+    this.borders.push(sampleRows(this.rows[0]));
     this.extend(maxLevel);
   }
 
@@ -468,6 +473,7 @@ export class CircuitShapes {
         }
       }
       this.rows.push(rows);
+      this.borders.push(sampleRows(rows));
       this.levels.push(this.share(n, Int32Array.from(under), built, this.placer(n)));
       this.maxLevel = n;
     }
@@ -545,6 +551,40 @@ export class CircuitShapes {
     for (const s of c.steps) {
       const ch = this.childOf(c.level, c.type, s);
       this.letters(c.level - 1, ch.type, ch.k, out);
+    }
+    return out;
+  }
+
+  /**
+   * Corner j of a level-n supertile of `type`, where its edge j starts, in
+   * its frame: the corner of the child its edge j starts on, where that
+   * child's edge (run backwards, the child being mirrored) ends.
+   */
+  corner(n: number, type: string, j: number): Pt {
+    if (n === 0) return leafPts(this.family, type as TileTypeId)[j];
+    const key = `${n}/${type}/${j}`;
+    const hit = this.corners.get(key);
+    if (hit) return hit;
+    const part = edgeParts(type as HexType, j)[0];
+    const ch = this.kidsAt(n, type)[part.s];
+    const p = transPt(ch.xform as Affine, this.corner(n - 1, ch.node.type, (part.e + 1) % 6));
+    this.corners.set(key, p);
+    return p;
+  }
+
+  /**
+   * The outline of a level-n supertile of `type`, in its frame: each corner
+   * followed by crossings on the edge it starts (at most `BORDER_SAMPLES`,
+   * evenly spaced), all of them points of the supertile's border. A
+   * neighbour sharing an edge passes through the same points.
+   */
+  outline(n: number, type: string): Pt[] {
+    const T = this.levels[n][type];
+    const rows = this.borders[n][type];
+    const out: Pt[] = [];
+    for (let j = 0; j < 6; j++) {
+      out.push(this.corner(n, type, j));
+      for (const p of rows[j]) out.push(T.pts[p]);
     }
     return out;
   }
@@ -726,6 +766,22 @@ export class CircuitShapes {
  * over consecutive tiles; the first and the last midpoint.
  */
 const SUMS = 11;
+
+/** Crossings kept per edge of a supertile for drawing its outline. */
+const BORDER_SAMPLES = 12;
+
+/** Each row cut to at most `BORDER_SAMPLES` crossings, evenly spaced and both ends kept, so a row and its reverse keep the same ones. */
+function sampleRows(rows: Record<string, Int32Array[]>): Record<string, Int32Array[]> {
+  const out: Record<string, Int32Array[]> = {};
+  for (const [t, edges] of Object.entries(rows)) {
+    out[t] = edges.map((row) => {
+      const m = row.length;
+      if (m <= BORDER_SAMPLES) return row;
+      return Int32Array.from({ length: BORDER_SAMPLES }, (_, i) => row[Math.round((i * (m - 1)) / (BORDER_SAMPLES - 1))]);
+    });
+  }
+  return out;
+}
 
 const cross = (px: number, py: number, qx: number, qy: number): number => px * qy - py * qx;
 

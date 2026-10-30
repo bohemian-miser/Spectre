@@ -135,3 +135,94 @@
 .harm-related {
   border-style: dashed;
 }
+
+/* A circuit beside its partner, supertile for supertile. */
+.harm-supertiles h3,
+.harm-expansion h3 {
+  margin: 18px 0 6px;
+}
+.harm-slider {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  font-size: 13px;
+}
+.harm-side {
+  margin: 0;
+  display: grid;
+  gap: 4px;
+  width: min(340px, 100%);
+}
+.harm-side svg {
+  width: 100%;
+  aspect-ratio: 1;
+}
+.harm-side-empty {
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  font-size: 12px;
+  color: var(--muted);
+  border: 1px dashed var(--line, #8884);
+  border-radius: 6px;
+  padding: 12px;
+}
+.harm-side figcaption {
+  font-size: 12px;
+  color: var(--muted);
+}
+.harm-st {
+  fill: color-mix(in srgb, var(--chip, #888) 30%, transparent);
+  stroke: color-mix(in srgb, var(--chip, #888) 80%, #000);
+  stroke-width: 0.6;
+}
+.harm-st-unshared {
+  fill: color-mix(in srgb, var(--chip, #888) 60%, transparent);
+  stroke: var(--g2);
+  stroke-width: 2.4;
+}
+.harm-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  font-size: 12px;
+  margin: 4px 0;
+}
+.harm-xgrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 18px minmax(0, 1fr);
+  gap: 6px 8px;
+  font-size: 12px;
+}
+.harm-xline {
+  display: contents;
+}
+.harm-xcol-head,
+.harm-xhead {
+  color: var(--muted);
+}
+.harm-xhead {
+  margin-bottom: 2px;
+}
+.harm-xchip {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.harm-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+}
+.harm-x-cancelled {
+  opacity: 0.4;
+}
+.harm-xnew {
+  margin-left: 8px;
+}
+.harm-xbirth {
+  font-weight: 600;
+}
