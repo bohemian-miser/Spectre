@@ -20,10 +20,8 @@ import {
   comboDigitChar,
   comboOptionCounts,
   connectionPoints,
-  enumerateMatchings,
   flatten,
   leafOrder,
-  nonCrossingForTile,
   transPt,
   type TileFamilyId,
   type TileTypeId,
@@ -86,7 +84,9 @@ export function supertilePatch(family: TileFamilyId, subset: readonly number[], 
   return { type, nTiles, tileType, tileOcc, occNode, across, outline, nNodes: firstOcc.length };
 }
 
-export { ruleOptions } from '../src/pages/shapes/circuitShapes';
+import { ruleOptions } from '../src/pages/shapes/circuitShapes';
+
+export { ruleOptions };
 
 /**
  * The boundary map of one pairing on one supertile: for each outline crossing

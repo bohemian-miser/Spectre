@@ -13,23 +13,14 @@
  * A crossing's address is the tile and edge it sits on: the slots from the
  * supertile down to that tile, and the tile's edge.
  */
-import { buildSystem, circuitKey, type Address, type HexType, type Link, type MetaNode, type Pt } from '../../core';
+import { circuitKey, type Address, type HexType, type Link, type Pt } from '../../core';
 import { familyOf, type BornCircuit, type CircuitShapes } from '../shapes/circuitShapes';
 
-interface Layer {
-  readonly pts: readonly Pt[];
-  readonly mate: Int32Array;
-  readonly arcLen: Float64Array;
-  readonly outlineChild: Int32Array;
-  readonly owner: Int32Array;
-  readonly local: Int32Array;
-}
-
-const layer = (cs: CircuitShapes, level: number, type: string): Layer => (cs.levels[level] as unknown as Record<string, Layer>)[type];
-
-/** A type's table at a level: its crossings (positions in its own frame) and each route as [from, to, tiles], once per pair. */
+/** A type's table at a level: its crossings (places of the level), where the level's places sit, and each route as [from, to, tiles], once per pair. */
 export interface Table {
   readonly type: HexType;
+  readonly crossings: Int32Array;
+  /** Every place of the level, in the frame the level's types share. */
   readonly pts: readonly Pt[];
   readonly routes: readonly (readonly [number, number, number])[];
 }
@@ -41,56 +32,59 @@ export interface Level {
   readonly groups: readonly (readonly HexType[])[];
 }
 
-/** Positions to 1/64 and the routes, as one list of integers. */
-const contentOf = (pts: readonly Pt[], routes: readonly (readonly [number, number, number])[]): Float64Array => {
-  const out = new Float64Array(2 * pts.length + 3 * routes.length + 1);
-  let i = 0;
-  for (const p of pts) { out[i++] = Math.round(p.x * 64); out[i++] = Math.round(p.y * 64); }
-  out[i++] = -1;
-  for (const r of routes) { out[i++] = r[0]; out[i++] = r[1]; out[i++] = r[2]; }
-  return out;
+const routesOf = (cs: CircuitShapes, level: number, type: string): [number, number, number][] => {
+  const T = cs.levels[level][type];
+  const routes: [number, number, number][] = [];
+  for (const k of T.crossings()) {
+    const m = T.mate(k);
+    if (m > k) routes.push([k, m, T.len(k)]);
+  }
+  return routes;
 };
 
 const hashOf = (xs: Float64Array): number => {
   let h = 2166136261;
-  for (let i = 0; i < xs.length; i++) h = Math.imul(h ^ (xs[i] | 0), 16777619);
+  for (let i = 0; i < xs.length; i++) h = Math.imul(h ^ xs[i], 16777619);
   return h >>> 0;
 };
 
-const sameContent = (a: Float64Array, b: Float64Array): boolean => a.length === b.length && a.every((x, i) => x === b[i]);
+/** The types with identical tables: the same places, joined the same way, through as many tiles. */
+export function groupsAt(cs: CircuitShapes, level: number): HexType[][] {
+  const byHash = new Map<number, { content: Float64Array; types: HexType[] }[]>();
+  for (const type of Object.keys(cs.levels[level]) as HexType[]) {
+    const crossings = cs.levels[level][type].crossings();
+    const routes = routesOf(cs, level, type);
+    const content = new Float64Array(crossings.length + 1 + 3 * routes.length);
+    content.set(crossings);
+    content[crossings.length] = -1;
+    routes.forEach((r, i) => content.set(r, crossings.length + 1 + 3 * i));
+    const h = hashOf(content);
+    const bucket = byHash.get(h) ?? byHash.set(h, []).get(h)!;
+    const same = bucket.find((g) => g.content.length === content.length && g.content.every((x, i) => x === content[i]));
+    if (same) same.types.push(type);
+    else bucket.push({ content, types: [type] });
+  }
+  return [...byHash.values()].flat().map((g) => g.types);
+}
 
 export function tablesAt(cs: CircuitShapes, level: number): Level {
   const types = Object.keys(cs.levels[level]) as HexType[];
-  // same crossings in the same places, joined the same way, through as many tiles
-  const byHash = new Map<number, { content: Float64Array; types: HexType[] }[]>();
-  const tables = types.map((type) => {
-    const L = layer(cs, level, type);
-    const routes: [number, number, number][] = [];
-    L.mate.forEach((m, i) => { if (m > i) routes.push([i, m, L.arcLen[i]]); });
-    const content = contentOf(L.pts, routes);
-    const bucket = byHash.get(hashOf(content)) ?? byHash.set(hashOf(content), []).get(hashOf(content))!;
-    const same = bucket.find((g) => sameContent(g.content, content));
-    if (same) same.types.push(type);
-    else bucket.push({ content, types: [type] });
-    return { type, pts: L.pts, routes };
-  });
-  return { level, tables, groups: [...byHash.values()].flat().map((g) => g.types) };
+  const tables = types.map((type) => ({ type, crossings: cs.levels[level][type].crossings(), pts: cs.levels[level][type].pts, routes: routesOf(cs, level, type) }));
+  return { level, tables, groups: groupsAt(cs, level) };
 }
 
 /** The tile and edge crossing k of a level-n supertile of this type sits on. */
 export function crossingAddress(cs: CircuitShapes, level: number, type: HexType, k: number): { address: Address; edge: number } {
   const links: Link[] = [];
   let t: string = type;
-  let i = k;
+  let p = k;
   for (let n = level; n > 0; n--) {
-    const L = layer(cs, n, t);
-    const g = L.outlineChild[i];
-    const child = (buildSystem(cs.family, n)[t] as MetaNode).children[L.owner[g]];
+    const child = cs.childOf(n, t, cs.levels[n][t].level.under[p]);
     links.unshift({ slot: child.pos, parent: t as HexType });
-    t = child.node.type;
-    i = L.local[g];
+    t = child.type;
+    p = child.k;
   }
-  return { address: { leaf: t as HexType, path: links }, edge: cs.crossingEdge(t, i) };
+  return { address: { leaf: t as HexType, path: links }, edge: cs.crossingEdge(t, p) };
 }
 
 /** A circuit closing at a level: the first of its kind kept, with the types it closed in and whether it closed lower down already. */

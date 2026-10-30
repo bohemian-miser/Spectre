@@ -19,7 +19,7 @@
  * which keeps every arc's route through its children, so a circuit born at
  * any level can be read without building a patch.
  */
-import { TYPE_PREFIX, buildSystem, type HexType, type MetaNode } from '../../core';
+import { TYPE_PREFIX, type HexType } from '../../core';
 import type { BornCircuit, CircuitShapes } from '../shapes/circuitShapes';
 
 /** Type names by their letters in a token. */
@@ -41,29 +41,15 @@ export interface Visit {
 export function visitsAt(cs: CircuitShapes, c: BornCircuit, k: number): Visit[] {
   const out: Visit[] = [];
   const descend = (n: number, type: string, cross: number, path: readonly number[], parent: string): void => {
-    const L = cs.levels[n][type];
     if (n <= k) {
-      out.push({ id: path.join('.'), type, slot: path[path.length - 1], parent, tiles: L.arcLen[cross] });
+      out.push({ id: path.join('.'), type, slot: path[path.length - 1], parent, tiles: cs.levels[n][type].len(cross) });
       return;
     }
-    const meta = buildSystem(cs.family, n)[type] as MetaNode;
-    const fwd = L.forward[cross] === 1;
-    const from = fwd ? cross : L.mate[cross];
-    const steps = L.routeSteps.subarray(L.routeStart[from], L.routeStart[from + 1]);
-    const enter = (i: number, reversed: boolean): void => {
-      const ch = meta.children[L.owner[i]];
-      const childType = ch.node.type;
-      const loc = reversed ? cs.levels[n - 1][childType].mate[L.local[i]] : L.local[i];
-      descend(n - 1, childType, loc, [...path, ch.pos], type);
-    };
-    if (fwd) for (const i of steps) enter(i, false);
-    else for (let q = steps.length - 1; q >= 0; q--) enter(steps[q], true);
+    for (const e of cs.enters(n, type, cross)) descend(n - 1, e.type, e.k, [...path, e.slot], type);
   };
-  const meta = buildSystem(cs.family, c.level)[c.type] as MetaNode;
-  const top = cs.levels[c.level][c.type];
-  for (const i of c.steps) {
-    const ch = meta.children[top.owner[i]];
-    descend(c.level - 1, ch.node.type, top.local[i], [ch.pos], c.type);
+  for (const s of c.steps) {
+    const ch = cs.childOf(c.level, c.type, s);
+    descend(c.level - 1, ch.type, ch.k, [ch.pos], c.type);
   }
   return out;
 }

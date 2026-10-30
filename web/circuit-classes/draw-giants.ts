@@ -31,7 +31,7 @@ for (const lv of [L, L - 2]) {
   shapes.push({ what: `largest circuit born in a level-${lv} Delta`, length: here[0].length, stop: s, pts: p.map((q) => [q.x, q.y]) });
 }
 const Ld = cs.levels[L].Delta;
-let best = 0; for (let k = 1; k < Ld.arcLen.length; k++) if (Ld.arcLen[k] > Ld.arcLen[best]) best = k;
-{ const { s, p } = pick(Ld.arcLen[best], (st) => cs.longestArc(L, 'Delta', st).pts); shapes.push({ what: `longest open strand through a level-${L} Delta`, length: Ld.arcLen[best], stop: s, pts: p.map((q) => [q.x, q.y]) }); }
+let best = -1; for (const k of Ld.crossings()) if (best < 0 || Ld.len(k) > Ld.len(best)) best = k;
+{ const { s, p } = pick(Ld.len(best), (st) => cs.longestArc(L, 'Delta', st).pts); shapes.push({ what: `longest open strand through a level-${L} Delta`, length: Ld.len(best), stop: s, pts: p.map((q) => [q.x, q.y]) }); }
 writeFileSync(out, JSON.stringify(shapes));
 console.error(shapes.map((x) => `${x.what}: ${x.length} tiles, drawn to L${x.stop}, ${x.pts.length} pts`).join('\n'), `\n${((Date.now() - t0) / 1000).toFixed(0)}s`);

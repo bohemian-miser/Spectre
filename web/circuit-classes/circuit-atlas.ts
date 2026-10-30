@@ -106,7 +106,7 @@ function analyse(family: TileFamilyId, subset: readonly number[], combo: string,
   const longest = Array.from({ length: depth }, (_, i) => delta(i + 1).reduce((a, b) => Math.max(a, b.length), 0));
   const openArc = Array.from({ length: depth }, (_, i) => {
     const L = cs.levels[i + 1].Delta;
-    return L.arcLen.reduce((a, b) => Math.max(a, b), 0);
+    return Array.from(L.crossings(), (k) => L.len(k)).reduce((a, b) => Math.max(a, b), 0);
   });
   // Growth over two levels of the largest circuit seen so far (generations can skip a level).
   const seen = longest.map((_, i) => Math.max(...longest.slice(0, i + 1)));
