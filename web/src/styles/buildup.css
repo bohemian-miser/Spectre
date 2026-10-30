@@ -23,6 +23,10 @@
 .bu-chip.is-active { border-color: var(--text); box-shadow: 0 0 0 1px var(--text); }
 .bu-chip button { padding: 1px 8px; border: 1px solid rgb(0 0 0 / 0.25); border-radius: 99px; color: #1d2430; font-size: 0.8rem; }
 .bu-chip button.is-on { font-weight: 700; outline: 2px solid #1d2430; outline-offset: -2px; }
+.bu-side-by { display: grid; gap: 6px; min-width: 0; align-content: start; }
+.bu-line { margin: 0; font-size: 0.88rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.bu-picked { display: inline-flex; gap: 6px; align-items: center; padding: 2px 4px 2px 10px; border-radius: 99px; background: var(--danger); color: #fff; margin-right: 8px; }
+.bu-picked button { border: 0; background: transparent; color: #fff; cursor: pointer; font: inherit; padding: 0 6px; }
 .bu-toggle { display: inline-flex; border: 1px solid var(--line); border-radius: 99px; overflow: hidden; }
 .bu-toggle button { padding: 3px 12px; border: 0; background: var(--bg); color: var(--text); }
 .bu-toggle button + button { border-left: 1px solid var(--line); }
@@ -54,21 +58,13 @@
 .bv-tip { position: absolute; pointer-events: none; z-index: 2; padding: 3px 8px; font-size: 0.8rem; background: var(--text); color: var(--bg); border-radius: 4px; white-space: nowrap; }
 .bv-tools { position: absolute; top: 8px; right: 8px; display: flex; gap: 4px; z-index: 3; }
 .bv-tools button { font: inherit; font-size: 0.85rem; min-width: 30px; padding: 2px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--text); cursor: pointer; }
-.bv-legend { position: absolute; left: 10px; bottom: 10px; display: flex; gap: 6px; align-items: center; font-size: 0.75rem; color: var(--muted); background: color-mix(in srgb, var(--panel) 85%, transparent); padding: 2px 6px; border-radius: 4px; pointer-events: none; }
+.bv-legend { position: absolute; left: 10px; bottom: 10px; display: flex; flex-wrap: wrap; max-width: calc(100% - 20px); gap: 4px 8px; align-items: center; font-size: 0.75rem; color: var(--muted); background: color-mix(in srgb, var(--panel) 85%, transparent); padding: 2px 6px; border-radius: 4px; pointer-events: none; }
 .bv-ramp { display: inline-block; width: 70px; height: 6px; border-radius: 3px; background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 18%, transparent), var(--accent)); }
 
 /* passes */
 .bu-passes { display: grid; gap: 6px; min-width: 0; align-content: start; }
-.bu-passes .bv-surface { height: min(64vh, 720px); }
-.bu-crumbs { display: flex; flex-wrap: wrap; gap: 2px 6px; align-items: center; font-size: 0.82rem; }
-.bu-crumbs strong { margin-right: 4px; }
-.bu-crumbs button { font: inherit; padding: 0 2px; border: 0; background: none; color: var(--accent); cursor: pointer; }
-.bu-crumbs button:disabled { color: var(--text); cursor: default; font-weight: 600; }
-.bu-sep { color: var(--muted); margin-right: 6px; }
-.bu-passes-foot { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; font-size: 0.8rem; }
-.bu-passes-foot button { font: inherit; padding: 2px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--text); cursor: pointer; margin-left: auto; }
-.bu-passes-foot button:disabled { opacity: 0.45; cursor: default; }
-.bu-legend { display: flex; flex-wrap: wrap; gap: 4px 10px; }
+.bu-passes .bv-surface { height: min(68vh, 780px); }
+.bv-legend .bu-key { color: var(--text); }
 .bu-key { display: inline-flex; gap: 4px; align-items: center; }
 .bu-key i { width: 14px; height: 3px; border-radius: 2px; }
 

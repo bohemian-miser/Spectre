@@ -1,20 +1,18 @@
 /**
  * A supertile drawn from its children's route tables, glued at their shared
- * crossings: each child filled in its type's colour, and in it the child's
- * routes that make up the routes (or the circuit) shown, each a straight line
+ * crossings: each child the strands run through filled in its type's
+ * colour, and in it the child's routes that take part, each a straight line
  * between the crossings where the strand enters and leaves the child (a
- * pass, `viewer.ts`). A child route opens into its own children's routes one
- * level down; so does the whole drawing, a level at a time.
+ * pass, `viewer.ts`), coloured by the child's type and thicker for routes
+ * passed more often.
  */
 import { useMemo } from 'react';
 import { leafOrder, type Pt } from '../../core';
 import type { Box } from '../../lib/viewport';
 import { Viewer, type Lines, type Mark, type ViewerApi } from './Viewer';
-import { fixedSource, mapBox, signature, subCount, subPasses, type Geometry, type Pass } from './viewer';
+import { fixedSource, mapBox, type Geometry, type Pass } from './viewer';
 
 const nf = (n: number) => n.toLocaleString('en-US');
-/** Most passes drawn at once. */
-export const MAX_PASSES = 200000;
 
 /** Stroke colours for the types, one each, told apart on light and dark grounds. */
 export const TYPE_STROKE: Record<string, string> = {
@@ -24,6 +22,10 @@ export const TYPE_STROKE: Record<string, string> = {
 const TYPES = leafOrder('hex') as string[];
 /** Most children filled at once. */
 const MAX_FILLS = 600;
+/** Most of the other routes drawn faint. */
+const MAX_REST = 120000;
+/** Widths a route is drawn at, by how often it is passed. */
+const WIDTHS = [1.6, 2.6, 3.8];
 let drawings = 0;
 
 const tint = (hex: string, alpha: number): string => {
@@ -31,124 +33,137 @@ const tint = (hex: string, alpha: number): string => {
   return `rgba(${v >> 16},${(v >> 8) & 255},${v & 255},${alpha})`;
 };
 
-/** One step of a breakdown: the passes drawn and what they are the passes of. */
-export interface Depth {
-  readonly passes: readonly Pass[];
-  readonly label: string;
-}
-
-/** The supertile the breakdown is drawn in: its outline, its children's, and a box round it. */
+/** The supertile drawn in: its outline and a box to frame. */
 export interface Frame {
   readonly outline: readonly Pt[];
-  readonly children: readonly (readonly Pt[])[];
   readonly box: Box;
 }
 
-const flat = (pts: readonly Pt[], close = true): Float64Array => {
-  const out = new Float64Array(2 * pts.length + (close ? 2 : 0));
+const flat = (pts: readonly Pt[]): Float64Array => {
+  const out = new Float64Array(2 * pts.length + 2);
   pts.forEach((p, i) => { out[2 * i] = p.x; out[2 * i + 1] = p.y; });
-  if (close && pts.length) { out[2 * pts.length] = pts[0].x; out[2 * pts.length + 1] = pts[0].y; }
+  if (pts.length) { out[2 * pts.length] = pts[0].x; out[2 * pts.length + 1] = pts[0].y; }
   return out;
 };
 
 export function PassesPane(props: {
   g: Geometry;
   frame: Frame;
-  title: string;
-  stack: readonly Depth[];
-  onStack: (s: readonly Depth[]) => void;
-  /** Signatures of the passes on the other side, when compared. */
-  other?: ReadonlySet<string> | null;
+  /** Changes when the view should frame `frame.box` again. */
+  fitKey: string;
+  passes: readonly Pass[];
+  /** How often each pass's route is passed in all (1 when not given). */
+  passesOf?: (p: Pass) => number;
+  /** Draw, faint, the other routes of the children the passes run through. */
+  rest?: boolean;
+  /** Passes the other side has a match for: drawn faint, the rest bold. */
+  matched?: readonly boolean[] | null;
   apiRef?: React.MutableRefObject<ViewerApi | null>;
   hovered: number | null;
   onHover: (i: number | null) => void;
+  label: string;
   testId: string;
 }): JSX.Element {
-  const { g, frame, stack } = props;
-  const top = stack[stack.length - 1];
-  const passes = top.passes;
-  const sigs = useMemo(() => (props.other ? passes.map((p) => signature(g, p)) : null), [g, passes, props.other]);
-  const unmatched = useMemo(() => (sigs && props.other ? sigs.map((s) => !props.other!.has(s)) : null), [sigs, props.other]);
-  const lines: Lines = useMemo(() => ({
-    key: `${props.testId} ${++drawings}`,
-    count: passes.length,
-    points: (i) => fixedSource(Float64Array.of(passes[i].a.x, passes[i].a.y, passes[i].b.x, passes[i].b.y)),
-    style: (i) => TYPES.indexOf(passes[i].type) + (unmatched && !unmatched[i] ? TYPES.length : 0),
-    styles: [
-      ...TYPES.map((t) => ({ color: TYPE_STROKE[t], width: unmatched ? 3 : 2, alpha: 1 })),
-      ...TYPES.map((t) => ({ color: TYPE_STROKE[t], width: 1.2, alpha: 0.35 })),
-    ],
-    stop: () => 0,
-  }), [passes, unmatched, stack.length, props.testId]);
+  const { g, frame, passes, matched } = props;
+  const most = useMemo(() => {
+    let m = 1;
+    if (props.passesOf) for (const p of passes) m = Math.max(m, props.passesOf(p));
+    return m;
+  }, [passes, props.passesOf]);
+  // the children the passes run through, by slot path
+  const kids = useMemo(() => {
+    const m = new Map<string, Pass>();
+    for (const p of passes) m.set(p.path.join('.'), p);
+    return [...m.values()];
+  }, [passes]);
+  const rest = useMemo(() => {
+    if (!props.rest || kids.length > MAX_FILLS) return [] as [Pt, Pt][];
+    const out: [Pt, Pt][] = [];
+    for (const p of kids) {
+      const T = g.cs.levels[p.level][p.type];
+      for (const k of T.crossings()) {
+        const m = T.mate(k);
+        if (m <= k) continue;
+        const a = T.pts[k], b = T.pts[m];
+        out.push([
+          { x: p.x[0] * a.x + p.x[1] * a.y + p.x[2], y: p.x[3] * a.x + p.x[4] * a.y + p.x[5] },
+          { x: p.x[0] * b.x + p.x[1] * b.y + p.x[2], y: p.x[3] * b.x + p.x[4] * b.y + p.x[5] },
+        ]);
+        if (out.length >= MAX_REST) return out;
+      }
+    }
+    return out;
+  }, [g, kids, props.rest]);
+  const R = rest.length;
+  const lines: Lines = useMemo(() => {
+    const width = (p: Pass) => {
+      const c = props.passesOf?.(p) ?? 1;
+      return most <= 1 ? 0 : Math.min(2, Math.floor((3 * Math.log(c)) / Math.log(most + 1)));
+    };
+    return {
+      key: `${props.testId} ${++drawings}`,
+      count: R + passes.length,
+      points: (i) => {
+        if (i < R) return fixedSource(Float64Array.of(rest[i][0].x, rest[i][0].y, rest[i][1].x, rest[i][1].y));
+        const p = passes[i - R];
+        return fixedSource(Float64Array.of(p.a.x, p.a.y, p.b.x, p.b.y));
+      },
+      style: (i) => {
+        if (i < R) return 0;
+        const p = passes[i - R];
+        return 1 + TYPES.indexOf(p.type) * 6 + width(p) + (matched && matched[i - R] ? 3 : 0);
+      },
+      styles: [
+        { color: '--muted', width: 0.8, alpha: 0.35 },
+        ...TYPES.flatMap((t) => [
+          ...WIDTHS.map((w) => ({ color: TYPE_STROKE[t], width: w, alpha: 1 })),
+          ...WIDTHS.map((w) => ({ color: TYPE_STROKE[t], width: Math.max(1.2, w - 0.8), alpha: 0.5 })),
+        ]),
+      ],
+      stop: () => 0,
+    };
+  }, [passes, matched, rest, R, most, props.testId]); // eslint-disable-line react-hooks/exhaustive-deps
   const marks = useMemo(() => {
     const out: Mark[] = [];
-    // each child the routes run through, filled in its type's colour
-    const kids = new Map<string, Pass>();
-    for (const p of passes) kids.set(p.path.join('.'), p);
-    if (kids.size <= MAX_FILLS) {
-      for (const p of kids.values()) {
+    if (kids.length <= MAX_FILLS) {
+      for (const p of kids) {
         const pts = g.cs.outline(p.level, p.type).map((q) => ({ x: p.x[0] * q.x + p.x[1] * q.y + p.x[2], y: p.x[3] * q.x + p.x[4] * q.y + p.x[5] }));
         out.push({ pts: flat(pts), color: tint(TYPE_STROKE[p.type], 0.45), width: 0.8, fill: tint(TYPE_STROKE[p.type], 0.1) });
       }
     }
     out.push({ pts: flat(frame.outline), color: '--muted', width: 1 });
-    // where the routes meet, so each one's ends read where lines overlap
-    if (passes.length <= 120) {
-      const ends = new Float64Array(2 * passes.length);
-      passes.forEach((p, i) => { ends[2 * i] = p.a.x; ends[2 * i + 1] = p.a.y; });
-      out.push({ pts: ends, color: '--text', width: 1.6, dots: true });
-    }
     return () => out;
-  }, [g, frame, passes]);
-  const present = [...new Set(passes.map((p) => p.type))].sort((a, b) => TYPES.indexOf(a) - TYPES.indexOf(b));
-  const next = subCount(g, passes);
-  const atTiles = passes.length > 0 && passes[0].level === 0;
-  const open = (i: number | null) => {
-    if (i === null) return;
-    const p = passes[i];
-    if (p.level === 0) return;
-    props.onStack([...stack, { passes: subPasses(g, p), label: `in one ${p.type}` }]);
-    props.apiRef?.current?.fit(mapBox(p.x, g.box(p.level, p.type)));
-  };
+  }, [g, frame, kids]);
+  const present = useMemo(() => [...new Set(passes.map((p) => p.type))].sort((a, b) => TYPES.indexOf(a) - TYPES.indexOf(b)), [passes]);
+  const pass = (i: number) => passes[i - R];
   return (
     <div className="bu-passes" data-testid={props.testId}>
-      <div className="bu-crumbs" aria-label="Depth">
-        <strong>{props.title}</strong>
-        {stack.map((d, i) => (
-          <button key={i} type="button" className={i === stack.length - 1 ? 'is-active' : ''} onClick={() => props.onStack(stack.slice(0, i + 1))} disabled={i === stack.length - 1}>
-            {i > 0 && <span className="bu-sep">›</span>}
-            {d.label ? `${d.label}, ` : ''}level {d.passes[0]?.level}: {nf(d.passes.length)} {d.passes.length === 1 ? 'route' : 'routes'}
-          </button>
-        ))}
-      </div>
       <Viewer
         frame={frame.box}
-        fitKey={`${props.testId} ${props.title}`}
+        fitKey={props.fitKey}
         lines={lines}
         marks={marks}
         hovered={props.hovered}
-        onHover={props.onHover}
-        onPick={open}
+        onHover={(i) => props.onHover(i !== null && i >= R ? i : null)}
+        onPick={(i) => {
+          if (i === null || i < R) return;
+          const p = pass(i);
+          props.apiRef?.current?.fit(mapBox(p.x, g.box(p.level, p.type)));
+        }}
         highlight={props.hovered !== null ? [{ i: props.hovered, color: '--text', width: 4 }] : undefined}
-        tooltip={(i) => `Route of the ${passes[i].type} at ${passes[i].path.join('.')}: ${nf(passes[i].tiles)} tiles${passes[i].level > 0 ? '. Click to open it' : ''}`}
+        tooltip={(i) => {
+          if (i < R) return 'Another route of this child';
+          const p = pass(i);
+          const c = props.passesOf?.(p);
+          return `Route of a ${p.type}, ${nf(p.tiles)} tiles${c && c > 1 ? `; passed ${nf(c)} times in all, in every ${p.type}` : ''}. Click to zoom to it`;
+        }}
         apiRef={props.apiRef}
-        label={`${props.title}: ${passes.length} routes of its children`}
-      />
-      <div className="bu-passes-foot">
-        <span className="bu-legend">
+        label={props.label}
+      >
+        <div className="bv-legend">
           {present.map((t) => <span key={t} className="bu-key"><i style={{ background: TYPE_STROKE[t] }} />{t}</span>)}
-        </span>
-        {unmatched && <span className="bu-muted">Bold: {nf(unmatched.filter(Boolean).length)} of {nf(passes.length)} run through a sequence of child types no route on the other side has.</span>}
-        <button
-          type="button"
-          disabled={atTiles || next > MAX_PASSES}
-          title={next > MAX_PASSES ? `${nf(next)} routes are too many to draw` : undefined}
-          onClick={() => props.onStack([...stack, { passes: passes.flatMap((p) => subPasses(g, p)), label: '' }])}
-          data-testid={`${props.testId}-down`}
-        >
-          One level down ({nf(next)})
-        </button>
-      </div>
+        </div>
+      </Viewer>
     </div>
   );
 }
