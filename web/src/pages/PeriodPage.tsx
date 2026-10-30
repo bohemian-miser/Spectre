@@ -71,9 +71,9 @@ export default function PeriodPage(): JSX.Element {
           </section>
 
           <section className="bu-section" aria-labelledby="pd-anim-h">
-            <h2 id="pd-anim-h">Two levels up, built from the pieces</h2>
+            <h2 id="pd-anim-h">Each level built from the one below</h2>
             <p className="bu-muted">
-              A supertile two levels up drawn as its pieces two levels down, each with its border. The pieces are pushed together and their crossings welded in pairs; the big supertile&rsquo;s routes are walked through them and pulled tight into its own border, which is then drawn straight beside the border of the same type two levels down.
+              The nine supertiles of a level in a row, each with its border. Copies of them are carried down into the nine supertiles of the next level, turned and mirrored into the slots each type&rsquo;s substitution rule gives; each new supertile&rsquo;s routes are walked through its pieces and pulled tight into its own border. Then the new row moves up and builds the next. Routes are coloured in the order of their first crossing, so a row with the same borders as an earlier one is coloured the same way round.
             </p>
             <Animation key={label} cs={computed.cs} states={computed.r.states} start={computed.rep?.start ?? 1} length={computed.rep?.length ?? null} dark={dark} />
           </section>

@@ -21,9 +21,10 @@ import { ComboPicker, type ComboChoice } from './shapes/ComboPicker';
 import { closingsByLevel, groupsAt, type Closing } from './buildup/buildup';
 import { circuitUse, type LevelUse } from './buildup/circuitRoutes';
 import { CORE_TYPES, coreRoutes, extraRoutes } from './buildup/routes';
+import { GroupStrip } from './buildup/GroupStrip';
 import { PassesPane, type Frame } from './buildup/PassesPane';
 import { Viewer, type Lines, type Mark, type ViewerApi } from './buildup/Viewer';
-import { Geometry, IDENTITY, chooseStop, circuitPasses, linesPerStop, mapBox, routePasses, routeSet, signature, subPasses, type Pass } from './buildup/viewer';
+import { Geometry, IDENTITY, ringOf, chooseStop, circuitPasses, linesPerStop, mapBox, routePasses, routeSet, signature, subPasses, type Pass } from './buildup/viewer';
 import '../styles/shapes.css';
 import '../styles/buildup.css';
 
@@ -46,16 +47,14 @@ const boxOf = (xs: Iterable<{ x: number; y: number }>): Box => {
   }
   return { min: { x: x0, y: y0 }, max: { x: x1, y: y1 } };
 };
+const ringBox = (a: Float64Array): Box => {
+  const out: { x: number; y: number }[] = [];
+  for (let i = 0; i < a.length; i += 2) out.push({ x: a[i], y: a[i + 1] });
+  return boxOf(out);
+};
 const grow = (b: Box, f: number): Box => {
   const m = f * Math.max(b.max.x - b.min.x, b.max.y - b.min.y, 1e-9);
   return { min: { x: b.min.x - m, y: b.min.y - m }, max: { x: b.max.x + m, y: b.max.y + m } };
-};
-const flat = (pts: readonly { x: number; y: number }[]): Float64Array => {
-  const out = new Float64Array(2 * pts.length + 2);
-  pts.forEach((p, i) => { out[2 * i] = p.x; out[2 * i + 1] = p.y; });
-  out[2 * pts.length] = pts[0].x;
-  out[2 * pts.length + 1] = pts[0].y;
-  return out;
 };
 
 /** The combination, level and circuit asked for in the address. */
@@ -184,7 +183,7 @@ export default function BuildUpPage(): JSX.Element {
   const T = ready ? now!.levels[level][shownType] : null;
   const rs = useMemo(() => (ready ? routeSet(now!, level, shownType) : null), [ready, now, level, shownType]);
   const perStop = useMemo(() => (g && rs ? linesPerStop(g, rs) : []), [g, rs]);
-  const frame = useMemo(() => (ready ? boxOf(now!.outline(level, shownType)) : null), [ready, now, level, shownType]);
+  const frame = useMemo(() => (ready && g ? ringBox(ringOf(g, level, shownType).pts) : null), [ready, g, level, shownType]);
   const span = useMemo(() => {
     if (!g) return [] as number[];
     return Array.from({ length: Math.max(1, level) }, (_, s) => {
@@ -208,7 +207,13 @@ export default function BuildUpPage(): JSX.Element {
     return {
       key: `${choice.combo} ${level} ${shownType} ${isExtra ? 'core' : ''}`,
       count: rs.from.length,
-      points: (i, stop, view) => g.source(level, shownType, rs.from[i], IDENTITY, stop, view),
+      points: (i, stop, view, edge) => g.source(level, shownType, rs.from[i], IDENTITY, stop, view, edge),
+      // next to the outline, down to children under two pixels across, as the outline's own crossings are
+      edge: (scale) => {
+        let s = 0;
+        while (s + 1 < span.length && span[s + 1] * scale < 2) s++;
+        return s;
+      },
       style: (i) => (isExtra?.[i] ? SHADES : shadeOf(rs.tiles[i])),
       styles: [
         ...Array.from({ length: SHADES }, (_, s) => ({
@@ -223,10 +228,10 @@ export default function BuildUpPage(): JSX.Element {
   }, [g, rs, perStop, span, choice.combo, level, shownType, isExtra]); // eslint-disable-line react-hooks/exhaustive-deps
   const routeMarks = useMemo(() => {
     if (!now || !ready) return () => [];
-    // the outline through crossings on the border; the children's are left out, their few crossings making poor outlines that cut across the strands
-    const outline: Mark = { pts: flat(now.outline(level, shownType)), color: '--muted', width: 1 };
+    // the outline through every crossing on the border, as fine as the routes beside it are drawn
+    const outline: Mark = { pts: ringOf(g!, level, shownType).pts, color: '--muted', width: 1 };
     return (): Mark[] => [outline];
-  }, [now, ready, level, shownType]);
+  }, [now, g, ready, level, shownType]);
   const selRoute = routeSel !== null && rs ? rs.from.indexOf(routeSel) : -1;
   const highlight = useMemo(() => {
     const out: { i: number; color: string; width: number }[] = [];
@@ -291,7 +296,7 @@ export default function BuildUpPage(): JSX.Element {
     const passes = passesOf(c, k);
     const u = useOf(c)[Math.min(k, N - 1)];
     const top = passesOf(c, N)!;
-    const frame: Frame = { outline: now!.outline(N, c.circuit.type), box: grow(boxOf(top.flatMap((p) => [p.a, p.b])), 0.06) };
+    const frame: Frame = { outline: ringOf(g!, N, c.circuit.type).pts, box: grow(boxOf(top.flatMap((p) => [p.a, p.b])), 0.06) };
     const counts = (p: Pass) => {
       const m = now!.levels[p.level][p.type].mate(p.k);
       return useOf(c)[p.level].byType.get(p.type as HexType)?.get(m < 0 ? p.k : Math.min(p.k, m)) ?? 1;
@@ -360,17 +365,6 @@ export default function BuildUpPage(): JSX.Element {
         </div>
         {!circuitView && (
           <>
-            <div className="bu-types" role="group" aria-label="Supertile type">
-              {groups.map((gr) => (
-                <span key={gr.join()} className={`bu-chip${gr.includes(shownType) ? ' is-active' : ''}`} title={gr.length > 1 ? 'These types have the same routes between the same crossings' : undefined}>
-                  {gr.map((t) => (
-                    <button key={t} type="button" className={t === shownType ? 'is-on' : ''} style={{ background: tileColor(t) }} onClick={() => { setType(t); setRouteSel(null); setHover(null); }} data-testid={`bu-type-${t}`}>
-                      {t}
-                    </button>
-                  ))}
-                </span>
-              ))}
-            </div>
             <label className="bu-check">
               <input type="checkbox" checked={differs} onChange={(e) => setDiffers(e.target.checked)} data-testid="bu-differs" />
               What each type adds to the shared routes
@@ -395,6 +389,10 @@ export default function BuildUpPage(): JSX.Element {
         )}
       </div>
       {error && <p className="bu-error">{error}</p>}
+      {ready && g && level > 0 && (
+        <GroupStrip g={g} level={level} groups={groups} type={shownType} onPick={(t) => { setType(t); setRouteSel(null); setHover(null); }}
+          use={circ && level < circ.circuit.level ? useOf(circ)[level] : null} />
+      )}
 
       <section className="bu-strip" data-testid="bu-circuits">
         {circ && (
@@ -420,7 +418,7 @@ export default function BuildUpPage(): JSX.Element {
           {!circuitView && showing === 'children' && allPasses && frame && g && (
             <div className="bu-side-by">
               <p className="bu-line">{`A level-${level} ${shownType}: ${nf(rs?.from.length ?? 0)} routes, made of ${nf(allPasses.length)} routes of its children`}</p>
-              <PassesPane g={g} frame={{ outline: now!.outline(level, shownType), box: frame }} fitKey={`${choice.combo} ${level} ${shownType}`} passes={allPasses}
+              <PassesPane g={g} frame={{ outline: ringOf(g, level, shownType).pts, box: frame }} fitKey={`${choice.combo} ${level} ${shownType}`} passes={allPasses}
                 apiRef={leftApi} hovered={hoverL} onHover={setHoverL} label={`A level-${level} ${shownType} built from its children's routes`} testId="bu-children" />
             </div>
           )}

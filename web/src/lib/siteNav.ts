@@ -195,6 +195,14 @@ export const SITE_NAV: readonly NavItem[] = Object.freeze([
     blurb: "A combination's supertiles built level by level: every type's border table, and the circuits that close at each level.",
   },
   {
+    id: 'foundations',
+    label: 'Foundations',
+    short: 'Foundations',
+    entry: 'foundations.html',
+    status: 'ready',
+    blurb: 'Every combination of 023468: the circuits that start a chain, the level each first closes at, and the harmonics grown from them.',
+  },
+  {
     id: 'period',
     label: 'Every other level',
     short: 'Period',

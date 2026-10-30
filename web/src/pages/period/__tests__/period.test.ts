@@ -13,7 +13,7 @@ import { HEX_TYPES, buildSystem, childType, connectionPoints, flatten, leafOrder
 import { CircuitShapes, ruleOptions } from '../../shapes/circuitShapes';
 import { expand, run, sameBorder, walkExpansion, type Run } from '../period';
 import { isLine, lineOf, repeatOf } from '../proof';
-import { graphOf, trueOutline } from '../scene';
+import { graphOf, stepsOf, trueOutline } from '../scene';
 
 const key = (p: { x: number; y: number }) => `${Math.round(p.x * 1000)},${Math.round(p.y * 1000)}`;
 
@@ -174,6 +174,29 @@ describe('the exact outline', () => {
         expect(o.length).toBeGreaterThan(6);
         expect(o.every((p) => corners.has(key(p)))).toBe(true);
         expect(new Set(o.map(key)).size).toBe(o.length);
+      }
+    }
+  });
+});
+
+describe('the animation\'s steps', () => {
+  it('walks each parent route through the pieces from one of its crossings to the other', () => {
+    const digits = [...'010100000'].map((c) => parseInt(c, 36));
+    const r = run([1, 2, 8], digits, 4);
+    const cs = new CircuitShapes('hex', [1, 2, 8], digits, 1, 1, true);
+    for (const [from, d, count] of [[0, 1, 3], [1, 2, 1]] as const) {
+      const steps = stepsOf(cs, r.states, from, d, count);
+      expect(steps.map((s) => s.repeats)).toEqual(d === 1 ? [null, null, 1] : [1]);
+      for (const st of steps) {
+        for (const t of HEX_TYPES) {
+          const b = st.builds[t];
+          expect(b.pieces).toHaveLength(st.to - st.from === 1 ? (t === 'Gamma' ? 7 : 8) : expand(r.states, st.to, t, d).pieces.length);
+          b.parent.routes.forEach(([p, q], i) => {
+            const w = b.routePaths[i].through;
+            expect(key(w[0])).toBe(key(b.parent.dots[p]));
+            expect(key(w[w.length - 1])).toBe(key(b.parent.dots[q]));
+          });
+        }
       }
     }
   });

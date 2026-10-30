@@ -207,7 +207,7 @@ export class CircuitShapes {
   /** levels[n][type]: each type's table at level n. */
   readonly levels: Record<string, Table>[] = [];
   readonly born: BornCircuit[] = [];
-  /** With `onePerLength`: where each family, level and length sits in `born`. */
+  /** With `onePerLength`: where each family, level and length sits in `born` (with `keyOf`, each key). */
   private readonly bornAt = new Map<string, number>();
   /** rows[n][type][edge]: a level-n type's places on each edge, in order round the supertile; what level n + 1 is glued by. */
   private readonly rows: Record<string, Int32Array[]>[] = [{}];
@@ -216,6 +216,15 @@ export class CircuitShapes {
   /** Per level, each type's border crossings on each edge, in order, at most `BORDER_SAMPLES` of them evenly spaced: what outlines are drawn through. */
   private readonly borders: Record<string, Int32Array[]>[] = [];
   private readonly corners = new Map<string, Pt>();
+  /** `walkAbove`'s gluing of the last type it walked in. */
+  private readonly glued = new Map<string, ReturnType<CircuitShapes['glue']>>();
+  /** With `keyOf`: how many circuits closed under each key. */
+  private readonly copies = new Map<string, number>();
+
+  /** How many circuits closed like `c`: with `keyOf`, the copies under its key; otherwise 1. */
+  copiesOf(c: BornCircuit): number {
+    return this.keyOf ? (this.copies.get(this.keyOf(c)) ?? 0) : 1;
+  }
 
   /** The highest level built so far; `extend` adds levels above it. */
   maxLevel = 0;
@@ -235,6 +244,8 @@ export class CircuitShapes {
     private readonly keepAtLeast = 50,
     /** Keep one walk per family, level and length (a Delta's when there is one) rather than one per supertile type. */
     readonly onePerLength = false,
+    /** Keep one walk per key (the first) and count the copies (`copiesOf`); overrides `onePerLength`. */
+    private readonly keyOf?: (c: BornCircuit) => string,
   ) {
     if (family !== 'hex') throw new Error('supertiles are built up for the hexagon tiles');
     const sel = new Set(subset);
@@ -361,7 +372,11 @@ export class CircuitShapes {
       const walked = new Map<number, { built: Built; closing: Omit<BornCircuit, 'type'>[] }>();
       const born = (t: string, c: Omit<BornCircuit, 'type'>): void => {
         const b: BornCircuit = { ...c, type: t as TileTypeId };
-        if (!onePerLength) this.born.push(b);
+        if (this.keyOf) {
+          const at = this.keyOf(b);
+          if (!this.bornAt.has(at)) this.bornAt.set(at, this.born.push(b) - 1);
+          this.copies.set(at, (this.copies.get(at) ?? 0) + 1);
+        } else if (!onePerLength) this.born.push(b);
         else {
           const at = `${familyOf(b)}/${n}/${b.length}`;
           const i = this.bornAt.get(at);
@@ -507,6 +522,71 @@ export class CircuitShapes {
       this.borders.push(sampleRows(rows));
       this.levels.push(this.share(n, Int32Array.from(under), built, this.placer(n)));
       this.maxLevel = n;
+    }
+  }
+
+  /**
+   * The children of a level-(below + 1) supertile, with the level-`below`
+   * tables: child crossing g is `child * Q + its place`, and `across[g]` is
+   * the crossing of the neighbouring child it is glued to (-1 on the outline).
+   */
+  private glue(t: string, node: MetaNode, below: number) {
+    const prev = this.levels[below];
+    const rowsBelow = this.rows[below];
+    const Q = Object.values(prev)[0].size;
+    const kids = node.children;
+    const childAt = new Int32Array(8).fill(-1);
+    kids.forEach((ch, ci) => { childAt[ch.pos] = ci; });
+    const tables = kids.map((ch) => prev[ch.node.type]);
+    const total = kids.length * Q;
+    const across = new Int32Array(total).fill(-1);
+    // two children glued along an edge meet crossing for crossing, in reverse order
+    for (const [a, b] of gluedPairs(t as HexType)) {
+      const ca = childAt[a.s], cb = childAt[b.s];
+      const A = rowsBelow[kids[ca].node.type][a.e];
+      const B = rowsBelow[kids[cb].node.type][b.e];
+      if (A.length !== B.length) throw new Error(`${t} glues ${A.length} crossings to ${B.length}`);
+      for (let i = 0, m = A.length; i < m; i++) {
+        const x = ca * Q + A[i], y = cb * Q + B[m - 1 - i];
+        across[x] = y;
+        across[y] = x;
+      }
+    }
+    return { kids, childAt, tables, total, across, Q };
+  }
+
+  /**
+   * The strand through child crossing `step` (`childPlace * 8 + slot`) of a
+   * level-(below + 1) supertile of `type`, followed through its children from
+   * the level-`below` tables alone, so `below` may be the top level built: the
+   * child crossings it enters, the tiles on the way, and whether it closes
+   * inside the supertile. An open strand is followed from `step` until it
+   * reaches the outline.
+   */
+  walkAbove(type: string, step: number, below = this.maxLevel): { closed: boolean; steps: number[]; length: number } {
+    const key = `${below}/${type}`;
+    let glued = this.glued.get(key);
+    if (!glued) {
+      this.glued.clear();
+      glued = this.glue(type, buildSystem(this.family, below + 1)[type] as MetaNode, below);
+      this.glued.set(key, glued);
+    }
+    const { kids, childAt, tables, across, Q } = glued;
+    const c0 = childAt[slotOf(step)];
+    if (c0 < 0) throw new Error(`${type} has no child in slot ${slotOf(step)}`);
+    const g0 = c0 * Q + placeOf(step);
+    const steps: number[] = [];
+    let g = g0;
+    let length = 0;
+    for (;;) {
+      const c = Math.floor(g / Q);
+      steps.push((g % Q) * 8 + kids[c].pos);
+      const m = tables[c].mate(g - c * Q);
+      if (m < 0) return { closed: false, steps, length };
+      length += tables[c].len(g - c * Q);
+      g = across[c * Q + m];
+      if (g < 0) return { closed: false, steps, length };
+      if (g === g0) return { closed: true, steps, length };
     }
   }
 
