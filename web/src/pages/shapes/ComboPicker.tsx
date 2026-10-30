@@ -23,6 +23,8 @@ export function ComboPicker(props: { busy: boolean; onAdd: (c: ComboChoice) => v
   const types = leafOrder('hex');
   const [digits, setDigits] = useState<number[]>(() => types.map((_, i) => parseInt(props.initialCombo?.[i] ?? '0', 36) || 0));
   const [level, setLevel] = useState(props.initialLevel ?? 7);
+  // the box's text, which may be empty or partial while typing; `level` keeps the last whole number from 1 up
+  const [levelText, setLevelText] = useState(String(level));
   const safe = digits.map((d, i) => (d < counts[i] ? d : 0));
   const combo = safe.map((d) => comboDigitChar(d) ?? '0').join('');
   const total = counts.reduce((a, b) => a * Math.max(1, b), 1);
@@ -67,7 +69,20 @@ export function ComboPicker(props: { busy: boolean; onAdd: (c: ComboChoice) => v
       <label>
         Up to level
         {levels === 'any' ? (
-          <input type="number" min={1} step={1} style={{ width: '4.5em' }} value={level} onChange={(e) => setLevel(Math.max(1, Math.floor(Number(e.target.value)) || 1))} data-testid="shapes-combo-level" />
+          <input
+            type="number"
+            min={1}
+            step={1}
+            style={{ width: '4.5em' }}
+            value={levelText}
+            onChange={(e) => {
+              const n = Math.floor(Number(e.target.value));
+              setLevelText(e.target.value);
+              if (e.target.value.trim() !== '' && n >= 1) setLevel(n);
+            }}
+            onBlur={() => setLevelText(String(level))}
+            data-testid="shapes-combo-level"
+          />
         ) : (
           <select value={level} onChange={(e) => setLevel(Number(e.target.value))} data-testid="shapes-combo-level">
             {levels.map((l) => (
