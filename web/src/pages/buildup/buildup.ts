@@ -101,9 +101,11 @@ export interface Closing {
 }
 
 /** The circuits closing at each level up to the last built, keyed by their words (`core/circuitWord.ts`). */
+/** Each circuit's key, worked out once: a big circuit's word runs to millions of tiles. */
+const keyOf = new WeakMap<BornCircuit, string>();
+
 export function closingsByLevel(cs: CircuitShapes): Closing[][] {
   const firstSeen = new Map<string, number>();
-  const keyOf = new Map<BornCircuit, string>();
   const out: Closing[][] = [];
   for (let n = 0; n <= cs.maxLevel; n++) {
     const at = new Map<string, { circuit: BornCircuit; types: Set<HexType>; copies: number }>();
