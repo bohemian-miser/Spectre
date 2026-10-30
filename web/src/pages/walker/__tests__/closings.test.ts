@@ -6,6 +6,7 @@
  */
 import { describe, expect, it } from 'vitest';
 
+import { circuitKey } from '../../../core';
 import { closingsByLevel, firstClosings } from '../../buildup/buildup';
 import { CircuitShapes } from '../../shapes/circuitShapes';
 import { ClosingsJob } from '../../../workers/closingsClient';
@@ -32,10 +33,12 @@ describe('where the circuits found first close', () => {
     expect(found.length).toBeGreaterThan(4);
     expect([...got.keys()].sort()).toEqual(found.map((f) => f.key).sort());
     const top = Math.max(...[...got.values()].map((c) => c.level));
-    const table = closingsByLevel(new CircuitShapes('hex', subset, digits, top, 1, true));
+    const built = new CircuitShapes('hex', subset, digits, top, 1, true);
+    const table = closingsByLevel(built);
     for (const f of found) {
       const c = got.get(f.key)!;
-      const there = table[c.level].find((x) => x.key === f.key);
+      // the table keys circuits by their words as numbers; the walker by their letters
+      const there = table[c.level].find((x) => x.length === f.length && circuitKey(built.word(x.circuit)) === f.key);
       expect(there?.first).toBe(c.level);
       expect(there?.family).toBe(c.family);
       expect(there?.length).toBe(f.length);

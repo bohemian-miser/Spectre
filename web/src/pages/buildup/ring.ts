@@ -132,7 +132,7 @@ export function outlinePoints(cs: CircuitShapes, n: number, type: string): Pt[] 
   const out: Pt[] = [];
   for (let j = 0; j < 6; j++) {
     out.push(cs.corner(n, type, j));
-    for (const p of rows[j]) out.push(T.pts[p]);
+    for (const p of rows[j]) out.push(T.pt(p));
   }
   return out;
 }

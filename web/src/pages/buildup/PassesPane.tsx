@@ -79,7 +79,7 @@ export function PassesPane(props: {
       for (const k of T.crossings()) {
         const m = T.mate(k);
         if (m <= k) continue;
-        const a = T.pts[k], b = T.pts[m];
+        const a = T.pt(k), b = T.pt(m);
         out.push([
           { x: p.x[0] * a.x + p.x[1] * a.y + p.x[2], y: p.x[3] * a.x + p.x[4] * a.y + p.x[5] },
           { x: p.x[0] * b.x + p.x[1] * b.y + p.x[2], y: p.x[3] * b.x + p.x[4] * b.y + p.x[5] },
