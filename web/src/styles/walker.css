@@ -583,6 +583,21 @@
   stroke: var(--wk-trace);
   stroke-width: var(--wk-strand, 2.2px);
 }
+.wk__peek.is-open {
+  --wk-trace: #5c6b82;
+}
+.wk__peek.is-open .wk__peek-strand {
+  stroke-dasharray: 6 3;
+}
+.wk__peek.is-open .wk__peek-head {
+  color: var(--muted, #6b7280);
+}
+.wk__peek-end {
+  fill: var(--text, #1d2430);
+  stroke: var(--panel, #fff);
+  stroke-width: 1.5px;
+  vector-effect: non-scaling-stroke;
+}
 .wk__peek-arrow {
   fill: var(--text, #1d2430);
   stroke: var(--panel, #fff);
