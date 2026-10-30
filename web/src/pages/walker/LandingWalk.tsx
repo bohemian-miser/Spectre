@@ -139,7 +139,7 @@ function searchStage(pw: PossibleWalk, keys: readonly string[]): Stage {
 
 const CHAIN_ROWS = 5000;
 /** The highest level built to find where the circuits found first close. */
-const CLOSING_LEVEL = 8;
+const CLOSING_LEVEL = 10;
 /** How far the circuits ahead of each landing are looked for, and how far the nearest circuit is sought. */
 const AHEAD = { choices: 3, forks: 30, tiles: 3000 };
 const SEEK = { choices: 40, forks: 400, tiles: 30000 };
