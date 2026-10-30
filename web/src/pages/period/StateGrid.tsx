@@ -5,7 +5,10 @@
  */
 import { HEX_TYPES, type Pt } from '../../core';
 import { sameState, type Border, type State } from './period';
-import { STRAIGHT_START, routeCurve } from './scene';
+import { routeCurve } from './scene';
+
+/** Corner 0 of the hexagon a border is drawn on, at this angle from its centre. */
+const STRAIGHT_START = (5 * Math.PI) / 6;
 
 /** Most crossings a cell is drawn with. */
 const MAX_DRAWN = 300;
