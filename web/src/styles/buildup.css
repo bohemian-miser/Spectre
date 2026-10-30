@@ -81,11 +81,15 @@
 .bu-summary-table tbody tr.is-active { background: var(--panel); font-weight: 600; }
 
 /* the level's types, grouped by table */
-.bu-groups { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; overscroll-behavior-x: contain; }
-.bu-group { flex: 0 0 auto; display: grid; justify-items: center; gap: 4px; padding: 6px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); cursor: pointer; font: inherit; color: var(--text); }
+.bu-groups-wrap { display: grid; gap: 6px; min-width: 0; }
+.bu-groups-show { justify-self: start; font-size: 0.85rem; }
+.bu-groups { display: flex; flex-wrap: wrap; gap: 10px; }
+@media (max-width: 640px) { .bu-groups { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; overscroll-behavior-x: contain; } }
+.bu-group { flex: 0 0 auto; display: grid; justify-items: center; align-content: start; gap: 4px; padding: 6px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); cursor: pointer; font: inherit; color: var(--text); }
+.bu-group.is-core { cursor: default; border-style: dashed; }
 .bu-group.is-active { border-color: var(--text); box-shadow: 0 0 0 1px var(--text); }
 .bu-group.is-dim canvas { opacity: 0.35; }
 .bu-group canvas { display: block; }
-.bu-group-names { display: flex; flex-wrap: wrap; justify-content: center; gap: 3px; max-width: 132px; }
-.bu-group-count { font-size: 0.72rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.bu-group-names { display: flex; flex-wrap: wrap; justify-content: center; gap: 3px; max-width: 260px; }
+.bu-group-count { font-size: 0.78rem; color: var(--muted); font-variant-numeric: tabular-nums; max-width: 260px; text-align: center; }
 .bu-name { display: inline-block; font-size: 0.72rem; padding: 0 7px; border-radius: 99px; border: 1px solid rgb(0 0 0 / 0.25); color: #1d2430; }
