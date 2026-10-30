@@ -218,9 +218,8 @@ export function clampLineScale(scale: number): number {
  *
  * There is deliberately no ceiling, as with {@link DEFAULT_FIND_CEILING}: a
  * window costs ~40 bytes a point CPU-side plus the GPU copy, and how much of
- * that to spend is the reader's call. `TRAIL_MAX_POINTS` in
- * `pages/map/strandWalk.ts` still backstops the walk itself so a chase left
- * running cannot take the tab down. The floor is the least a window can hold
+ * that to spend is the reader's call. Without a window the walk keeps every
+ * point, as many as memory holds. The floor is the least a window can hold
  * and still look like a trail.
  */
 export const DEFAULT_TRAIL_HOLD = 0;

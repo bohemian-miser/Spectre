@@ -12,5 +12,6 @@ export default defineConfig({
   test: {
     include: ['src/**/__tests__/**/*.test.{ts,tsx}', 'circuit-index/__tests__/*.test.ts', 'circuit-classes/__tests__/*.test.ts'],
     environment: 'node',
+    setupFiles: ['./vitest.setup.ts'],
   },
 });
