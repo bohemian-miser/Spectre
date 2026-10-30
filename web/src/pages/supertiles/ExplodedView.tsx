@@ -49,12 +49,27 @@ export interface ExplodedViewProps {
   readonly circuitColors?: ReadonlyMap<number, string>;
   /** Lengths picked out in the stats panel; others are dimmed. */
   readonly highlightLengths?: ReadonlySet<number>;
+  /** The path picked by a click (`StrandRun.path`), drawn over the rest. */
+  readonly picked?: number | null;
   readonly idPrefix?: string;
   readonly className?: string;
   readonly ariaLabel?: string;
 }
 
 let uid = 0;
+
+/** A run as SVG path data: its curves when it has them, else straight steps. */
+function runD(run: StrandRun): string {
+  const { points, curves } = run;
+  if (!curves) return polylineD(points);
+  const f = (p: { x: number; y: number }): string => `${p.x} ${p.y}`;
+  let d = `M${f(points[0])}`;
+  for (let i = 1; i < points.length; i++) {
+    const [c1, c2] = curves[i - 1];
+    d += `C${f(c1)} ${f(c2)} ${f(points[i])}`;
+  }
+  return d;
+}
 
 /** A piece is inked by its own flavour, so the grouping reads as one colour. */
 const islandColor = (island: Island): string => tileColor(island.type, 'bright');
@@ -69,6 +84,7 @@ export function ExplodedView(props: ExplodedViewProps): JSX.Element {
     strands,
     circuitColors,
     highlightLengths,
+    picked = null,
     idPrefix,
     className,
     ariaLabel,
@@ -193,15 +209,15 @@ export function ExplodedView(props: ExplodedViewProps): JSX.Element {
    */
   const strandPaths = useMemo(() => {
     if (!strands || strands.length === 0) return null;
-    const picked = highlightLengths && highlightLengths.size > 0 ? highlightLengths : null;
+    const lengths = highlightLengths && highlightLengths.size > 0 ? highlightLengths : null;
     return strands.map((run, i) => {
-      const chosen = !picked || (run.closed && picked.has(run.length));
+      const chosen = !lengths || (run.closed && lengths.has(run.length));
       const stroke = run.closed ? circuitColors?.get(run.length) ?? '#1c9c4b' : TAIL_COLOR;
       return (
         <path
           key={`s${i}`}
           className={run.closed ? 'supertile-strand is-circuit' : 'supertile-strand is-tail'}
-          d={polylineD(run.points)}
+          d={runD(run)}
           fill="none"
           stroke={stroke}
           strokeWidth={strandWidth}
@@ -213,6 +229,33 @@ export function ExplodedView(props: ExplodedViewProps): JSX.Element {
       );
     });
   }, [strands, circuitColors, highlightLengths, strandWidth]);
+
+  /** The picked path: ink under accent, wider than the rest, as on the Top-down map. */
+  const pickedPaths = useMemo(() => {
+    if (!strands || picked === null) return null;
+    const runs = strands.filter((run) => run.path === picked);
+    return runs.flatMap((run, i) => [
+      <path
+        key={`pi${i}`}
+        d={runD(run)}
+        fill="none"
+        stroke="#10131a"
+        strokeWidth={strandWidth * 3.2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />,
+      <path
+        key={`pa${i}`}
+        className="supertile-strand is-picked"
+        d={runD(run)}
+        fill="none"
+        stroke="var(--accent, #2f7d5b)"
+        strokeWidth={strandWidth * 2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />,
+    ]);
+  }, [strands, picked, strandWidth]);
 
   const viewBox = `${layout.bounds.min.x} ${layout.bounds.min.y} ${
     layout.bounds.max.x - layout.bounds.min.x
@@ -250,6 +293,7 @@ export function ExplodedView(props: ExplodedViewProps): JSX.Element {
         {/* Strands last, so a path is never hidden behind a piece's fill or a
             piece's name — the path is the thing being looked at. */}
         {strandPaths ? <g className="supertile-strands">{strandPaths}</g> : null}
+        {pickedPaths ? <g className="supertile-picked">{pickedPaths}</g> : null}
       </g>
     </svg>
   );

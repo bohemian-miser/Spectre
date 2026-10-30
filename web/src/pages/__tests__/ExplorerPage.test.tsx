@@ -178,7 +178,9 @@ describe('ExplorerPage', () => {
     expect(container.querySelectorAll('.matching-slider')).toHaveLength(
       leafOrder('spectre').length,
     );
-    expect(container.querySelector('.combo-readout code')?.textContent).toBe('2578-0100000000');
+    expect((container.querySelector('[data-testid="combo-string"]') as HTMLInputElement).value).toBe(
+      '2578-0100000000',
+    );
   });
 
   it('mirrors edits into the hash after the debounce', async () => {

@@ -1,9 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import { comboToMatchingIndices } from '../../../core';
+import { DEFAULT_SHARE, defaultRule } from '../../../lib/strandRule';
 import {
-  DEFAULT_COMBO,
-  DEFAULT_SUBSET,
   DEFAULT_SUPERTILES_STATE,
   SUPERTILES_ROUTE,
   decodeSupertilesQuery,
@@ -23,6 +22,7 @@ describe('supertiles URL codec', () => {
 
   it('round-trips a fully specified state', () => {
     const state: SupertilesUrlState = {
+      family: 'spectre',
       rootTile: 'Psi',
       level: 5,
       gap: 0.8,
@@ -38,6 +38,7 @@ describe('supertiles URL codec', () => {
 
   it('is canonical: encode → decode → encode is stable', () => {
     const state: SupertilesUrlState = {
+      family: 'spectre',
       rootTile: 'Sigma',
       level: 4,
       gap: 1.234,
@@ -45,8 +46,7 @@ describe('supertiles URL codec', () => {
       showTiles: true,
       showLabels: false,
       lines: false,
-      subset: DEFAULT_SUBSET,
-      matching: comboToMatchingIndices('spectre', DEFAULT_SUBSET, DEFAULT_COMBO),
+      ...defaultRule('spectre'),
     };
     const once = encodeSupertilesQuery(state);
     expect(encodeSupertilesQuery(decodeSupertilesQuery(once))).toBe(once);
@@ -65,7 +65,8 @@ describe('supertiles URL codec', () => {
       matching: comboToMatchingIndices('spectre', [1, 5], '0000000000'),
     });
     expect(q).toContain('ln=1');
-    expect(q).toContain('e=15');
+    expect(q).toContain('c=15-0000000000');
+    expect(q).not.toContain('e=');
     const back = decodeSupertilesQuery(q);
     expect(back.lines).toBe(true);
     expect(back.subset).toEqual([1, 5]);
@@ -75,7 +76,7 @@ describe('supertiles URL codec', () => {
   it('reads the lossless matching vector when a link carries one', () => {
     // `m=` is the fallback the Explorer's codec also uses, for matchings no
     // combination string can name. A link carrying one must survive intact.
-    const vector = comboToMatchingIndices('spectre', DEFAULT_SUBSET, DEFAULT_COMBO);
+    const vector = defaultRule('spectre').matching;
     const back = decodeSupertilesQuery(`ln=1&e=2578&m=${vector.join('.')}`);
     expect(back.matching).toEqual(vector);
     // A malformed entry falls back to 0 rather than producing NaN geometry.
@@ -116,6 +117,29 @@ describe('supertiles URL codec', () => {
     // A route-only hash carries no state.
     expect(hashToSupertilesState('#/supertiles')).toEqual(DEFAULT_SUPERTILES_STATE);
     expect(hashToSupertilesState('')).toEqual(DEFAULT_SUPERTILES_STATE);
+  });
+
+  it('reads the classes and digits apart, as older links carry them', () => {
+    const older = decodeSupertilesQuery('ln=1&e=15&c=0000000000');
+    const now = decodeSupertilesQuery('ln=1&c=15-0000000000');
+    expect(older).toEqual(now);
+    expect(older.subset).toEqual([1, 5]);
+  });
+
+  it('carries the family, and each family opens with its own rule', () => {
+    const hex = decodeSupertilesQuery('f=hex');
+    expect(hex.family).toBe('hex');
+    expect(hex.subset).toEqual(defaultRule('hex').subset);
+    expect(hex.matching).toEqual(defaultRule('hex').matching);
+    expect(encodeSupertilesQuery(hex)).toBe('f=hex');
+    const lit = encodeSupertilesQuery({ ...hex, lines: true });
+    expect(lit).toContain(`c=${DEFAULT_SHARE.hex}`);
+    expect(decodeSupertilesQuery(lit)).toEqual({ ...hex, lines: true });
+  });
+
+  it('keeps a family\'s usual rule when a combination string is not one of its own', () => {
+    // A spectre string has ten digits; a hexagon rule needs nine.
+    expect(decodeSupertilesQuery(`f=hex&c=${DEFAULT_SHARE.spectre}`).subset).toEqual(defaultRule('hex').subset);
   });
 
   it('compares states by what they encode', () => {

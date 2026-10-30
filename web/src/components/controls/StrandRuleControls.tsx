@@ -8,19 +8,20 @@
  * stays a pure view of `(subset, matching, contracts)`.
  */
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import {
-  formatComboShareString,
+  familyMajors,
   hasMultiStrands,
   leafOrder,
   nonCrossingForTile,
-  matchingIndicesToCombo,
   type ColorSchemeId,
   type EdgeContracts,
   type TileFamilyId,
   type TileTypeId,
 } from '../../core';
+import { copyText } from '../../hooks/shareLink';
 import { comboOdometer } from '../../lib/comboOdometer';
+import { ruleFromShare, ruleShare } from '../../lib/strandRule';
 import { EdgeSubsetPicker } from './EdgeSubsetPicker';
 import { MatchingSlider } from './MatchingSlider';
 
@@ -52,7 +53,12 @@ export interface StrandRuleControlsProps {
   onStrandCountChange?(major: number, count: number): void;
   /** Open a tile's pairing in the big editor; omit to hide the Edit buttons. */
   onOpenTile?(tileType: TileTypeId): void;
-  /** Set every tile's matching at once (the whole-rule combination stepper); omit to hide it. */
+  /**
+   * Set every tile's matching at once: the whole-rule combination stepper,
+   * and typing a combination string, which calls `onSubsetChange` and then
+   * this, so both must update from the latest state. Omit to hide the stepper
+   * and leave the string read-only.
+   */
   onMatchingVectorChange?(matching: readonly number[]): void;
 }
 
@@ -83,10 +89,33 @@ export function StrandRuleControls(props: StrandRuleControlsProps): JSX.Element 
 
   const order = useMemo(() => leafOrder(family), [family]);
   const selected = useMemo(() => new Set(subset), [subset]);
-  const combo = useMemo(() => {
-    const digits = matchingIndicesToCombo(family, subset, matching, contracts);
-    return digits === null ? null : formatComboShareString(subset, digits);
-  }, [family, subset, matching, contracts]);
+  const combo = useMemo(
+    () => ruleShare(family, { subset, matching, contracts }),
+    [family, subset, matching, contracts],
+  );
+  /** A combination string being typed; null shows the rule's own. */
+  const [draft, setDraft] = useState<string | null>(null);
+  const [comboNote, setComboNote] = useState<string | null>(null);
+
+  const applyDraft = (): void => {
+    if (draft === null || !onMatchingVectorChange) return;
+    if (draft.trim() === '' || draft.trim() === combo) {
+      setDraft(null);
+      setComboNote(null);
+      return;
+    }
+    const rule = ruleFromShare(family, draft, contracts);
+    if (!rule) {
+      setComboNote(
+        `Not a combination string here: classes from ${familyMajors(family).join('')}, a dash, then ${order.length} digits.`,
+      );
+      return;
+    }
+    onSubsetChange(rule.subset);
+    onMatchingVectorChange(rule.matching);
+    setDraft(null);
+    setComboNote(null);
+  };
 
   /**
    * Which tiles are the reason there is no combination string. The encoder
@@ -128,12 +157,45 @@ export function StrandRuleControls(props: StrandRuleControlsProps): JSX.Element 
 
       <fieldset className="explorer-matchings">
         <legend>Matchings</legend>
-        <p className="combo-readout">
-          {combo ? (
-            <>
-              Combination string: <code>{combo}</code>
-            </>
-          ) : (
+        <div className="combo-readout">
+          <label className="combo-field">
+            <span>Combination string</span>
+            <input
+              type="text"
+              aria-label="Combination string of the rule"
+              data-testid="combo-string"
+              spellCheck={false}
+              readOnly={!onMatchingVectorChange}
+              placeholder={combo === null ? 'none' : undefined}
+              value={draft ?? combo ?? ''}
+              onChange={(e) => {
+                setDraft(e.target.value);
+                setComboNote(null);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') applyDraft();
+                if (e.key === 'Escape') {
+                  setDraft(null);
+                  setComboNote(null);
+                }
+              }}
+              onBlur={applyDraft}
+              onFocus={(e) => e.currentTarget.select()}
+            />
+          </label>
+          <button
+            type="button"
+            disabled={combo === null}
+            onClick={() => combo && void copyText(combo).then((ok) => setComboNote(ok ? 'Copied.' : 'Copying is blocked here; select the string and copy it.'))}
+          >
+            Copy
+          </button>
+          {comboNote ? (
+            <span className="muted" role="status" data-testid="combo-note">
+              {comboNote}
+            </span>
+          ) : null}
+          {combo === null ? (
             <span className="muted" data-testid="combo-crossing">
               {multi
                 ? 'Several strands on a class: a combination string has no room for that, so the link spells the matchings out.'
@@ -141,8 +203,8 @@ export function StrandRuleControls(props: StrandRuleControlsProps): JSX.Element 
                   ? `${crossing[0]}’s matching crosses itself, so there is no combination string.`
                   : `These matchings cross themselves, so there is no combination string: ${crossing.join(', ')}.`}
             </span>
-          )}
-        </p>
+          ) : null}
+        </div>
         {onMatchingVectorChange && combos.total > 1 ? (
           <div className="combo-stepper" role="group" aria-label="Every tile's matching at once" data-testid="combo-stepper">
             <button type="button" aria-label="Previous combination" onClick={() => onMatchingVectorChange(combos.step(-1))}>

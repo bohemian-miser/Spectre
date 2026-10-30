@@ -862,3 +862,42 @@ textarea {
 .tile-glyph-dot.is-odd {
   fill: var(--danger);
 }
+
+/* StrandRuleControls: the rule's combination string and the whole-rule stepper. */
+.combo-readout {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 6px;
+  font-size: 12px;
+}
+.combo-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.combo-field input {
+  font-family: var(--mono);
+  font-size: 12px;
+  width: 16em;
+}
+.combo-readout button {
+  padding: 1px 9px;
+}
+.combo-stepper {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 0;
+  font-size: 13px;
+}
+.combo-stepper button {
+  padding: 1px 9px;
+}
+.combo-stepper-count {
+  font-variant-numeric: tabular-nums;
+  min-width: 11em;
+  text-align: center;
+}
+
