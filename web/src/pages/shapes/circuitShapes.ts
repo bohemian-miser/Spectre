@@ -202,6 +202,12 @@ export class CircuitShapes {
   /** The highest level built so far; `extend` adds levels above it. */
   maxLevel = 0;
 
+  /** Per level, the sums of the arcs met so far (`arcSums`): key `place * 16 + type index`, value an offset into `sumPool`. */
+  private readonly sumAt: Map<number, number>[] = [];
+  private sumPool = new Float64Array(SUMS * 1024);
+  private sumUsed = 0;
+  private readonly typeIndex = new Map<string, number>();
+
   constructor(
     readonly family: TileFamilyId,
     subset: readonly number[],
@@ -565,6 +571,91 @@ export class CircuitShapes {
     return { path, chord: [transPt(x, leaf.pts[k]), transPt(x, leaf.pts[leaf.mate(k)])] };
   }
 
+  /**
+   * The sums over the tiles of the arc from place k of a level-n `type`, in
+   * its frame (`SUMS`), each arc worked out once from its children's.
+   */
+  private arcSums(n: number, type: string, k: number): number {
+    const memo = (this.sumAt[n] ??= new Map());
+    let ti = this.typeIndex.get(type);
+    if (ti === undefined) this.typeIndex.set(type, (ti = this.typeIndex.size));
+    const key = k * 16 + ti;
+    const hit = memo.get(key);
+    if (hit !== undefined) return hit;
+    const acc = new Float64Array(SUMS);
+    if (n === 0) {
+      const T = this.levels[0][type];
+      const p = T.pts[k], q = T.pts[T.mate(k)];
+      const mx = (p.x + q.x) / 2, my = (p.y + q.y) / 2;
+      acc.set([1, mx, my, 0, 0, 0, 0, mx, my, mx, my]);
+    } else {
+      const kids = this.kidsAt(n, type);
+      for (const e of this.enters(n, type, k)) {
+        const at = this.arcSums(n - 1, e.type, e.k);
+        joinSums(acc, this.sumPool, at, kids[e.slot].xform as Affine);
+      }
+    }
+    if (this.sumUsed + SUMS > this.sumPool.length) {
+      const grown = new Float64Array(this.sumPool.length * 2);
+      grown.set(this.sumPool);
+      this.sumPool = grown;
+    }
+    const at = this.sumUsed;
+    this.sumPool.set(acc, at);
+    this.sumUsed += SUMS;
+    memo.set(key, at);
+    return at;
+  }
+
+  /** The sums over a born circuit's tiles (`SUMS`), in its supertile's frame, with the pair of tiles that closes the loop in the shoelace sum. */
+  circuitSums(c: BornCircuit): Float64Array {
+    const acc = new Float64Array(SUMS);
+    for (const s of c.steps) {
+      const ch = this.childOf(c.level, c.type, s);
+      const at = this.arcSums(c.level - 1, ch.type, ch.k);
+      joinSums(acc, this.sumPool, at, ch.xform);
+    }
+    acc[6] += cross(acc[9] - acc[1], acc[10] - acc[2], acc[7] - acc[1], acc[8] - acc[2]);
+    return acc;
+  }
+
+  /**
+   * The chord midpoints of a born circuit's tiles at the given tile indices
+   * (ascending, counted from the first tile `shape(c, 0)` draws), as x, y
+   * pairs. Arcs holding none of them are passed over by their tile counts.
+   */
+  midpointsAt(c: BornCircuit, tiles: ArrayLike<number>): Float64Array {
+    const out = new Float64Array(2 * tiles.length);
+    let got = 0;
+    let passed = 0;
+    const visit = (lvl: number, type: string, k: number, x: Affine): void => {
+      const T = this.levels[lvl][type];
+      const len = T.len(k);
+      if (got === tiles.length || passed + len <= tiles[got]) {
+        passed += len;
+        return;
+      }
+      if (lvl === 0) {
+        const p = transPt(x, T.pts[k]), q = transPt(x, T.pts[T.mate(k)]);
+        while (got < tiles.length && tiles[got] === passed) {
+          out[2 * got] = (p.x + q.x) / 2;
+          out[2 * got + 1] = (p.y + q.y) / 2;
+          got++;
+        }
+        passed++;
+        return;
+      }
+      const kids = this.kidsAt(lvl, type);
+      for (const e of this.enters(lvl, type, k)) visit(lvl - 1, e.type, e.k, mul(x, kids[e.slot].xform as Affine));
+    };
+    for (const s of c.steps) {
+      if (got === tiles.length) break;
+      const ch = this.childOf(c.level, c.type, s);
+      visit(c.level - 1, ch.type, ch.k, ch.xform);
+    }
+    return out;
+  }
+
   /** A born circuit as a closed polyline in its supertile's frame, drawn down to level `stop`. */
   shape(c: BornCircuit, stop: number): Pt[] {
     const out: Pt[] = [];
@@ -608,6 +699,61 @@ export class CircuitShapes {
     }
     return out;
   }
+}
+
+/**
+ * The sums `arcSums` keeps per arc, over the chord midpoints m of its tiles in
+ * order, each about the arc's own mean so that none grows with the distance
+ * from the origin: the tile count; the mean (x, y); the second moments about
+ * the mean (xx, xy, yy); the shoelace sum Σ (m_j − mean) × (m_(j+1) − mean)
+ * over consecutive tiles; the first and the last midpoint.
+ */
+const SUMS = 11;
+
+const cross = (px: number, py: number, qx: number, qy: number): number => px * qy - py * qx;
+
+/**
+ * Appends an arc's sums (at `src[o..]`, in its own frame) to `acc`, mapped by
+ * x: the mean moves with x, the moments and the shoelace sum change by its
+ * linear part only, and two runs of tiles combine through their means (the
+ * pairwise update of Chan, Golub and LeVeque for the moments). The tiles are
+ * never listed.
+ */
+function joinSums(acc: Float64Array, src: Float64Array, o: number, x: Affine): void {
+  const [a, b, c, d, e, f] = x;
+  const nb = src[o];
+  const Cxx = src[o + 3], Cxy = src[o + 4], Cyy = src[o + 5];
+  const bx = a * src[o + 1] + b * src[o + 2] + c, by = d * src[o + 1] + e * src[o + 2] + f;
+  const bxx = a * a * Cxx + 2 * a * b * Cxy + b * b * Cyy;
+  const bxy = a * d * Cxx + (a * e + b * d) * Cxy + b * e * Cyy;
+  const byy = d * d * Cxx + 2 * d * e * Cxy + e * e * Cyy;
+  const bw = (a * e - b * d) * src[o + 6];
+  const Fx = a * src[o + 7] + b * src[o + 8] + c, Fy = d * src[o + 7] + e * src[o + 8] + f;
+  const Lx = a * src[o + 9] + b * src[o + 10] + c, Ly = d * src[o + 9] + e * src[o + 10] + f;
+  const na = acc[0];
+  if (na === 0) {
+    acc.set([nb, bx, by, bxx, bxy, byy, bw, Fx, Fy, Lx, Ly]);
+    return;
+  }
+  const n = na + nb;
+  const ax = acc[1], ay = acc[2];
+  const dx = bx - ax, dy = by - ay;
+  const mx = ax + (dx * nb) / n, my = ay + (dy * nb) / n;
+  const w = (na * nb) / n;
+  // about the new mean μ: Σ (u − μ) × (v − μ) = Σ (u − μ_run) × (v − μ_run) + (μ_run − μ) × (last − first), for each run
+  acc[6] +=
+    cross(ax - mx, ay - my, acc[9] - acc[7], acc[10] - acc[8]) +
+    bw +
+    cross(bx - mx, by - my, Lx - Fx, Ly - Fy) +
+    cross(acc[9] - mx, acc[10] - my, Fx - mx, Fy - my);
+  acc[0] = n;
+  acc[1] = mx;
+  acc[2] = my;
+  acc[3] += bxx + dx * dx * w;
+  acc[4] += bxy + dx * dy * w;
+  acc[5] += byy + dy * dy * w;
+  acc[9] = Lx;
+  acc[10] = Ly;
 }
 
 export interface TileLoop {
@@ -655,6 +801,29 @@ export function tileLoop(crossings: readonly Pt[], samples: number): TileLoop {
   return { xy, n, rg: Math.sqrt(s / L) };
 }
 
+/**
+ * A born circuit's tile loop, as `tileLoop(cs.shape(c, 0), samples)` gives
+ * it, from the circuit's sums and its sampled tiles alone.
+ */
+export function circuitLoop(cs: CircuitShapes, c: BornCircuit, samples: number): TileLoop {
+  const s = cs.circuitSums(c);
+  const L = s[0];
+  const rg = Math.sqrt((s[3] + s[5]) / L);
+  const n = Math.min(L, samples);
+  const at = Array.from({ length: n }, (_, j) => {
+    const i = Math.round((j * L) / n) % L;
+    return s[6] < 0 ? L - 1 - i : i;
+  });
+  const order = at.map((_, j) => j).sort((x, y) => at[x] - at[y]);
+  const mids = cs.midpointsAt(c, order.map((j) => at[j]));
+  const xy = new Float64Array(2 * n);
+  order.forEach((j, q) => {
+    xy[2 * j] = mids[2 * q];
+    xy[2 * j + 1] = mids[2 * q + 1];
+  });
+  return { xy, n, rg };
+}
+
 export interface DistinctCircuit {
   /** Child slots it runs through, sorted. */
   readonly family: string;
@@ -680,7 +849,7 @@ export function distinctCircuits(cs: CircuitShapes, samples: number): DistinctCi
   const order = [...cs.born].sort((a, b) => a.level - b.level || b.length - a.length);
   const out: DistinctCircuit[] = [];
   for (const c of order) {
-    const loop = tileLoop(cs.shape(c, 0), samples);
+    const loop = circuitLoop(cs, c, samples);
     const family = familyOf(c);
     const twin = out.find((o) => o.length === c.length && Math.abs(o.loop.rg - loop.rg) <= 1e-6 * loop.rg);
     if (twin) {

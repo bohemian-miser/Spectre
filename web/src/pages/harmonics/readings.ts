@@ -54,19 +54,58 @@ export function visitsAt(cs: CircuitShapes, c: BornCircuit, k: number): Visit[] 
   return out;
 }
 
-/** Cancels every backtrack A B A (cyclically) until none is left; the tiles of the three visits are kept on A. */
-export function cancelBacktracks(visits: readonly Visit[]): Visit[] {
-  let out = [...visits];
-  for (;;) {
-    const n = out.length;
-    let hit = -1;
-    for (let i = 0; i < n && hit < 0; i++) if (n > 2 && out[(i + 2) % n].id === out[i].id && out[(i + 1) % n].id !== out[i].id) hit = i;
-    if (hit < 0) return out;
-    const idx = [hit, (hit + 1) % n, (hit + 2) % n];
-    const merged: Visit = { ...out[hit], tiles: idx.reduce((s, q) => s + out[q].tiles, 0) };
-    const set = new Set(idx);
-    out = out.flatMap((v, q) => (q === hit ? [merged] : set.has(q) ? [] : [v]));
+/**
+ * Cancels every backtrack A B A (cyclically) until none is left, always the
+ * first one in the sequence as it stands; the tiles of the three visits are
+ * kept on A. Returns the visits kept (indices, in order) and their tiles.
+ *
+ * The visits are taken in order onto a stack that never holds a backtrack, so
+ * the first backtrack is always among its top three; once the end is reached,
+ * the backtracks left run round from the end to the start.
+ */
+export function cancelBacktracksAt(ids: ArrayLike<number | string>, tiles: ArrayLike<number>): { keep: Int32Array; tiles: Float64Array } {
+  const n = ids.length;
+  const at = new Int32Array(n);
+  const sum = new Float64Array(n);
+  let head = 0;
+  let top = 0;
+  const id = (q: number) => ids[at[q]];
+  const settle = (): void => {
+    while (top - head >= 3 && id(top - 1) === id(top - 3) && id(top - 2) !== id(top - 3)) {
+      sum[top - 3] += sum[top - 2] + sum[top - 1];
+      top -= 2;
+    }
+  };
+  for (let i = 0; i < n; i++) {
+    at[top] = i;
+    sum[top++] = tiles[i];
+    settle();
   }
+  while (top - head > 2) {
+    if (id(head) === id(top - 2) && id(top - 1) !== id(top - 2)) {
+      // the last two and the first
+      const kept = at[top - 2], s = sum[top - 2] + sum[top - 1] + sum[head];
+      head++;
+      top -= 2;
+      at[top] = kept;
+      sum[top++] = s;
+    } else if (id(head + 1) === id(top - 1) && id(head) !== id(top - 1)) {
+      // the last and the first two
+      sum[top - 1] += sum[head] + sum[head + 1];
+      head += 2;
+    } else break;
+    settle();
+  }
+  return { keep: at.slice(head, top), tiles: sum.slice(head, top) };
+}
+
+/** `cancelBacktracksAt` on visits. */
+export function cancelBacktracks(visits: readonly Visit[]): Visit[] {
+  const { keep, tiles } = cancelBacktracksAt(
+    visits.map((v) => v.id),
+    visits.map((v) => v.tiles),
+  );
+  return Array.from(keep, (i, q) => (visits[i].tiles === tiles[q] ? visits[i] : { ...visits[i], tiles: tiles[q] }));
 }
 
 /** A visit's token at level k of a circuit born at level `birth`: `Ph<6D`, with the type left out from the level just below the birth and the parent from the one below that. */
@@ -84,15 +123,72 @@ export interface Reading {
   readonly tiles: readonly number[];
 }
 
-/** The circuit read at every level below its birth, backtracks cancelled. */
-export function readings(cs: CircuitShapes, c: BornCircuit): Reading[] {
-  const out: Reading[] = [];
-  for (let k = 0; k < c.level; k++) {
-    const raw = visitsAt(cs, c, k);
-    const cut = cancelBacktracks(raw);
-    out.push({ level: k, raw: raw.length, tokens: cut.map((v) => token(v, k, c.level)), tiles: cut.map((v) => v.tiles) });
+/**
+ * The raw visits at one level, as columns: the arc through the supertile
+ * (its type and the place entered), the supertile's slot path from the birth
+ * supertile down as one number (base 8), its slot, its parent's type, and
+ * the tiles on the arc.
+ */
+interface VisitColumns {
+  readonly type: string[];
+  readonly cross: number[];
+  readonly id: number[];
+  readonly slot: number[];
+  readonly parent: string[];
+  readonly tiles: number[];
+}
+
+/** The visits of the level below: each arc's route through the children of its supertile. */
+function expand(cs: CircuitShapes, n: number, v: VisitColumns): VisitColumns {
+  const out: VisitColumns = { type: [], cross: [], id: [], slot: [], parent: [], tiles: [] };
+  const below = cs.levels[n - 1];
+  for (let i = 0; i < v.type.length; i++) {
+    for (const e of cs.enters(n, v.type[i], v.cross[i])) {
+      out.type.push(e.type);
+      out.cross.push(e.k);
+      out.id.push(v.id[i] * 8 + e.slot);
+      out.slot.push(e.slot);
+      out.parent.push(v.type[i]);
+      out.tiles.push(below[e.type].len(e.k));
+    }
   }
   return out;
+}
+
+/**
+ * A born circuit read from the level below its birth downwards, each level's
+ * visits expanded from the level above's, until a level has more than
+ * `stopAbove` raw visits (that level is read and is the last).
+ */
+export function readDown(cs: CircuitShapes, c: BornCircuit, stopAbove = Infinity): { readings: Reading[]; readFrom: number } {
+  const out: Reading[] = [];
+  const names = new Map<string, string>();
+  const name = (t: string): string => names.get(t) ?? (names.set(t, t), t);
+  let k = c.level - 1;
+  let v: VisitColumns = { type: [], cross: [], id: [], slot: [], parent: [], tiles: [] };
+  for (const s of c.steps) {
+    const ch = cs.childOf(c.level, c.type, s);
+    v.type.push(ch.type);
+    v.cross.push(ch.k);
+    v.id.push(ch.pos);
+    v.slot.push(ch.pos);
+    v.parent.push(c.type);
+    v.tiles.push(cs.levels[k][ch.type].len(ch.k));
+  }
+  for (; k >= 0; k--) {
+    if (k < c.level - 1) v = expand(cs, k + 1, v);
+    const cut = cancelBacktracksAt(v.id, v.tiles);
+    const at = v;
+    const tokens = Array.from(cut.keep, (i) => name(token({ id: '', type: at.type[i], slot: at.slot[i], parent: at.parent[i], tiles: 0 }, k, c.level)));
+    out.unshift({ level: k, raw: v.type.length, tokens, tiles: Array.from(cut.tiles) });
+    if (v.type.length > stopAbove) break;
+  }
+  return { readings: out, readFrom: Math.max(0, k) };
+}
+
+/** The circuit read at every level below its birth, backtracks cancelled. */
+export function readings(cs: CircuitShapes, c: BornCircuit): Reading[] {
+  return readDown(cs, c).readings;
 }
 
 /** Whether two cyclic token sequences are the same, read either way round. Rotations are tried only where the first token matches. */
