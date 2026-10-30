@@ -24,13 +24,13 @@
 .pd-rx { stroke: var(--muted); stroke-width: 1; }
 .pd-dot { fill: var(--text); }
 .pd-many { display: block; width: 64px; font-family: var(--mono); font-size: 0.7rem; color: var(--muted); }
-.pd-anim { display: grid; gap: 8px; max-width: 760px; }
+.pd-anim { display: grid; gap: 8px; max-width: 1100px; }
 .pd-controls { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; font-size: 0.9rem; }
 .pd-controls > button { padding: 4px 12px; border-radius: 99px; border: 1px solid var(--line); background: var(--panel); color: var(--text); cursor: pointer; }
 .pd-chips { display: inline-flex; flex-wrap: wrap; gap: 4px; }
 .pd-chips button { padding: 2px 10px; border-radius: 99px; border: 1px solid var(--line); background: var(--panel); color: var(--text); cursor: pointer; font-size: 0.82rem; }
 .pd-chips button.is-active { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
-.pd-canvas { width: 100%; height: auto; aspect-ratio: 720 / 460; display: block; border: 1px solid var(--line); border-radius: var(--radius); background: var(--canvas-bg); }
+.pd-canvas { width: 100%; height: auto; aspect-ratio: 1080 / 560; display: block; border: 1px solid var(--line); border-radius: var(--radius); background: var(--canvas-bg); }
 .pd-scrub { flex: 1 1 200px; min-width: 120px; }
 .pd-phases { margin: 0; padding-left: 1.4em; display: grid; gap: 2px; font-size: 0.85rem; }
 .pd-phases button { background: none; border: 0; padding: 0; color: var(--muted); cursor: pointer; font: inherit; text-align: left; }
