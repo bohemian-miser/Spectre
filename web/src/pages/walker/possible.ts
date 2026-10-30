@@ -217,9 +217,12 @@ export interface ChoiceNode {
  * The options at a choice, each with the ancestor types that decide it: at
  * the lowest level where the options' sets of types differ.
  */
-export function forkOf(wk: Walker, stage: Stage): Fork {
-  const w = stage.worlds[0];
-  const sets = stage.pending.map((o) => typesByLevel(o.worlds).map((m) => new Set(m.keys())));
+export const forkOf = (wk: Walker, stage: Stage): Fork => forkAt(wk, stage.worlds, stage.pending, stage.seen.length + 1);
+
+/** The fork at `step`, reached with `worlds` and offering `pending`. */
+export function forkAt(wk: Walker, worlds: readonly World[], pending: readonly Outcome[], step: number): Fork {
+  const w = worlds[0];
+  const sets = pending.map((o) => typesByLevel(o.worlds).map((m) => new Set(m.keys())));
   const depth = Math.max(0, ...sets.map((x) => x.length));
   let level: number | null = null;
   for (let k = 0; k < depth && level === null; k++) {
@@ -227,9 +230,9 @@ export function forkOf(wk: Walker, stage: Stage): Fork {
     if (new Set(keys).size > 1) level = k;
   }
   return {
-    step: stage.seen.length + 1,
+    step,
     from: { type: w.at.leaf, exit: wk.table.get(w.at.leaf)!.get(w.entry)! },
-    options: stage.pending.map((o, i) => ({
+    options: pending.map((o, i) => ({
       key: o.key,
       type: o.type,
       edge: o.edge,
@@ -238,13 +241,13 @@ export function forkOf(wk: Walker, stage: Stage): Fork {
       deciders: level === null ? [] : HEX_TYPES.filter((t) => sets[i][level!]?.has(t)),
       slotsPer: level === null ? [] : HEX_TYPES.filter((t) => sets[i][level!]?.has(t)).map((t) => {
         const slots = new Set<number>();
-        for (const w of stage.pending[i].worlds) {
+        for (const w of pending[i].worlds) {
           const l = w.chain[level!];
           if (l && l.parent === t) slots.add(l.slot);
         }
         return slots.size;
       }),
-      cells: level === null ? [] : [...new Set(stage.pending[i].worlds.flatMap((w) => (w.chain[level!] ? [`${w.chain[level!].parent}${w.chain[level!].slot}`] : [])))],
+      cells: level === null ? [] : [...new Set(pending[i].worlds.flatMap((w) => (w.chain[level!] ? [`${w.chain[level!].parent}${w.chain[level!].slot}`] : [])))],
     })),
   };
 }

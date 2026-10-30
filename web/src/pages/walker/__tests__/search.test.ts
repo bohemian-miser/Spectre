@@ -17,7 +17,7 @@ import { FRESH } from '../canon';
 
 import { circuitKey } from '../circuits';
 import { explore, makeWalker, reducePossible, startWalk, type PossibleWalk } from '../possible';
-import { SearchTreeData, Subtrees } from '../search';
+import { SearchTreeData, Subtrees, branchOf } from '../search';
 import { patternOf } from '../walk';
 
 const triangle = patternOf([0, 2, 3, 4, 6, 8], '000100000');
@@ -33,7 +33,7 @@ describe('the search in subtrees', () => {
     const wk = makeWalker(triangle, 'Delta', 0, 5);
     const pw = startWalk(wk);
     const sub = new Subtrees(wk, 'w0', 400);
-    sub.add([{ handle: '0', stage: pw.stage }]);
+    sub.add([branchOf('0', pw.stage)]);
     const data = new SearchTreeData();
     while (sub.waiting > 0) data.put(sub.run(1000));
     const ex = explore(pw, { forks: Infinity, tiles: 400 }).pw;
@@ -54,7 +54,7 @@ describe('the search in subtrees', () => {
 describe('one branch per circuit', () => {
   const walkAll = (wk: ReturnType<typeof makeWalker>, tiles: number, oneReading: boolean) => {
     const sub = new Subtrees(wk, 'w0', tiles);
-    sub.add([{ handle: '0', stage: startWalk(wk).stage, ...(oneReading ? { reading: FRESH } : {}) }]);
+    sub.add([branchOf('0', startWalk(wk).stage, oneReading ? FRESH : undefined)]);
     const data = new SearchTreeData();
     while (sub.waiting > 0) data.put(sub.run(1000));
     const ends = data.nodes.filter((n) => n.end?.status === 'closed').map((n) => n.end!.seen!);

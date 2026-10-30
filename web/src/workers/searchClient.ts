@@ -7,7 +7,7 @@
  * `Worker` (node, vitest) one `Subtrees` runs on the calling thread.
  */
 
-import { Subtrees, type Branch, type Handle, type Walked } from '../pages/walker/search';
+import { Subtrees, branchOf, type Branch, type Handle, type Walked } from '../pages/walker/search';
 import { FRESH } from '../pages/walker/canon';
 import type { Stage, Walker } from '../pages/walker/possible';
 
@@ -36,7 +36,7 @@ export interface Search {
 
 /** `oneReading`: cut every branch that is not the first reading of what it closes on (`canon.ts`). */
 export function startSearch(walker: Walker, root: Stage, tiles: number, oneReading: boolean, onUpdate: (u: SearchUpdate) => void, size = Math.max(1, (globalThis.navigator?.hardwareConcurrency ?? 2) - 1)): Search {
-  const rootBranch: Branch = { handle: '0', stage: root, ...(oneReading ? { reading: FRESH } : {}) };
+  const rootBranch = branchOf('0', root, oneReading ? FRESH : undefined);
   if (typeof Worker === 'undefined') {
     const sub = new Subtrees(walker, 'w0', tiles);
     sub.add([rootBranch]);

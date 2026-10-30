@@ -2,13 +2,17 @@
  * The breadth-first search over the tree of choices, split so that the
  * ancestor stacks never leave the thread that walks them.
  *
- * A `Subtrees` holds a queue of branches not yet walked, each with its stage.
- * Walking one (`walkOn`) ends it, or opens a fork whose landings join the
- * back of the queue; once walked, a branch keeps no stacks. What comes out is
- * a `Walked` record per branch: its fork's landings and the handles given to
+ * A `Subtrees` holds a queue of branches not yet walked, each with its
+ * stacks. Walking one ends it, or opens a fork whose landings join the back
+ * of the queue; once walked, a branch keeps no stacks. What comes out is a
+ * `Walked` record per branch: its fork's landings and the handles given to
  * them, or how it ended, with the tiles of a circuit it closes on. The page
  * builds its tree from the records (`SearchTree`), and walks the stacks of
  * one branch again only when it is looked at (`followKeys`).
+ *
+ * A branch keeps the tiles walked to it as a `Path`, one byte per tile
+ * (`tileCode`) after the path of the branch it forks from, so the landings
+ * of a fork share the tiles before it.
  *
  * A branch that carries a `Reading` is cut as soon as it cannot be the first
  * reading of a circuit (`canon.ts`), so each circuit is closed on by one
@@ -17,13 +21,37 @@
  * Handles are `worker:index`, so records from several workers can be put in
  * one tree; the root is `0`.
  */
-import { firstReading, stillFirst, type Reading } from './canon';
-import { advance, chooseIn, forkOf, reducePossible, type Fork, type PossibleWalk, type Seen, type Stage, type Status, type Walker } from './possible';
+import { firstReading, seenOf, stillFirst, tileCode, type Reading } from './canon';
+import { forkAt, reducePossible, stepAll, type Fork, type Outcome, type PossibleWalk, type Seen, type Stage, type Status, type Walker, type World } from './possible';
 
 export type Handle = string;
 
-/** A branch handed to a walker of subtrees: its handle and the stage it starts from. */
-export interface Branch { readonly handle: Handle; readonly stage: Stage; readonly reading?: Reading }
+/** The tiles walked to a branch: the codes walked since `parent`'s path, `length` in all. */
+export interface Path { readonly parent: Path | null; readonly length: number; readonly codes: Uint8Array }
+
+/** A branch handed to a walker of subtrees: its handle, its stacks and how it stands, and the tiles walked to it. */
+export interface Branch {
+  readonly handle: Handle;
+  readonly worlds: readonly World[];
+  readonly status: Status;
+  readonly path: Path;
+  readonly reading?: Reading;
+}
+
+/** The branch that starts from a stage. */
+export function branchOf(handle: Handle, stage: Stage, reading?: Reading): Branch {
+  const codes = Uint8Array.from(stage.seen, (s) => tileCode(s.type, s.entry));
+  // a stage stopped at a choice is walked to it again
+  const status = stage.status === 'choice' ? 'walking' : stage.status;
+  return { handle, worlds: stage.worlds, status, path: { parent: null, length: codes.length, codes }, ...(reading ? { reading } : {}) };
+}
+
+/** Writes a path's codes, in order, into the first `path.length` places of `into`. */
+function spell(path: Path, into: Uint8Array): void {
+  for (let p: Path | null = path; p; p = p.parent) into.set(p.codes, p.length - p.codes.length);
+}
+
+const statusAfter = (o: Outcome): Status => (o.key === 'closes' ? 'closed' : o.key === 'open' ? 'open' : 'walking');
 
 /** How a branch ended: as the walk does, or cut as not the first reading of anything it closes on. */
 export type Ending = Status | 'cut';
@@ -44,6 +72,8 @@ export class Subtrees {
   private readonly queue: Branch[] = [];
   private head = 0;
   private made = 0;
+  /** The codes of the branch being walked. */
+  private codes = new Uint8Array(1024);
 
   constructor(private readonly walker: Walker, private readonly tag: string, private readonly tiles: number) {}
 
@@ -71,33 +101,60 @@ export class Subtrees {
     return out;
   }
 
+  /** The codes buffer with room for `n` codes, keeping the first `keep`. */
+  private room(n: number, keep: number): Uint8Array {
+    if (n > this.codes.length) {
+      const grown = new Uint8Array(Math.max(n, this.codes.length * 2));
+      grown.set(this.codes.subarray(0, keep));
+      this.codes = grown;
+    }
+    return this.codes;
+  }
+
   private walk(b: Branch): Walked {
     const wk = this.walker;
-    let st = b.stage;
+    const from = b.path.length;
+    let codes = this.room(from + 1, 0);
+    spell(b.path, codes);
+    let n = from;
+    let worlds = b.worlds;
+    let status = b.status;
+    let pending: readonly Outcome[] = [];
     let reading = b.reading;
-    const cut = (): Walked => ({ handle: b.handle, tiles: st.seen.length, end: { status: 'cut' } });
-    while (st.status === 'walking' && st.seen.length < this.tiles) {
-      st = advance(wk, st);
-      if (reading && st.status !== 'choice') {
-        const next = stillFirst(wk, st.seen, reading);
-        if (!next) return cut();
+    while (status === 'walking' && n < this.tiles) {
+      const { outcomes, corner } = stepAll(wk, worlds);
+      if (outcomes.length === 0) { status = corner.stacks ? 'open' : 'stuck'; break; }
+      if (outcomes.length > 1) { status = 'choice'; pending = outcomes; break; }
+      codes = this.room(n + 1, n);
+      codes[n++] = tileCode(worlds[0].at.leaf, worlds[0].entry);
+      worlds = outcomes[0].worlds;
+      status = statusAfter(outcomes[0]);
+      if (reading) {
+        const next = stillFirst(wk, codes, n, reading);
+        if (!next) return { handle: b.handle, tiles: n, end: { status: 'cut' } };
         reading = next;
       }
     }
-    if (st.status === 'closed' && reading && !firstReading(wk, st.seen)) return cut();
-    if (st.status !== 'choice') return { handle: b.handle, tiles: st.seen.length, end: { status: st.status, seen: st.status === 'closed' ? st.seen : undefined } };
-    const fork = forkOf(wk, st);
+    if (status === 'closed' && reading && !firstReading(wk, codes, n)) return { handle: b.handle, tiles: n, end: { status: 'cut' } };
+    if (status !== 'choice') {
+      const seen = status === 'closed' ? Array.from(codes.subarray(0, n), (c) => seenOf(wk, c)) : undefined;
+      return { handle: b.handle, tiles: n, end: { status, seen } };
+    }
+    const fork = forkAt(wk, worlds, pending, n + 1);
+    // every landing leaves the same tile, so the path through it is shared
+    codes = this.room(n + 1, n);
+    codes[n] = tileCode(worlds[0].at.leaf, worlds[0].entry);
     const children: { handle: Handle; key: string }[] = [];
-    for (const o of st.pending) {
-      const stage = chooseIn(wk, st, o.key);
-      // a landing that cannot start a first reading is not walked
-      const next = reading ? stillFirst(wk, stage.seen, reading) : undefined;
-      if (reading && !next) continue;
+    // landings that cannot start a first reading are not walked
+    const next = reading ? stillFirst(wk, codes, n + 1, reading) : undefined;
+    if (next === null) return { handle: b.handle, tiles: n, fork: { fork, children } };
+    const path: Path = { parent: b.path, length: n + 1, codes: codes.slice(from, n + 1) };
+    for (const o of pending) {
       const handle = `${this.tag}:${this.made++}`;
-      this.queue.push({ handle, stage, reading: next ?? undefined });
+      this.queue.push({ handle, worlds: o.worlds, status: statusAfter(o), path, ...(next ? { reading: next } : {}) });
       children.push({ handle, key: o.key });
     }
-    return { handle: b.handle, tiles: st.seen.length, fork: { fork, children } };
+    return { handle: b.handle, tiles: n, fork: { fork, children } };
   }
 }
 
