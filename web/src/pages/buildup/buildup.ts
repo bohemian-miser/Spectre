@@ -41,19 +41,40 @@ export interface Level {
   readonly groups: readonly (readonly HexType[])[];
 }
 
+/** Positions to 1/64 and the routes, as one list of integers. */
+const contentOf = (pts: readonly Pt[], routes: readonly (readonly [number, number, number])[]): Float64Array => {
+  const out = new Float64Array(2 * pts.length + 3 * routes.length + 1);
+  let i = 0;
+  for (const p of pts) { out[i++] = Math.round(p.x * 64); out[i++] = Math.round(p.y * 64); }
+  out[i++] = -1;
+  for (const r of routes) { out[i++] = r[0]; out[i++] = r[1]; out[i++] = r[2]; }
+  return out;
+};
+
+const hashOf = (xs: Float64Array): number => {
+  let h = 2166136261;
+  for (let i = 0; i < xs.length; i++) h = Math.imul(h ^ (xs[i] | 0), 16777619);
+  return h >>> 0;
+};
+
+const sameContent = (a: Float64Array, b: Float64Array): boolean => a.length === b.length && a.every((x, i) => x === b[i]);
+
 export function tablesAt(cs: CircuitShapes, level: number): Level {
   const types = Object.keys(cs.levels[level]) as HexType[];
-  const bySig = new Map<string, HexType[]>();
+  // same crossings in the same places, joined the same way, through as many tiles
+  const byHash = new Map<number, { content: Float64Array; types: HexType[] }[]>();
   const tables = types.map((type) => {
     const L = layer(cs, level, type);
     const routes: [number, number, number][] = [];
     L.mate.forEach((m, i) => { if (m > i) routes.push([i, m, L.arcLen[i]]); });
-    // same crossings in the same places, joined the same way, through as many tiles
-    const sig = `${L.pts.map((p) => `${p.x.toFixed(6)},${p.y.toFixed(6)}`).join(';')}|${routes.map((r) => r.join(',')).join(';')}`;
-    (bySig.get(sig) ?? bySig.set(sig, []).get(sig)!).push(type);
+    const content = contentOf(L.pts, routes);
+    const bucket = byHash.get(hashOf(content)) ?? byHash.set(hashOf(content), []).get(hashOf(content))!;
+    const same = bucket.find((g) => sameContent(g.content, content));
+    if (same) same.types.push(type);
+    else bucket.push({ content, types: [type] });
     return { type, pts: L.pts, routes };
   });
-  return { level, tables, groups: [...bySig.values()] };
+  return { level, tables, groups: [...byHash.values()].flat().map((g) => g.types) };
 }
 
 /** The tile and edge crossing k of a level-n supertile of this type sits on. */

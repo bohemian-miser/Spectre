@@ -19,7 +19,6 @@ import '../styles/buildup.css';
 
 const nf = (n: number) => n.toLocaleString('en-US');
 const DEFAULT: ComboChoice = { subset: [0, 2, 3, 4, 6, 8], combo: '140000001', level: 6 };
-const MAX_LEVEL = 8;
 /** Most points a circuit is drawn with; longer circuits are drawn through evenly spaced tiles. */
 const MAX_POINTS = 4000;
 /** Tables with more routes than this are drawn on a canvas, without a reading per route. */
@@ -171,7 +170,16 @@ export default function BuildUpPage(): JSX.Element {
   const tables = useMemo(() => (cs.current && level <= built ? tablesAt(cs.current, level) : null), [built, level]); // eslint-disable-line react-hooks/exhaustive-deps
   const closings = useMemo(() => (cs.current ? closingsByLevel(cs.current) : []), [built]); // eslint-disable-line react-hooks/exhaustive-deps
   const [logMin, logMax] = tables ? bounds(tables.tables.flatMap((t) => t.routes.map((r) => Math.log(r[2])))) : [0, 0];
-  const groupCounts = useMemo(() => (cs.current ? Array.from({ length: built + 1 }, (_, k) => tablesAt(cs.current!, k).groups.length) : []), [built]); // eslint-disable-line react-hooks/exhaustive-deps
+  // a built level never changes, so each level's count is worked out once
+  const counted = useRef<{ cs: CircuitShapes | null; counts: number[] }>({ cs: null, counts: [] });
+  const groupCounts = useMemo(() => {
+    const now = cs.current;
+    if (!now) return [];
+    if (counted.current.cs !== now) counted.current = { cs: now, counts: [] };
+    const { counts } = counted.current;
+    for (let k = counts.length; k <= built; k++) counts.push(tablesAt(now, k).groups.length);
+    return counts.slice(0, built + 1);
+  }, [built]); // eslint-disable-line react-hooks/exhaustive-deps
   const here = closings[level] ?? [];
 
   const hrefOf = (c: Closing): string => {
@@ -192,7 +200,7 @@ export default function BuildUpPage(): JSX.Element {
         <p className="bu-muted">Types whose tables are identical are drawn once with all their names: from outside they behave the same, though they are built differently inside.</p>
       </header>
 
-      <ComboPicker busy={busy} onAdd={(c) => buildTo(c.level, c)} levels={[4, 5, 6, 7, 8]} verb="Build" initialLevel={DEFAULT.level} initialCombo={DEFAULT.combo} />
+      <ComboPicker busy={busy} onAdd={(c) => buildTo(c.level, c)} levels={[4, 5, 6, 7, 8, 9, 10]} verb="Build" initialLevel={DEFAULT.level} initialCombo={DEFAULT.combo} />
       {error && <p className="bu-error">{error}</p>}
 
       <div className="bu-levels" role="group" aria-label="Level" data-testid="bu-levels">
@@ -201,11 +209,9 @@ export default function BuildUpPage(): JSX.Element {
             {k === 0 ? 'Tiles' : `Level ${k}`}
           </button>
         ))}
-        {built < MAX_LEVEL && (
-          <button type="button" disabled={busy} onClick={() => { buildTo(built + 1); setLevel(built + 1); }} data-testid="bu-next">
-            {busy ? `Building level ${built + 1}…` : `Build level ${built + 1}`}
-          </button>
-        )}
+        <button type="button" disabled={busy} onClick={() => { buildTo(built + 1); setLevel(built + 1); }} data-testid="bu-next">
+          {busy ? `Building level ${built + 1}…` : `Build level ${built + 1}`}
+        </button>
         <span className="bu-muted">{choice.subset.join('')} · {choice.combo}</span>
       </div>
 
