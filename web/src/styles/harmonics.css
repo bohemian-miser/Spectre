@@ -136,51 +136,123 @@
   border-style: dashed;
 }
 
-/* Families and their chains. */
-.harm-families {
-  display: grid;
-  gap: 10px;
+/* The table of circuits: a column per level, a row per chain. */
+.harm-table-wrap {
+  overflow-x: auto;
+  max-width: 100%;
+  border: 1px solid var(--line, #8884);
+  border-radius: 6px;
 }
-.harm-family h3 {
-  margin: 0 0 4px;
-  font-size: 15px;
+.harm-table {
+  border-collapse: collapse;
+  font-size: 12px;
 }
-.harm-family h3 small {
+.harm-table thead th {
+  position: sticky;
+  top: 0;
+  background: var(--panel, var(--bg, #fff));
+  color: var(--muted);
+  font-weight: 500;
+  padding: 3px 4px;
+  text-align: center;
+}
+.harm-table td {
+  padding: 2px;
+  text-align: center;
+  vertical-align: middle;
+  min-width: 58px;
+}
+.harm-fam-row th {
+  text-align: left;
+  padding: 8px 6px 2px;
+  font-size: 13px;
+}
+.harm-fam-row small {
   font-weight: 400;
   color: var(--muted);
   margin-left: 6px;
 }
-.harm-chain-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 6px;
-  margin: 3px 0 3px 12px;
-}
-.harm-row-label {
-  font-size: 12px;
+.harm-row-head {
+  text-align: left;
+  font-weight: 400;
   color: var(--muted);
-  min-width: 74px;
+  padding: 0 6px;
+  white-space: nowrap;
+  position: sticky;
+  left: 0;
+  background: var(--panel, var(--bg, #fff));
 }
-.harm-near {
-  font-size: 15px;
+.harm-cell {
+  display: grid;
+  justify-items: center;
+  gap: 1px;
+  padding: 2px 3px;
+  font: inherit;
+  font-size: 11px;
+  color: inherit;
+  background: transparent;
+  border: 1px solid var(--line, #8884);
+  border-radius: 5px;
+  cursor: pointer;
+}
+.harm-cell:hover {
+  border-color: var(--g1);
+}
+.harm-cell.is-selected {
+  border-color: var(--g1);
+  box-shadow: inset 0 0 0 1px var(--g1);
+  background: color-mix(in srgb, var(--g1) 8%, transparent);
+}
+.harm-cell-near {
+  color: var(--muted);
+  border: 1px dashed var(--line, #8884);
+  border-radius: 5px;
+  font-size: 11px;
+  opacity: 0.7;
+  cursor: help;
+}
+.harm-thumb {
+  display: block;
+  color: var(--text, #222);
+}
+.harm-pairbar {
+  margin: 8px 0;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--g1) 10%, transparent);
+  font-size: 13px;
+}
+.harm-crumb {
+  font: inherit;
+  border: 0;
+  background: none;
+  padding: 0 2px;
+  color: var(--g1);
+  cursor: pointer;
+  text-decoration: underline;
 }
 
-/* A chain over its supertiles. */
+/* A chain over its supertiles, and its rows of visits. */
 .harm-supertiles h3,
-.harm-explore h3,
 .harm-page section > h3 {
   margin: 18px 0 6px;
 }
-.harm-slider {
+.harm-canvas-controls {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px 10px;
+  gap: 6px 16px;
   font-size: 13px;
 }
-.harm-chain-glyphs,
-.harm-chain-pics {
+.harm-slider,
+.harm-check,
+.harm-show {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+.harm-chain-glyphs {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-start;
@@ -188,7 +260,7 @@
 }
 .harm-chain-glyphs figure {
   margin: 0;
-  width: 150px;
+  width: 130px;
   font-size: 11px;
   color: var(--muted);
 }
@@ -202,24 +274,41 @@
   cursor: pointer;
   color: inherit;
 }
-.harm-step {
-  align-self: center;
-  font-size: 18px;
-  color: var(--muted);
-  cursor: help;
+.harm-members {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 520px), 1fr));
+  gap: 12px;
+  margin-top: 8px;
 }
-.harm-side {
+.harm-member {
   margin: 0;
   display: grid;
   gap: 4px;
-  width: min(230px, 100%);
+  min-width: 0;
 }
-.harm-side svg {
-  width: 100%;
-  aspect-ratio: 1;
+.harm-member figcaption {
+  font-size: 12px;
+  color: var(--muted);
+  min-height: 2.6em;
+}
+.harm-member figcaption strong {
+  color: var(--text, inherit);
+}
+.harm-member-view .bv-surface {
+  height: min(70vh, 560px);
+  min-height: 300px;
+}
+.harm-step {
+  font-size: 16px;
+  margin-right: 6px;
+  color: var(--text, inherit);
+  cursor: help;
+}
+.harm-hover-note {
+  color: var(--g1);
 }
 .harm-side-empty {
-  aspect-ratio: 1;
+  min-height: 300px;
   display: grid;
   place-items: center;
   text-align: center;
@@ -229,110 +318,46 @@
   border-radius: 6px;
   padding: 12px;
 }
-.harm-side figcaption {
-  font-size: 12px;
-  color: var(--muted);
-}
-.harm-st {
-  fill: color-mix(in srgb, var(--chip, #888) 30%, transparent);
-  stroke: color-mix(in srgb, var(--chip, #888) 80%, #000);
-  stroke-width: 0.6;
-}
-.harm-st-unshared {
-  fill: color-mix(in srgb, var(--chip, #888) 60%, transparent);
-  stroke: var(--g2);
-  stroke-width: 2.4;
-}
-
-/* A chain supertile by supertile. */
-.harm-explore {
-  position: relative;
-}
 .harm-cols {
   display: grid;
   gap: 8px 12px;
   margin-top: 8px;
 }
-.harm-col {
-  min-width: 0;
-  display: grid;
-  gap: 6px;
-  align-content: start;
-}
 .harm-col-head {
   font-weight: 600;
 }
-.harm-col-head small {
-  font-weight: 400;
-  color: var(--muted);
-}
-.harm-items {
+.harm-row {
+  min-width: 0;
   font-size: 12px;
   display: grid;
   gap: 3px;
+  padding: 4px 0;
+  border-top: 1px solid var(--line, #8884);
+}
+.harm-row.is-drawn {
+  background: color-mix(in srgb, var(--g1) 6%, transparent);
 }
 .harm-xhead {
   color: var(--muted);
   font-size: 12px;
   margin: 0;
 }
-.harm-xchip {
-  font: inherit;
-  color: inherit;
-  cursor: pointer;
-}
-.harm-chip-picked {
-  box-shadow: 0 0 0 2px var(--g1);
-}
 .harm-run {
   border-style: dashed;
   opacity: 0.75;
   --chip: #9a9a9a;
-  cursor: help;
 }
 .harm-run::before {
   display: none;
 }
-.harm-trail {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 2px;
-  font-size: 12px;
+.harm-chip.is-lit {
+  outline: 2px solid var(--g1);
+  outline-offset: -1px;
+  opacity: 1;
+  background: color-mix(in srgb, var(--g1) 22%, transparent);
 }
-.harm-crumb {
-  font: inherit;
-  border: 0;
-  background: none;
-  padding: 0 2px;
-  color: var(--muted);
-  cursor: pointer;
-}
-.harm-crumb:hover {
-  color: inherit;
-  text-decoration: underline;
-}
-.harm-loc .bv-surface {
-  height: 210px;
-  min-height: 0;
-}
-.harm-routes .bu-passes .bv-surface {
-  height: 240px;
-  min-height: 0;
-}
-.harm-pop {
-  position: absolute;
-  z-index: 5;
-  width: 280px;
-  padding: 8px;
-  display: grid;
-  gap: 4px;
-  background: var(--panel, #fff);
-  border: 1px solid var(--line, #8884);
-  border-radius: 6px;
-  box-shadow: 0 4px 16px #0003;
-  pointer-events: none;
-}
-.harm-mini {
-  width: 100%;
-  height: 140px;
+@media (max-width: 700px) {
+  .harm-member-view .bv-surface {
+    height: 70vw;
+  }
 }
