@@ -136,9 +136,40 @@
   border-style: dashed;
 }
 
-/* A circuit beside its partner, supertile for supertile. */
+/* Families and their chains. */
+.harm-families {
+  display: grid;
+  gap: 10px;
+}
+.harm-family h3 {
+  margin: 0 0 4px;
+  font-size: 15px;
+}
+.harm-family h3 small {
+  font-weight: 400;
+  color: var(--muted);
+  margin-left: 6px;
+}
+.harm-chain-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  margin: 3px 0 3px 12px;
+}
+.harm-row-label {
+  font-size: 12px;
+  color: var(--muted);
+  min-width: 74px;
+}
+.harm-near {
+  font-size: 15px;
+}
+
+/* A chain over its supertiles. */
 .harm-supertiles h3,
-.harm-expansion h3 {
+.harm-explore h3,
+.harm-page section > h3 {
   margin: 18px 0 6px;
 }
 .harm-slider {
@@ -148,11 +179,40 @@
   gap: 4px 10px;
   font-size: 13px;
 }
+.harm-chain-glyphs,
+.harm-chain-pics {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 10px;
+}
+.harm-chain-glyphs figure {
+  margin: 0;
+  width: 150px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.harm-chain-glyphs figure.is-picked figcaption {
+  color: inherit;
+}
+.harm-glyph-pick {
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  color: inherit;
+}
+.harm-step {
+  align-self: center;
+  font-size: 18px;
+  color: var(--muted);
+  cursor: help;
+}
 .harm-side {
   margin: 0;
   display: grid;
   gap: 4px;
-  width: min(340px, 100%);
+  width: min(230px, 100%);
 }
 .harm-side svg {
   width: 100%;
@@ -183,46 +243,96 @@
   stroke: var(--g2);
   stroke-width: 2.4;
 }
-.harm-legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  font-size: 12px;
-  margin: 4px 0;
+
+/* A chain supertile by supertile. */
+.harm-explore {
+  position: relative;
 }
-.harm-xgrid {
+.harm-cols {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 18px minmax(0, 1fr);
-  gap: 6px 8px;
-  font-size: 12px;
+  gap: 8px 12px;
+  margin-top: 8px;
 }
-.harm-xline {
-  display: contents;
+.harm-col {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+  align-content: start;
 }
-.harm-xcol-head,
-.harm-xhead {
+.harm-col-head {
+  font-weight: 600;
+}
+.harm-col-head small {
+  font-weight: 400;
   color: var(--muted);
 }
+.harm-items {
+  font-size: 12px;
+  display: grid;
+  gap: 3px;
+}
 .harm-xhead {
-  margin-bottom: 2px;
+  color: var(--muted);
+  font-size: 12px;
+  margin: 0;
 }
 .harm-xchip {
   font: inherit;
   color: inherit;
   cursor: pointer;
 }
-.harm-check {
-  display: inline-flex;
-  align-items: center;
+.harm-chip-picked {
+  box-shadow: 0 0 0 2px var(--g1);
+}
+.harm-run {
+  border-style: dashed;
+  opacity: 0.75;
+  --chip: #9a9a9a;
+  cursor: help;
+}
+.harm-run::before {
+  display: none;
+}
+.harm-trail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  font-size: 12px;
+}
+.harm-crumb {
+  font: inherit;
+  border: 0;
+  background: none;
+  padding: 0 2px;
+  color: var(--muted);
+  cursor: pointer;
+}
+.harm-crumb:hover {
+  color: inherit;
+  text-decoration: underline;
+}
+.harm-loc .bv-surface {
+  height: 210px;
+  min-height: 0;
+}
+.harm-routes .bu-passes .bv-surface {
+  height: 240px;
+  min-height: 0;
+}
+.harm-pop {
+  position: absolute;
+  z-index: 5;
+  width: 280px;
+  padding: 8px;
+  display: grid;
   gap: 4px;
-  font-size: 13px;
+  background: var(--panel, #fff);
+  border: 1px solid var(--line, #8884);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px #0003;
+  pointer-events: none;
 }
-.harm-x-cancelled {
-  opacity: 0.4;
-}
-.harm-xnew {
-  margin-left: 8px;
-}
-.harm-xbirth {
-  font-weight: 600;
+.harm-mini {
+  width: 100%;
+  height: 140px;
 }

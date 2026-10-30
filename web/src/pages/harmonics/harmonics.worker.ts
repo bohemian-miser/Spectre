@@ -18,7 +18,15 @@ scope.onmessage = (event) => {
     if (!engine) throw new Error('no combination started');
     if (m.type === 'next') engine.next();
     const result =
-      m.type === 'compare' ? engine.compare(m.a, m.b) : m.type === 'picture' ? engine.picture(m.a, m.b, m.k) : m.type === 'expansion' ? engine.expansion(m.a, m.b, m.depth) : engine.result();
+      m.type === 'compare'
+        ? engine.compare(m.a, m.b)
+        : m.type === 'picture'
+          ? engine.picture(m.members, m.k)
+          : m.type === 'node'
+            ? engine.node(m.c, m.sel, m.other)
+            : m.type === 'drawing'
+              ? engine.drawing(m.c, m.share)
+              : engine.result();
     scope.postMessage({ id: m.id, result });
   } catch (err) {
     scope.postMessage({ id: m.id, error: err instanceof Error ? err.message : String(err) });
