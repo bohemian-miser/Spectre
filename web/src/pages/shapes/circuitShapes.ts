@@ -4,7 +4,7 @@
  * children so one circuit can be expanded on its own, down to any level of
  * detail.
  *
- * An arc of a level-n supertile (outline crossing k to its mate) is the walk
+ * An arc of a level-n supertile (crossing k to its mate) is the walk
  * through the children that made it: a list of child crossings it enters.
  * Expanding a circuit means replaying those walks recursively; stopping at
  * level `stop` draws each level-`stop` arc as a straight chord between its
@@ -14,7 +14,9 @@
 import {
   buildSystem,
   connectionPoints,
+  edgeParts,
   enumerateMatchings,
+  gluedPairs,
   leafOrder,
   mul,
   nonCrossingForTile,
@@ -40,20 +42,115 @@ export function ruleOptions(family: TileFamilyId, subset: readonly number[]): (r
   });
 }
 
-interface Layer {
-  readonly pts: readonly Pt[];
-  readonly mate: Int32Array;
-  readonly arcLen: Float64Array;
-  /** For an arc walked from outline crossing k: its child entries, routeSteps[routeStart[k]..routeStart[k + 1]). */
-  readonly routeStart: Int32Array;
-  readonly routeSteps: Int32Array;
-  /** Whether the route is stored from k (otherwise it is stored from mate[k]). */
-  readonly forward: Uint8Array;
-  /** Child crossing (global, in the parent's child list) of each outline crossing. */
-  readonly outlineChild: Int32Array;
-  /** Per global child crossing: which child, and its index in that child's outline. */
-  readonly owner: Int32Array;
-  readonly local: Int32Array;
+/**
+ * A level's crossings, numbered once for every type: a crossing's number (its
+ * place) is fixed by the slot of the child it sits on and the child's place
+ * one level down, which is also what fixes its position, so a place sits at
+ * the same point in every type's frame. Level 0's places are the six edges
+ * of a hexagon.
+ *
+ * The level's table is common to the types: for each place, the place a
+ * strand entering there leaves by, the tiles on the way, and the route
+ * through the children that made it. A type keeps which places it has and
+ * its entries where it differs from the common table.
+ */
+export class Level {
+  private cachedPts: readonly Pt[] | null = null;
+
+  constructor(
+    readonly n: number,
+    /** Per place: the child crossing it is, as `childPlace * 8 + slot` (level 0: its edge). */
+    readonly under: Int32Array,
+    readonly mate: Int32Array,
+    readonly arcLen: Float64Array,
+    /** The route from place k: routeSteps[routeStart[k]..routeStart[k + 1]), each a child crossing as in `under`. */
+    readonly routeStart: Int32Array,
+    readonly routeSteps: Int32Array,
+    /** Whether the route is stored from k (otherwise it is stored from mate[k]). */
+    readonly forward: Uint8Array,
+    private readonly place: (p: number) => Pt,
+  ) {}
+
+  get size(): number {
+    return this.under.length;
+  }
+
+  /** Each place's position, in the frame every type at this level shares. */
+  get pts(): readonly Pt[] {
+    if (!this.cachedPts) this.cachedPts = Array.from(this.under, (_, p) => this.place(p));
+    return this.cachedPts;
+  }
+}
+
+/** A type's entry where it differs from the common table. */
+interface Own {
+  readonly mate: number;
+  readonly len: number;
+  readonly forward: boolean;
+  readonly steps: Int32Array;
+}
+
+const NO_STEPS = new Int32Array(0);
+
+/** One type's table at one level: the level's common table, with the type's places and overrides. */
+export class Table {
+  constructor(
+    readonly level: Level,
+    readonly type: string,
+    /** Bit p: the type has place p. */
+    private readonly present: Uint8Array,
+    private readonly own: ReadonlyMap<number, Own>,
+  ) {}
+
+  get size(): number {
+    return this.level.size;
+  }
+
+  get pts(): readonly Pt[] {
+    return this.level.pts;
+  }
+
+  /** Overrides of the common table. */
+  get overrides(): number {
+    return this.own.size;
+  }
+
+  has(k: number): boolean {
+    return (this.present[k >> 3] & (1 << (k & 7))) !== 0;
+  }
+
+  /** The place a strand entering at k leaves by: -1 when it ends inside, or k is not a crossing of this type. */
+  mate(k: number): number {
+    if (!this.has(k)) return -1;
+    const o = this.own.get(k);
+    return o ? o.mate : this.level.mate[k];
+  }
+
+  /** Tiles on the way from k to its mate. */
+  len(k: number): number {
+    if (!this.has(k)) return 0;
+    const o = this.own.get(k);
+    return o ? o.len : this.level.arcLen[k];
+  }
+
+  /** The route of the arc through k, as stored: from k when `forward`, otherwise from its mate. */
+  route(k: number): { steps: Int32Array; forward: boolean } {
+    const at = (p: number): { steps: Int32Array; forward: boolean } => {
+      const o = this.own.get(p);
+      if (o) return { steps: o.steps, forward: o.forward };
+      const L = this.level;
+      return { steps: L.routeSteps.subarray(L.routeStart[p], L.routeStart[p + 1]), forward: L.forward[p] === 1 };
+    };
+    const r = at(k);
+    return r.forward ? r : { steps: at(this.mate(k)).steps, forward: false };
+  }
+
+  /** The type's places, in order. */
+  crossings(): Int32Array {
+    const out: number[] = [];
+    for (let k = 0; k < this.size; k++) if (this.has(k)) out.push(k);
+    return Int32Array.from(out);
+  }
 }
 
 export interface BornCircuit {
@@ -62,23 +159,45 @@ export interface BornCircuit {
   readonly length: number;
   /** Child slots (positions) it passes through, in order of first visit. */
   readonly slots: readonly number[];
-  /** Child entries of the closing walk. */
+  /** Child crossings the closing walk enters, as `childPlace * 8 + slot`. */
   readonly steps: readonly number[];
 }
 
 /** A born circuit's family: the child slots it runs through, sorted. */
 export const familyOf = (c: BornCircuit): string => [...new Set(c.slots)].sort((x, y) => x - y).join('');
 
-const key = (p: Pt) => `${Math.round(p.x * 64)},${Math.round(p.y * 64)}`;
+/** A child crossing, `childPlace * 8 + slot`, taken apart. */
+export const slotOf = (step: number): number => step & 7;
+export const placeOf = (step: number): number => step >>> 3;
+
+/** One type's results at a level, before they are shared out. */
+interface Built {
+  readonly type: string;
+  readonly places: Int32Array;
+  /** Per crossing, in the order of `places`: */
+  readonly mate: Int32Array;
+  readonly len: Float64Array;
+  readonly forward: Uint8Array;
+  readonly routeStart: Int32Array;
+  readonly steps: Int32Array;
+}
+
+const sameEntry = (a: Built, i: number, b: Built, j: number): boolean => {
+  if (a.mate[i] !== b.mate[j] || a.len[i] !== b.len[j] || a.forward[i] !== b.forward[j]) return false;
+  const s = a.routeStart[i], e = a.routeStart[i + 1], t = b.routeStart[j];
+  if (e - s !== b.routeStart[j + 1] - t) return false;
+  for (let q = 0; q < e - s; q++) if (a.steps[s + q] !== b.steps[t + q]) return false;
+  return true;
+};
 
 export class CircuitShapes {
-  readonly levels: Record<string, Layer>[] = [];
+  /** levels[n][type]: each type's table at level n. */
+  readonly levels: Record<string, Table>[] = [];
   readonly born: BornCircuit[] = [];
   /** With `onePerLength`: where each family, level and length sits in `born`. */
   private readonly bornAt = new Map<string, number>();
-
-  /** Per tile type, the edge each crossing sits on. */
-  private readonly edges: Record<string, readonly number[]>;
+  /** The top level's crossings on each edge of each type, in order round the supertile: what the next level is glued by. */
+  private rows: Record<string, Int32Array[]> = {};
 
   /** The highest level built so far; `extend` adds levels above it. */
   maxLevel = 0;
@@ -93,219 +212,317 @@ export class CircuitShapes {
     /** Keep one walk per family, level and length (a Delta's when there is one) rather than one per supertile type. */
     readonly onePerLength = false,
   ) {
+    if (family !== 'hex') throw new Error('supertiles are built up for the hexagon tiles');
     const sel = new Set(subset);
-    this.edges = Object.fromEntries(leafOrder(family).map((t) => [t, slotsOfType(family, t, subset).map((x) => x.edge)]));
     const options = ruleOptions(family, subset);
-    const level0: Record<string, Layer> = {};
-    leafOrder(family).forEach((t, ti) => {
-      const pts = connectionPoints(family, t, sel).map((c) => c.pt);
-      const mate = new Int32Array(pts.length).fill(-1);
+    const corners = connectionPoints(family, 'Delta', new Set([0, 1, 2, 3, 4, 5, 6, 7, 8])).map((c) => c.pt);
+    const built = leafOrder(family).map((t, ti): Built => {
+      const edges = slotsOfType(family, t, subset).map((x) => x.edge);
+      if (edges.length !== connectionPoints(family, t, sel).length) throw new Error(`${t}: crossings and edges disagree`);
+      const mate = new Int32Array(6).fill(-1);
       for (const [a, b] of options[ti][digits[ti]]) {
-        mate[a] = b;
-        mate[b] = a;
+        mate[edges[a]] = edges[b];
+        mate[edges[b]] = edges[a];
       }
-      const empty = new Int32Array(0);
-      level0[t] = {
-        pts,
-        mate,
-        arcLen: new Float64Array(pts.length).fill(1),
-        routeStart: new Int32Array(pts.length + 1),
-        routeSteps: empty,
-        forward: new Uint8Array(pts.length).fill(1),
-        outlineChild: empty,
-        owner: empty,
-        local: empty,
+      this.rows[t] = Array.from({ length: 6 }, (_, j) => Int32Array.from(edges.includes(j) ? [j] : []));
+      const places = Int32Array.from([...edges].sort((x, y) => x - y));
+      return {
+        type: t,
+        places,
+        mate: Int32Array.from(places, (p) => mate[p]),
+        len: new Float64Array(places.length).fill(1),
+        forward: new Uint8Array(places.length).fill(1),
+        routeStart: new Int32Array(places.length + 1),
+        steps: NO_STEPS,
       };
     });
-    this.levels.push(level0);
+    this.levels.push(this.share(0, Int32Array.from([0, 1, 2, 3, 4, 5]), built, (p) => corners[p]));
     this.extend(maxLevel);
+  }
+
+  /** The level's common table from each type's results: per place, the entry most types have; the rest are overrides. */
+  private share(n: number, under: Int32Array, built: readonly Built[], place: (p: number) => Pt): Record<string, Table> {
+    const P = under.length;
+    const count = new Int32Array(P + 1);
+    for (const b of built) for (const p of b.places) count[p + 1]++;
+    for (let p = 0; p < P; p++) count[p + 1] += count[p];
+    // who has each place: built index and position in its list
+    const whoB = new Int32Array(count[P]);
+    const whoI = new Int32Array(count[P]);
+    const fill = count.slice(0, P);
+    built.forEach((b, bi) => b.places.forEach((p, i) => { whoB[fill[p]] = bi; whoI[fill[p]++] = i; }));
+    const mate = new Int32Array(P).fill(-1);
+    const arcLen = new Float64Array(P);
+    const forward = new Uint8Array(P);
+    const routeStart = new Int32Array(P + 1);
+    let steps = new Int32Array(1024);
+    let used = 0;
+    const own = built.map(() => new Map<number, Own>());
+    const group = new Int32Array(built.length);
+    for (let p = 0; p < P; p++) {
+      const lo = count[p], hi = count[p + 1];
+      // group the types' entries; the biggest group (first on a tie) is common
+      let best = lo, bestSize = 0;
+      for (let a = lo; a < hi; a++) {
+        group[a - lo] = a;
+        for (let r = lo; r < a; r++) {
+          if (group[r - lo] === r && sameEntry(built[whoB[a]], whoI[a], built[whoB[r]], whoI[r])) { group[a - lo] = r; break; }
+        }
+      }
+      for (let a = lo; a < hi; a++) {
+        if (group[a - lo] !== a) continue;
+        let size = 0;
+        for (let r = a; r < hi; r++) if (group[r - lo] === a) size++;
+        if (size > bestSize) { best = a; bestSize = size; }
+      }
+      routeStart[p] = used;
+      if (bestSize > 0) {
+        const b = built[whoB[best]], i = whoI[best];
+        mate[p] = b.mate[i];
+        arcLen[p] = b.len[i];
+        forward[p] = b.forward[i];
+        const s = b.steps.subarray(b.routeStart[i], b.routeStart[i + 1]);
+        if (used + s.length > steps.length) {
+          const grown = new Int32Array(Math.max(steps.length * 2, used + s.length));
+          grown.set(steps);
+          steps = grown;
+        }
+        steps.set(s, used);
+        used += s.length;
+      }
+      for (let a = lo; a < hi; a++) {
+        if (group[a - lo] === best) continue;
+        const b = built[whoB[a]], i = whoI[a];
+        own[whoB[a]].set(p, { mate: b.mate[i], len: b.len[i], forward: b.forward[i] === 1, steps: b.steps.slice(b.routeStart[i], b.routeStart[i + 1]) });
+      }
+    }
+    routeStart[P] = used;
+    const level = new Level(n, under, mate, arcLen, routeStart, steps.slice(0, used), forward, place);
+    const out: Record<string, Table> = {};
+    built.forEach((b, bi) => {
+      const present = new Uint8Array((P + 7) >> 3);
+      for (const p of b.places) present[p >> 3] |= 1 << (p & 7);
+      out[b.type] = new Table(level, b.type, present, own[bi]);
+    });
+    return out;
   }
 
   /** Builds the levels up to `toLevel`, one on top of the last; levels already built are kept. */
   extend(toLevel: number): void {
-    const { family, keepAtLeast, onePerLength } = this;
+    const { keepAtLeast, onePerLength } = this;
     for (let n = this.maxLevel + 1; n <= toLevel; n++) {
-      const sys = buildSystem(family, n);
+      const sys = buildSystem(this.family, n);
       const prev = this.levels[n - 1];
-      const next: Record<string, Layer> = {};
+      const Q = Object.values(prev)[0].size;
+      // the level's places, by child crossing (childPlace * 8 + slot)
+      const placeAt = new Int32Array(Q * 8).fill(-1);
+      const under: number[] = [];
+      const intern = (step: number): number => {
+        let p = placeAt[step];
+        if (p < 0) {
+          p = placeAt[step] = under.length;
+          under.push(step);
+        }
+        return p;
+      };
+      const built: Built[] = [];
+      const rows: Record<string, Int32Array[]> = {};
       for (const [t, node] of Object.entries(sys)) {
-        const meta = node as MetaNode;
-        const ownerArr: number[] = [];
-        const localArr: number[] = [];
-        const world: Pt[] = [];
-        const start: number[] = [];
-        meta.children.forEach((ch, ci) => {
-          start.push(world.length);
-          prev[ch.node.type].pts.forEach((p, k) => {
-            ownerArr.push(ci);
-            localArr.push(k);
-            world.push(transPt(ch.xform as Affine, p));
-          });
-        });
-        const total = world.length;
-        const at = new Map<string, number>();
+        const kids = (node as MetaNode).children;
+        const childAt = new Int32Array(8).fill(-1);
+        kids.forEach((ch, ci) => { childAt[ch.pos] = ci; });
+        const tables = kids.map((ch) => prev[ch.node.type]);
+        // child crossing g = child * Q + its place
+        const total = kids.length * Q;
         const across = new Int32Array(total).fill(-1);
-        world.forEach((p, i) => {
-          const k = key(p);
-          const j = at.get(k);
-          if (j === undefined) at.set(k, i);
-          else {
-            across[i] = j;
-            across[j] = i;
+        // two children glued along an edge meet crossing for crossing, in reverse order
+        for (const [a, b] of gluedPairs(t as HexType)) {
+          const ca = childAt[a.s], cb = childAt[b.s];
+          const A = this.rows[kids[ca].node.type][a.e];
+          const B = this.rows[kids[cb].node.type][b.e];
+          if (A.length !== B.length) throw new Error(`${t} glues ${A.length} crossings to ${B.length}`);
+          for (let i = 0, m = A.length; i < m; i++) {
+            const x = ca * Q + A[i], y = cb * Q + B[m - 1 - i];
+            across[x] = y;
+            across[y] = x;
           }
+        }
+        const outer: number[] = [];
+        tables.forEach((T, ci) => {
+          for (let q = 0; q < Q; q++) if (T.has(q) && across[ci * Q + q] < 0) outer.push(ci * Q + q);
         });
-        const inner = (i: number) => {
-          const b = prev[meta.children[ownerArr[i]].node.type];
-          const m = b.mate[localArr[i]];
-          return { j: m < 0 ? -1 : start[ownerArr[i]] + m, len: m < 0 ? 0 : b.arcLen[localArr[i]] };
-        };
-        const outline: number[] = [];
-        for (let i = 0; i < total; i++) if (across[i] < 0) outline.push(i);
-        const outPos = new Map(outline.map((i, k) => [i, k]));
-        const mate = new Int32Array(outline.length).fill(-1);
-        const arcLen = new Float64Array(outline.length);
-        const forward = new Uint8Array(outline.length);
-        const routeStart = new Int32Array(outline.length + 1);
-        const steps: number[] = [];
-        const used = new Uint8Array(total);
-        outline.forEach((i0, k0) => {
-          routeStart[k0] = steps.length;
-          if (used[i0]) {
-            routeStart[k0 + 1] = steps.length;
-            return;
+        const stepOf = (g: number): number => (g % Q) * 8 + kids[Math.floor(g / Q)].pos;
+        const placeOfG = new Int32Array(total).fill(-1);
+        for (const g of outer) placeOfG[g] = intern(stepOf(g));
+        // walked in order of place, so a route is stored from the same end in every type
+        outer.sort((x, y) => placeOfG[x] - placeOfG[y]);
+        const places = Int32Array.from(outer, (g) => placeOfG[g]);
+        const index = new Int32Array(total);
+        outer.forEach((g, k) => { index[g] = k; });
+        // the edge's crossings round the supertile: each child edge on it in turn, the child mirrored, so reversed
+        rows[t] = Array.from({ length: 6 }, (_, j) => {
+          const row: number[] = [];
+          for (const part of edgeParts(t as HexType, j)) {
+            const c = childAt[part.s];
+            const on = this.rows[kids[c].node.type][part.e];
+            for (let q = on.length - 1; q >= 0; q--) row.push(placeOfG[c * Q + on[q]]);
           }
+          return Int32Array.from(row);
+        });
+        if (rows[t].reduce((a, r) => a + r.length, 0) !== outer.length) throw new Error(`${t} at level ${n}: the border places miss crossings`);
+        const childMate = (g: number): number => {
+          const c = Math.floor(g / Q);
+          const m = tables[c].mate(g - c * Q);
+          return m < 0 ? -1 : c * Q + m;
+        };
+        const childLen = (g: number): number => {
+          const c = Math.floor(g / Q);
+          return tables[c].len(g - c * Q);
+        };
+        const outs = outer.length;
+        const mate = new Int32Array(outs).fill(-1);
+        const len = new Float64Array(outs);
+        const forward = new Uint8Array(outs);
+        const routeStart = new Int32Array(outs + 1);
+        const steps: number[] = [];
+        const seen = new Uint8Array(total);
+        for (let k0 = 0; k0 < outs; k0++) {
+          const g0 = outer[k0];
+          routeStart[k0] = steps.length;
+          if (seen[g0]) continue;
           forward[k0] = 1;
-          let i = i0;
-          let len = 0;
+          let g = g0;
+          let l = 0;
           for (;;) {
-            used[i] = 1;
-            steps.push(i);
-            const { j, len: l } = inner(i);
+            seen[g] = 1;
+            steps.push(stepOf(g));
+            const j = childMate(g);
             if (j < 0) break;
-            used[j] = 1;
-            len += l;
+            seen[j] = 1;
+            l += childLen(g);
             if (across[j] < 0) {
-              const k1 = outPos.get(j) as number;
-              mate[k0] = k1;
-              mate[k1] = k0;
-              arcLen[k0] = arcLen[k1] = len;
+              const k1 = index[j];
+              mate[k0] = places[k1];
+              mate[k1] = places[k0];
+              len[k0] = len[k1] = l;
               break;
             }
-            i = across[j];
+            g = across[j];
           }
-          routeStart[k0 + 1] = steps.length;
-        });
-        for (let i0 = 0; i0 < total; i0++) {
-          if (used[i0] || across[i0] < 0) continue;
-          let i = i0;
-          let len = 0;
+        }
+        routeStart[outs] = steps.length;
+        built.push({ type: t, places, mate, len, forward, routeStart, steps: Int32Array.from(steps) });
+        for (let g0 = 0; g0 < total; g0++) {
+          if (seen[g0] || across[g0] < 0) continue;
+          let g = g0;
+          let l = 0;
           const walk: number[] = [];
           let ok = true;
           for (;;) {
-            used[i] = 1;
-            walk.push(i);
-            const { j, len: l } = inner(i);
+            seen[g] = 1;
+            walk.push(stepOf(g));
+            const j = childMate(g);
             if (j < 0) {
               ok = false;
               break;
             }
-            used[j] = 1;
-            len += l;
-            i = across[j];
-            if (i < 0) {
+            seen[j] = 1;
+            l += childLen(g);
+            g = across[j];
+            if (g < 0) {
               ok = false;
               break;
             }
-            if (i === i0) break;
+            if (g === g0) break;
           }
-          if (ok && len >= keepAtLeast) {
+          if (ok && l >= keepAtLeast) {
             const slots: number[] = [];
-            for (const w of walk) {
-              const pos = meta.children[ownerArr[w]].pos;
-              if (!slots.includes(pos)) slots.push(pos);
-            }
-            const c: BornCircuit = { level: n, type: t as TileTypeId, length: len, slots, steps: walk };
+            for (const w of walk) if (!slots.includes(slotOf(w))) slots.push(slotOf(w));
+            const c: BornCircuit = { level: n, type: t as TileTypeId, length: l, slots, steps: walk };
             if (!onePerLength) this.born.push(c);
             else {
-              const at = `${familyOf(c)}/${n}/${len}`;
+              const at = `${familyOf(c)}/${n}/${l}`;
               const i = this.bornAt.get(at);
               if (i === undefined) this.bornAt.set(at, this.born.push(c) - 1);
               else if (t === 'Delta') this.born[i] = c;
             }
           }
         }
-        next[t] = {
-          pts: outline.map((i) => world[i]),
-          mate,
-          arcLen,
-          routeStart,
-          routeSteps: Int32Array.from(steps),
-          forward,
-          outlineChild: Int32Array.from(outline),
-          owner: Int32Array.from(ownerArr),
-          local: Int32Array.from(localArr),
-        };
       }
-      this.levels.push(next);
+      this.rows = rows;
+      this.levels.push(this.share(n, Int32Array.from(under), built, this.placer(n)));
       this.maxLevel = n;
     }
   }
 
-  /** The points of the arc from outline crossing k of a level-n `type` (in frame `x`), drawn down to level `stop`. */
+  /** Works out where place p of level n sits, from the child crossing it is (a function of its own, so it holds nothing from the build). */
+  private placer(n: number): (p: number) => Pt {
+    const xform: Affine[] = [];
+    for (const node of Object.values(buildSystem(this.family, n))) for (const ch of (node as MetaNode).children) xform[ch.pos] = ch.xform as Affine;
+    return (p) => {
+      const step = this.levels[n].Delta.level.under[p];
+      return transPt(xform[slotOf(step)], this.levels[n - 1].Delta.level.pts[placeOf(step)]);
+    };
+  }
+
+  /** The child at each slot of a level-n supertile of `type`. */
+  private kidsAt(n: number, type: string): MetaNode['children'][number][] {
+    const out: MetaNode['children'][number][] = [];
+    for (const ch of (buildSystem(this.family, n)[type] as MetaNode).children) out[ch.pos] = ch;
+    return out;
+  }
+
+  /** Each child crossing of a level-n arc from place k, in the order the strand meets them, with the child's own place entered. */
+  enters(n: number, type: string, k: number): { slot: number; type: string; k: number }[] {
+    const kids = this.kidsAt(n, type);
+    const { steps, forward } = this.levels[n][type].route(k);
+    const out: { slot: number; type: string; k: number }[] = [];
+    const take = (s: number, reversed: boolean): void => {
+      const ct = kids[slotOf(s)].node.type;
+      out.push({ slot: slotOf(s), type: ct, k: reversed ? this.levels[n - 1][ct].mate(placeOf(s)) : placeOf(s) });
+    };
+    if (forward) for (const s of steps) take(s, false);
+    else for (let q = steps.length - 1; q >= 0; q--) take(steps[q], true);
+    return out;
+  }
+
+  /** The child a child crossing of a level-n `type` sits in, and its place there. */
+  childOf(n: number, type: string, step: number): { type: string; pos: number; xform: Affine; k: number } {
+    const ch = this.kidsAt(n, type)[slotOf(step)];
+    return { type: ch.node.type, pos: ch.pos, xform: ch.xform as Affine, k: placeOf(step) };
+  }
+
+  /** The points of the arc from place k of a level-n `type` (in frame `x`), drawn down to level `stop`. */
   arc(n: number, type: string, k: number, x: Affine, stop: number, out: Pt[]): void {
-    const L = this.levels[n][type];
     if (n <= stop) {
-      out.push(transPt(x, L.pts[k]));
+      out.push(transPt(x, this.levels[n][type].pts[k]));
       return;
     }
-    const meta = buildSystem(this.family, n)[type] as MetaNode;
-    const fwd = L.forward[k] === 1;
-    const from = fwd ? k : L.mate[k];
-    const s = Array.from(L.routeSteps.subarray(L.routeStart[from], L.routeStart[from + 1]));
-    const prev = this.levels[n - 1];
-    const enter = (i: number, reversed: boolean) => {
-      const ch = meta.children[L.owner[i]];
-      const childType = ch.node.type;
-      let loc = L.local[i];
-      if (reversed) loc = prev[childType].mate[loc];
-      this.arc(n - 1, childType, loc, mul(x, ch.xform as Affine), stop, out);
-    };
-    if (fwd) for (const i of s) enter(i, false);
-    else for (let q = s.length - 1; q >= 0; q--) enter(s[q], true);
+    const kids = this.kidsAt(n, type);
+    for (const e of this.enters(n, type, k)) this.arc(n - 1, e.type, e.k, mul(x, kids[e.slot].xform as Affine), stop, out);
   }
 
-  /** The tiles of a level-n arc entering crossing k, as letters (`core/circuitWord.ts`), appended to `out`. */
+  /** The tiles of a level-n arc entering place k, as letters (`core/circuitWord.ts`), appended to `out`. */
   private letters(n: number, type: string, k: number, out: string[]): void {
-    const L = this.levels[n][type];
     if (n === 0) {
-      out.push(tileLetter(type as HexType, this.edges[type][k], this.edges[type][L.mate[k]]));
+      out.push(tileLetter(type as HexType, k, this.levels[0][type].mate(k)));
       return;
     }
-    const meta = buildSystem(this.family, n)[type] as MetaNode;
-    const fwd = L.forward[k] === 1;
-    const from = fwd ? k : L.mate[k];
-    const s = L.routeSteps.subarray(L.routeStart[from], L.routeStart[from + 1]);
-    const prev = this.levels[n - 1];
-    const enter = (i: number, reversed: boolean) => {
-      const childType = meta.children[L.owner[i]].node.type;
-      this.letters(n - 1, childType, reversed ? prev[childType].mate[L.local[i]] : L.local[i], out);
-    };
-    if (fwd) for (const i of s) enter(i, false);
-    else for (let q = s.length - 1; q >= 0; q--) enter(s[q], true);
+    for (const e of this.enters(n, type, k)) this.letters(n - 1, e.type, e.k, out);
   }
 
-  /** The edge of a tile of this type that its crossing k sits on. */
-  crossingEdge(type: string, k: number): number {
-    return this.edges[type][k];
+  /** The edge of a tile that its level-0 place k sits on. */
+  crossingEdge(_type: string, k: number): number {
+    return k;
   }
 
-  /** A born circuit's word: a letter per tile, the hexagon family only. */
+  /** A born circuit's word: a letter per tile. */
   word(c: BornCircuit): string[] {
-    if (this.family !== 'hex') throw new Error('circuit words are written for hexagon tiles');
-    const meta = buildSystem(this.family, c.level)[c.type] as MetaNode;
-    const L = this.levels[c.level][c.type];
     const out: string[] = [];
-    for (const i of c.steps) this.letters(c.level - 1, meta.children[L.owner[i]].node.type, L.local[i], out);
+    for (const s of c.steps) {
+      const ch = this.childOf(c.level, c.type, s);
+      this.letters(c.level - 1, ch.type, ch.k, out);
+    }
     return out;
   }
 
@@ -316,13 +533,13 @@ export class CircuitShapes {
 
   /** The longest arc through a level-n supertile of `type` (an open strand), drawn down to level `stop`, with its end points. */
   longestArc(n: number, type: string, stop: number): { length: number; pts: Pt[] } {
-    const L = this.levels[n][type];
-    let best = 0;
-    for (let k = 1; k < L.arcLen.length; k++) if (L.arcLen[k] > L.arcLen[best]) best = k;
+    const T = this.levels[n][type];
+    let best = -1;
+    for (const k of T.crossings()) if (best < 0 || T.len(k) > T.len(best)) best = k;
     const out: Pt[] = [];
     this.arc(n, type, best, [1, 0, 0, 0, 1, 0], stop, out);
-    out.push(L.pts[L.mate[best]]);
-    return { length: L.arcLen[best], pts: out };
+    out.push(T.pts[T.mate(best)]);
+    return { length: T.len(best), pts: out };
   }
 
   /**
@@ -331,44 +548,29 @@ export class CircuitShapes {
    * the supertile's frame (the first two points of `shape(c, 0)`).
    */
   firstTile(c: BornCircuit): { path: { type: TileTypeId; pos: number }[]; chord: [Pt, Pt] } {
-    const meta = buildSystem(this.family, c.level)[c.type] as MetaNode;
-    const top = this.levels[c.level][c.type];
-    const i = c.steps[0];
-    const first = meta.children[top.owner[i]];
-    const path = [{ type: first.node.type as TileTypeId, pos: first.pos }];
-    let x = first.xform as Affine;
-    let n = c.level - 1;
-    let type = first.node.type as string;
-    let k = top.local[i];
+    const first = this.childOf(c.level, c.type, c.steps[0]);
+    const path = [{ type: first.type as TileTypeId, pos: first.pos }];
+    let x = first.xform;
+    let type = first.type;
+    let k = first.k;
     // Follow the first child entered at each level, as `arc` does.
-    while (n > 0) {
-      const L = this.levels[n][type];
-      const m = buildSystem(this.family, n)[type] as MetaNode;
-      const fwd = L.forward[k] === 1;
-      const from = fwd ? k : L.mate[k];
-      const steps = L.routeSteps.subarray(L.routeStart[from], L.routeStart[from + 1]);
-      const g = fwd ? steps[0] : steps[steps.length - 1];
-      const child = m.children[L.owner[g]];
-      let loc = L.local[g];
-      if (!fwd) loc = this.levels[n - 1][child.node.type].mate[loc];
-      path.push({ type: child.node.type as TileTypeId, pos: child.pos });
-      x = mul(x, child.xform as Affine);
-      n--;
-      type = child.node.type;
-      k = loc;
+    for (let n = c.level - 1; n > 0; n--) {
+      const e = this.enters(n, type, k)[0];
+      path.push({ type: e.type as TileTypeId, pos: e.slot });
+      x = mul(x, this.kidsAt(n, type)[e.slot].xform as Affine);
+      type = e.type;
+      k = e.k;
     }
     const leaf = this.levels[0][type];
-    return { path, chord: [transPt(x, leaf.pts[k]), transPt(x, leaf.pts[leaf.mate[k]])] };
+    return { path, chord: [transPt(x, leaf.pts[k]), transPt(x, leaf.pts[leaf.mate(k)])] };
   }
 
   /** A born circuit as a closed polyline in its supertile's frame, drawn down to level `stop`. */
   shape(c: BornCircuit, stop: number): Pt[] {
-    const meta = buildSystem(this.family, c.level)[c.type] as MetaNode;
-    const L = this.levels[c.level][c.type];
     const out: Pt[] = [];
-    for (const i of c.steps) {
-      const ch = meta.children[L.owner[i]];
-      this.arc(c.level - 1, ch.node.type, L.local[i], ch.xform as Affine, stop, out);
+    for (const s of c.steps) {
+      const ch = this.childOf(c.level, c.type, s);
+      this.arc(c.level - 1, ch.type, ch.k, ch.xform, stop, out);
     }
     return out;
   }
@@ -385,42 +587,28 @@ export class CircuitShapes {
     let passed = 0;
     let next = 0;
     const visit = (lvl: number, type: string, k: number, x: Affine): void => {
-      const L = this.levels[lvl][type];
-      if (out.length === n || passed + L.arcLen[k] <= next) {
-        passed += L.arcLen[k];
+      const T = this.levels[lvl][type];
+      if (out.length === n || passed + T.len(k) <= next) {
+        passed += T.len(k);
         return;
       }
       if (lvl === 0) {
-        out.push(transPt(x, L.pts[k]));
+        out.push(transPt(x, T.pts[k]));
         passed++;
         next = Math.round((out.length * c.length) / n);
         return;
       }
-      const meta = buildSystem(this.family, lvl)[type] as MetaNode;
-      const fwd = L.forward[k] === 1;
-      const from = fwd ? k : L.mate[k];
-      const s = L.routeSteps.subarray(L.routeStart[from], L.routeStart[from + 1]);
-      const prev = this.levels[lvl - 1];
-      const enter = (i: number, reversed: boolean) => {
-        const ch = meta.children[L.owner[i]];
-        let loc = L.local[i];
-        if (reversed) loc = prev[ch.node.type].mate[loc];
-        visit(lvl - 1, ch.node.type, loc, mul(x, ch.xform as Affine));
-      };
-      if (fwd) for (const i of s) enter(i, false);
-      else for (let q = s.length - 1; q >= 0; q--) enter(s[q], true);
+      const kids = this.kidsAt(lvl, type);
+      for (const e of this.enters(lvl, type, k)) visit(lvl - 1, e.type, e.k, mul(x, kids[e.slot].xform as Affine));
     };
-    const meta = buildSystem(this.family, c.level)[c.type] as MetaNode;
-    const top = this.levels[c.level][c.type];
-    for (const i of c.steps) {
+    for (const s of c.steps) {
       if (out.length === n) break;
-      const ch = meta.children[top.owner[i]];
-      visit(c.level - 1, ch.node.type, top.local[i], ch.xform as Affine);
+      const ch = this.childOf(c.level, c.type, s);
+      visit(c.level - 1, ch.type, ch.k, ch.xform);
     }
     return out;
   }
 }
-
 
 export interface TileLoop {
   /** Tile positions (chord midpoints), anticlockwise, `samples` of them evenly spaced by tile count. */

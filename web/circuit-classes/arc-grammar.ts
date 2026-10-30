@@ -36,32 +36,18 @@ export function arcSignatureCounts(cs: CircuitShapes, maxDepth: number, minLengt
     const counts = new Array<Set<number>>(maxDepth + 1).fill(null as never).map(() => new Set<number>());
     let arcs = 0;
     for (const [t, L] of Object.entries(layer)) {
-      const nk = L.pts.length;
+      const nk = L.size;
       const sig = Array.from({ length: maxDepth + 1 }, () => new Int32Array(nk).fill(-1));
-      for (let k = 0; k < nk; k++) {
-        if (L.mate[k] < 0) continue;
+      for (const k of L.crossings()) {
+        if (L.mate(k) < 0) continue;
         sig[0][k] = intern(0, t);
       }
       if (n > 0) {
-        const steps = (k: number): { child: number; local: number }[] => {
-          const fwd = L.forward[k] === 1;
-          const from = fwd ? k : L.mate[k];
-          const s = Array.from(L.routeSteps.subarray(L.routeStart[from], L.routeStart[from + 1]));
-          const out = s.map((i) => ({ child: L.owner[i], local: L.local[i] }));
-          if (fwd) return out;
-          return out.reverse().map(({ child, local }) => ({ child, local: -1 - local })); // reversed: resolved below
-        };
-        const meta = cs.childTypes(n, t);
-        for (let k = 0; k < nk; k++) {
-          if (L.mate[k] < 0) continue;
-          const st = steps(k);
+        for (const k of L.crossings()) {
+          if (L.mate(k) < 0) continue;
+          const st = cs.enters(n, t, k);
           for (let j = 1; j <= maxDepth; j++) {
-            const parts = st.map(({ child, local }) => {
-              const ct = meta[child].type;
-              const pl = cs.levels[n - 1][ct];
-              const loc = local >= 0 ? local : pl.mate[-1 - local];
-              return { pos: meta[child].pos, tok: `${meta[child].pos}:${prev[ct][j - 1][loc]}` };
-            });
+            const parts = st.map((e) => ({ pos: e.slot, tok: `${e.slot}:${prev[e.type][j - 1][e.k]}` }));
             // A zigzag along the seam between two children (A B A B ...) is one run: keep its
             // first two and last two pieces, and the run's parity, not its length.
             const out: string[] = [];
@@ -84,9 +70,9 @@ export function arcSignatureCounts(cs: CircuitShapes, maxDepth: number, minLengt
         }
       }
       next[t] = sig;
-      for (let k = 0; k < nk; k++) {
-        const m = L.mate[k];
-        if (m < 0 || m < k || L.arcLen[k] < minLength) continue;
+      for (const k of L.crossings()) {
+        const m = L.mate(k);
+        if (m < 0 || m < k || L.len(k) < minLength) continue;
         arcs++;
         for (let j = 0; j <= maxDepth; j++) {
           // Canonical over direction: the smaller of the two directed ids is not comparable across directions,

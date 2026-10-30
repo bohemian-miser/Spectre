@@ -13,7 +13,7 @@ import type { TileTypeId } from '../core';
 import { CircuitShapes } from './shapes/circuitShapes';
 import { ComboPicker, type ComboChoice } from './shapes/ComboPicker';
 import { explorerCircuitHref } from './shapes/explorerLink';
-import { closingsByLevel, tablesAt, type Closing, type Table } from './buildup/buildup';
+import { closingsByLevel, groupsAt, tablesAt, type Closing, type Table } from './buildup/buildup';
 import '../styles/shapes.css';
 import '../styles/buildup.css';
 
@@ -61,7 +61,7 @@ function TableCanvas(props: { table: Table; shade: (n: number) => number; frame:
 
 function TableCard(props: { table: Table; names: readonly string[]; logMin: number; logMax: number }): JSX.Element {
   const { table, names } = props;
-  const [minX, maxX] = bounds(table.pts.map((p) => p.x)), [minY, maxY] = bounds(table.pts.map((p) => p.y));
+  const [minX, maxX] = bounds(Array.from(table.crossings, (k) => table.pts[k].x)), [minY, maxY] = bounds(Array.from(table.crossings, (k) => table.pts[k].y));
   const span = Math.max(maxX - minX, maxY - minY) || 1;
   const size = span * 1.16;
   const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
@@ -86,10 +86,10 @@ function TableCard(props: { table: Table; names: readonly string[]; logMin: numb
             </path>
           );
         })}
-        {table.pts.map((p, i) => <circle key={i} cx={p.x} cy={-p.y} r={span * 0.008 + 0.02} className="bu-crossing" />)}
+        {Array.from(table.crossings, (k) => <circle key={k} cx={table.pts[k].x} cy={-table.pts[k].y} r={span * 0.008 + 0.02} className="bu-crossing" />)}
       </svg>
       )}
-      <figcaption>{nf(table.pts.length)} crossings, {nf(table.routes.length)} routes</figcaption>
+      <figcaption>{nf(table.crossings.length)} crossings, {nf(table.routes.length)} routes</figcaption>
     </figure>
   );
 }
@@ -177,7 +177,7 @@ export default function BuildUpPage(): JSX.Element {
     if (!now) return [];
     if (counted.current.cs !== now) counted.current = { cs: now, counts: [] };
     const { counts } = counted.current;
-    for (let k = counts.length; k <= built; k++) counts.push(tablesAt(now, k).groups.length);
+    for (let k = counts.length; k <= built; k++) counts.push(groupsAt(now, k).length);
     return counts.slice(0, built + 1);
   }, [built]); // eslint-disable-line react-hooks/exhaustive-deps
   const here = closings[level] ?? [];
