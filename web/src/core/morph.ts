@@ -193,12 +193,12 @@ export function hexSpectreAlignment(rootTile: TileTypeId, level: number): Affine
   return out;
 }
 
+const homeCache = new Map<string, readonly (Pt | null)[]>();
 /**
  * For each vertex of a Spectre leaf, its hexagon-local home, or null when it
  * has none. Keyed by Spectre leaf type; memoized (pure label arithmetic).
  */
-const homeCache = new Map<string, readonly (Pt | null)[]>();
-function vertexHomes(type: TileTypeId): readonly (Pt | null)[] {
+export function vertexHomes(type: TileTypeId): readonly (Pt | null)[] {
   const hit = homeCache.get(type);
   if (hit) return hit;
   const hexType: TileTypeId = type === 'Gamma1' || type === 'Gamma2' ? 'Gamma' : type;

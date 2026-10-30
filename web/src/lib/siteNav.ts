@@ -211,6 +211,14 @@ export const SITE_NAV: readonly NavItem[] = Object.freeze([
     blurb: 'Borders compared level by level: where they repeat every second level, and the infinite line that follows.',
   },
   {
+    id: 'limit',
+    label: 'Limit shape',
+    short: 'Limit',
+    entry: 'limit.html',
+    status: 'ready',
+    blurb: 'Supertile outlines scaled down level after level, from hexagons and from Spectres, and the shape both settle on.',
+  },
+  {
     id: 'legacy',
     label: 'Legacy p5 app',
     short: 'Legacy',
