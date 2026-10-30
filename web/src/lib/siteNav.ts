@@ -179,6 +179,14 @@ export const SITE_NAV: readonly NavItem[] = Object.freeze([
     blurb: 'Which circuits are the same circuit two levels up: every circuit read at every level, and the lineages among them.',
   },
   {
+    id: 'buildup',
+    label: 'Build-up',
+    short: 'Build-up',
+    entry: 'buildup.html',
+    status: 'ready',
+    blurb: "A combination's supertiles built level by level: every type's border table, and the circuits that close at each level.",
+  },
+  {
     id: 'legacy',
     label: 'Legacy p5 app',
     short: 'Legacy',

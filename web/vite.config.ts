@@ -41,6 +41,7 @@ export default defineConfig({
         corners: resolve(__dirname, 'corners.html'),
         shapes: resolve(__dirname, 'shapes.html'),
         harmonics: resolve(__dirname, 'harmonics.html'),
+        buildup: resolve(__dirname, 'buildup.html'),
         legacy: resolve(__dirname, 'legacy.html'),
         widgets: resolve(__dirname, 'widgets.html'),
       },

@@ -294,6 +294,11 @@ export class CircuitShapes {
     else for (let q = s.length - 1; q >= 0; q--) enter(s[q], true);
   }
 
+  /** The edge of a tile of this type that its crossing k sits on. */
+  crossingEdge(type: string, k: number): number {
+    return this.edges[type][k];
+  }
+
   /** A born circuit's word: a letter per tile, the hexagon family only. */
   word(c: BornCircuit): string[] {
     if (this.family !== 'hex') throw new Error('circuit words are written for hexagon tiles');
