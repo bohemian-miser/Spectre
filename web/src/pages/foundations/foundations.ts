@@ -254,14 +254,33 @@ export const bornKey = (c: BornCircuit): string => `${c.type}|${closingKey(c)}`;
 export const buildShapes = (subset: readonly number[], combo: string, level: number): CircuitShapes =>
   new CircuitShapes('hex', subset, [...combo].map((ch) => parseInt(ch, 36)), level, 1, false, bornKey);
 
-interface Group {
-  key: string;
-  level: number;
-  length: number;
-  family: string;
-  steps: number;
-  copies: Record<string, number>;
+/** Every copy of one closing: its walk read (a Delta's when there is one) and its copies per type. */
+export interface Group {
+  readonly key: string;
+  readonly level: number;
+  readonly length: number;
+  readonly family: string;
+  readonly steps: number;
+  readonly copies: Record<string, number>;
   rep: BornCircuit;
+}
+
+/**
+ * The closings of a renormalisation in the order `foundations` numbers them
+ * (a closing's `id` is its place here): by level, then length, then family,
+ * ties in the order they were born. Levels never reorder as the build grows,
+ * so a build to any level at or above a closing's gives it the same id.
+ */
+export function closingGroups(cs: CircuitShapes): Group[] {
+  const groups = new Map<string, Group>();
+  for (const c of cs.born) {
+    const key = closingKey(c);
+    let g = groups.get(key);
+    if (!g) groups.set(key, (g = { key, level: c.level, length: c.length, family: familyOf(c), steps: c.steps.length, copies: {}, rep: c }));
+    g.copies[c.type] = (g.copies[c.type] ?? 0) + cs.copiesOf(c);
+    if (c.type === 'Delta' && g.rep.type !== 'Delta') g.rep = c;
+  }
+  return [...groups.values()].sort((a, b) => a.level - b.level || a.length - b.length || a.family.localeCompare(b.family));
 }
 
 /**
@@ -277,15 +296,7 @@ export function foundations(cs: CircuitShapes, opts: { floor?: number; maxRaw?: 
   const floor = opts.floor ?? 2;
   const maxRaw = opts.maxRaw ?? 3e6;
   const wordCap = opts.wordCap ?? 4e6;
-  const groups = new Map<string, Group>();
-  for (const c of cs.born) {
-    const key = closingKey(c);
-    let g = groups.get(key);
-    if (!g) groups.set(key, (g = { key, level: c.level, length: c.length, family: familyOf(c), steps: c.steps.length, copies: {}, rep: c }));
-    g.copies[c.type] = (g.copies[c.type] ?? 0) + cs.copiesOf(c);
-    if (c.type === 'Delta' && g.rep.type !== 'Delta') g.rep = c;
-  }
-  const list = [...groups.values()].sort((a, b) => a.level - b.level || a.length - b.length || a.family.localeCompare(b.family));
+  const list = closingGroups(cs);
   const cache = opts.cache ?? { words: new Map(), reads: new Map() };
   const wordOf = (g: Group): string => cache.words.get(g.rep) ?? cache.words.set(g.rep, circuitKey(cs.word(g.rep))).get(g.rep)!;
   const reads = new Map<Group, TopReadings>();

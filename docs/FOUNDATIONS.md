@@ -16,8 +16,16 @@ Scripts: [`foundations-sweep.ts`](../web/circuit-classes/foundations-sweep.ts)
 [`foundations-index.ts`](../web/circuit-classes/foundations-index.ts)
 (the summary),
 [`foundations-recurrence.ts`](../web/circuit-classes/foundations-recurrence.ts)
-(the lengths along a chain). Data: `web/public/data/foundations/hex-023468/`. Tests:
+(the lengths along a chain). Data: `web/circuit-classes/data/foundations/hex-023468/`. Tests:
 [`foundations.test.ts`](../web/src/pages/foundations/__tests__/foundations.test.ts).
+
+The Foundations page (`foundations.html`) shows every combination's
+foundational circuits, chains and account of chords, from a cut of the
+sweep's output in `web/public/data/foundations/hex-023468/`
+([`foundations-page.ts`](../web/circuit-classes/foundations-page.ts),
+[`pageData.ts`](../web/src/pages/foundations/pageData.ts)). It marks as
+monsters the foundational circuits that start a chain at floor + 4 or later
+(§6) and the 19 of at least 100,000 tiles.
 
 ## 1. Harmonics above a floor
 
@@ -362,6 +370,7 @@ a finite automaton on crossing addresses.
 cd web
 node --max-old-space-size=3500 node_modules/.bin/vite-node circuit-classes/foundations-sweep.ts -- 023468 9 0 1   # shard 0 of 1
 node node_modules/.bin/vite-node circuit-classes/foundations-index.ts -- 023468
+node node_modules/.bin/vite-node circuit-classes/foundations-page.ts -- 023468
 node --max-old-space-size=9000 node_modules/.bin/vite-node circuit-classes/foundations-predict.ts -- 023468 140000001 11
 node --max-old-space-size=12000 node_modules/.bin/vite-node circuit-classes/foundations-recurrence.ts -- 023468 140000001 11 147,07
 npx vitest run src/pages/foundations

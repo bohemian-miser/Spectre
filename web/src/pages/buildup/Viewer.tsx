@@ -25,12 +25,14 @@ export interface Lines {
   readonly key: string;
   readonly count: number;
   /** Line i as x, y pairs (y up), down to level `stop`, children outside `view` passed over, handed out in chunks. */
-  points(i: number, stop: number, view: Box | null): PointSource;
+  points(i: number, stop: number, view: Box | null, edgeStop: number): PointSource;
   /** Index into `styles`. */
   style(i: number): number;
   readonly styles: readonly LineStyle[];
   /** The level to draw down to at `scale` pixels per unit, with this fraction of the frame in view. */
   stop(scale: number, inView: number): number;
+  /** The level to draw down to next to the outline (as fine as the outline is drawn); `stop` when not given. */
+  edge?(scale: number): number;
 }
 
 /** Something drawn over the lines every frame: a line, or dots. */
@@ -61,6 +63,8 @@ interface Drawn {
 }
 
 const CELL = 10;
+/** Each mark's box (x0, y0, x1, y1), worked out once. */
+const boxes = new WeakMap<Mark, number[]>();
 /** Points taken from a line at a time. */
 const CHUNK = 4000;
 /** Milliseconds of drawing per animation frame. */
@@ -155,7 +159,21 @@ export function Viewer(props: {
       }
     }
     const marks = [...(d?.marks ?? []), ...(live.current.live ?? [])];
+    const vw = size.width, vh = size.height;
     for (const m of marks) {
+      // marks out of view are passed over
+      let box = boxes.get(m);
+      if (!box) {
+        let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity, run = 0;
+        for (let i = 0; i < m.pts.length; i += 2) {
+          x0 = Math.min(x0, m.pts[i]); x1 = Math.max(x1, m.pts[i]);
+          y0 = Math.min(y0, m.pts[i + 1]); y1 = Math.max(y1, m.pts[i + 1]);
+          if (i) run += Math.abs(m.pts[i] - m.pts[i - 2]) + Math.abs(m.pts[i + 1] - m.pts[i - 1]);
+        }
+        // the box, and the mean step between points
+        boxes.set(m, (box = [x0, y0, x1, y1, run / Math.max(1, m.pts.length / 2 - 1)]));
+      }
+      if (sx(now, box[2]) < -8 || sx(now, box[0]) > vw + 8 || sy(now, box[1]) < -8 || sy(now, box[3]) > vh + 8) continue;
       if (m.dots) {
         g.fillStyle = color(m.color);
         for (let i = 0; i < m.pts.length; i += 2) {
@@ -166,10 +184,18 @@ export function Viewer(props: {
         continue;
       }
       g.beginPath();
-      for (let i = 0; i < m.pts.length; i += 2) {
+      // points within half a pixel of the last one drawn are passed over; the last point always kept
+      let lx = 0, ly = 0;
+      const last = m.pts.length - 2;
+      // a long line seen from far: every stride-th point, the stride keeping the mean step near half a pixel
+      const stride = 2 * Math.max(1, Math.floor(0.5 / (box[4] * now.scale || 1)));
+      for (let i = 0; i < m.pts.length; i = i < last && i + stride > last ? last : i + stride) {
         const X = sx(now, m.pts[i]), Y = sy(now, m.pts[i + 1]);
         if (i === 0) g.moveTo(X, Y);
-        else g.lineTo(X, Y);
+        else if (i === last || Math.abs(X - lx) >= 0.5 || Math.abs(Y - ly) >= 0.5) g.lineTo(X, Y);
+        else continue;
+        lx = X;
+        ly = Y;
       }
       if (m.fill) {
         g.fillStyle = color(m.fill);
@@ -211,6 +237,7 @@ export function Viewer(props: {
     const inView = Math.min(1, (ix * iy) / fa);
     const whole = inView >= 0.999 && view.min.x <= frame.min.x && view.min.y <= frame.min.y && view.max.x >= frame.max.x && view.max.y >= frame.max.y;
     const stop = lines.stop(c.scale, inView);
+    const edgeStop = Math.min(stop, lines.edge ? lines.edge(c.scale) : stop);
     const canvas = document.createElement('canvas');
     canvas.width = Math.round(size.width * dpr);
     canvas.height = Math.round(size.height * dpr);
@@ -236,7 +263,7 @@ export function Viewer(props: {
       const paths = lines.styles.map(() => new Path2D());
       while (i < lines.count && performance.now() - t0 < SLICE) {
         if (!src) {
-          src = lines.points(i, stop, whole ? null : view);
+          src = lines.points(i, stop, whole ? null : view, edgeStop);
           parts = [];
           got = 0;
         }
