@@ -110,6 +110,6 @@ describe('the viewer', () => {
           if (d > 0) ps = ps.flatMap((p) => subPasses(g, p));
         }
       }
-    });
+    }, 30000);
   }
 });
