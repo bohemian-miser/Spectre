@@ -1,15 +1,15 @@
 /**
- * The common table and each type's own entries, against the tables read
- * through `mate`/`len` and against the renormalisation that glues children
- * by position (`circuit-classes/renormalize.ts`); a route's child arcs,
- * against the positions of the crossings they join.
+ * Each type's table rebuilt two ways, against the table read through
+ * `mate`/`len`: from the stored common table, overrides and presence (and,
+ * at low levels, against the renormalisation that glues children by
+ * position, `circuit-classes/renormalize.ts`); and from the core every
+ * non-Gamma type shares plus the type's extras.
  */
 import { describe, expect, it } from 'vitest';
 
 import { renormalize } from '../../../../circuit-classes/renormalize';
-import { buildSystem, transPt, type Affine, type MetaNode } from '../../../core';
 import { CircuitShapes } from '../../shapes/circuitShapes';
-import { childArcs, commonTable, composition, levelRoutes, ownPart, rebuilt, routeName } from '../routes';
+import { CORE_TYPES, coreRoutes, extraRoutes, rebuilt } from '../routes';
 
 const CASES: [number[], string, number][] = [
   [[0, 2, 3, 4, 6, 8], '140000001', 7],
@@ -22,12 +22,12 @@ const BY_POSITION = 4;
 
 const at = (p: { x: number; y: number }) => `${Math.round(p.x * 64)},${Math.round(p.y * 64)}`;
 
-describe('common table and own entries', () => {
+describe('tables rebuilt', () => {
   for (const [subset, combo, top] of CASES) {
     const digits = [...combo].map((c) => parseInt(c, 36));
     const cs = new CircuitShapes('hex', subset, digits, top, 1, false);
 
-    it(`rebuild each type's table for ${subset.join('')} ${combo}`, () => {
+    it(`from the common table, overrides and presence, for ${subset.join('')} ${combo}`, () => {
       const ref = renormalize('hex', subset, digits, BY_POSITION);
       for (let n = 0; n <= top; n++) {
         for (const [t, T] of Object.entries(cs.levels[n])) {
@@ -35,9 +35,6 @@ describe('common table and own entries', () => {
           expect(mate, `${t} at level ${n}`).toEqual(Int32Array.from({ length: T.size }, (_, p) => T.mate(p)));
           expect(len, `${t} at level ${n}`).toEqual(Float64Array.from({ length: T.size }, (_, p) => T.len(p)));
           expect(T.absent() + T.crossings().length).toBe(T.size);
-          const own = ownPart(cs, n, t as never);
-          expect(own.absent.length).toBe(T.absent());
-          expect(own.places.length).toBe(T.overrides);
           if (n > BY_POSITION) continue;
           const b = ref.levels[n][t];
           const ours: string[] = [];
@@ -48,82 +45,47 @@ describe('common table and own entries', () => {
       }
     }, 60000);
 
-    it(`draws the common table once per pair for ${subset.join('')} ${combo}`, () => {
+    it(`from the core and each type's extras, for ${subset.join('')} ${combo}`, () => {
       for (let n = 0; n <= top; n++) {
-        const L = Object.values(cs.levels[n])[0].level;
-        const c = commonTable(cs, n);
-        const paired = Array.from(L.mate).filter((m, p) => m >= 0 && L.mate[m] === p).length;
-        expect(c.routes.length).toBe(paired / 2 + c.oneSided);
-      }
-    });
-  }
-});
-
-describe('a route as its child arcs', () => {
-  const subset = [0, 2, 3, 4, 6, 8];
-  for (const combo of ['140000001', '000100000']) {
-    const cs = new CircuitShapes('hex', subset, [...combo].map((c) => parseInt(c, 36)), 5, 1, false);
-
-    it(`joins child crossings that sit together, through as many tiles, for ${combo}`, () => {
-      let checked = 0;
-      for (let n = 1; n <= 5; n++) {
+        const core = coreRoutes(cs, n);
         for (const [t, T] of Object.entries(cs.levels[n])) {
-          const xf: Affine[] = [];
-          for (const ch of (buildSystem('hex', n)[t] as MetaNode).children) xf[ch.pos] = ch.xform as Affine;
-          for (const k of T.crossings()) {
-            const m = T.mate(k);
-            if (m < 0) continue;
-            const arcs = childArcs(cs, n, t, k);
-            const pt = (slot: number, type: string, p: number) => at(transPt(xf[slot], cs.levels[n - 1][type].pts[p]));
-            expect(pt(arcs[0].slot, arcs[0].type, arcs[0].from)).toBe(at(T.pts[k]));
-            const last = arcs[arcs.length - 1];
-            expect(pt(last.slot, last.type, last.to)).toBe(at(T.pts[m]));
-            for (let i = 1; i < arcs.length; i++) {
-              const a = arcs[i - 1], b = arcs[i];
-              expect(pt(a.slot, a.type, a.to)).toBe(pt(b.slot, b.type, b.from));
-              expect(a.slot).not.toBe(b.slot);
-            }
-            expect(arcs.reduce((s, a) => s + a.tiles, 0)).toBe(T.len(k));
-            checked++;
+          const mate = new Int32Array(T.size).fill(-1);
+          const len = new Float64Array(T.size);
+          const had = new Uint8Array(T.size);
+          const put = ([a, b, l]: readonly [number, number, number]) => {
+            had[a] = 1;
+            mate[a] = b;
+            len[a] = l;
+            if (b >= 0) { had[b] = 1; mate[b] = a; len[b] = l; }
+          };
+          // a core route is in every non-Gamma type; Gamma has those of its crossings
+          for (const r of core) {
+            if ((CORE_TYPES as readonly string[]).includes(t)) put(r);
+            else if (T.has(r[0]) && T.mate(r[0]) === r[1] && T.len(r[0]) === r[2]) put(r);
           }
+          for (const r of extraRoutes(cs, n, t, core)) put(r);
+          expect(Array.from(had), `${t} at level ${n}`).toEqual(Array.from({ length: T.size }, (_, p) => (T.has(p) ? 1 : 0)));
+          expect(mate, `${t} at level ${n}`).toEqual(Int32Array.from({ length: T.size }, (_, p) => T.mate(p)));
+          expect(len, `${t} at level ${n}`).toEqual(Float64Array.from({ length: T.size }, (_, p) => T.len(p)));
         }
       }
-      expect(checked).toBeGreaterThan(5000);
     }, 60000);
-
-    it(`groups a level's routes by composition for ${combo}`, () => {
-      for (let n = 1; n <= 5; n++) {
-        const lr = levelRoutes(cs, n, 'Delta');
-        const T = cs.levels[n].Delta;
-        const count = new Map<string, number>();
-        for (const k of T.crossings()) {
-          if (T.mate(k) <= k) continue;
-          const name = routeName(childArcs(cs, n, 'Delta', k).map((a) => a.type)).composition;
-          count.set(name, (count.get(name) ?? 0) + 1);
-        }
-        expect(new Map(lr.groups.map((g) => [g.composition, g.count]))).toEqual(count);
-        expect(lr.routes).toBe(T.crossings().filter((k) => T.mate(k) > k).length);
-      }
-    });
-
-    it(`walks each type's border round in order for ${combo}`, () => {
-      for (let n = 0; n <= 5; n++) {
-        for (const [t, T] of Object.entries(cs.levels[n])) {
-          const ring = cs.border(n, t).flatMap((r) => Array.from(r));
-          expect([...ring].sort((x, y) => x - y)).toEqual(Array.from(T.crossings()));
-        }
-      }
-    });
   }
-});
 
-describe('composition', () => {
-  it('writes runs once with their count', () => {
-    expect(composition(['Xi', 'Delta', 'Delta', 'Phi', 'Delta'])).toBe('Xi Delta×2 Phi Delta');
-    expect(routeName(['Xi', 'Delta', 'Delta'])).toEqual(routeName(['Delta', 'Delta', 'Xi']));
-    expect(routeName(['Xi', 'Delta', 'Delta']).shape).toBe('Delta Xi');
-    expect(composition(['Pi', 'Delta', 'Gamma', 'Delta', 'Gamma', 'Delta', 'Gamma', 'Pi'])).toBe('Pi (Delta Gamma)×3 Pi');
-    const nested = [...Array(3)].flatMap(() => ['Xi', 'Delta', 'Gamma', 'Delta', 'Gamma']);
-    expect(composition(nested)).toBe('(Xi (Delta Gamma)×2)×3');
+  it('leaves few routes outside the core', () => {
+    const cs = new CircuitShapes('hex', [0, 2, 3, 4, 6, 8], [...'140000001'].map((c) => parseInt(c, 36)), 6, 1, true);
+    const core = coreRoutes(cs, 6);
+    const extras = extraRoutes(cs, 6, 'Delta', core);
+    expect(extras.length * 50).toBeLessThan(core.length);
+  });
+
+  it('walks each type border round in order', () => {
+    const cs = new CircuitShapes('hex', [0, 2, 3, 4, 6, 8], [...'000100000'].map((c) => parseInt(c, 36)), 5, 1, true);
+    for (let n = 0; n <= 5; n++) {
+      for (const [t, T] of Object.entries(cs.levels[n])) {
+        const ring = cs.border(n, t).flatMap((r) => Array.from(r));
+        expect([...ring].sort((x, y) => x - y)).toEqual(Array.from(T.crossings()));
+      }
+    }
   });
 });
