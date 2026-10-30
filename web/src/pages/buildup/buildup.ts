@@ -167,7 +167,12 @@ export function codeKey(w: Uint16Array): string {
   }
   const at = `${c.length}:${(h1 >>> 0).toString(36)}${(h2 >>> 0).toString(36)}`;
   const seen = wordsByHash.get(at) ?? wordsByHash.set(at, []).get(at)!;
-  let i = seen.findIndex((o) => o.length === c.length && o.every((x, q) => x === c[q]));
+  const same = (o: Uint16Array) => {
+    if (o.length !== c.length) return false;
+    for (let q = 0; q < c.length; q++) if (o[q] !== c[q]) return false;
+    return true;
+  };
+  let i = seen.findIndex(same);
   if (i < 0) i = seen.push(c) - 1;
   return i === 0 ? at : `${at}/${i}`;
 }

@@ -20,6 +20,7 @@ import { CircuitShapes } from './shapes/circuitShapes';
 import { ComboPicker, type ComboChoice } from './shapes/ComboPicker';
 import { closingsByLevel, groupsAt, type Closing } from './buildup/buildup';
 import { circuitUse, closedUse, joinedRoutes, type LevelUse } from './buildup/circuitRoutes';
+import { DeepPane } from './buildup/DeepPane';
 import { GroupStrip } from './buildup/GroupStrip';
 import { PassesPane, type Frame } from './buildup/PassesPane';
 import { Viewer, type Lines, type Mark, type ViewerApi } from './buildup/Viewer';
@@ -90,6 +91,7 @@ export default function BuildUpPage(): JSX.Element {
   const [rest, setRest] = useState(false);
   const [hoverL, setHoverL] = useState<number | null>(null);
   const [hoverR, setHoverR] = useState<number | null>(null);
+  const [deepOpen, setDeepOpen] = useState(false);
   const viewer = useRef<ViewerApi | null>(null);
   const leftApi = useRef<ViewerApi | null>(null);
   const rightApi = useRef<ViewerApi | null>(null);
@@ -476,6 +478,11 @@ export default function BuildUpPage(): JSX.Element {
           </aside>
         </div>
       )}
+
+      <details className="bu-levels-so-far" onToggle={(e) => setDeepOpen((e.target as HTMLDetailsElement).open)} data-testid="bu-deep-open">
+        <summary>Levels {built + 1} to 30, from the counts and the chains</summary>
+        {deepOpen && now && !busy && <DeepPane cs={now} built={built} closings={closings} />}
+      </details>
 
       <details className="bu-levels-so-far">
         <summary>Levels so far</summary>

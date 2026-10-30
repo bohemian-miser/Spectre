@@ -732,10 +732,17 @@ export class CircuitShapes {
 
   /** The child at each slot of a level-n supertile of `type`. */
   private kidsAt(n: number, type: string): MetaNode['children'][number][] {
-    const out: MetaNode['children'][number][] = [];
-    for (const ch of (buildSystem(this.family, n)[type] as MetaNode).children) out[ch.pos] = ch;
+    const key = `${n} ${type}`;
+    let out = this.kids.get(key);
+    if (!out) {
+      out = [];
+      for (const ch of (buildSystem(this.family, n)[type] as MetaNode).children) out[ch.pos] = ch;
+      this.kids.set(key, out);
+    }
     return out;
   }
+
+  private readonly kids = new Map<string, MetaNode['children'][number][]>();
 
   /** Each child crossing of a level-n arc from place k, in the order the strand meets them, with the child's own place entered. */
   enters(n: number, type: string, k: number): { slot: number; type: string; k: number }[] {
@@ -790,12 +797,23 @@ export class CircuitShapes {
     const out = new Uint16Array(c.length);
     const typeAt = new Map(leafOrder(this.family).map((t, i) => [t as string, i]));
     let at = 0;
+    // as `enters` takes an arc apart, without a list per arc
     const visit = (n: number, type: string, k: number): void => {
       if (n === 0) {
         out[at++] = typeAt.get(type)! * 64 + k * 8 + this.levels[0][type].mate(k);
         return;
       }
-      for (const e of this.enters(n, type, k)) visit(n - 1, e.type, e.k);
+      const kids = this.kidsAt(n, type);
+      const below = this.levels[n - 1];
+      const { steps, forward } = this.levels[n][type].route(k);
+      if (forward) {
+        for (let q = 0; q < steps.length; q++) visit(n - 1, kids[slotOf(steps[q])].node.type, placeOf(steps[q]));
+      } else {
+        for (let q = steps.length - 1; q >= 0; q--) {
+          const ct = kids[slotOf(steps[q])].node.type;
+          visit(n - 1, ct, below[ct].mate(placeOf(steps[q])));
+        }
+      }
     };
     for (const s of c.steps) {
       const ch = this.childOf(c.level, c.type, s);
