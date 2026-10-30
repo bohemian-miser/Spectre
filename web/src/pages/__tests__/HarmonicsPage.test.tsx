@@ -28,6 +28,16 @@ describe('HarmonicsPage', () => {
     expect(level2.querySelectorAll('.harm-token-differs').length).toBeGreaterThan(0);
     expect(screen.getByTestId('harm-partner')).toHaveProperty('value', String(2 + 5));
     expect(screen.getByTestId('harm-extras').textContent).toMatch(/24 extra runs of visits and misses 0 of the fundamental's tiles/);
+    // The two over their supertiles: at the top levels they agree; at the tiles the harmonic's extra visits are marked.
+    await waitFor(() => expect(screen.getByTestId('harm-picture-state').textContent).toMatch(/agree/), { timeout: 10000 });
+    expect(screen.getByTestId('harm-side-b').textContent).toMatch(/the 8,784 at level 5: 183 visits through 6 supertiles/);
+    fireEvent.change(screen.getByTestId('harm-k'), { target: { value: '0' } });
+    await waitFor(() => expect(screen.getByTestId('harm-side-b').textContent).toMatch(/at level 2: 1,395 visits through 441 supertiles; 72 hold visits the other lacks/), { timeout: 10000 });
+    expect(screen.getByTestId('harm-side-b').querySelectorAll('.harm-st-unshared')).toHaveLength(72);
+    // Expanded a level at a time from the birth supertiles, the rows agreeing.
+    fireEvent.click(screen.getByTestId('harm-expand'));
+    await waitFor(() => expect(screen.getAllByTestId('harm-xrow')).toHaveLength(1), { timeout: 10000 });
+    expect(screen.getAllByTestId('harm-xrow')[0].textContent).toMatch(/level 5 · 183 visits, 180 cancelled/);
     // A fundamental has no partner.
     // Any other circuit can be lined up with the picked one.
     fireEvent.change(screen.getByTestId('harm-partner'), { target: { value: '5' } });

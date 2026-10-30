@@ -8,7 +8,9 @@
  * the same at their top levels and differ below) beside them. A chosen
  * circuit is lined up with its fundamental, or with any other circuit, level
  * by level, with the tokens the two do not share marked; where they differ
- * at the tiles, the harmonic's extra visits are listed. Any circuit opens in
+ * at the tiles, the harmonic's extra visits are listed. The two are drawn side
+ * by side over their supertiles at a chosen level (`harmonics/PairViews.tsx`)
+ * and expanded from their birth supertiles level by level. Any circuit opens in
  * the Explorer's infinite view.
  */
 
@@ -18,6 +20,7 @@ import { ComboPicker, type ComboChoice } from './shapes/ComboPicker';
 import { explorerCircuitHref } from './shapes/explorerLink';
 import { CircuitGlyph as Glyph, describeCircuit } from './compare/CompareView';
 import { ReadingsTable } from './compare/ReadingsTable';
+import { PairExpansion, PairSupertiles } from './harmonics/PairViews';
 import { compareHref } from './compare/refs';
 import { createHarmonicsClient, sameCyclic, type CircuitInfo, type Comparison, type HarmonicsResult } from './harmonics/harmonicsJob';
 import '../styles/shapes.css';
@@ -356,6 +359,7 @@ export default function HarmonicsPage(props: { forceSync?: boolean }): JSX.Eleme
                   </figure>
                 ) : null}
               </div>
+              {other && partner !== null && picked !== null ? <PairSupertiles client={client.current} level={result.level} ai={partner} bi={picked} a={other} b={picking} /> : null}
               <ReadingsTable b={picking} a={other} rows={comparing?.rows ?? null} nameA="of the other" />
               {extras && lineage ? (
                 <p className="shapes-note" data-testid="harm-extras">
@@ -364,6 +368,7 @@ export default function HarmonicsPage(props: { forceSync?: boolean }): JSX.Eleme
                   {extras.unmatched === 0 ? ' Every extra run is a loop out of one supertile and back into it, round a point where three supertiles meet.' : ''}
                 </p>
               ) : null}
+              {other && partner !== null && picked !== null ? <PairExpansion client={client.current} level={result.level} ai={partner} bi={picked} a={other} b={picking} /> : null}
             </section>
           ) : null}
         </>
