@@ -13,8 +13,8 @@ import { bounds } from './TableFigure';
 
 const nf = (n: number) => n.toLocaleString('en-US');
 const pct = (a: number, b: number) => `${Math.round((100 * a) / Math.max(1, b))}%`;
-/** Points the circuit is drawn with. */
-const SAMPLES = 4000;
+/** The circuit is drawn as runs of tiles within this share of its radius of gyration, each at its mean. */
+const SHARE = 1 / 100;
 /** Routes listed per level. */
 const TOP = 4;
 /** Levels below the circuit's own compared with its harmonic's. */
@@ -40,7 +40,7 @@ function Overlay(props: { cs: CircuitShapes; c: Closing }): JSX.Element {
       const t = taken.get(slotOf(s)) ?? taken.set(slotOf(s), new Map()).get(slotOf(s))!;
       t.set(lo, (t.get(lo) ?? 0) + 1);
     }
-    const circuit = cs.sampled(c.circuit, SAMPLES);
+    const circuit = cs.coarse(c.circuit, SHARE).pts;
     const all = kids.flatMap((ch) => {
       const T = cs.levels[N - 1][ch.node.type];
       return Array.from(T.crossings(), (k) => transPt(ch.xform as Affine, T.pts[k]));

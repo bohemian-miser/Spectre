@@ -31,8 +31,8 @@ import '../styles/buildup.css';
 
 const nf = (n: number) => n.toLocaleString('en-US');
 const DEFAULT: ComboChoice = { subset: [0, 2, 3, 4, 6, 8], combo: '140000001', level: 6 };
-/** Most points a circuit is drawn with; longer circuits are drawn through evenly spaced tiles. */
-const MAX_POINTS = 4000;
+/** A circuit is drawn as runs of tiles within this share of its radius of gyration, each at its mean. */
+const SHARE = 1 / 50;
 
 /** A circuit's passes over a group's routes at a level, by lower place. */
 function usesOf(use: LevelUse | undefined, types: readonly HexType[]): Map<number, number> | null {
@@ -45,7 +45,7 @@ function usesOf(use: LevelUse | undefined, types: readonly HexType[]): Map<numbe
 function CircuitCard(props: { cs: CircuitShapes; c: Closing; level: number; href: string; selected: boolean; onSelect: () => void }): JSX.Element {
   const { cs, c } = props;
   const d = useMemo(() => {
-    const pts = cs.sampled(c.circuit, MAX_POINTS);
+    const { pts } = cs.coarse(c.circuit, SHARE);
     const [minX, maxX] = bounds(pts.map((p) => p.x)), [minY, maxY] = bounds(pts.map((p) => p.y));
     const span = Math.max(maxX - minX, maxY - minY) || 1;
     const path = pts.map((p, i) => `${i ? 'L' : 'M'}${((p.x - minX) / span * 100).toFixed(2)} ${((maxY - p.y) / span * 100).toFixed(2)}`).join('') + 'Z';
