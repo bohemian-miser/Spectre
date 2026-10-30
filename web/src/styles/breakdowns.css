@@ -1,0 +1,83 @@
+/* A circuit's placements read level by level (harmonics/BreakdownSets.tsx). */
+
+.bd-table {
+  border-collapse: collapse;
+  font-size: 12px;
+  margin: 4px 0 8px;
+}
+.bd-table th,
+.bd-table td {
+  text-align: left;
+  vertical-align: top;
+  padding: 3px 10px 3px 0;
+  border-top: 1px solid var(--line, #8884);
+}
+.bd-table thead th {
+  color: var(--muted);
+  font-weight: 500;
+  border-top: 0;
+}
+.bd-table tbody th {
+  color: var(--muted);
+  font-weight: 400;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.bd-chips {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  max-width: 340px;
+}
+.bd-chip {
+  font: inherit;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  min-width: 22px;
+  padding: 0 5px;
+  line-height: 18px;
+  border-radius: 4px;
+  border: 1px solid color-mix(in srgb, var(--accent, #2a78d6) 55%, transparent);
+  background: color-mix(in srgb, var(--accent, #2a78d6) 16%, transparent);
+  color: inherit;
+  cursor: pointer;
+}
+.bd-chip.is-alone {
+  border-style: dashed;
+  border-color: var(--muted);
+  background: transparent;
+}
+.bd-chip.is-picked {
+  outline: 2px solid var(--accent, #2a78d6);
+  outline-offset: 1px;
+}
+.bd-none {
+  color: var(--muted);
+}
+.bd-score {
+  color: var(--muted);
+  max-width: 380px;
+}
+.bd-step-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  margin-bottom: 6px;
+}
+.bd-step-bar button {
+  font: inherit;
+  width: 26px;
+  padding: 0;
+  line-height: 22px;
+}
+.bd-view .bv-surface {
+  height: min(50vh, 380px);
+  min-height: 240px;
+}
+@media (max-width: 700px) {
+  .bd-table {
+    display: block;
+    overflow-x: auto;
+  }
+}

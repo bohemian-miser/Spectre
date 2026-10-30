@@ -31,6 +31,7 @@ import { ChainWorkspace, CircuitTable, short, Thumb, useThumbs } from './harmoni
 import { chainsOf } from './harmonics/chains';
 import { FOLDS, type Fold } from './harmonics/rows';
 import { linksAt, MIN_SCORE, type Scored } from './harmonics/similarity';
+import { BreakdownSets } from './harmonics/BreakdownSets';
 import { createHarmonicsClient, type CircuitInfo, type Comparison, type HarmonicsResult } from './harmonics/harmonicsJob';
 import '../styles/shapes.css';
 import '../styles/harmonics.css';
@@ -301,6 +302,7 @@ export default function HarmonicsPage(props: { forceSync?: boolean }): JSX.Eleme
                 })}
               </div>
               <ChainWorkspace client={client.current} level={result.level} members={members} circuits={result.circuits} fold={fold} onFold={setFold} />
+              <BreakdownSets client={client.current} level={result.level} circuits={result.circuits} focus={sel.focus} partner={partner} />
               <h3>Readings</h3>
               {other ? (
                 <p className="shapes-note">
