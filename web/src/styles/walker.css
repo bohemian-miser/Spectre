@@ -552,21 +552,49 @@
   font-weight: 600;
   color: var(--text, #1d2430);
 }
+.wk__peek {
+  --wk-trace: #d6336c;
+}
+.wk__peek-tiles {
+  opacity: 0.35;
+}
 .wk__peek-tile {
   stroke: var(--panel, #fff);
-  stroke-width: 0.06;
+  stroke-width: 0.5px;
+  vector-effect: non-scaling-stroke;
 }
+.wk__peek-start-tile {
+  stroke: var(--text, #1d2430);
+  stroke-width: 2px;
+  vector-effect: non-scaling-stroke;
+}
+.wk__peek-halo,
 .wk__peek-strand {
   fill: none;
-  stroke: var(--text, #1d2430);
-  stroke-width: 0.16;
   stroke-linecap: round;
   stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+.wk__peek-halo {
+  stroke: var(--panel, #fff);
+  stroke-width: var(--wk-halo, 5.5px);
+}
+.wk__peek-strand {
+  stroke: var(--wk-trace);
+  stroke-width: var(--wk-strand, 2.2px);
+}
+.wk__peek-arrow {
+  fill: var(--text, #1d2430);
+  stroke: var(--panel, #fff);
+  stroke-width: 1px;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
 }
 .wk__peek-start {
-  fill: none;
-  stroke: #2f9e44;
-  stroke-width: 0.2;
+  fill: var(--panel, #fff);
+  stroke: var(--text, #1d2430);
+  stroke-width: 2px;
+  vector-effect: non-scaling-stroke;
 }
 
 .wk-tree__fold {
@@ -673,6 +701,9 @@
 }
 .wk__found li:hover {
   background: var(--panel-2, #efece5);
+}
+.wk__found:hover li:not(:hover) {
+  opacity: 0.55;
 }
 .wk__found-n {
   color: var(--muted, #8a8f99);

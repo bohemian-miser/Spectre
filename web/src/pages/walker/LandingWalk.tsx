@@ -55,12 +55,19 @@ function framed(placed: Map<string, PlacedTile>, frame: Affine): Map<string, Pla
   return out;
 }
 
+/** Arrows along a peek's strand, and how many pixels long. */
+const PEEK_ARROWS = 4;
+const ARROW_PX = 10;
+
 /**
  * The walk from a node of the tree, drawn small beside the pointer: its
- * tiles in their colours and the strand through their centres, to the
- * node's fork or to where its branch ends.
+ * tiles faint in their colours, the strand over them in one strong colour on
+ * a light halo, the start tile outlined and a few arrows for the way it
+ * goes, to the node's fork or to where its branch ends. Line widths are in
+ * pixels, so a strand of thousands of tiles is as easy to follow as a short one.
  */
 function CircuitPeek({ pw, subset, frame, id, keys, landing, text, x, y }: { pw: PossibleWalk; subset: readonly number[]; frame?: Affine; id: number; keys?: readonly string[]; landing?: string; text?: string; x: number; y: number }): JSX.Element | null {
+  const size = 220;
   const drawn = useMemo(() => {
     // a landing not yet taken is taken here, on the side, without adding it to the tree; a branch of the search is walked again from the start
     const st = keys ? searchStage(pw, keys) : landing ? stageAfter(pw, id, landing, RUN_CAP) : stageAhead(pw, id, RUN_CAP);
@@ -70,20 +77,44 @@ function CircuitPeek({ pw, subset, frame, id, keys, landing, text, x, y }: { pw:
     const pts = ids.map((t) => tileCentre(g.placed.get(t)!.xform));
     const xs = pts.map((p) => p.x), ys = pts.map((p) => p.y);
     const box = { x: Math.min(...xs) - 1.2, y: Math.min(...ys) - 1.2, w: Math.max(...xs) - Math.min(...xs) + 2.4, h: Math.max(...ys) - Math.min(...ys) + 2.4 };
-    const strand = strandPathD(st.seen.flatMap((s, i) => (g.placed.has(g.ids[i]) ? [{ ...s, xform: g.placed.get(g.ids[i])!.xform }] : [])), subset);
-    return { st, tiles, pts, box, strand };
+    const steps = st.seen.flatMap((s, i) => (g.placed.has(g.ids[i]) ? [{ ...s, xform: g.placed.get(g.ids[i])!.xform, next: g.placed.get(g.ids[i + 1]) }] : []));
+    const strand = strandPathD(steps, subset);
+    // an arrow where the strand leaves a tile, pointing at the next tile's centre
+    const unit = Math.max(box.w, box.h) / size;
+    const L = ARROW_PX * unit;
+    const count = Math.min(PEEK_ARROWS, Math.floor(steps.length / 4));
+    const arrows = Array.from({ length: count }, (_, k) => steps[Math.floor(((k + 0.5) * steps.length) / count)]).flatMap((s) => {
+      const out = s && s.next ? pointOnEdge(s.type, subset, s.exit) : null;
+      if (!s || !s.next || !out) return [];
+      const p = transPt(s.xform, out);
+      const a = tileCentre(s.xform), b = tileCentre(s.next.xform);
+      const d = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+      const ux = (b.x - a.x) / d, uy = (b.y - a.y) / d;
+      const tip = { x: p.x + ux * L * 0.55, y: p.y + uy * L * 0.55 };
+      const back = { x: p.x - ux * L * 0.45, y: p.y - uy * L * 0.45 };
+      return [`${tip.x},${tip.y} ${back.x - uy * L * 0.45},${back.y + ux * L * 0.45} ${back.x + uy * L * 0.45},${back.y - ux * L * 0.45}`];
+    });
+    return { st, tiles, start: g.placed.get(ids[0]), pts, box, strand, arrows, unit };
   }, [pw, id, keys, landing, subset, frame]);
-  const { st, tiles, pts, box, strand } = drawn;
-  const size = 220;
+  const { st, tiles, start, pts, box, strand, arrows, unit } = drawn;
+  // thinner where the tiles are drawn small, so a long strand does not cover its own turns
+  const tilePx = 1 / unit;
+  const strandPx = Math.min(2.4, Math.max(1.2, tilePx * 0.45));
+  const haloPx = strandPx + Math.min(3.2, Math.max(1.2, tilePx * 0.5));
   // above and to the right of the pointer, clear of the rows under it; below only where there is no room above
   const left = Math.min(x + 18, window.innerWidth - size - 12);
   const above = y > size + 160;
   return (
     <div className="wk__peek" style={above ? { left, top: y - 18, width: size, transform: 'translateY(-100%)' } : { left, top: y + 18, width: size }} data-testid="wk-peek">
-      <svg viewBox={`${box.x} ${box.y} ${box.w} ${box.h}`} width={size} height={size}>
-        {tiles.map((t) => <polygon key={t.id} points={tilePoints(t.xform)} fill={tileColor(t.type)} className="wk__peek-tile" />)}
-        <path d={strand} className="wk__peek-strand" />
-        {pts[0] && <circle cx={pts[0].x} cy={pts[0].y} r={0.6} className="wk__peek-start" />}
+      <svg viewBox={`${box.x} ${box.y} ${box.w} ${box.h}`} width={size} height={size} style={{ ['--wk-strand' as string]: `${strandPx}px`, ['--wk-halo' as string]: `${haloPx}px` }}>
+        <g className="wk__peek-tiles">
+          {tiles.map((t) => <polygon key={t.id} points={tilePoints(t.xform)} fill={tileColor(t.type)} className="wk__peek-tile" />)}
+        </g>
+        {start && <polygon points={tilePoints(start.xform)} fill={tileColor(start.type)} className="wk__peek-start-tile" data-testid="wk-peek-start" />}
+        <path d={strand} className="wk__peek-halo" />
+        <path d={strand} className="wk__peek-strand" data-testid="wk-peek-strand" />
+        {arrows.map((a, i) => <polygon key={i} points={a} className="wk__peek-arrow" />)}
+        {pts[0] && <circle cx={pts[0].x} cy={pts[0].y} r={3.5 * unit} className="wk__peek-start" />}
       </svg>
       <p className="wk__peek-head">{st.status === 'closed' ? `A circuit of ${st.seen.length} tiles` : st.status === 'choice' ? `${st.seen.length} tiles, to the fork at step ${st.seen.length + 1}` : `${st.seen.length} tiles, still open`}</p>
       {text && <p>{text}</p>}
@@ -572,7 +603,7 @@ export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial
             found={found}
             highlight={lit}
             route={searchAt}
-            onHoverNode={canHover ? (id) => peekSearch(id) : undefined}
+            onHoverNode={canHover ? (id, key) => { setLit(key ?? null); peekSearch(id); } : undefined}
             onGoto={goSearch}
           />
         )}

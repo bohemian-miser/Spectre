@@ -36,7 +36,8 @@ export function SearchTree({ nodes: tree, version, start, found, highlight, rout
   highlight?: string | null;
   /** The way down to the nodes the search is walking. */
   route?: ReadonlySet<number>;
-  onHoverNode?: (id: number | null) => void;
+  /** A node hovered, with the key of the circuit it closes on. */
+  onHoverNode?: (id: number | null, key?: string | null) => void;
   onGoto?: (id: number) => void;
 }): JSX.Element {
   const box = useRef<HTMLDivElement | null>(null);
@@ -95,7 +96,7 @@ export function SearchTree({ nodes: tree, version, start, found, highlight, rout
           <g
             key={c.id}
             className={`wk-stree__node is-${c.state}${highlight && c.key === highlight ? ' is-lit' : ''}${route?.has(c.id) ? ' is-searching' : ''}`}
-            onMouseEnter={() => onHoverNode?.(c.id)}
+            onMouseEnter={() => onHoverNode?.(c.id, c.key)}
             onClick={() => onGoto?.(c.id)}
           >
             {c.type
