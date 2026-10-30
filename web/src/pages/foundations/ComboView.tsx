@@ -9,14 +9,13 @@ import { explorerCircuitHref } from '../shapes/explorerLink';
 import { AccountChart } from './AccountChart';
 import { buildupHref, compact, harmonicsHref, nf, pct, slots, SUBSET } from './data';
 import type { DrawClient, Drawing } from './drawings';
-import { chainOf, isGiant, isLate, provenNote, rebornLevels, type ChainMember, type FoundRow, type PageCombo } from './pageData';
+import { chainOf, isGiant, isLate, provenNote, type ChainMember, type FoundRow, type PageCombo } from './pageData';
 
 const MARK: Record<ChainMember['mark'], { sign: string; title: string }> = {
   confirmed: { sign: '✓', title: 'predicted from two levels down, then built' },
   built: { sign: '', title: 'built (below the levels predictions start at)' },
   missed: { sign: '!', title: 'built, but not predicted' },
   predicted: { sign: '?', title: 'predicted, above the build' },
-  reborn: { sign: '↺', title: 'the walk predicted closes as a reborn copy of a lower circuit' },
   other: { sign: '≠', title: "the walk predicted is another circuit's harmonic" },
 };
 
@@ -44,10 +43,10 @@ function Glyph(props: { drawing: Drawing | undefined; size: number }): JSX.Eleme
 
 function Card(props: { data: PageCombo; f: FoundRow; drawing: Drawing | undefined; selected: boolean; onSelect: () => void }): JSX.Element {
   const { data, f, drawing } = props;
-  const [id, level, length, family, , copies, types] = f;
+  const [id, level, length, families, , copies, types, , places, nugget] = f;
+  const fams = [...new Set(families.split(' '))];
   const base = import.meta.env.BASE_URL;
   const chain = useMemo(() => chainOf(data, id), [data, id]);
-  const reborn = useMemo(() => rebornLevels(data, id), [data, id]);
   const late = isLate(level, data.floor);
   const giant = isGiant(length);
   const ref = useRef<HTMLElement>(null);
@@ -87,7 +86,11 @@ function Card(props: { data: PageCombo; f: FoundRow; drawing: Drawing | undefine
           ) : null}
         </div>
         <div className="fd-muted">
-          children {slots(family)} ·{' '}
+          <span title={`children ${fams.map(slots).join('; ')} at level ${level}`}>
+            closes in {nf(places)} {places === 1 ? 'place' : 'places'} from level {level}, children {fams.slice(0, 4).join(', ')}
+            {fams.length > 4 ? ', …' : ''}
+          </span>{' '}
+          ·{' '}
           {drawing ? (
             <span title={`${drawing.types.join(', ')}; ${nf(copies)} copies`}>
               in {drawing.types.length === 9 ? 'every type' : drawing.types.length === 1 ? drawing.types[0] : `${drawing.types.length} types`}
@@ -111,10 +114,9 @@ function Card(props: { data: PageCombo; f: FoundRow; drawing: Drawing | undefine
               </span>
             )).flatMap((el, i) => (i ? [' ', el] : [el]))
           ) : (
-            <span className="fd-muted">no harmonic</span>
+            <span className="fd-muted">{nugget ? 'nugget: no harmonic' : 'no harmonic built'}</span>
           )}
         </div>
-        {reborn ? <div className="fd-muted">reborn at {reborn[0] === reborn[1] ? `level ${reborn[0]}` : `levels ${reborn[0]}–${reborn[1]}`}</div> : null}
         <div className="fd-links" onClick={(e) => e.stopPropagation()}>
           {explorer ? <a href={explorer}>Explorer</a> : <span className="fd-muted">Explorer</span>}
           <a href={harmonicsHref(base, data.combo, Math.min(level + 2, 9))}>Harmonics</a>
@@ -133,7 +135,7 @@ export function ComboView(props: { data: PageCombo; client: DrawClient; circuit:
     let on = true;
     setError(null);
     props.client
-      .draw({ subset: SUBSET, combo: data.combo, want: data.found.map(([id, level, length, family]) => ({ id, level, length, family })) })
+      .draw({ subset: SUBSET, combo: data.combo, want: data.found.map(([id, level, length, families, , , , place]) => ({ id, place, level, length, family: families.split(' ')[0] })) })
       .then((ds) => on && setDrawings({ combo: data.combo, byId: new Map(ds.map((d) => [d.id, d])) }))
       .catch((e: unknown) => on && setError(e instanceof Error ? e.message : String(e)));
     return () => {
@@ -153,7 +155,7 @@ export function ComboView(props: { data: PageCombo; client: DrawClient; circuit:
     <div className="fd-combo" data-testid="fd-combo">
       <header>
         <h2>
-          {data.combo} <span className="fd-muted">rule 023468</span>
+          {data.combo} <span className="fd-muted">rule {data.rule}</span>
         </h2>
         <p className="fd-summary" data-testid="fd-summary">
           <span>
@@ -163,10 +165,11 @@ export function ComboView(props: { data: PageCombo; client: DrawClient; circuit:
             Last foundational level <b>{data.lastNew}</b>
           </span>
           <span>
-            <b>{data.found.length}</b> foundational circuits, <b>{data.found.filter(([id]) => withChains.has(id)).length}</b> with harmonics
+            <b>{data.found.length}</b> foundational circuits: <b>{data.found.filter(([id]) => withChains.has(id)).length}</b> chains,{' '}
+            <b>{data.found.filter((f) => f[9]).length}</b> {data.found.filter((f) => f[9]).length === 1 ? 'nugget' : 'nuggets'}
           </span>
           <span>
-            Tails at level {L}: <b>{pct(data.account[L][2])}</b>
+            Tails at level {L}: <b>{pct(data.tails[L])}</b>
           </span>
         </p>
       </header>
@@ -179,9 +182,9 @@ export function ComboView(props: { data: PageCombo; client: DrawClient; circuit:
       <section className="fd-cards">
         <h3>Foundational circuits</h3>
         <p className="fd-muted fd-key">
-          Each chain lists the harmonics two levels at a time, as tiles and level:{' '}
+          Each chain lists its harmonics by level, as tiles and level:{' '}
           <span className="fd-member fd-m-confirmed">✓</span> predicted, then built; <span className="fd-member fd-m-predicted">?</span> predicted above the build;{' '}
-          <span className="fd-member">↺</span> closes as a reborn copy; <span className="fd-member">!</span> built, not predicted.
+          <span className="fd-member">!</span> built, not predicted. A nugget has no harmonic: it only closes again, in more places, as the same circuit.
         </p>
         {error ? <p className="fd-muted">Could not draw: {error}</p> : null}
         {byLevel.map(([level, list]) => (

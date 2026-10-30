@@ -14,19 +14,17 @@
  * 023468 / 140000001 every pair agrees from A's level 2 up and differs at
  * levels 0 and 1; other combinations need a floor of 1, 3 or 4.
  *
- * A circuit closing at a level is one of three things:
- *
- * - reborn: the same circuit (the same tile word, `core/circuitWord.ts`) as
- *   one that closed lower down, closing again across a seam of a bigger
- *   supertile;
- * - harmonic: a harmonic of a circuit closing two levels down;
- * - foundational: neither. A foundational circuit starts a chain.
+ * A circuit is its word (`core/circuitWord.ts`): every closing with that
+ * word, in any place and at any level, is the same circuit. Where it first
+ * closes, a circuit is a harmonic of a circuit closing two levels down, or
+ * foundational. A foundational circuit with harmonics starts a chain; one
+ * without is a nugget.
  *
  * `account` splits the chords of every level-n supertile into the circuits
  * closed inside it, by the level they close at and what they are, and the
  * open arcs (tails) that leave it.
  */
-import { buildSystem, circuitKey, connectionPoints, leafOrder, type HexType, type MetaNode, type TileFamilyId } from '../../core';
+import { buildSystem, connectionPoints, leafOrder, type HexType, type MetaNode, type TileFamilyId } from '../../core';
 import { CircuitShapes, familyOf, placeOf, slotOf, type BornCircuit } from '../shapes/circuitShapes';
 
 const TYPES = leafOrder('hex') as readonly string[];
@@ -204,28 +202,108 @@ export function agreement(a: TopReadings, aLevel: number, b: TopReadings): { flo
  */
 export const isHarmonic = (agreed: number, level: number, floor: number): boolean => agreed <= floor && agreed <= level - 2;
 
-export type Status = 'foundational' | 'harmonic' | 'reborn';
+export type Status = 'foundational' | 'harmonic';
 
-/** One distinct circuit closing at one level: every copy of it, in every type. */
+/**
+ * A circuit's word as numbers, one per tile: type * 64 + entry edge * 8 +
+ * exit edge, in the order the strand meets the tiles (`CircuitShapes.word`
+ * writes the same tiles as letters).
+ */
+export function wordCodes(cs: CircuitShapes, c: BornCircuit): Int32Array {
+  const out = new Int32Array(c.length);
+  let i = 0;
+  const visit = (m: number, ti: number, place: number): void => {
+    const T = cs.levels[m][TYPES[ti]];
+    if (m === 0) {
+      out[i++] = ti * 64 + place * 8 + T.mate(place);
+      return;
+    }
+    const { steps, forward } = T.route(place);
+    const kids = kidsOf(cs, m)[ti];
+    const len = steps.length;
+    for (let q = 0; q < len; q++) {
+      const st = steps[forward ? q : len - 1 - q];
+      const ct = kids[slotOf(st)];
+      visit(m - 1, ct, forward ? placeOf(st) : cs.levels[m - 1][TYPES[ct]].mate(placeOf(st)));
+    }
+  };
+  const top = kidsOf(cs, c.level)[typeIndex.get(c.type)!];
+  for (const st of c.steps) visit(c.level - 1, top[slotOf(st)], placeOf(st));
+  if (i !== c.length) throw new Error(`a ${c.length}-tile circuit walked ${i} tiles`);
+  return out;
+}
+
+/**
+ * Which circuit a closing is, as a key: its word read from the tile and in
+ * the direction where it reads least (as `circuitKey` does with letters),
+ * hashed with its length. Two closings have the same key when they are the
+ * same circuit, moved; two different circuits share one only if two
+ * independent 32-bit hashes collide.
+ */
+export function wordKey(cs: CircuitShapes, c: BornCircuit): string {
+  const w = wordCodes(cs, c);
+  const n = w.length;
+  const back = new Int32Array(n);
+  for (let j = 0; j < n; j++) {
+    const x = w[n - 1 - j];
+    back[j] = (x & ~63) | ((x & 7) << 3) | ((x >> 3) & 7);
+  }
+  const f = leastRotation(w), r = leastRotation(back);
+  let pick = w, at = f;
+  for (let j = 0; j < n; j++) {
+    const a = w[(f + j) % n], b = back[(r + j) % n];
+    if (a !== b) {
+      if (b < a) { pick = back; at = r; }
+      break;
+    }
+  }
+  let h1 = 0x811c9dc5, h2 = 0x1b873593;
+  for (let j = 0; j < n; j++) {
+    const v = pick[(at + j) % n];
+    h1 = Math.imul(h1 ^ v, 0x01000193) >>> 0;
+    h2 = Math.imul(h2 ^ (v + j * 7919), 0x5bd1e995) >>> 0;
+  }
+  return `${n}:${h1.toString(36)}:${h2.toString(36)}`;
+}
+
+/**
+ * One circuit: one word, with every place it closes in, at every level. A
+ * place is a closing with its own child slots (`closingKey`); the same
+ * circuit closes across different pairs of children, in different places of
+ * a supertile, and again across the seams of bigger supertiles.
+ */
 export interface Closing {
   readonly id: number;
-  /** `closingKey` of its copies. */
-  readonly key: string;
+  /** `closingKey` of each of its places. */
+  readonly keys: readonly string[];
+  /** Its places' indices in `closingGroups`, lowest level first; the first is the one read and drawn. */
+  readonly places: readonly number[];
+  /** The lowest level it closes at. */
   readonly level: number;
   readonly length: number;
-  readonly family: string;
-  /** Child crossings of its walk (the representative's). */
+  /** The family (child slots) of each of its places at its lowest level. */
+  readonly families: readonly string[];
+  /** How many places it closes in at each level, from its lowest. */
+  readonly placesByLevel: Readonly<Record<number, number>>;
+  /** Copies closing in a supertile of each type at each level: copiesByLevel[level][type]. */
+  readonly copiesByLevel: Readonly<Record<number, Readonly<Record<string, number>>>>;
+  /** Child crossings of the walk read. */
   readonly steps: number;
-  /** Copies closing in a supertile of each type, by type name. */
+  /** Copies closing in a supertile of each type, every place and level together, by type name. */
   readonly copies: Readonly<Record<string, number>>;
+  /** Foundational: starts a chain (`nugget` when nothing is a harmonic of it); harmonic: a harmonic of `of`. */
   readonly status: Status;
-  /** Reborn: the closing it is a copy of (its first). Harmonic: the closing two levels down it is a harmonic of. */
+  /** Harmonic: the circuit it is a harmonic of, closing two levels below its lowest level. */
   readonly of: number | null;
-  /** Harmonic: the floor of its agreement with `of`. Foundational: the best floor found against any closing two levels down, or null when there was none. */
+  /** Harmonic: the floor of its agreement with `of`, the highest over its places that agree. Foundational: the best floor found against any circuit two levels down, or null when there was none. */
   readonly floor: number | null;
-  /** The foundational closing at the root of its chain (itself when foundational; for a reborn one, its first's). */
+  /** Harmonic: how many of its places at its lowest level read as a place of `of`. */
+  readonly matched: number;
+  /** The foundational circuit at the root of its chain (itself when foundational). */
   readonly root: number;
-  /** Raw visits per level read, and the lowest level read. */
+  /** A foundational circuit nothing is a harmonic of, and its harmonics none either: its chain is itself. */
+  readonly nugget: boolean;
+  /** Raw visits per level read, and the lowest level read (of the place read). */
   readonly visits: readonly number[];
   readonly lowest: number;
 }
@@ -234,27 +312,27 @@ export interface Foundations {
   readonly levels: number;
   readonly floor: number;
   readonly closings: readonly Closing[];
-  /** The highest level with a foundational closing. */
+  /** The highest level a foundational circuit first closes at. */
   readonly lastNew: number;
 }
 
-/** Words and readings of the closings, kept between calls of `foundations` on the same renormalisation. */
+/** Word keys and readings of the places, kept between calls of `foundations` on the same renormalisation. */
 export interface FoundationsCache {
   readonly words: Map<BornCircuit, string>;
   readonly reads: Map<BornCircuit, TopReadings>;
 }
 
-/** What makes copies of a born circuit one closing: level, length, family and the cyclic sequence of child slots. */
+/** What makes copies of a born circuit one place: level, length, family and the cyclic sequence of child slots. */
 export const closingKey = (c: BornCircuit): string => `${c.level}/${c.length}/${familyOf(c)}/${canonicalCycle(c.steps.map(slotOf)).join('')}`;
 
-/** One kept walk per supertile type and closing, with its copies counted. */
+/** One kept walk per supertile type and place, with its copies counted. */
 export const bornKey = (c: BornCircuit): string => `${c.type}|${closingKey(c)}`;
 
-/** The renormalisation of a hexagon combination to `level`, keeping every closing once per type with its copies counted. */
+/** The renormalisation of a hexagon combination to `level`, keeping every place once per type with its copies counted. */
 export const buildShapes = (subset: readonly number[], combo: string, level: number): CircuitShapes =>
   new CircuitShapes('hex', subset, [...combo].map((ch) => parseInt(ch, 36)), level, 1, false, bornKey);
 
-/** Every copy of one closing: its walk read (a Delta's when there is one) and its copies per type. */
+/** Every copy of one place: its walk read (a Delta's when there is one) and its copies per type. */
 export interface Group {
   readonly key: string;
   readonly level: number;
@@ -266,14 +344,16 @@ export interface Group {
 }
 
 /**
- * The closings of a renormalisation in the order `foundations` numbers them
- * (a closing's `id` is its place here): by level, then length, then family,
- * ties in the order they were born. Levels never reorder as the build grows,
- * so a build to any level at or above a closing's gives it the same id.
+ * The places of a renormalisation up to level `upTo`, in a fixed order (a
+ * place's index is its position here): by level, then length, then family,
+ * ties in the order they were born. Levels never reorder as the build
+ * grows, so a build to any level at or above a place's gives it the same
+ * index.
  */
-export function closingGroups(cs: CircuitShapes): Group[] {
+export function closingGroups(cs: CircuitShapes, upTo = cs.maxLevel): Group[] {
   const groups = new Map<string, Group>();
   for (const c of cs.born) {
+    if (c.level > upTo) continue;
     const key = closingKey(c);
     let g = groups.get(key);
     if (!g) groups.set(key, (g = { key, level: c.level, length: c.length, family: familyOf(c), steps: c.steps.length, copies: {}, rep: c }));
@@ -284,52 +364,93 @@ export function closingGroups(cs: CircuitShapes): Group[] {
 }
 
 /**
- * Sorts every circuit the renormalisation closed into foundational, harmonic
- * and reborn. `cs` must keep every closing (`buildShapes`, or `keepAtLeast`
- * 1 without `onePerLength`). Copies of a circuit in one supertile, or in supertiles of
- * different types, are one closing when they have the same length, the same
- * family and the same cyclic sequence of child slots; one representative is
- * read (the Delta's when there is one). Two circuits are compared by their
- * words when one is at most `wordCap` tiles.
+ * The places' words, where they decide anything: a place whose length no
+ * other place shares is a circuit of its own and gets its key instead.
+ * Places past `wordCap` tiles keep their key too.
  */
-export function foundations(cs: CircuitShapes, opts: { floor?: number; maxRaw?: number; wordCap?: number; cache?: FoundationsCache } = {}): Foundations {
+export function placeWords(cs: CircuitShapes, places: readonly Group[], cache: FoundationsCache, wordCap = 6e7): string[] {
+  const sameLength = new Map<number, number>();
+  for (const g of places) sameLength.set(g.length, (sameLength.get(g.length) ?? 0) + 1);
+  return places.map((g) => {
+    if (sameLength.get(g.length)! < 2 || g.length > wordCap) return `place ${g.key}`;
+    return cache.words.get(g.rep) ?? cache.words.set(g.rep, wordKey(cs, g.rep)).get(g.rep)!;
+  });
+}
+
+/**
+ * Sorts every circuit the renormalisation closed, up to level `upTo`, into
+ * foundational and harmonic. `cs` must keep every closing (`buildShapes`,
+ * or `keepAtLeast` 1 without `onePerLength`). The places with one word, at
+ * any level, are one circuit, sorted where it first closes. Each place is
+ * read (a Delta's copy when there is one). A circuit is a harmonic of the
+ * circuit two levels below its lowest level that the most of its places
+ * there read as (a place of it with the same family, agreeing from `floor`
+ * up); `matched` says how many do.
+ */
+export function foundations(cs: CircuitShapes, opts: { floor?: number; maxRaw?: number; wordCap?: number; cache?: FoundationsCache; upTo?: number } = {}): Foundations {
   const floor = opts.floor ?? 2;
   const maxRaw = opts.maxRaw ?? 3e6;
-  const wordCap = opts.wordCap ?? 4e6;
-  const list = closingGroups(cs);
+  const upTo = opts.upTo ?? cs.maxLevel;
+  const places = closingGroups(cs, upTo);
   const cache = opts.cache ?? { words: new Map(), reads: new Map() };
-  const wordOf = (g: Group): string => cache.words.get(g.rep) ?? cache.words.set(g.rep, circuitKey(cs.word(g.rep))).get(g.rep)!;
-  const reads = new Map<Group, TopReadings>();
-  const out: Closing[] = [];
-  list.forEach((g, id) => {
-    // reborn: an earlier closing with the same word
-    let of = -1;
-    if (g.length <= wordCap) {
-      for (let j = 0; j < id && of < 0; j++) {
-        const e = list[j];
-        if (e.level < g.level && e.length === g.length && wordOf(e) === wordOf(g)) of = out[j].status === 'reborn' ? out[j].of! : j;
-      }
-    }
+  const words = placeWords(cs, places, cache, opts.wordCap);
+  const readOf = (g: Group): TopReadings => {
     let r = cache.reads.get(g.rep);
     if (!r || r.lowest > floor + 2) cache.reads.set(g.rep, (r = readCircuit(cs, g.rep, 0, maxRaw, floor + 2)));
-    reads.set(g, r);
-    const base = { id, key: g.key, level: g.level, length: g.length, family: g.family, steps: g.steps, copies: g.copies, visits: r.raw, lowest: r.lowest };
-    if (of >= 0) {
-      out.push({ ...base, status: 'reborn', of, floor: null, root: out[of].root });
-      return;
+    return r;
+  };
+  const byWord = new Map<string, number[]>();
+  places.forEach((_, i) => (byWord.get(words[i]) ?? byWord.set(words[i], []).get(words[i])!).push(i));
+  const circuits = [...byWord.values()].sort((a, b) => a[0] - b[0]);
+  const out: (Closing & { nugget: boolean })[] = [];
+  circuits.forEach((ps, id) => {
+    const g = places[ps[0]];
+    const first = ps.filter((p) => places[p].level === g.level);
+    const copies: Record<string, number> = {};
+    const placesByLevel: Record<number, number> = {};
+    const copiesByLevel: Record<number, Record<string, number>> = {};
+    for (const p of ps) {
+      const lv = places[p].level;
+      placesByLevel[lv] = (placesByLevel[lv] ?? 0) + 1;
+      const at = (copiesByLevel[lv] ??= {});
+      for (const [t, n] of Object.entries(places[p].copies)) {
+        copies[t] = (copies[t] ?? 0) + n;
+        at[t] = (at[t] ?? 0) + n;
+      }
     }
-    let best = -1, bestFloor = Infinity;
-    list.forEach((a, j) => {
-      if (j >= id || a.level + 2 !== g.level || a.family !== g.family) return;
-      const { floor: f } = agreement(reads.get(a)!, a.level, r);
-      if (f < a.level && f < bestFloor) { best = j; bestFloor = f; }
+    const r = readOf(g);
+    const base = {
+      id, keys: ps.map((p) => places[p].key), places: ps, level: g.level, length: g.length, families: first.map((p) => places[p].family),
+      placesByLevel, copiesByLevel, steps: g.steps, copies, visits: r.raw, lowest: r.lowest, nugget: false,
+    };
+    // the circuit with places two levels down that the most of this one's lowest places read as
+    let best = -1, bestMatched = 0, bestFloor = Infinity, anyFloor = Infinity;
+    out.forEach((a, j) => {
+      const below = a.places.filter((q) => places[q].level + 2 === g.level);
+      if (!below.length) return;
+      let matched = 0, worst = -Infinity;
+      for (const p of first) {
+        let pf = Infinity;
+        for (const q of below) {
+          if (places[q].family !== places[p].family) continue;
+          const { floor: f } = agreement(readOf(places[q]), places[q].level, readOf(places[p]));
+          if (f < places[q].level) { pf = Math.min(pf, f); anyFloor = Math.min(anyFloor, f); }
+        }
+        if (isHarmonic(pf, g.level - 2, floor)) { matched++; worst = Math.max(worst, pf); }
+      }
+      if (matched > bestMatched || (matched > 0 && matched === bestMatched && worst < bestFloor)) { best = j; bestMatched = matched; bestFloor = worst; }
     });
-    if (best >= 0 && isHarmonic(bestFloor, list[best].level, floor)) out.push({ ...base, status: 'harmonic', of: best, floor: bestFloor, root: out[best].root });
-    else out.push({ ...base, status: 'foundational', of: null, floor: best >= 0 ? bestFloor : null, root: id });
+    if (best >= 0) out.push({ ...base, status: 'harmonic', of: best, floor: bestFloor, matched: bestMatched, root: out[best].root });
+    else out.push({ ...base, status: 'foundational', of: null, floor: Number.isFinite(anyFloor) ? anyFloor : null, matched: 0, root: id });
   });
+  const rooted = new Set(out.filter((c) => c.status === 'harmonic').map((c) => c.root));
+  for (const c of out) if (c.status === 'foundational' && !rooted.has(c.id)) c.nugget = true;
   const lastNew = Math.max(0, ...out.filter((c) => c.status === 'foundational').map((c) => c.level));
-  return { levels: cs.maxLevel, floor, closings: out, lastNew };
+  return { levels: upTo, floor, closings: out, lastNew };
 }
+
+/** A circuit's class in the account: a nugget, or the foundational circuit or a harmonic of a chain. */
+export const classOf = (c: Closing): 'nugget' | 'foundational' | 'harmonic' => (c.nugget ? 'nugget' : c.status);
 
 /** A closed walk `walkAbove` found, as a circuit closing at `level` in a supertile of `type`. */
 export function bornAbove(level: number, type: string, walk: { steps: number[]; length: number }): BornCircuit {
@@ -489,15 +610,15 @@ export function account(cs: CircuitShapes, bucketOf: (c: BornCircuit) => string)
   return rows;
 }
 
-/** The account by what each closing is: foundational, harmonic or reborn. */
+/** The account by class: nugget, or the foundational circuit or a harmonic of a chain. */
 export function tileAccount(cs: CircuitShapes, f: Foundations): AccountRow[] {
-  const statusOf = new Map(f.closings.map((c) => [c.key, c.status] as const));
-  return account(cs, (c) => statusOf.get(closingKey(c)) ?? 'unclassified');
+  const classOfKey = new Map(f.closings.flatMap((c) => c.keys.map((k) => [k, classOf(c)] as const)));
+  return account(cs, (c) => classOfKey.get(closingKey(c)) ?? 'unclassified');
 }
 
-/** The account by chain: each closing under the foundational closing at its root (its id). */
+/** The account by chain and class: each circuit under `root|class`, its chain's foundational circuit (its id) and what it is, so each chord counts once. */
 export function chainAccount(cs: CircuitShapes, f: Foundations): AccountRow[] {
-  const rootOf = new Map(f.closings.map((c) => [c.key, String(c.root)] as const));
+  const rootOf = new Map(f.closings.flatMap((c) => c.keys.map((k) => [k, `${c.root}|${classOf(c)}`] as const)));
   return account(cs, (c) => rootOf.get(closingKey(c)) ?? 'unclassified');
 }
 
@@ -573,4 +694,11 @@ export function seamCrossings(c: BornCircuit): Record<string, number> {
     out[key] = (out[key] ?? 0) + 1;
   }
   return out;
+}
+
+/** The substitution's growth: the Perron-Frobenius eigenvalue of M, how many times the tiles (and chords) of a supertile grow a level. */
+export function substitutionGrowth(family: TileFamilyId): number {
+  const M = substitutionMatrix(family);
+  const f = typeFrequencies(family);
+  return f.reduce((s, ft, t) => s + ft * M[t].reduce((a, b) => a + b, 0), 0);
 }

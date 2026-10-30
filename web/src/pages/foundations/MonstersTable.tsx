@@ -38,6 +38,13 @@ export function groupMonsters(monsters: readonly Monster[]): Row[] {
   return [...by.values()].map((ms) => ({ combo: ms[0].combo, floor: ms[0].floor, level: ms[0].level, length: ms[0].length, kind: kind(ms[0]), members: ms }));
 }
 
+/** A circuit's places, compactly: the children of its one place, or how many places and the first few families. */
+function placesText(families: string): string {
+  const f = families.split(' ');
+  const u = [...new Set(f)];
+  return f.length === 1 ? slots(f[0]) : `${f.length} places, children ${u.slice(0, 3).join(', ')}${u.length > 3 ? ', …' : ''}`;
+}
+
 export function MonstersTable(props: { monsters: readonly Monster[]; onOpen: (m: Monster) => void }): JSX.Element {
   const [sort, setSort] = useState<{ key: Key; desc: boolean }>({ key: 'length', desc: true });
   const grouped = useMemo(() => groupMonsters(props.monsters), [props.monsters]);
@@ -81,8 +88,8 @@ export function MonstersTable(props: { monsters: readonly Monster[]; onOpen: (m:
               <td>{r.floor}</td>
               <td>{r.level}</td>
               <td>{nf(r.length)}</td>
-              <td title={r.members.map((m) => slots(m.family)).join('; ')}>
-                {slots(r.members[0].family)}
+              <td title={r.members.map((m) => m.families.split(' ').map(slots).join(', ')).join('; ')}>
+                {placesText(r.members[0].families)}
                 {r.members.length > 1 ? <span className="fd-muted"> and {r.members.length - 1} more</span> : null}
               </td>
               <td>
