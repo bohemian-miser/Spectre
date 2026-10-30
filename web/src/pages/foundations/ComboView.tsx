@@ -1,53 +1,29 @@
 /**
  * One combination: its summary, what is proven and what only observed, the
- * account of chords by level, and its foundational circuits as cards by the
- * level they first close at, each drawn from a fresh build in a worker.
+ * account of chords by level, and its foundational circuits by the level
+ * they first close at: each chain as a row, its foundational circuit's card
+ * then its harmonics (`ChainRow.tsx`), and each nugget as a card. Every
+ * circuit is drawn from a fresh build in a worker.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { TileTypeId } from '../../core';
 import { explorerCircuitHref } from '../shapes/explorerLink';
 import { AccountChart } from './AccountChart';
+import { ChainRow } from './ChainRow';
+import { Glyph } from './Glyph';
 import { TailsPanel } from './TailsPanel';
-import { buildupHref, compact, harmonicsHref, nf, pct, slots, subsetOf } from './data';
+import { buildupHref, harmonicsHref, nf, pct, slots, subsetOf } from './data';
 import type { DrawClient, Drawing } from './drawings';
-import { chainOf, isGiant, isLate, provenNote, type ChainMember, type FoundRow, type PageCombo } from './pageData';
+import { chainOf, isGiant, isLate, provenNote, type ChainStep, type FoundRow, type PageCombo } from './pageData';
 
-const MARK: Record<ChainMember['mark'], { sign: string; title: string }> = {
-  confirmed: { sign: '✓', title: 'predicted from two levels down, then built' },
-  built: { sign: '', title: 'built (below the levels predictions start at)' },
-  missed: { sign: '!', title: 'built, but not predicted' },
-  predicted: { sign: '?', title: 'predicted, above the build' },
-  other: { sign: '≠', title: "the walk predicted is another circuit's harmonic" },
-};
-
-function Glyph(props: { drawing: Drawing | undefined; size: number }): JSX.Element {
-  const d = props.drawing;
-  if (!d) return <div className="fd-glyph fd-glyph-wait" style={{ width: props.size, height: props.size }} />;
-  const xy = d.xy;
-  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-  for (let i = 0; i < xy.length; i += 2) {
-    x0 = Math.min(x0, xy[i]);
-    x1 = Math.max(x1, xy[i]);
-    y0 = Math.min(y0, xy[i + 1]);
-    y1 = Math.max(y1, xy[i + 1]);
-  }
-  const s = Math.max(x1 - x0, y1 - y0) || 1;
-  const pad = 0.06 * s;
-  const pts: string[] = [];
-  for (let i = 0; i < xy.length; i += 2) pts.push(`${(xy[i] - x0 + (s - (x1 - x0)) / 2 + pad).toFixed(3)},${(y1 - xy[i + 1] + (s - (y1 - y0)) / 2 + pad).toFixed(3)}`);
-  return (
-    <svg className="fd-glyph" viewBox={`0 0 ${s + 2 * pad} ${s + 2 * pad}`} width={props.size} height={props.size} aria-hidden="true">
-      <polygon points={pts.join(' ')} vectorEffect="non-scaling-stroke" />
-    </svg>
-  );
-}
-
-function Card(props: { data: PageCombo; f: FoundRow; drawing: Drawing | undefined; selected: boolean; onSelect: () => void }): JSX.Element {
-  const { data, f, drawing } = props;
+function Card(props: { data: PageCombo; f: FoundRow; chain: readonly ChainStep[]; drawing: Drawing | undefined; selected: boolean; onSelect: () => void }): JSX.Element {
+  const { data, f, drawing, chain } = props;
   const [id, level, length, families, , copies, types, , places, nugget] = f;
   const fams = [...new Set(families.split(' '))];
   const base = import.meta.env.BASE_URL;
-  const chain = useMemo(() => chainOf(data, id), [data, id]);
+  // the Harmonics page read to the chain's last member built, opened on this circuit's chain
+  const built = chain.filter((st) => st.members.some((m) => m.id !== null));
+  const harmonicsLevel = built.length ? built[built.length - 1].level : Math.min(level + 2, data.levels);
   const late = isLate(level, data.floor);
   const giant = isGiant(length);
   const ref = useRef<HTMLElement>(null);
@@ -100,27 +76,10 @@ function Card(props: { data: PageCombo; f: FoundRow; drawing: Drawing | undefine
             `in ${types} ${types === 1 ? 'type' : 'types'}`
           )}
         </div>
-        <div className="fd-chain" data-testid="fd-chain">
-          {chain.length ? (
-            chain.map((st) => (
-              <span key={st.level} className="fd-step">
-                <span className="fd-arrow">→</span>
-                {st.members.map((m, i) => (
-                  <span key={i} className={`fd-member fd-m-${m.mark}`} title={`${nf(m.length)} tiles at level ${st.level}: ${MARK[m.mark].title}`}>
-                    {compact(m.length)}
-                    <small> L{st.level}</small>
-                    {MARK[m.mark].sign ? ` ${MARK[m.mark].sign}` : ''}
-                  </span>
-                ))}
-              </span>
-            )).flatMap((el, i) => (i ? [' ', el] : [el]))
-          ) : (
-            <span className="fd-muted">{nugget ? 'nugget: no harmonic' : 'no harmonic built'}</span>
-          )}
-        </div>
+        {chain.length ? null : <div className="fd-muted">{nugget ? 'nugget: no harmonic' : 'no harmonic built'}</div>}
         <div className="fd-links" onClick={(e) => e.stopPropagation()}>
           {explorer ? <a href={explorer}>Explorer</a> : <span className="fd-muted">Explorer</span>}
-          <a href={harmonicsHref(base, data.combo, Math.min(level + 2, 9), data.rule)}>Harmonics</a>
+          <a href={harmonicsHref(base, data.combo, harmonicsLevel, data.rule, { level, length })}>Harmonics</a>
           <a href={buildupHref(base, data.combo, level, length, data.rule)}>Build-up</a>
         </div>
       </div>
@@ -150,6 +109,7 @@ export function ComboView(props: { data: PageCombo; client: DrawClient; circuit:
     return [...m].sort((a, b) => a[0] - b[0]);
   }, [data]);
   const withChains = useMemo(() => new Set(data.harm.map((h) => h[4])), [data]);
+  const chains = useMemo(() => new Map(data.found.map((f) => [f[0], chainOf(data, f[0])] as const)), [data]);
   const L = data.levels;
   const note = useMemo(() => provenNote(data), [data]);
   return (
@@ -184,23 +144,34 @@ export function ComboView(props: { data: PageCombo; client: DrawClient; circuit:
       <section className="fd-cards">
         <h3>Foundational circuits</h3>
         <p className="fd-muted fd-key">
-          Each chain lists its harmonics by level, as tiles and level:{' '}
-          <span className="fd-member fd-m-confirmed">✓</span> predicted, then built; <span className="fd-member fd-m-predicted">?</span> predicted above the build;{' '}
-          <span className="fd-member">!</span> built, not predicted. A nugget has no harmonic: it only closes again, in more places, as the same circuit.
+          Each chain is a row: its foundational circuit, then its harmonics by level, each drawn and linked to its chain on the Harmonics page.{' '}
+          <span className="fd-m-confirmed">✓</span> predicted from two levels down, then built; <span className="fd-m-missed">!</span> built, not predicted; a blank
+          square is predicted above the build. A nugget has no harmonic: it only closes again, in more places, as the same circuit.
         </p>
         {error ? <p className="fd-muted">Could not draw: {error}</p> : null}
-        {byLevel.map(([level, list]) => (
-          <div key={level} className="fd-level">
-            <h4>
-              Level {level} <span className="fd-muted">· {list.length} {list.length === 1 ? 'circuit' : 'circuits'}{isLate(level, data.floor) ? ' · floor + ' + (level - data.floor) : ''}</span>
-            </h4>
-            <div className="fd-grid-cards">
-              {list.map((f) => (
-                <Card key={f[0]} data={data} f={f} drawing={byId?.get(f[0])} selected={props.circuit === f[0]} onSelect={() => props.onCircuit(props.circuit === f[0] ? null : f[0])} />
-              ))}
+        {byLevel.map(([level, list]) => {
+          const card = (f: FoundRow) => (
+            <Card key={f[0]} data={data} f={f} chain={chains.get(f[0])!} drawing={byId?.get(f[0])} selected={props.circuit === f[0]} onSelect={() => props.onCircuit(props.circuit === f[0] ? null : f[0])} />
+          );
+          const rows = list.filter((f) => chains.get(f[0])!.length);
+          const single = list.filter((f) => !chains.get(f[0])!.length);
+          const columns = [...new Set(rows.flatMap((f) => chains.get(f[0])!.map((st) => st.level)))].sort((a, b) => a - b);
+          return (
+            <div key={level} className="fd-level">
+              <h4>
+                Level {level} <span className="fd-muted">· {list.length} {list.length === 1 ? 'circuit' : 'circuits'}{isLate(level, data.floor) ? ' · floor + ' + (level - data.floor) : ''}</span>
+              </h4>
+              {rows.length ? (
+                <div className="fd-chains" style={{ ['--fd-cols' as string]: columns.length }}>
+                  {rows.map((f) => (
+                    <ChainRow key={`${data.combo}/${f[0]}`} data={data} chain={chains.get(f[0])!} columns={columns} client={props.client} card={card(f)} />
+                  ))}
+                </div>
+              ) : null}
+              {single.length ? <div className="fd-grid-cards">{single.map(card)}</div> : null}
             </div>
-          </div>
-        ))}
+          );
+        })}
       </section>
     </div>
   );
