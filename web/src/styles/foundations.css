@@ -149,7 +149,7 @@
 }
 .fd-row {
   display: grid;
-  grid-template-columns: 1fr 34px 30px 40px 48px 26px;
+  grid-template-columns: 1fr 34px 30px 40px 48px 26px 22px;
   gap: 4px;
   align-items: center;
   padding: 2px 8px;
@@ -195,6 +195,10 @@
   margin: 0;
   font-size: 11px;
   color: var(--muted);
+}
+.fd-flag {
+  color: var(--fd-monster);
+  font-size: 11px;
 }
 .fd-badge {
   display: inline-block;
@@ -382,6 +386,74 @@
 .fd-seg-tails {
   fill: var(--fd-tails);
   background: var(--fd-tails);
+}
+.fd-expected {
+  stroke: var(--text);
+  stroke-width: 2;
+  stroke-dasharray: 3 2;
+}
+.fd-tails {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px 32px;
+  align-items: flex-start;
+}
+.fd-tails-block {
+  min-width: 0;
+  max-width: 100%;
+  font-size: 12px;
+}
+.fd-tails h3 {
+  margin: 0 0 6px;
+  font-size: 14px;
+}
+.fd-tails-block p {
+  max-width: 60ch;
+}
+.fd-fates td,
+.fd-forecast td {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.fd-small {
+  border-collapse: collapse;
+  font-size: 12px;
+  margin: 4px 0;
+  display: block;
+  overflow-x: auto;
+  max-width: 100%;
+}
+.fd-small th {
+  font-weight: 500;
+  color: var(--muted);
+  text-align: right;
+  padding: 2px 8px;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+.fd-small td {
+  padding: 2px 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 50%, transparent);
+}
+.fd-small th:first-child,
+.fd-small td:first-child {
+  text-align: left;
+}
+.fd-warn {
+  color: var(--fd-monster);
+}
+.fd-line {
+  fill: none;
+  stroke: var(--fd-chain);
+  stroke-width: 2;
+}
+.fd-dot {
+  fill: var(--fd-chain);
+  stroke: var(--bg);
+  stroke-width: 2;
+}
+.fd-dot-found {
+  fill: var(--fd-found);
 }
 .fd-grid {
   stroke: var(--line);

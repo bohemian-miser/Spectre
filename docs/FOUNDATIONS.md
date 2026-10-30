@@ -74,8 +74,10 @@ are one circuit (`wordKey`, the word read where it reads least, hashed, as
 `circuitKey` does with letters; tested against `circuitKey` on four
 combinations). A circuit is sorted where it first closes. It is a harmonic
 of the circuit two levels down that the most of its places there read as,
-each against a place with the same family; in every combination of 023468
-all of a harmonic's places do.
+each against a place with the same family. In 2,142 of the 2,246 harmonics
+of 023468 every place does; in the other 104 some places read as no place of
+the parent (the 66-tile harmonic of the 15 in 000000001 closes in 10 places
+at level 5, the 15 in 7 at level 3).
 
 140000001, classified to level 9 (the level-10 to 12 lengths from the tables
 up to one level below, §3):
@@ -207,6 +209,89 @@ Any circuit not yet seen closes above level 11, so it is made of chords
 that are on tails at level 11: at most 45.7% of a Delta's chords there
 (the prediction run of §3), and the tails' share falls by a factor of about
 0.90 a level. That is a bound, not an estimate.
+
+### What the tails become
+
+Every chord on a tail at level L is on a circuit closing above L or on an
+infinite strand. A circuit closing at level m is made of chords on tails at
+every level below m, so the tails at L of a level-N supertile, less its tails
+at N, are exactly the chords of the circuits closing at levels L + 1 to N
+inside it (tested in integers, per type, on three combinations, against the
+tables' arc lengths). Weighted by type frequency, the share of the tails at
+L that close by L + k into each chain, into nuggets, into circuits at level
+10 that are no known word and no predicted harmonic (unseen), or are still
+open, for 140000001 and L = 5:
+
+| by level | chain of 303 | chain of 2,079 | chain of 57 | chain of 447 | nuggets | unseen | still open |
+|---|---|---|---|---|---|---|---|
+| 6 | 4.3% | 0.0% | 1.5% | 2.3% | 0.0% | 0.0% | 91.9% |
+| 7 | 4.3% | 3.8% | 4.4% | 3.8% | 0.0% | 0.0% | 83.6% |
+| 8 | 7.7% | 3.8% | 6.2% | 6.5% | 0.0% | 0.0% | 75.7% |
+| 9 | 7.7% | 6.9% | 8.9% | 8.2% | 0.0% | 0.0% | 68.3% |
+| 10 | 10.5% | 6.9% | 10.5% | 10.6% | 0.0% | 0.0% | 61.5% |
+
+No combination of 023468 has anything unseen at level 10.
+
+### Back-test
+
+At each level L, the circuits known by L (with their chains' later members)
+against what the tails at L close into, to level 10. The share left to
+circuits found later drops, at each level, by exactly what the foundational
+circuits found at the next level close, and is 0 from the last of them on.
+
+| L | 140000001: known by L | found later | still open at 10 | found at L + 1 |
+|---|---|---|---|---|
+| 2 | 0.0% | 49.2% | 50.8% | 60 (7.0%) |
+| 3 | 0.0% | 45.4% | 54.6% | 303 (14.2%) |
+| 4 | 9.8% | 32.8% | 57.4% | 57 (12.0%), 2,079 (10.9%) |
+| 5 | 28.0% | 10.6% | 61.5% | 447 (10.6%) |
+| 6 | 33.1% | 0.0% | 66.9% | |
+| 7 | 26.5% | 0.0% | 73.5% | |
+| 8 | 18.8% | 0.0% | 81.2% | |
+| 9 | 10.0% | 0.0% | 90.0% | |
+
+| L | 000001100 (floor 4): known by L | found later | still open at 10 | found at L + 1 |
+|---|---|---|---|---|
+| 2 | 0.0% | 89.3% | 10.7% | 6, 6 |
+| 3 | 12.0% | 76.6% | 11.5% | 69, 81 |
+| 4 | 17.7% | 69.1% | 13.2% | 93, 1,707, 7,899 |
+| 5 | 26.8% | 54.1% | 19.1% | |
+| 6 | 16.6% | 61.6% | 21.8% | 4,143, 22,389, 54,759, 150,153 |
+| 7 | 68.7% | 0.0% | 31.3% | |
+| 8 | 57.1% | 0.0% | 42.9% | |
+| 9 | 32.8% | 0.0% | 67.2% | |
+
+### Forecast
+
+From a level L, with what is known by L only: each chain with two members
+first closed by L goes on two levels at a time, each member taking q times
+its predecessor's share where it first closes, q the ratio of the last two.
+That is the place counts per supertile of each type (a harmonic closing in
+as many places as its parent two levels down) times the tiles (growing as
+over the last two members) over a supertile's chords (growing by
+(4 + √15)² every two levels). A chain stops when a member due by L is
+missing, or when its last member's harmonic, predicted from the tables up
+to L, is a circuit seen lower down: the chain closes into itself. The
+forecast of the next members, against the build:
+
+| forecast from | 140000001: forecast | in the build |
+|---|---|---|
+| 6 | 4.92% | 5.15% |
+| 7 | 8.94% | 9.05% |
+| 8 | 7.49% | 7.40% |
+| 9 | 3.47% | 3.50% |
+
+From level 10 the known chains of 140000001 are expected to take 30.6% of
+all chords, 60% of the 50.8% still on tails there; the rest is room for its
+known circuits closing again in more places (the 57 and the 447 close in 13
+more places every level), for new circuits and for open strands.
+
+The forecast's one assumption fails in places: a harmonic closes in a
+different number of places per supertile of some type than its parent two
+levels down in 891 of 20,214 checks, in 71 combinations. In 82
+combinations a chain closes into itself one level after its last member,
+so the forecast made at that level takes more than the build shows. The
+page flags both, per combination.
 
 ## 5. Shares in the limit
 

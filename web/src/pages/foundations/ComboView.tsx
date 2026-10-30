@@ -7,6 +7,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { TileTypeId } from '../../core';
 import { explorerCircuitHref } from '../shapes/explorerLink';
 import { AccountChart } from './AccountChart';
+import { TailsPanel } from './TailsPanel';
 import { buildupHref, compact, harmonicsHref, nf, pct, slots, SUBSET } from './data';
 import type { DrawClient, Drawing } from './drawings';
 import { chainOf, isGiant, isLate, provenNote, type ChainMember, type FoundRow, type PageCombo } from './pageData';
@@ -179,6 +180,7 @@ export function ComboView(props: { data: PageCombo; client: DrawClient; circuit:
         ))}
       </ul>
       <AccountChart data={data} />
+      <TailsPanel data={data} />
       <section className="fd-cards">
         <h3>Foundational circuits</h3>
         <p className="fd-muted fd-key">

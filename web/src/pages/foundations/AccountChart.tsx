@@ -6,7 +6,7 @@
  * of 100%; hovering a column gives each segment's share.
  */
 import { Fragment, useMemo, useState } from 'react';
-import { segments, type PageCombo, type Split } from './pageData';
+import { expectedTails, segments, type PageCombo, type Split } from './pageData';
 import { pct } from './data';
 
 const H = 150;
@@ -39,6 +39,9 @@ export function AccountChart(props: { data: PageCombo }): JSX.Element {
   const y = (share: number): number => TOP + H * (1 - share);
   const top = levels.length - 1;
   const shown = hover ?? top;
+  const exp = useMemo(() => expectedTails(data), [data]);
+  // the known chains' expected share, drawn into the top column's tails from below
+  const mark = 1 - data.tails[top] + exp.expected;
   return (
     <figure className="fd-chart" data-testid="fd-chart">
       <div className="fd-chart-tools">
@@ -89,6 +92,15 @@ export function AccountChart(props: { data: PageCombo }): JSX.Element {
               </g>
             );
           })}
+          <line
+            x1={LEFT + COL * top + 3}
+            x2={LEFT + COL * top + COL - 3}
+            y1={y(mark)}
+            y2={y(mark)}
+            className="fd-expected"
+          >
+            <title>{`known chains expected to take ${pct(exp.expected)} of the chords on tails at level ${top}`}</title>
+          </line>
         </svg>
         <div className="fd-chart-read" aria-live="polite">
           <strong>Level {shown}</strong>
