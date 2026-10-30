@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { comboToMatchingIndices } from '../../../core';
 import { descendantOutlines, findHarmonic, growTwice, neighboursOf, readUp } from '../harmonic';
 import { startMap } from '../map';
-import { traceMap, type StrandRule } from '../strands';
+import { traceMap } from '../strands';
+import type { StrandRule } from '../../../lib/strandRule';
 
 const SUBSET = [0, 2, 3, 4, 6, 8];
 const rule = (combo: string): StrandRule => ({ subset: SUBSET, matching: comboToMatchingIndices('hex', SUBSET, combo) });

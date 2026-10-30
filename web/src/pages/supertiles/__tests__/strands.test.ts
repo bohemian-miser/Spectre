@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  analyze,
   buildSystem,
   comboToMatchingIndices,
   countTiles,
@@ -12,6 +13,8 @@ import {
   weldSegments,
   type Segment,
 } from '../../../core';
+import { matchingVectorToRecord } from '../../../lib/matchingModel';
+import { defaultRule } from '../../../lib/strandRule';
 import { buildLeafChordTable } from '../../map/chords';
 import { explodeSupertile } from '../explode';
 import { STRAND_DRAW_BUDGET, buildExplodedStrands } from '../strands';
@@ -135,6 +138,60 @@ describe('buildExplodedStrands — runs follow their pieces', () => {
     expect(wide.runs.length).toBeGreaterThan(tight.circuitCount + tight.tailCount);
   });
 });
+
+const histogram = (lengths: number[]): Record<number, number> => {
+  const out: Record<number, number> = {};
+  for (const l of lengths) out[l] = (out[l] ?? 0) + 1;
+  return out;
+};
+
+for (const family of ['hex', 'spectre'] as const) {
+  describe(`${family}: buildExplodedStrands against the Explorer's analysis`, () => {
+    const rule = defaultRule(family);
+    const curved = () => buildLeafChordTable(family, rule.subset, rule.matching, undefined, true);
+    const level = 3;
+    const instances = flatten(buildSystem(family, level).Delta, levelMirror(level));
+
+    it('finds the circuits `analyze` finds, with the same lengths', () => {
+      const strands = buildExplodedStrands(explodeSupertile({ family, level, depth: 2, gap: 0.6 }), curved());
+      const ref = analyze({
+        family,
+        instances,
+        selected: new Set(rule.subset),
+        matchingIndexByType: matchingVectorToRecord(family, rule.matching),
+      });
+      expect(strands.circuitCount).toBe(ref.circuits.length);
+      expect(strands.tailCount).toBe(ref.tails.length);
+      expect(histogram(strands.paths.filter((p) => p.closed).map((p) => p.length))).toEqual(
+        histogram(ref.circuits.map(pathLength)),
+      );
+    });
+
+    it('names each path\'s tiles by their slot paths in the supertile, and its pieces by its runs', () => {
+      const strands = buildExplodedStrands(explodeSupertile({ family, level, depth: 1, gap: 0.6 }), curved());
+      const ids = new Set(instances.map((inst) => inst.id));
+      strands.paths.forEach((path, i) => {
+        expect(path.tiles.length).toBeGreaterThan(0);
+        expect(path.tiles.length).toBeLessThanOrEqual(path.length);
+        for (const tile of path.tiles) expect(ids.has(tile)).toBe(true);
+        const runPieces = new Set(strands.runs.filter((r) => r.path === i).map((r) => r.islandId));
+        expect(new Set(path.pieces)).toEqual(runPieces);
+        for (const tile of path.tiles) expect(path.pieces.some((piece) => tile.startsWith(`${piece}.`))).toBe(true);
+      });
+    });
+
+    it('draws each chord as a curve with a handle at each end', () => {
+      const strands = buildExplodedStrands(explodeSupertile({ family, level, depth: 1, gap: 0.6 }), curved());
+      for (const run of strands.runs) {
+        expect(run.curves).toHaveLength(run.points.length - 1);
+        run.curves!.forEach(([c1, c2], i) => {
+          const a = run.points[i];
+          expect(Math.hypot(c1.x - a.x, c1.y - a.y)).toBeLessThanOrEqual(Math.hypot(c2.x - a.x, c2.y - a.y));
+        });
+      }
+    });
+  });
+}
 
 describe('buildExplodedStrands — limits', () => {
   it('says so rather than freezing on a patch past the budget', () => {

@@ -22,7 +22,7 @@ Mostly vibe coded and plagiarised from https://cs.uwaterloo.ca/~csk/spectre/app.
 <td><a href="https://bohemian-miser.github.io/Spectre/map.html#/map?seed=1&z=36&ln=1&e=2578&c=0100101100"><img src="docs/screenshots/map-close.png" alt="Infinite map zoomed in"></a><br>Infinite map, zoomed in</td>
 </tr>
 <tr>
-<td><a href="https://bohemian-miser.github.io/Spectre/supertiles.html#/supertiles?lv=3&gap=0.35&ln=1&e=2578&c=0100101100"><img src="docs/screenshots/supertiles.png" alt="A Delta supertile split into its eight children"></a><br>A Delta supertile split into its eight children</td>
+<td><a href="https://bohemian-miser.github.io/Spectre/supertiles.html#/supertiles?lv=3&gap=0.35&ln=1&c=2578-0100101100"><img src="docs/screenshots/supertiles.png" alt="A Delta supertile split into its eight children"></a><br>A Delta supertile split into its eight children</td>
 <td><a href="https://bohemian-miser.github.io/Spectre/tails.html"><img src="docs/screenshots/tails.png" alt="The Tails Problem page"></a><br>The Tails Problem</td>
 </tr>
 <tr>
@@ -61,7 +61,7 @@ The open question: you can have [a fixed number | an infinite number] of infinit
 * **The Tails Problem** (`/tails.html`) - an explainer for the edge-matching stuff and why some tiles end up with tails.
 * **Classifications** (`/classifications.html`) - every combination of every rule (over 600,000) as one dot, sorted into triangle fractals, infinite lines, chaotic thin circuits, space-filling hybrids and bounded loops. Pick the axes from the measurements, hover a dot to draw that combination, click to pin it. Method and scripts in [`web/circuit-classes/`](web/circuit-classes/).
 * **Rules & isomorphism** (`/rules.html`) - how the rules of Tile(1,1), the hexagons and the hexagon-matching Spectre labels line up, with combination counts per rule and where the combinations are the same patterns.
-* **Supertiles** (`/supertiles.html`) - pull a supertile apart into the pieces it's made of.
+* **Supertiles** (`/supertiles.html`) - pull a supertile of hexagons or spectres apart into the pieces it's made of. Tick **Circuits** to trace its strands under any rule; click a strand to pick its circuit and see which pieces it crosses.
 * **Strand machine** (`/machine.html`) - walk a strand one tile at a time and see which joins the labels allow vs which the tiling actually uses.
 * **Neighbour machine** (`/transducer.html`) - a tile's position is its slot path, and crossing an edge is a lookup in the substitution rules carried up and down that path. The page animates the lookups on the rules, lets you walk tile to tile, and shows the finite-state machine that does the same crossing in one pass (after [Tatham](https://www.chiark.greenend.org.uk/~sgtatham/quasiblog/aperiodic-transducers/)). A rule and combination on top walk a strand, ending in the supertile's boundary state, which is what the deep orbit iterates.
 * **Legacy app** (`/legacy.html`) - the original p5 version. It lets you draw on each of the 10 flavours of tile, has better navigation, and you can change the colours.

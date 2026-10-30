@@ -136,7 +136,7 @@ test('narrowing the edge rule keeps a combination string and keeps drawing', asy
   await page.setViewportSize({ width: 1400, height: 1000 });
   await page.goto('supertiles.html#/supertiles?lv=2&gap=0.35&ln=1&e=012&c=');
   await expect(page.locator('.supertile-view')).toBeVisible({ timeout: 30000 });
-  await expect(page.locator('.combo-readout')).toContainText('012-');
+  await expect(page.getByTestId('combo-string')).toHaveValue(/^012-/);
 
   // Push every matching to its highest index, so there is something to go
   // stale when the subset shrinks under it.
@@ -147,7 +147,7 @@ test('narrowing the edge rule keeps a combination string and keeps drawing', asy
     const max = await sliders.nth(i).getAttribute('max');
     await sliders.nth(i).fill(max ?? '0');
   }
-  await expect(page.locator('.combo-readout')).toContainText('Combination string');
+  await expect(page.getByTestId('combo-string')).not.toHaveValue('');
   const drawnBefore = await page.locator('.supertile-strand').count();
   expect(drawnBefore).toBeGreaterThan(0);
 
@@ -155,7 +155,7 @@ test('narrowing the edge rule keeps a combination string and keeps drawing', asy
   await page.locator('.edge-subset-picker button').filter({ hasText: /^2$/ }).first().click();
 
   // Still a real rule with a real combination string, still drawing.
-  await expect(page.locator('.combo-readout')).toContainText('01-');
+  await expect(page.getByTestId('combo-string')).toHaveValue(/^01-/);
   await expect(page.locator('.combo-readout')).not.toContainText('crosses itself');
   await expect.poll(() => page.locator('.supertile-strand').count()).toBeGreaterThan(0);
   expect(errors).toEqual([]);
@@ -171,4 +171,22 @@ test('strands draw over the pieces and their labels', async ({ page }) => {
     .locator('.supertile-camera')
     .evaluate((g) => [...g.children].map((c) => c.getAttribute('class')));
   expect(order[order.length - 1]).toBe('supertile-strands');
+});
+
+test('clicking a strand picks its circuit and names the pieces it runs through', async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 1000 });
+  await page.goto('supertiles.html#/supertiles?f=hex&lv=3&ln=1&c=023468-111000100');
+  await expect(page.locator('.supertile-strand.is-circuit').first()).toBeVisible({ timeout: 30000 });
+  // A point halfway along the longest drawn circuit run, in screen pixels.
+  const at = await page.evaluate(() => {
+    const runs = [...document.querySelectorAll<SVGPathElement>('.supertile-strand.is-circuit')];
+    const run = runs.sort((a, b) => b.getTotalLength() - a.getTotalLength())[0];
+    const p = run.getPointAtLength(run.getTotalLength() / 2);
+    const m = run.getScreenCTM()!;
+    return { x: m.a * p.x + m.c * p.y + m.e, y: m.b * p.x + m.d * p.y + m.f };
+  });
+  await page.mouse.click(at.x, at.y);
+  await expect(page.getByTestId('st-picked')).toContainText('circuit');
+  await expect(page.locator('.supertile-strand.is-picked').first()).toBeVisible();
+  expect(Number(await page.getByTestId('st-picked-length').textContent())).toBeGreaterThan(0);
 });

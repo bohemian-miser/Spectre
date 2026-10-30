@@ -17,12 +17,7 @@
 
 import {
   DEFAULT_CONTRACTS,
-  comboToMatchingIndices,
-  formatComboShareString,
   leafOrder,
-  matchingIndicesToCombo,
-  normalizeMatchingVector,
-  parseComboShareString,
   localChords,
   pathLength,
   pathSegments,
@@ -35,43 +30,13 @@ import {
   zSub,
   zToAffine,
   type Affine,
-  type EdgeContracts,
   type Pt,
   type Segment,
   type TileTypeId,
-  type TopDownFamily,
   type ZVec,
 } from '../../core';
+import type { StrandRule } from '../../lib/strandRule';
 import type { TopDownMap } from './map';
-
-export interface StrandRule {
-  /** Selected seam classes. */
-  readonly subset: readonly number[];
-  /** Matching index per leaf type, in `leafOrder(family)` order. */
-  readonly matching: readonly number[];
-  readonly contracts?: EdgeContracts;
-}
-
-/** The rule a family starts with: the site's usual examples. */
-export function defaultRule(family: TopDownFamily): StrandRule {
-  return family === 'hex'
-    ? ruleFromShare(family, '023468-111000100')!
-    : ruleFromShare(family, '2578-0100101100')!;
-}
-
-/** A rule from a share string (`023468-111000100`), or null if it does not parse. */
-export function ruleFromShare(family: TopDownFamily, share: string): StrandRule | null {
-  const parsed = parseComboShareString(share);
-  if (!parsed) return null;
-  const matching = comboToMatchingIndices(family, parsed.subset, parsed.combo);
-  return { subset: parsed.subset, matching: normalizeMatchingVector(family, parsed.subset, matching) };
-}
-
-/** The share string of a rule, when its combination can be written as one. */
-export function ruleShare(family: TopDownFamily, rule: StrandRule): string | null {
-  const combo = matchingIndicesToCombo(family, rule.subset, rule.matching, rule.contracts);
-  return combo === null ? null : formatComboShareString(rule.subset, combo);
-}
 
 export interface MapStrand {
   readonly closed: boolean;
@@ -205,30 +170,6 @@ export function traceMap(map: TopDownMap, rule: StrandRule): MapStrands {
     }
   }
   return { strands, circuits, open };
-}
-
-/** The strand drawn nearest a world point, if one passes within `reach`. */
-export function strandNear(strands: readonly MapStrand[], p: Pt, reach: number): number | null {
-  let best = -1;
-  let bestD = reach;
-  strands.forEach((s, i) => {
-    const n = s.points.length;
-    const last = s.closed ? n : n - 1;
-    for (let j = 0; j < last; j++) {
-      const a = s.points[j];
-      const b = s.points[(j + 1) % n];
-      const dx = b.x - a.x;
-      const dy = b.y - a.y;
-      const len2 = dx * dx + dy * dy;
-      const t = len2 > 0 ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2)) : 0;
-      const d = Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
-      if (d < bestD) {
-        bestD = d;
-        best = i;
-      }
-    }
-  });
-  return best < 0 ? null : best;
 }
 
 function zToPt(t: ZVec): Pt {

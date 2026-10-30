@@ -145,14 +145,6 @@
   gap: 8px;
 }
 
-.combo-readout {
-  margin: 0 0 6px;
-  font-size: 12px;
-}
-.combo-readout code {
-  word-break: break-all;
-}
-
 .tool-row {
   display: flex;
   flex-wrap: wrap;
@@ -278,22 +270,6 @@
 
 
 /* Every tile's matching at once: aperiodic-circuits' "next combination". */
-.combo-stepper {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin: 6px 0;
-  font-size: 13px;
-}
-.combo-stepper button {
-  padding: 1px 9px;
-}
-.combo-stepper-count {
-  font-variant-numeric: tabular-nums;
-  min-width: 11em;
-  text-align: center;
-}
-
 /* Decomposition: the factors a rule's pairings force, and its loops by vector. */
 .decomposition-factors {
   margin: 0 0 4px;

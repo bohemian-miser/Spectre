@@ -44,7 +44,7 @@ test('a deep link reproduces the scene', async ({ page }) => {
   const svg = page.locator('svg.tiling-view');
   await expect(svg).toHaveAttribute('data-level', '1');
   await expect(page.locator('.matching-slider').first()).toBeVisible();
-  await expect(page.locator('.combo-readout code')).toHaveText('2578-0000000000');
+  await expect(page.getByTestId('combo-string')).toHaveValue('2578-0000000000');
 });
 
 test('legacy.html still runs the p5 app', async ({ page }) => {

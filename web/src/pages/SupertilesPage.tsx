@@ -16,6 +16,7 @@
  */
 
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import type { PointerEvent as ReactPointerEvent } from 'react';
 
 import {
   PanZoom,
@@ -24,16 +25,11 @@ import {
   StrandRuleControls,
   type PanZoomApi,
 } from '../components';
-import {
-  LEAF_ORDER,
-  SUPER_RULES,
-  TILE_NAMES,
-  normalizeMatchingVector,
-  type TileTypeId,
-} from '../core';
+import { SUPER_RULES, TILE_NAMES, type Pt, type TileTypeId } from '../core';
 import { useCircuitAnalysis } from '../hooks/useCircuitAnalysis';
 import { matchingVectorToRecord } from '../lib/matchingModel';
 import { tileColor } from '../lib/palette';
+import { changeRule, pathNear, setTileMatching, toggleClass, type StrandRule } from '../lib/strandRule';
 import { buildLeafChordTable } from './map/chords';
 import { STRAND_DRAW_BUDGET, buildExplodedStrands } from './supertiles/strands';
 import { ExplodedView, LABEL_BUDGET, TILE_DRAW_BUDGET } from './supertiles/ExplodedView';
@@ -48,9 +44,11 @@ import {
 } from './supertiles/explode';
 import {
   DEFAULT_SUPERTILES_STATE,
+  defaultSupertilesState,
   hashToSupertilesState,
   sameSupertilesState,
   supertilesStateToHash,
+  type SupertilesFamily,
   type SupertilesUrlState,
 } from './supertiles/supertilesUrl';
 import '../styles/supertiles.css';
@@ -61,6 +59,14 @@ export interface SupertilesPageProps {
 }
 
 const GAP_STEP = 0.05;
+/** A press that moves less than this is a click, not a pan. */
+const CLICK_SLOP = 5;
+/** How close, in pixels, a click must come to a strand to pick it. */
+const PICK_REACH = 9;
+const FAMILIES: readonly { id: SupertilesFamily; label: string }[] = [
+  { id: 'hex', label: 'Hexagons' },
+  { id: 'spectre', label: 'Spectre' },
+];
 /** Slider scrubbing writes the URL, so the write is debounced like the map's. */
 const URL_DEBOUNCE_MS = 400;
 
@@ -88,34 +94,21 @@ export function SupertilesPage(props: SupertilesPageProps): JSX.Element {
   }, []);
 
   /**
-   * Change the seam subset, bringing the matching vector back into range for
-   * it. Dropping a class removes connection points, so an index that was valid
-   * a moment ago can be past the end — and the combo encoder rejects an
-   * out-of-range index exactly as it rejects a crossing one, which made a
-   * perfectly good rule report that it "crosses itself" and refuse to show a
-   * combination string. The Explorer has always normalized here; this view did
-   * not.
+   * Change the strand rule, bringing the matching vector back into range for
+   * it: dropping a class removes connection points, so an index that was
+   * valid a moment ago can be past the end. Changing the rule turns the
+   * circuits on.
    */
-  const changeSubset = useCallback((subset: readonly number[]): void => {
-    setState((prev) => ({
-      ...prev,
-      subset,
-      matching: normalizeMatchingVector('spectre', subset, prev.matching),
-      lines: true,
-    }));
+  const patchRule = useCallback((next: (prev: SupertilesUrlState) => Partial<StrandRule>): void => {
+    setState((prev) => ({ ...prev, ...changeRule(prev.family, prev, next(prev)), lines: true }));
   }, []);
 
-  const toggleMajor = useCallback((major: number): void => {
+  /** Another family starts from its own usual rule; the view keeps its settings. */
+  const changeFamily = useCallback((family: SupertilesFamily): void => {
     setState((prev) => {
-      const subset = prev.subset.includes(major)
-        ? prev.subset.filter((m) => m !== major)
-        : [...prev.subset, major].sort((a, b) => a - b);
-      return {
-        ...prev,
-        subset,
-        matching: normalizeMatchingVector('spectre', subset, prev.matching),
-        lines: true,
-      };
+      if (prev.family === family) return prev;
+      const { subset, matching } = defaultSupertilesState(family);
+      return { ...prev, family, subset, matching, contracts: undefined };
     });
   }, []);
 
@@ -158,12 +151,13 @@ export function SupertilesPage(props: SupertilesPageProps): JSX.Element {
   const layout = useMemo(
     () =>
       explodeSupertile({
+        family: deferred.family,
         rootTile: deferred.rootTile,
         level: deferred.level,
         gap: deferred.gap,
         depth: deferred.depth,
       }),
-    [deferred.rootTile, deferred.level, deferred.gap, deferred.depth],
+    [deferred.family, deferred.rootTile, deferred.level, deferred.gap, deferred.depth],
   );
 
   // --- the strand rule --------------------------------------------------
@@ -177,25 +171,25 @@ export function SupertilesPage(props: SupertilesPageProps): JSX.Element {
   const chords = useMemo(
     () =>
       linesOn
-        ? buildLeafChordTable('spectre', deferred.subset, deferred.matching, deferred.contracts)
+        ? buildLeafChordTable(deferred.family, deferred.subset, deferred.matching, deferred.contracts, true)
         : null,
-    [linesOn, deferred.subset, deferred.matching, deferred.contracts],
+    [linesOn, deferred.family, deferred.subset, deferred.matching, deferred.contracts],
   );
 
   const analysisInput = useMemo(
     () =>
       linesOn
         ? {
-            family: 'spectre' as const,
+            family: deferred.family,
             rootTile: deferred.rootTile,
             level: deferred.level,
             subset: deferred.subset,
-            matchingIndexByType: matchingVectorToRecord('spectre', deferred.matching),
+            matchingIndexByType: matchingVectorToRecord(deferred.family, deferred.matching),
             contracts: deferred.contracts,
             rainbowTails: false,
           }
         : null,
-    [linesOn, deferred.rootTile, deferred.level, deferred.subset, deferred.matching, deferred.contracts],
+    [linesOn, deferred.family, deferred.rootTile, deferred.level, deferred.subset, deferred.matching, deferred.contracts],
   );
   const analysis = useCircuitAnalysis(analysisInput, { workerMinLevel: 3 });
 
@@ -205,6 +199,32 @@ export function SupertilesPage(props: SupertilesPageProps): JSX.Element {
    * visibly comes apart when they are pushed away from each other.
    */
   const strands = useMemo(() => buildExplodedStrands(layout, chords), [layout, chords]);
+
+  // --- picking a circuit -------------------------------------------------
+  const [picked, setPicked] = useState<number | null>(null);
+  useEffect(() => setPicked(null), [strands]);
+  const pickedPath = picked !== null ? strands.paths[picked] ?? null : null;
+  const piecesById = useMemo(() => new Map(layout.leaves.map((island) => [island.id, island])), [layout]);
+  const pressRef = useRef<Pt | null>(null);
+  const onPressDown = (e: ReactPointerEvent): void => {
+    // The zoom buttons handle their own presses.
+    const own = (e.target as Element | null)?.closest?.('[data-panzoom-ignore]');
+    pressRef.current = own ? null : { x: e.clientX, y: e.clientY };
+  };
+  const onPressUp = (e: ReactPointerEvent): void => {
+    const down = pressRef.current;
+    pressRef.current = null;
+    const api = panRef.current;
+    if (!down || !api || strands.runs.length === 0) return;
+    if (Math.hypot(e.clientX - down.x, e.clientY - down.y) > CLICK_SLOP) return;
+    const at = api.toWorld({ x: e.clientX, y: e.clientY });
+    const run = pathNear(
+      strands.runs.map((r) => ({ points: r.points, closed: false })),
+      at,
+      PICK_REACH / api.camera.scale,
+    );
+    setPicked(run === null ? null : strands.runs[run].path);
+  };
 
   const circuitColors = useMemo(
     () => new Map(analysis.result?.circuitColors ?? []),
@@ -251,6 +271,22 @@ export function SupertilesPage(props: SupertilesPageProps): JSX.Element {
         </div>
 
         <form className="supertiles-controls" onSubmit={(e) => e.preventDefault()}>
+          <label className="supertiles-control">
+            <span>Tiles</span>
+            <select
+              aria-label="Tile family"
+              data-testid="st-family"
+              value={state.family}
+              onChange={(e) => changeFamily(e.target.value as SupertilesFamily)}
+            >
+              {FAMILIES.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
           <label className="supertiles-control">
             <span>Flavour</span>
             <select
@@ -340,12 +376,12 @@ export function SupertilesPage(props: SupertilesPageProps): JSX.Element {
           <label className="supertiles-control supertiles-check">
             <input
               type="checkbox"
-              aria-label="Draw the strand lines and analyse the circuits"
+              aria-label="Draw the strands and analyse the circuits"
               data-testid="st-lines"
               checked={state.lines}
               onChange={(e) => patch({ lines: e.target.checked })}
             />
-            <span>Circuit lines</span>
+            <span>Circuits</span>
           </label>
 
           <button type="button" onClick={() => panRef.current?.reset()}>
@@ -371,7 +407,11 @@ export function SupertilesPage(props: SupertilesPageProps): JSX.Element {
           ))}
       </p>
 
-      <div className={`supertiles-viewport${stale ? ' is-stale' : ''}`}>
+      <div
+        className={`supertiles-viewport${stale ? ' is-stale' : ''}`}
+        onPointerDown={onPressDown}
+        onPointerUp={onPressUp}
+      >
         <PanZoom
           apiRef={panRef}
           fitBounds={fitBounds}
@@ -383,12 +423,14 @@ export function SupertilesPage(props: SupertilesPageProps): JSX.Element {
           {(api) => (
             <ExplodedView
               layout={layout}
+              family={deferred.family}
               camera={api.camera}
               showTiles={state.showTiles}
               showLabels={state.showLabels}
               strands={strands.runs}
               circuitColors={circuitColors}
               highlightLengths={highlightLengths}
+              picked={picked}
               idPrefix="st"
             />
           )}
@@ -413,7 +455,7 @@ export function SupertilesPage(props: SupertilesPageProps): JSX.Element {
             <span data-testid="st-strands">
               {strands.skipped
                 ? `lines: over ${fmt(STRAND_DRAW_BUDGET)} tiles`
-                : `${fmt(strands.circuitCount)} circuits · ${fmt(strands.tailCount)} wanderers`}
+                : `${fmt(strands.circuitCount)} circuits · ${fmt(strands.tailCount)} open`}
             </span>
           ) : null}
         </div>
@@ -421,34 +463,34 @@ export function SupertilesPage(props: SupertilesPageProps): JSX.Element {
 
       <div className="supertiles-rulepanel">
         <StrandRuleControls
-          family="spectre"
+          family={state.family}
           subset={state.subset}
           matching={state.matching}
           contracts={state.contracts}
-          onSubsetChange={changeSubset}
-          onToggleMajor={toggleMajor}
+          tileSize={state.family === 'hex' ? 84 : undefined}
+          onSubsetChange={(subset) => patchRule(() => ({ subset }))}
+          onToggleMajor={(major) => patchRule((prev) => ({ subset: toggleClass(prev.subset, major) }))}
           onMatchingChange={(tileType, index) =>
-            patch({
-              matching: LEAF_ORDER.map((t, i) => (t === tileType ? index : state.matching[i] ?? 0)),
-            })
+            patchRule((prev) => ({ matching: setTileMatching(prev.family, prev.matching, tileType, index) }))
           }
+          onMatchingVectorChange={(matching) => patchRule(() => ({ matching }))}
         />
 
         <SeamContractControls
-          family="spectre"
+          family={state.family}
           subset={state.subset}
           contracts={state.contracts}
           onChange={(major, contract) =>
-            patch({ contracts: { ...(state.contracts ?? {}), [major]: contract } })
+            patchRule((prev) => ({ contracts: { ...(prev.contracts ?? {}), [major]: contract } }))
           }
-          onReset={() => patch({ contracts: undefined })}
+          onReset={() => patchRule(() => ({ contracts: undefined }))}
         />
 
         <fieldset>
           <legend>Analysis</legend>
           {!linesOn ? (
             <p className="muted" data-testid="st-analysis-off">
-              Turn “Circuit lines” on to weld and trace this supertile.
+              Turn “Circuits” on to weld and trace this supertile.
             </p>
           ) : (
             <>
@@ -458,6 +500,34 @@ export function SupertilesPage(props: SupertilesPageProps): JSX.Element {
                 {deferred.level} {deferred.rootTile} supertile's own answer — and a strand that
                 runs between two pieces comes apart exactly where it crosses.
               </p>
+              {pickedPath ? (
+                <table className="supertiles-picked" data-testid="st-picked">
+                  <tbody>
+                    <tr>
+                      <th>picked</th>
+                      <td>{pickedPath.closed ? 'circuit' : 'open strand'}</td>
+                    </tr>
+                    <tr>
+                      <th>length</th>
+                      <td data-testid="st-picked-length">{fmt(pickedPath.length)}</td>
+                    </tr>
+                    <tr>
+                      <th>tiles</th>
+                      <td>{fmt(pickedPath.tiles.length)}</td>
+                    </tr>
+                    <tr>
+                      <th>pieces</th>
+                      <td data-testid="st-picked-pieces">
+                        {pickedPath.pieces
+                          .map((id) => `${piecesById.get(id)?.type ?? ''} ${id || '(root)'}`)
+                          .join(' · ')}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              ) : (
+                <p className="muted">Click a strand to pick it.</p>
+              )}
               <StatsSummary
                 result={analysis.result}
                 running={analysis.running}

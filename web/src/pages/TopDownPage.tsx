@@ -15,8 +15,6 @@ import type { PointerEvent as ReactPointerEvent } from 'react';
 import { PanZoom, SeamContractControls, StrandRuleControls, type PanZoomApi } from '../components';
 import {
   TILE_NAMES,
-  leafOrder,
-  normalizeMatchingVector,
   stepMatrix,
   supertileFrameByPath,
   topDownRule,
@@ -38,15 +36,17 @@ import {
   type TopDownUrlState,
 } from './topdown/board';
 import { drawMap, progressOf, type DrawOptions, type Running } from './topdown/draw';
+import { traceMap, type MapStrand } from './topdown/strands';
 import {
+  changeRule as changedRule,
   defaultRule,
+  pathNear,
   ruleFromShare,
   ruleShare,
-  strandNear,
-  traceMap,
-  type MapStrand,
+  setTileMatching,
+  toggleClass,
   type StrandRule,
-} from './topdown/strands';
+} from '../lib/strandRule';
 import { MAX_DEPTH, MAX_MAP_TILES, prune, startMap, substitute, tilesIn, undo, type TopDownMap } from './topdown/map';
 import { descendantOutlines, findHarmonic, growTwice, readUp, type HarmonicMatch } from './topdown/harmonic';
 import { FIT_LEVEL, QUAD_LEVEL, levelMap } from './topdown/world';
@@ -231,7 +231,7 @@ export function TopDownPage(props: TopDownPageProps): JSX.Element {
     setPicked(null);
     setStrandRule((r) => {
       if (next.circuits) return ruleFromShare(next.family, next.circuits) ?? r;
-      return { ...r, matching: normalizeMatchingVector(next.family, r.subset, r.matching, r.contracts) };
+      return changedRule(next.family, r, {});
     });
     setSelected(new Set<string>());
     setFocus(null);
@@ -267,12 +267,7 @@ export function TopDownPage(props: TopDownPageProps): JSX.Element {
     return readUp(b.route, 2, new Set(harmonic.tiles)).ids.map((id) => (index.has(id) ? `${index.get(id)! + 1}` : 'margin'));
   }, [harmonic, found, traced]);
   const pickedStrand = picked !== null && traced ? traced.strands[picked] ?? null : null;
-  const changeRule = (next: Partial<StrandRule>): void => {
-    setStrandRule((r) => {
-      const merged = { ...r, ...next };
-      return { ...merged, matching: normalizeMatchingVector(family, merged.subset, merged.matching, merged.contracts) };
-    });
-  };
+  const changeRule = (next: Partial<StrandRule>): void => setStrandRule((r) => changedRule(family, r, next));
 
   // --- substituting -------------------------------------------------------
   const run = useCallback(
@@ -360,7 +355,7 @@ export function TopDownPage(props: TopDownPageProps): JSX.Element {
     const at = panRef.current.toWorld({ x: e.clientX, y: e.clientY });
     if (tool === 'circuit') {
       if (!traced) return;
-      const i = strandNear(traced.strands, at, PICK_REACH / panRef.current.camera.scale);
+      const i = pathNear(traced.strands, at, PICK_REACH / panRef.current.camera.scale);
       setPicked(i);
       if (i === null) return;
       const tiles = traced.strands[i].tiles;
@@ -766,15 +761,9 @@ export function TopDownPage(props: TopDownPageProps): JSX.Element {
             contracts={strandRule.contracts}
             tileSize={84}
             onSubsetChange={(subset) => changeRule({ subset })}
-            onToggleMajor={(major) =>
-              changeRule({
-                subset: strandRule.subset.includes(major)
-                  ? strandRule.subset.filter((m) => m !== major)
-                  : [...strandRule.subset, major].sort((a, b) => a - b),
-              })
-            }
+            onToggleMajor={(major) => changeRule({ subset: toggleClass(strandRule.subset, major) })}
             onMatchingChange={(tileType, index) =>
-              changeRule({ matching: leafOrder(family).map((t, i) => (t === tileType ? index : strandRule.matching[i] ?? 0)) })
+              changeRule({ matching: setTileMatching(family, strandRule.matching, tileType, index) })
             }
             onMatchingVectorChange={(matching) => changeRule({ matching })}
           />

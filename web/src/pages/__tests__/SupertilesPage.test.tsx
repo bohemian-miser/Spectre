@@ -139,7 +139,7 @@ describe('SupertilesPage', () => {
     await settle();
     expect(container.querySelectorAll('.supertile-strand')).toHaveLength(0);
     expect(container.querySelector('[data-testid="st-analysis-off"]')?.textContent).toContain(
-      'Circuit lines',
+      'Circuits',
     );
     // The rule controls are there from the start — picking a rule is the point.
     expect(container.querySelector('.edge-subset-picker')).not.toBeNull();
@@ -155,7 +155,7 @@ describe('SupertilesPage', () => {
     expect(container.querySelectorAll('.supertile-strand').length).toBeGreaterThan(0);
     // …and the HUD reports the same trace the panel will.
     const hud = container.querySelector('[data-testid="st-strands"]')?.textContent ?? '';
-    expect(hud).toMatch(/\d+ circuits · \d+ wanderers/);
+    expect(hud).toMatch(/\d+ circuits · \d+ open/);
     expect(container.querySelector('.stats-summary')).not.toBeNull();
   });
 
@@ -184,7 +184,7 @@ describe('SupertilesPage', () => {
     expect(wide.join('|')).not.toBe(tight.join('|'));
   });
 
-  it('carries the rule in the hash', async () => {
+  it('carries the rule in the hash as one combination string, reading older links too', async () => {
     window.history.replaceState(null, '', '/#/supertiles?ln=1&e=15&c=0000000000');
     const { container } = render(<SupertilesPage />);
     await settle();
@@ -192,8 +192,51 @@ describe('SupertilesPage', () => {
       await new Promise((r) => setTimeout(r, 600));
     });
     expect(hash()).toContain('ln=1');
-    expect(hash()).toContain('e=15');
+    expect(hash()).toContain('c=15-0000000000');
+    expect(hash()).not.toContain('e=');
     expect(container.querySelectorAll('.supertile-strand').length).toBeGreaterThan(0);
+  });
+
+  it('takes hexagon supertiles apart and traces them under a hexagon rule', async () => {
+    window.history.replaceState(null, '', '/#/supertiles?f=hex&lv=3&ln=1&c=023468-111000100');
+    const { container } = render(<SupertilesPage />);
+    await settle();
+    expect((container.querySelector('[data-testid="st-family"]') as HTMLSelectElement).value).toBe('hex');
+    expect(container.querySelectorAll('.supertile-island')).toHaveLength(8);
+    expect(container.querySelectorAll('.supertile-strand').length).toBeGreaterThan(0);
+    expect((container.querySelector('[data-testid="combo-string"]') as HTMLInputElement).value).toBe(
+      '023468-111000100',
+    );
+  });
+
+  it('switching family starts from that family\'s usual rule', async () => {
+    window.history.replaceState(null, '', '/#/supertiles?ln=1');
+    const { container } = render(<SupertilesPage />);
+    await settle();
+    fireEvent.change(container.querySelector('[data-testid="st-family"]') as Element, {
+      target: { value: 'hex' },
+    });
+    await settle();
+    expect((container.querySelector('[data-testid="combo-string"]') as HTMLInputElement).value).toBe(
+      '023468-111000100',
+    );
+  });
+
+  it('sets the rule from a typed combination string', async () => {
+    window.history.replaceState(null, '', '/#/supertiles?ln=1');
+    const { container } = render(<SupertilesPage />);
+    await settle();
+    const field = container.querySelector('[data-testid="combo-string"]') as HTMLInputElement;
+    fireEvent.change(field, { target: { value: '15-0000000000' } });
+    fireEvent.keyDown(field, { key: 'Enter' });
+    await settle();
+    expect(field.value).toBe('15-0000000000');
+    expect(container.querySelector('.edge-chip[data-major="1"]')?.getAttribute('aria-pressed')).toBe('true');
+
+    fireEvent.change(field, { target: { value: '15-00' } });
+    fireEvent.keyDown(field, { key: 'Enter' });
+    await settle();
+    expect(container.querySelector('[data-testid="combo-note"]')?.textContent).toContain('Not a combination string');
   });
 
   it('says nothing in the URL while everything is at its default', async () => {

@@ -17,7 +17,8 @@ import {
 } from '../../../core';
 import { matchingVectorToRecord } from '../../../lib/matchingModel';
 import { startMap, substitute, type TopDownMap } from '../map';
-import { strandNear, traceMap, type StrandRule } from '../strands';
+import { traceMap } from '../strands';
+import { pathNear, type StrandRule } from '../../../lib/strandRule';
 
 const SUBSET = [2, 5, 7, 8];
 const rule = (family: TopDownFamily): StrandRule => ({
@@ -85,11 +86,11 @@ for (const family of ['hex', 'spectre'] as const) {
       for (const id of circuit.tiles) expect(after.tiles.has(id)).toBe(false);
     });
 
-    it('strandNear finds a strand from one of its own points', () => {
+    it('pathNear finds a strand from one of its own points', () => {
       const traced = traceMap(startMap(family, 'Delta', 2), rule(family));
       const s = traced.strands[0];
-      expect(strandNear(traced.strands, s.points[0], 1e-6)).not.toBeNull();
-      expect(strandNear(traced.strands, { x: 1e6, y: 1e6 }, 1)).toBeNull();
+      expect(pathNear(traced.strands, s.points[0], 1e-6)).not.toBeNull();
+      expect(pathNear(traced.strands, { x: 1e6, y: 1e6 }, 1)).toBeNull();
     });
   });
 }
