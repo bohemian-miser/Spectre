@@ -211,6 +211,8 @@ export class CircuitShapes {
   private readonly bornAt = new Map<string, number>();
   /** rows[n][type][edge]: a level-n type's places on each edge, in order round the supertile; what level n + 1 is glued by. */
   private readonly rows: Record<string, Int32Array[]>[] = [{}];
+  /** groupOf[n][type]: types in one group have identical tables at level n (the same children's groups slot for slot, glued the same way), so each group is walked once. */
+  private readonly groupOf: Map<string, number>[] = [];
   /** Per level, each type's border crossings on each edge, in order, at most `BORDER_SAMPLES` of them evenly spaced: what outlines are drawn through. */
   private readonly borders: Record<string, Int32Array[]>[] = [];
   private readonly corners = new Map<string, Pt>();
@@ -258,6 +260,11 @@ export class CircuitShapes {
         steps: NO_STEPS,
       };
     });
+    const keys0 = new Map<string, number>();
+    this.groupOf.push(new Map(built.map((b) => {
+      const key = `${Array.from(b.places).join(',')}|${Array.from(b.mate).join(',')}`;
+      return [b.type, keys0.get(key) ?? keys0.set(key, keys0.size).get(key)!];
+    })));
     this.levels.push(this.share(0, Int32Array.from([0, 1, 2, 3, 4, 5]), built, (p) => corners[p]));
     this.borders.push(sampleRows(this.rows[0]));
     this.extend(maxLevel);
@@ -350,10 +357,45 @@ export class CircuitShapes {
       };
       const built: Built[] = [];
       const rows: Record<string, Int32Array[]> = {};
+      const groups = new Map<string, number>();
+      const walked = new Map<number, { built: Built; closing: Omit<BornCircuit, 'type'>[] }>();
+      const born = (t: string, c: Omit<BornCircuit, 'type'>): void => {
+        const b: BornCircuit = { ...c, type: t as TileTypeId };
+        if (!onePerLength) this.born.push(b);
+        else {
+          const at = `${familyOf(b)}/${n}/${b.length}`;
+          const i = this.bornAt.get(at);
+          if (i === undefined) this.bornAt.set(at, this.born.push(b) - 1);
+          else if (t === 'Delta') this.born[i] = b;
+        }
+      };
+      const keyOf = new Map<string, number>();
       for (const [t, node] of Object.entries(sys)) {
         const kids = (node as MetaNode).children;
         const childAt = new Int32Array(8).fill(-1);
         kids.forEach((ch, ci) => { childAt[ch.pos] = ci; });
+        // the edge's crossings round the supertile: each child edge on it in turn, the child mirrored, so reversed
+        const rowsOf = (): Int32Array[] => Array.from({ length: 6 }, (_, j) => {
+          const row: number[] = [];
+          for (const part of edgeParts(t as HexType, j)) {
+            const c = childAt[part.s];
+            const on = this.rows[n - 1][kids[c].node.type][part.e];
+            for (let q = on.length - 1; q >= 0; q--) row.push(intern(on[q] * 8 + kids[c].pos));
+          }
+          return Int32Array.from(row);
+        });
+        const key = `${kids.map((ch) => `${ch.pos}=${this.groupOf[n - 1].get(ch.node.type)}`).join(' ')}|${JSON.stringify(gluedPairs(t as HexType))}`;
+        const group = keyOf.get(key) ?? keyOf.set(key, keyOf.size).get(key)!;
+        groups.set(t, group);
+        const done = walked.get(group);
+        if (done) {
+          // its crossings are the walked type's, already numbered
+          rows[t] = rowsOf();
+          built.push({ ...done.built, type: t });
+          for (const c of done.closing) born(t, c);
+          continue;
+        }
+        const closing: Omit<BornCircuit, 'type'>[] = [];
         const tables = kids.map((ch) => prev[ch.node.type]);
         // child crossing g = child * Q + its place
         const total = kids.length * Q;
@@ -382,16 +424,7 @@ export class CircuitShapes {
         const places = Int32Array.from(outer, (g) => placeOfG[g]);
         const index = new Int32Array(total);
         outer.forEach((g, k) => { index[g] = k; });
-        // the edge's crossings round the supertile: each child edge on it in turn, the child mirrored, so reversed
-        rows[t] = Array.from({ length: 6 }, (_, j) => {
-          const row: number[] = [];
-          for (const part of edgeParts(t as HexType, j)) {
-            const c = childAt[part.s];
-            const on = this.rows[n - 1][kids[c].node.type][part.e];
-            for (let q = on.length - 1; q >= 0; q--) row.push(placeOfG[c * Q + on[q]]);
-          }
-          return Int32Array.from(row);
-        });
+        rows[t] = rowsOf();
         if (rows[t].reduce((a, r) => a + r.length, 0) !== outer.length) throw new Error(`${t} at level ${n}: the border places miss crossings`);
         const childMate = (g: number): number => {
           const c = Math.floor(g / Q);
@@ -434,7 +467,8 @@ export class CircuitShapes {
           }
         }
         routeStart[outs] = steps.length;
-        built.push({ type: t, places, mate, len, forward, routeStart, steps: Int32Array.from(steps) });
+        const mine: Built = { type: t, places, mate, len, forward, routeStart, steps: Int32Array.from(steps) };
+        built.push(mine);
         for (let g0 = 0; g0 < total; g0++) {
           if (seen[g0] || across[g0] < 0) continue;
           let g = g0;
@@ -461,18 +495,15 @@ export class CircuitShapes {
           if (ok && l >= keepAtLeast) {
             const slots: number[] = [];
             for (const w of walk) if (!slots.includes(slotOf(w))) slots.push(slotOf(w));
-            const c: BornCircuit = { level: n, type: t as TileTypeId, length: l, slots, steps: walk };
-            if (!onePerLength) this.born.push(c);
-            else {
-              const at = `${familyOf(c)}/${n}/${l}`;
-              const i = this.bornAt.get(at);
-              if (i === undefined) this.bornAt.set(at, this.born.push(c) - 1);
-              else if (t === 'Delta') this.born[i] = c;
-            }
+            const c = { level: n, length: l, slots, steps: walk };
+            closing.push(c);
+            born(t, c);
           }
         }
+        walked.set(group, { built: mine, closing });
       }
       this.rows.push(rows);
+      this.groupOf.push(groups);
       this.borders.push(sampleRows(rows));
       this.levels.push(this.share(n, Int32Array.from(under), built, this.placer(n)));
       this.maxLevel = n;
