@@ -114,11 +114,11 @@ test('the Shapes page groups the circuits and finds a circuit’s twins', async 
   await expect(page.locator('[data-testid="shapes-nearest"] tbody tr').first()).toContainText('0.00');
 });
 
-test('the Harmonics page reads the walker’s default combination into lineages', async ({ page }) => {
+test('the Harmonics page reads the walker’s default combination into families and chains', async ({ page }) => {
   await page.goto('harmonics.html');
-  await expect(page.locator('[data-testid="harm-summary"]')).toContainText('11 distinct circuits in 5 lineages', { timeout: 90000 });
-  await expect(page.locator('[data-testid="harm-chains"]')).toContainText('441');
-  await expect(page.locator('[data-testid="harm-detail"] h2')).toContainText('8,784 tiles at level 6 is 441 at level 4, two levels up');
+  await expect(page.locator('[data-testid="harm-summary"]')).toContainText('11 distinct circuits in 5 families; 4 chains of two or more', { timeout: 90000 });
+  await expect(page.locator('[data-testid="harm-families"]')).toContainText('Chain441 L4');
+  await expect(page.locator('[data-testid="harm-detail"] h2')).toHaveText('A chain of family 013467: 441 L4 → 8,784 L6');
   await expect(page.locator('[data-testid="harm-extras"]')).toContainText('24 extra runs');
 });
 
