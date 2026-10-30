@@ -39,6 +39,12 @@ export interface UsePanZoomOptions {
   readonly wheelIntensity?: number;
   /** Disable all gestures (read-only embeds). */
   readonly disabled?: boolean;
+  /**
+   * When the element is resized after the first framing (fitKey unchanged),
+   * keep the world point at its centre there and scale the view with its
+   * height, instead of framing `fitBounds` again.
+   */
+  readonly keepOnResize?: boolean;
 }
 
 export interface PanZoomApi {
@@ -121,6 +127,7 @@ export function usePanZoom(
   // first frame is already correct instead of flashing an unfitted scene.
   const fitSignature = `${opts.fitKey ?? ''}|${size.width}x${size.height}`;
   const lastFit = useRef<string>('');
+  const lastSize = useRef<{ key: string; width: number; height: number } | null>(null);
   useLayoutEffect(() => {
     if (opts.camera) return; // controlled: the owner decides framing
     const box = optsRef.current.fitBounds;
@@ -128,6 +135,17 @@ export function usePanZoom(
     if (size.width <= 0 || size.height <= 0) return;
     if (lastFit.current === fitSignature) return;
     lastFit.current = fitSignature;
+    const was = lastSize.current;
+    lastSize.current = { key: opts.fitKey ?? '', width: size.width, height: size.height };
+    if (optsRef.current.keepOnResize && was && was.key === (opts.fitKey ?? '') && was.height > 0) {
+      // the same world point at the centre, the view scaled with the height
+      const c = cameraRef.current;
+      const k = size.height / was.height;
+      const wx = (was.width / 2 - c.x) / c.scale, wy = (was.height / 2 - c.y) / c.scale;
+      const scale = c.scale * k;
+      commit({ scale, x: size.width / 2 - wx * scale, y: size.height / 2 - wy * scale });
+      return;
+    }
     commit(fitToBounds(box, size, { padding: optsRef.current.padding, ...limitsRef.current }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fitSignature, commit]);

@@ -28,7 +28,12 @@ describe('FoundationsPage', () => {
     expect(cards).toHaveLength(5);
     // the 303 at level 4 and its chain, each harmonic predicted, then built, and the next predicted above the build
     const c303 = cards.find((c) => c.textContent!.startsWith('303 tiles'))!;
-    expect(within(c303).getByTestId('fd-chain').textContent).toBe('→14.7k L6 ✓ →734k L8 ✓ →36.7M L10 ?');
+    const row303 = c303.closest('[data-testid="fd-chain"]') as HTMLElement;
+    expect([...row303.querySelectorAll('.fd-harm')].map((h) => h.textContent)).toEqual([
+      '14,679 tileslevel 6 · 1 place ✓',
+      '734,256 tileslevel 8 · 1 place ✓',
+      '?36,701,253 tileslevel 10 · predicted',
+    ]);
     // the 447 at level 6 is one circuit, in eight places there, and late
     const c447 = cards.find((c) => c.textContent!.startsWith('447 tiles'))!;
     expect(c447.textContent).toMatch(/late/);
@@ -38,6 +43,7 @@ describe('FoundationsPage', () => {
     await waitFor(() => expect(c303.querySelector('svg polygon')).not.toBeNull(), { timeout: 30000 });
     expect(within(c303).getByText('Build-up').getAttribute('href')).toBe(`${import.meta.env.BASE_URL}buildup.html?rule=023468&combo=140000001&level=4&circuit=303`);
     expect(within(c303).getByText('Explorer').getAttribute('href')).toMatch(/#\/explorer\?/);
+    expect(within(c303).getByText('Harmonics').getAttribute('href')).toBe(`${import.meta.env.BASE_URL}harmonics.html?rule=023468&combo=140000001&level=8&c=4-303`);
     // choosing a card puts it in the address
     fireEvent.click(c303);
     expect(location.search).toBe('?combo=140000001&circuit=1');
