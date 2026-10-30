@@ -15,7 +15,7 @@ import { tileColor } from '../../lib/palette';
 import { startSearch, type Search } from '../../workers/searchClient';
 import { createClosingsClient, type ClosingsClient } from '../../workers/closingsClient';
 import type { FirstClosing } from '../buildup/buildup';
-import { SearchTreeData, followKeys } from './search';
+import { SearchTreeData, followKeys, type Ending } from './search';
 import { choicesOf, concreteChain, circuitsAhead, followWord, makeWalker, reducePossible, replay, replayChoices, rotateWord, stageAfter, stageAhead, startWalk, type Ahead, type Outcome, type PossibleWalk, type Seen, type Stage, type Walker, type World } from './possible';
 import { AncestorFlow } from './AncestorFlow';
 import { classLabel } from './landings';
@@ -68,18 +68,33 @@ const ARROW_PX = 10;
  * goes, to the node's fork or to where its branch ends. Line widths are in
  * pixels, so a strand of thousands of tiles is as easy to follow as a short one.
  */
-function CircuitPeek({ pw, subset, frame, id, keys, landing, text, x, y }: { pw: PossibleWalk; subset: readonly number[]; frame?: Affine; id: number; keys?: readonly string[]; landing?: string; text?: string; x: number; y: number }): JSX.Element | null {
+/** What a peeked path is: a circuit, or how far it got and why it stopped. */
+const headline = (status: Ending, tiles: number, landings: number, maxLevel: number): string => {
+  const n = tiles.toLocaleString('en-US');
+  switch (status) {
+    case 'closed': return `A circuit of ${n} tiles`;
+    case 'choice': return `Not a circuit: ${n} tiles to a fork of ${landings} landings`;
+    case 'open': return `Not a circuit: ${n} tiles, then it leaves the level-${maxLevel} supertile`;
+    case 'stuck': return `Not a circuit: ${n} tiles, then no landing fits`;
+    case 'cut': return `Cut: ${n} tiles, not the first reading of what it closes on`;
+    default: return `Not closed by the tile limit: ${n} tiles walked`;
+  }
+};
+
+function CircuitPeek({ pw, subset, frame, id, keys, landing, ending, text, x, y }: { pw: PossibleWalk; subset: readonly number[]; frame?: Affine; id: number; keys?: readonly string[]; landing?: string; ending?: { status: Ending; tiles: number }; text?: string; x: number; y: number }): JSX.Element | null {
   const size = 220;
   const drawn = useMemo(() => {
     // a landing not yet taken is taken here, on the side, without adding it to the tree; a branch of the search is walked again from the start
     const st = keys ? searchStage(pw, keys) : landing ? stageAfter(pw, id, landing, RUN_CAP) : stageAhead(pw, id, RUN_CAP);
-    const g = sceneOf(pw, st.worlds[0], st.seen.length, frame);
-    const ids = g.ids.slice(0, st.seen.length + 1).filter((t) => g.placed.has(t));
+    // a branch of the search is drawn as far as the search walked it
+    const shown = ending ? Math.min(ending.tiles, st.seen.length) : st.seen.length;
+    const g = sceneOf(pw, st.worlds[0], shown, frame);
+    const ids = g.ids.slice(0, shown + 1).filter((t) => g.placed.has(t));
     const tiles = [...new Set(ids)].map((t) => g.placed.get(t)!);
     const pts = ids.map((t) => tileCentre(g.placed.get(t)!.xform));
     const xs = pts.map((p) => p.x), ys = pts.map((p) => p.y);
     const box = { x: Math.min(...xs) - 1.2, y: Math.min(...ys) - 1.2, w: Math.max(...xs) - Math.min(...xs) + 2.4, h: Math.max(...ys) - Math.min(...ys) + 2.4 };
-    const steps = st.seen.flatMap((s, i) => (g.placed.has(g.ids[i]) ? [{ ...s, xform: g.placed.get(g.ids[i])!.xform, next: g.placed.get(g.ids[i + 1]) }] : []));
+    const steps = st.seen.slice(0, shown).flatMap((s, i) => (g.placed.has(g.ids[i]) ? [{ ...s, xform: g.placed.get(g.ids[i])!.xform, next: g.placed.get(g.ids[i + 1]) }] : []));
     const strand = strandPathD(steps, subset);
     // an arrow where the strand leaves a tile, pointing at the next tile's centre
     const unit = Math.max(box.w, box.h) / size;
@@ -97,8 +112,12 @@ function CircuitPeek({ pw, subset, frame, id, keys, landing, text, x, y }: { pw:
       return [`${tip.x},${tip.y} ${back.x - uy * L * 0.45},${back.y + ux * L * 0.45} ${back.x + uy * L * 0.45},${back.y - ux * L * 0.45}`];
     });
     return { st, tiles, start: g.placed.get(ids[0]), pts, box, strand, arrows, unit };
-  }, [pw, id, keys, landing, subset, frame]);
+  }, [pw, id, keys, landing, ending, subset, frame]);
   const { st, tiles, start, pts, box, strand, arrows, unit } = drawn;
+  // a path that has not closed is drawn muted, with its last tile marked
+  const status: Ending = ending?.status ?? st.status;
+  const closed = status === 'closed';
+  const end = pts[pts.length - 1];
   // thinner where the tiles are drawn small, so a long strand does not cover its own turns
   const tilePx = 1 / unit;
   const strandPx = Math.min(2.4, Math.max(1.2, tilePx * 0.45));
@@ -107,7 +126,7 @@ function CircuitPeek({ pw, subset, frame, id, keys, landing, text, x, y }: { pw:
   const left = Math.min(x + 18, window.innerWidth - size - 12);
   const above = y > size + 160;
   return (
-    <div className="wk__peek" style={above ? { left, top: y - 18, width: size, transform: 'translateY(-100%)' } : { left, top: y + 18, width: size }} data-testid="wk-peek">
+    <div className={`wk__peek${closed ? '' : ' is-open'}`} style={above ? { left, top: y - 18, width: size, transform: 'translateY(-100%)' } : { left, top: y + 18, width: size }} data-testid="wk-peek">
       <svg viewBox={`${box.x} ${box.y} ${box.w} ${box.h}`} width={size} height={size} style={{ ['--wk-strand' as string]: `${strandPx}px`, ['--wk-halo' as string]: `${haloPx}px` }}>
         <g className="wk__peek-tiles">
           {tiles.map((t) => <polygon key={t.id} points={tilePoints(t.xform)} fill={tileColor(t.type)} className="wk__peek-tile" />)}
@@ -117,8 +136,9 @@ function CircuitPeek({ pw, subset, frame, id, keys, landing, text, x, y }: { pw:
         <path d={strand} className="wk__peek-strand" data-testid="wk-peek-strand" />
         {arrows.map((a, i) => <polygon key={i} points={a} className="wk__peek-arrow" />)}
         {pts[0] && <circle cx={pts[0].x} cy={pts[0].y} r={3.5 * unit} className="wk__peek-start" />}
+        {!closed && end && <rect x={end.x - 3.5 * unit} y={end.y - 3.5 * unit} width={7 * unit} height={7 * unit} className="wk__peek-end" data-testid="wk-peek-end" />}
       </svg>
-      <p className="wk__peek-head">{st.status === 'closed' ? `A circuit of ${st.seen.length} tiles` : st.status === 'choice' ? `${st.seen.length} tiles, to the fork at step ${st.seen.length + 1}` : `${st.seen.length} tiles, still open`}</p>
+      <p className="wk__peek-head" data-testid="wk-peek-head">{headline(status, ending?.tiles ?? st.seen.length, st.pending.length, pw.walker.maxLevel)}</p>
       {text && <p>{text}</p>}
     </div>
   );
@@ -238,7 +258,7 @@ export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial
   // per landing at the current fork, the circuits found a few choices ahead, worked out in the background
   const [ahead, setAhead] = useState<{ at: string; by: ReadonlyMap<string, Ahead> } | null>(null);
   const [seeking, setSeeking] = useState(false);
-  const [peek, setPeek] = useState<{ id: number; keys?: readonly string[]; landing?: string; text?: string; x: number; y: number } | null>(null);
+  const [peek, setPeek] = useState<{ id: number; keys?: readonly string[]; landing?: string; ending?: { status: Ending; tiles: number }; text?: string; x: number; y: number } | null>(null);
   const pointer = useRef({ x: 0, y: 0 });
   // the pointer, wherever it is, so a node's walk is drawn beside it in any of the trees
   const peeking = useRef(false);
@@ -338,7 +358,9 @@ export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial
   };
   const peekSearch = (id: number | null, text?: string): void => {
     const d = data.current;
-    setPeek(id === null || !d ? null : { id: 0, keys: d.keysTo(id), text, ...pointer.current });
+    const node = id === null || !d ? undefined : d.nodes[id];
+    const ending = node?.tiles === undefined ? undefined : { status: node.end?.status ?? 'choice', tiles: node.tiles };
+    setPeek(id === null || !d ? null : { id: 0, keys: d.keysTo(id), ending, text, ...pointer.current });
   };
 
   // how each circuit branches from the smaller ones compares every pair of branches, so it waits until the search stops
@@ -596,7 +618,7 @@ export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial
         </div>
       )}
 
-      {peek && <CircuitPeek pw={pw} subset={pattern.subset} frame={carry?.frame} id={peek.id} keys={peek.keys} landing={peek.landing} text={peek.text} x={peek.x} y={peek.y} />}
+      {peek && <CircuitPeek pw={pw} subset={pattern.subset} frame={carry?.frame} id={peek.id} keys={peek.keys} landing={peek.landing} ending={peek.ending} text={peek.text} x={peek.x} y={peek.y} />}
 
       <section className="td__section" data-testid="wk-search">
         <h3>Circuits found</h3>
