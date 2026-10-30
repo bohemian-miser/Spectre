@@ -95,9 +95,11 @@ export function Viewer(props: {
   tooltip?: (i: number) => string;
   apiRef?: React.MutableRefObject<ViewerApi | null>;
   /** The box in view (y up), each time the camera moves. */
-  onView?: (view: Box) => void;
+  onView?: (view: Box, resized: boolean) => void;
   /** The point under the pointer (y up), or null when it leaves. */
   onPoint?: (p: Pt | null) => void;
+  /** On a resize, keep the centre and scale with the height instead of framing again; the lines are drawn again once the size rests. */
+  keepOnResize?: boolean;
   label: string;
   className?: string;
   children?: ReactNode;
@@ -105,6 +107,8 @@ export function Viewer(props: {
   const host = useRef<HTMLDivElement | null>(null);
   const cv = useRef<HTMLCanvasElement | null>(null);
   const sized = useRef({ width: 0, height: 0 });
+  /** The size at the last camera change: a change with a new size comes from a resize. */
+  const sizeAtView = useRef({ width: 0, height: 0 });
   const viewOf = (c: Camera): Box => {
     const { width: W, height: H } = sized.current;
     return { min: { x: -c.x / c.scale, y: (c.y - H) / c.scale }, max: { x: (W - c.x) / c.scale, y: c.y / c.scale } };
@@ -115,7 +119,12 @@ export function Viewer(props: {
     padding: 0.04,
     minScale: 1e-4,
     maxScale: 1e5,
-    onCameraChange: (c) => live.current.onView?.(viewOf(c)),
+    onCameraChange: (c) => {
+      const s = sized.current, was = sizeAtView.current;
+      sizeAtView.current = s;
+      live.current.onView?.(viewOf(c), s.width !== was.width || s.height !== was.height);
+    },
+    keepOnResize: props.keepOnResize,
   });
   sized.current = pz.size;
   const cam = pz.camera;
@@ -368,11 +377,22 @@ export function Viewer(props: {
     requestAnimationFrame(step);
   }, [dpr, repaint]);
 
-  // the lines changed, or the view size: draw them again now; the camera moved: once it rests
+  // the lines changed, or the view size: draw them again now; the camera moved: once it rests.
+  // With keepOnResize a resize moves the camera too, so the last drawing is shown moved and scaled until it rests.
   const rest = useRef(0);
   useEffect(() => {
     redraw();
-  }, [props.lines, pz.size.width, pz.size.height, redraw]);
+  }, [props.lines, redraw]);
+  const sizedOnce = useRef(false);
+  useEffect(() => {
+    if (!sizedOnce.current) {
+      sizedOnce.current = true;
+      return;
+    }
+    if (props.keepOnResize && drawn.current) repaint();
+    else redraw();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pz.size.width, pz.size.height]);
   useEffect(() => {
     repaint();
     clearTimeout(rest.current);

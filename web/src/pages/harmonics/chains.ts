@@ -80,7 +80,7 @@ export interface Chain {
 }
 
 /** The connected sets of the relation, members ordered by level; every circuit is in exactly one. Chains are ordered by family, then by their lowest member. */
-export function chainsOf(circuits: readonly ChainCircuit[], links: readonly Link[]): Chain[] {
+export function chainsOf(circuits: readonly ChainCircuit[], links: readonly { readonly a: number; readonly b: number }[]): Chain[] {
   const root = circuits.map((_, i) => i);
   const find = (i: number): number => (root[i] === i ? i : (root[i] = find(root[i])));
   for (const l of links) root[find(l.a)] = find(l.b);

@@ -73,13 +73,13 @@ export function visitsWithFrames(cs: CircuitShapes, c: BornCircuit, level: numbe
 }
 
 /** One side of the picture: the circuit's supertiles at `level`, those holding an unshared token (by `shared`, per token of its reading) marked. */
-export function sideAt(cs: CircuitShapes, c: BornCircuit, level: number, reading: Reading | undefined, shared: readonly boolean[] | null): Side {
+export function sideAt(cs: CircuitShapes, c: BornCircuit, level: number, reading: Reading | undefined, shared: readonly boolean[] | null, kept?: Int32Array): Side {
   const visits = reading?.raw ?? Infinity;
   if (visits > VISIT_CAP) return { level, visits, count: 0, supertiles: [], circuit: new Float64Array(0) };
   const { v, xform } = visitsWithFrames(cs, c, level);
   const unshared = new Set<number>();
   if (shared) {
-    const { keep } = cancelBacktracksAt(v.id, v.tiles);
+    const keep = kept ?? cancelBacktracksAt(v.id, v.tiles).keep;
     keep.forEach((i, q) => { if (!shared[q]) unshared.add(v.id[i]); });
   }
   const first = new Map<number, number>();
@@ -110,7 +110,7 @@ export function sideAt(cs: CircuitShapes, c: BornCircuit, level: number, reading
  * a visit the member below does not share are marked (the lowest member's,
  * against the member above).
  */
-export function chainPicture(cs: CircuitShapes, members: readonly { circuit: BornCircuit; readings: readonly Reading[] }[], k: number): ChainPicture {
+export function chainPicture(cs: CircuitShapes, members: readonly { circuit: BornCircuit; readings: readonly Reading[]; keep?: (level: number) => Int32Array }[], k: number): ChainPicture {
   const base = members[0].circuit.level;
   const reading = (j: number) => members[j].readings.find((r) => r.level === k + members[j].circuit.level - base);
   const steps: Agreement[] = [];
@@ -123,6 +123,9 @@ export function chainPicture(cs: CircuitShapes, members: readonly { circuit: Bor
     shared[j] = m.b;
     if (j === 1) shared[0] = m.a;
   }
-  const sides = members.map((m, j) => sideAt(cs, m.circuit, k + m.circuit.level - base, reading(j), shared[j]));
+  const sides = members.map((m, j) => {
+    const level = k + m.circuit.level - base;
+    return sideAt(cs, m.circuit, level, reading(j), shared[j], m.keep && reading(j) && reading(j)!.raw <= VISIT_CAP ? m.keep(level) : undefined);
+  });
   return { k, sides, steps };
 }

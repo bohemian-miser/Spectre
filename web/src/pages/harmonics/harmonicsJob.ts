@@ -9,10 +9,11 @@ import type { TileFamilyId } from '../../core';
 import type { Box } from '../../lib/viewport';
 import { CircuitShapes, distinctCircuits, familyOf, type BornCircuit } from '../shapes/circuitShapes';
 import { Geometry } from '../buildup/viewer';
-import { chainRows, CircuitRows, type ChainRows } from './rows';
-import { chainPicture, SUPERTILE_CAP, type ChainPicture } from './pairView';
+import { chainRows, CircuitRows, type ChainRows, type Fold } from './rows';
+import { chainPicture, SUPERTILE_CAP, VISIT_CAP, type ChainPicture } from './pairView';
 import { chainsOf, closestInFamily, harmonicLinks, nearLinks, type Chain, type Link, type Near } from './chains';
 import { alignReadings, extraRuns, readDown, sameCyclic, type Alignment, type Reading } from './readings';
+import { scoreAll, type Scored } from './similarity';
 
 export interface HarmonicsJob {
   readonly family: TileFamilyId;
@@ -127,10 +128,23 @@ export class HarmonicsEngine {
   }
 
   /** Circuits of the last result (a chain's members, by level) over their supertiles, the lowest at level k. */
-  picture(members: readonly number[], k: number): ChainPicture {
+  picture(members: readonly number[], k: number, fold: Fold = 'fixpoint'): ChainPicture {
     const list = this.list();
     const born = this.circuits!.born;
-    return chainPicture(this.cs, members.map((i) => ({ circuit: born[i], readings: list[i].readings })), k);
+    if (fold === 'fixpoint') return chainPicture(this.cs, members.map((i) => ({ circuit: born[i], readings: list[i].readings })), k);
+    // the readings under another fold, at the level drawn, from the rows
+    const base = born[members[0]].level;
+    return chainPicture(
+      this.cs,
+      members.map((i) => {
+        const level = k + born[i].level - base;
+        const raw = list[i].readings.find((r) => r.level === level)?.raw ?? Infinity;
+        const rows = this.circuitRows(i);
+        const readings = raw <= VISIT_CAP ? [{ level, raw, tokens: rows.fold(level, fold).tokens, tiles: [] }] : [];
+        return { circuit: born[i], readings, keep: (l: number) => rows.fold(l, fold).keep };
+      }),
+      k,
+    );
   }
 
   private geometry: Geometry | null = null;
@@ -150,8 +164,8 @@ export class HarmonicsEngine {
   }
 
   /** Circuits of the last result (a chain's members, by level) read row by row down to level k for the lowest (`rows.ts`). */
-  rows(members: readonly number[], k: number): ChainRows {
-    return chainRows(members.map((i) => this.circuitRows(i)), k, SUPERTILE_CAP);
+  rows(members: readonly number[], k: number, fold: Fold = 'fixpoint'): ChainRows {
+    return chainRows(members.map((i) => this.circuitRows(i)), k, SUPERTILE_CAP, fold);
   }
 
   /** Raw visits of circuit `ci` at a level below its birth: read, or carried on from the two lowest levels read by their ratio. */
@@ -216,6 +230,30 @@ export class HarmonicsEngine {
       pts[2 * all.length + 1] = all[0].y;
       return { stop: s, pts: all.length > budget ? thin(pts, budget) : pts };
     });
+  }
+
+  private readonly scoredBy = new Map<string, Scored[]>();
+
+  /**
+   * Every pair of the last result two levels apart in one family, scored by
+   * how alike they read under a fold (`similarity.ts`). Under `fixpoint` the
+   * readings are the circuits' own; under another fold a level is read from
+   * the rows while it has at most `VISIT_CAP` raw visits.
+   */
+  similarities(fold: Fold = 'fixpoint'): Scored[] {
+    const circuits = this.list();
+    const key = `${this.cs.maxLevel} ${fold}`;
+    const hit = this.scoredBy.get(key);
+    if (hit) return hit;
+    const tokens = (i: number, level: number): readonly string[] | null => {
+      const r = circuits[i].readings.find((x) => x.level === level);
+      if (!r) return null;
+      if (fold === 'fixpoint') return r.tokens;
+      return r.raw <= VISIT_CAP ? this.circuitRows(i).fold(level, fold).tokens : null;
+    };
+    const out = scoreAll(circuits, tokens);
+    this.scoredBy.set(key, out);
+    return out;
   }
 
   /** Circuits `ai` and `bi` of the last result lined up, B's level k + offset against A's level k. */
@@ -285,10 +323,11 @@ export type WorkerMessage =
   | { type: 'start'; job: HarmonicsJob }
   | { type: 'next' }
   | { type: 'compare'; a: number; b: number }
-  | { type: 'picture'; members: readonly number[]; k: number }
-  | { type: 'rows'; members: readonly number[]; k: number }
+  | { type: 'picture'; members: readonly number[]; k: number; fold: Fold }
+  | { type: 'rows'; members: readonly number[]; k: number; fold: Fold }
   | { type: 'detail'; c: number; level: number; view: Box | null; budget: number }
-  | { type: 'thumbs'; cs: readonly number[]; budget: number };
+  | { type: 'thumbs'; cs: readonly number[]; budget: number }
+  | { type: 'similarities'; fold: Fold };
 
 export interface HarmonicsClient {
   /** Starts a combination afresh. */
@@ -298,14 +337,16 @@ export interface HarmonicsClient {
   /** Two circuits of the last result lined up. */
   compare(a: number, b: number): Promise<Comparison>;
   /** Two circuits of the last result over their supertiles, A at level k. */
-  picture(members: readonly number[], k: number): Promise<ChainPicture>;
+  picture(members: readonly number[], k: number, fold?: Fold): Promise<ChainPicture>;
   /** A supertile of a circuit of the last result, picked by its visit, with the visit circuit `other` pairs it with. */
   /** Circuits of the last result read row by row (`rows.ts`). */
-  rows(members: readonly number[], k: number): Promise<ChainRows>;
+  rows(members: readonly number[], k: number, fold?: Fold): Promise<ChainRows>;
   /** A circuit of the last result drawn for a view, as fine as its budget allows. */
   detail(c: number, level: number, view: Box | null, budget: number): Promise<{ stop: number; pts: Float64Array; capped: boolean }>;
   /** Thumbnails of circuits of the last result. */
   thumbs(cs: readonly number[], budget: number): Promise<{ stop: number; pts: Float64Array }[]>;
+  /** Every pair of the last result two levels apart in one family, scored under a fold (`similarity.ts`). */
+  similarities(fold: Fold): Promise<Scored[]>;
   dispose(): void;
 }
 
@@ -360,13 +401,13 @@ export function createHarmonicsClient(opts: { forceSync?: boolean } = {}): Harmo
       if (!worker) return sync(() => need().compare(a, b));
       return ask({ type: 'compare', a, b });
     },
-    picture(members, k) {
-      if (!worker) return sync(() => need().picture(members, k));
-      return ask({ type: 'picture', members, k });
+    picture(members, k, fold = 'fixpoint') {
+      if (!worker) return sync(() => need().picture(members, k, fold));
+      return ask({ type: 'picture', members, k, fold });
     },
-    rows(members, k) {
-      if (!worker) return sync(() => need().rows(members, k));
-      return ask({ type: 'rows', members, k });
+    rows(members, k, fold = 'fixpoint') {
+      if (!worker) return sync(() => need().rows(members, k, fold));
+      return ask({ type: 'rows', members, k, fold });
     },
     detail(c, level, view, budget) {
       if (!worker) return sync(() => need().detail(c, level, view, budget));
@@ -375,6 +416,10 @@ export function createHarmonicsClient(opts: { forceSync?: boolean } = {}): Harmo
     thumbs(cs, budget) {
       if (!worker) return sync(() => need().thumbs(cs, budget));
       return ask({ type: 'thumbs', cs, budget });
+    },
+    similarities(fold) {
+      if (!worker) return sync(() => need().similarities(fold));
+      return ask({ type: 'similarities', fold });
     },
     dispose() {
       worker?.terminate();

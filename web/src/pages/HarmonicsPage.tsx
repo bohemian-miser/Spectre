@@ -5,7 +5,9 @@
  * backtracks across a seam cancelled). A circuit born two levels above
  * another, through the same children, that reads at level k + 2 as the
  * other reads at level k from level 2 up is its harmonic; harmonics link
- * into chains (`harmonics/chains.ts`).
+ * into chains (`harmonics/chains.ts`). Links can be graded: pairs that read
+ * at least a chosen share alike at every level, under a chosen fold, link
+ * too (`harmonics/similarity.ts`).
  *
  * The circuits sit in a table, a column per level and a row per chain,
  * grouped by family (`harmonics/ChainViews.tsx`). Clicking a circuit opens
@@ -26,6 +28,9 @@ import { describeCircuit } from './compare/CompareView';
 import { ReadingsTable } from './compare/ReadingsTable';
 import { compareHref } from './compare/refs';
 import { ChainWorkspace, CircuitTable, short, Thumb, useThumbs } from './harmonics/ChainViews';
+import { chainsOf } from './harmonics/chains';
+import { FOLDS, type Fold } from './harmonics/rows';
+import { linksAt, MIN_SCORE, type Scored } from './harmonics/similarity';
 import { createHarmonicsClient, type CircuitInfo, type Comparison, type HarmonicsResult } from './harmonics/harmonicsJob';
 import '../styles/shapes.css';
 import '../styles/harmonics.css';
@@ -80,6 +85,9 @@ export default function HarmonicsPage(props: { forceSync?: boolean }): JSX.Eleme
   const [sel, setSel] = useState<Selection | null>(null);
   const [comparison, setComparison] = useState<Comparison | null>(null);
   const thumbs = useThumbs(client.current, result);
+  const [fold, setFold] = useState<Fold>('fixpoint');
+  const [threshold, setThreshold] = useState(1);
+  const [scored, setScored] = useState<{ key: string; scored: Scored[] } | null>(null);
   /** The selection the address asked for, kept until the first result. */
   const asked = useRef<{ c: string | null; with: string | null } | null>({ c: params().get('c'), with: params().get('with') });
 
@@ -128,11 +136,31 @@ export default function HarmonicsPage(props: { forceSync?: boolean }): JSX.Eleme
     history.replaceState(null, '', `${location.pathname}?${q}`);
   }, [choice, result, sel]);
 
+  // every pair two levels apart scored under the fold, once per level and fold
+  const scoreKey = result ? `${choice.subset.join('')} ${choice.combo} ${result.level} ${fold}` : null;
+  useEffect(() => {
+    if (!scoreKey) return;
+    let on = true;
+    client.current
+      .similarities(fold)
+      .then((s) => on && setScored({ key: scoreKey, scored: s }))
+      .catch((e: unknown) => on && setError(e instanceof Error ? e.message : String(e)));
+    return () => {
+      on = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scoreKey]);
+  const scores = scored && scored.key === scoreKey ? scored.scored : null;
+  /** The pairs linked at the threshold, by `a-b`; null while scoring. */
+  const linked = useMemo(() => (scores ? new Map(linksAt(scores, threshold).map((s) => [`${s.a}-${s.b}`, s])) : null), [scores, threshold]);
+  /** The chains at the threshold; the exact rule's while scoring. */
+  const chains = useMemo(() => (result && linked ? chainsOf(result.circuits, [...linked.values()]) : result?.chains ?? []), [result, linked]);
+  const shown = useMemo(() => (result ? { ...result, chains } : null), [result, chains]);
   const chainOf = useMemo(() => {
     const m = new Map<number, number>();
-    result?.chains.forEach((ch, q) => ch.members.forEach((i) => m.set(i, q)));
+    chains.forEach((ch, q) => ch.members.forEach((i) => m.set(i, q)));
     return m;
-  }, [result]);
+  }, [chains]);
   const newAt = useMemo(() => {
     if (!result) return [];
     const harmonic = new Set(result.links.map((l) => l.b));
@@ -144,8 +172,8 @@ export default function HarmonicsPage(props: { forceSync?: boolean }): JSX.Eleme
   const members = useMemo(() => {
     if (!sel || !result) return [];
     if (sel.with !== null) return [sel.focus, sel.with].sort((a, b) => result.circuits[a].level - result.circuits[b].level || result.circuits[a].length - result.circuits[b].length);
-    return result.chains[chainOf.get(sel.focus) ?? -1]?.members ?? [sel.focus];
-  }, [sel, result, chainOf]);
+    return chains[chainOf.get(sel.focus) ?? -1]?.members ?? [sel.focus];
+  }, [sel, result, chains, chainOf]);
   const at = sel ? members.indexOf(sel.focus) : -1;
   /** The circuit the focus's readings are lined up with: the other one compared, else its neighbour in its chain (below, else above). */
   const partner = sel === null ? null : sel.with ?? members[at - 1] ?? members[at + 1] ?? null;
@@ -166,11 +194,11 @@ export default function HarmonicsPage(props: { forceSync?: boolean }): JSX.Eleme
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [compareKey]);
   const comparing = comparison && sel && partner !== null && comparison.a === partner && comparison.b === sel.focus ? comparison : null;
-  const inChains = result ? result.chains.filter((ch) => ch.members.length > 1) : [];
+  const inChains = chains.filter((ch) => ch.members.length > 1);
   const pick = (i: number, shift: boolean) => {
     setSel((s) => (shift && s && s.focus !== i ? { focus: s.focus, with: i } : { focus: i, with: null }));
   };
-  const chain = sel && result ? result.chains[chainOf.get(sel.focus) ?? -1] : null;
+  const chain = sel && result ? chains[chainOf.get(sel.focus) ?? -1] : null;
 
   return (
     <div className="shapes-page harm-page">
@@ -201,15 +229,44 @@ export default function HarmonicsPage(props: { forceSync?: boolean }): JSX.Eleme
               </span>
             </div>
             <p className="shapes-note" data-testid="harm-summary">
-              {nf(result.circuits.length)} distinct circuits in {nf(new Set(result.chains.map((c) => c.family)).size)} families; {nf(inChains.length)} chains of
-              two or more. {newAt.map((n) => `Level ${n.level}: ${n.born} born, ${n.fresh} new`).join('; ')}.
+              {nf(result.circuits.length)} distinct circuits in {nf(new Set(chains.map((c) => c.family)).size)} families; {nf(inChains.length)} chains of
+              two or more{threshold < 1 || fold !== 'fixpoint' ? ` at ${Math.round(threshold * 100)}% alike, folding ${FOLDS.find((f) => f.id === fold)!.name}` : ''}. {newAt.map((n) => `Level ${n.level}: ${n.born} born, ${n.fresh} new`).join('; ')}.
             </p>
             <p className="shapes-note">
               Each circuit sits in the column of the level it closes at. A <strong>family</strong> is every circuit through the same children of its birth
               supertile; a <strong>chain</strong> is a row of circuits linked as harmonics, two columns apart. A dashed ≈ cell is a circuit that reads as a
               chain&apos;s lowest member at the top levels only. Click a circuit to open its row; shift-click a second to compare the two.
             </p>
-            <CircuitTable r={result} thumbs={thumbs} selected={members} onPick={pick} />
+            <div className="shapes-controls harm-link-controls">
+              <label className="harm-threshold">
+                Link circuits at least{' '}
+                <input
+                  type="range"
+                  min={MIN_SCORE * 100}
+                  max={100}
+                  step={1}
+                  value={Math.round(threshold * 100)}
+                  onChange={(e) => setThreshold(Number(e.target.value) / 100)}
+                  data-testid="harm-threshold"
+                />{' '}
+                <output>{Math.round(threshold * 100)}%</output> alike
+              </label>
+              <span className="harm-show" role="radiogroup" aria-label="What the readings fold">
+                Fold:
+                {FOLDS.map((f) => (
+                  <label key={f.id} className="harm-check">
+                    <input type="radio" name="harm-table-fold" checked={fold === f.id} onChange={() => setFold(f.id)} data-testid={`harm-table-fold-${f.id}`} /> {f.name}
+                  </label>
+                ))}
+              </span>
+              {!scores ? <span className="shapes-note">Scoring pairs…</span> : null}
+            </div>
+            <p className="shapes-note">
+              Two circuits two levels apart in one family link when, at every level from 2 up, the two read at least that share alike: one less the edit
+              distance between the readings (best rotation, either way round) over the longer one&apos;s length, under the fold chosen. 100% folding weaving
+              and detours is the exact rule. Each link shows its least share between the two; hover it for every level.
+            </p>
+            <CircuitTable r={shown!} thumbs={thumbs} selected={members} onPick={pick} linked={linked} />
           </section>
           {focus && sel ? (
             <section data-testid="harm-detail">
@@ -243,7 +300,7 @@ export default function HarmonicsPage(props: { forceSync?: boolean }): JSX.Eleme
                   );
                 })}
               </div>
-              <ChainWorkspace client={client.current} level={result.level} members={members} circuits={result.circuits} />
+              <ChainWorkspace client={client.current} level={result.level} members={members} circuits={result.circuits} fold={fold} onFold={setFold} />
               <h3>Readings</h3>
               {other ? (
                 <p className="shapes-note">

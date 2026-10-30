@@ -211,6 +211,28 @@
   opacity: 0.7;
   cursor: help;
 }
+.harm-cell-link {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  text-align: center;
+}
+.harm-cell-link span {
+  display: block;
+  cursor: help;
+  border-bottom: 1px solid var(--line, #8884);
+}
+.harm-link-controls {
+  flex-wrap: wrap;
+  gap: 12px 20px;
+}
+.harm-threshold input[type='range'] {
+  width: 180px;
+  vertical-align: middle;
+}
+.harm-table td > .harm-cell + .harm-cell {
+  margin-top: 4px;
+}
 .harm-thumb {
   display: block;
   color: var(--text, #222);
@@ -275,10 +297,17 @@
   color: inherit;
 }
 .harm-members {
+  position: sticky;
+  z-index: 4;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 520px), 1fr));
   gap: 12px;
-  margin-top: 8px;
+  padding: 6px 0;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  background: var(--bg, #f5f3ee);
+}
+.harm-members.is-stuck {
+  box-shadow: 0 6px 10px -8px #0006;
 }
 .harm-member {
   margin: 0;
@@ -287,16 +316,21 @@
   min-width: 0;
 }
 .harm-member figcaption {
-  font-size: 12px;
+  font-size: 11px;
+  line-height: 1.35;
   color: var(--muted);
-  min-height: 2.6em;
+  height: 4.05em;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
 }
 .harm-member figcaption strong {
   color: var(--text, inherit);
 }
 .harm-member-view .bv-surface {
-  height: min(70vh, 560px);
-  min-height: 300px;
+  height: var(--view-h, 400px);
+  min-height: 0;
 }
 .harm-step {
   font-size: 16px;
@@ -308,7 +342,9 @@
   color: var(--g1);
 }
 .harm-side-empty {
-  min-height: 300px;
+  height: var(--view-h, 400px);
+  box-sizing: border-box;
+  overflow: hidden;
   display: grid;
   place-items: center;
   text-align: center;
@@ -350,14 +386,93 @@
 .harm-run::before {
   display: none;
 }
+button.harm-run {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.harm-detour {
+  border-style: dotted;
+  border-width: 2px;
+  --chip: #8e44ad;
+  color: #8e44ad;
+}
+.harm-chip.is-detour {
+  border-style: dotted;
+  border-width: 2px;
+}
+.harm-chip.is-added {
+  outline: 2px dashed #c0392b;
+  outline-offset: -1px;
+}
+.harm-run.is-alone {
+  border-color: #c0392b;
+}
+.harm-run.is-open {
+  opacity: 1;
+  border-style: solid;
+  box-shadow: 0 0 0 1px var(--text, #333);
+}
+.harm-run-open {
+  flex-basis: 100%;
+  display: grid;
+  gap: 3px;
+  margin: 2px 0 4px;
+  padding: 4px 6px;
+  border-left: 3px solid var(--g1);
+  background: color-mix(in srgb, var(--g1) 5%, transparent);
+}
+.harm-run-strip {
+  display: flex;
+  gap: 2px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+.harm-run-visit {
+  flex: none;
+  font-size: 10px;
+  line-height: 15px;
+  padding: 0 3px 0 1px;
+}
+.harm-run-visit::before {
+  width: 6px;
+  height: 6px;
+}
+.harm-run-visit.is-odd {
+  outline: 2px solid var(--g2);
+  outline-offset: -1px;
+}
+.harm-unsteady {
+  color: var(--g2);
+}
+.harm-runs-table {
+  border-collapse: collapse;
+  font-size: 12px;
+  width: max-content;
+}
+.harm-runs-table th,
+.harm-runs-table td {
+  padding: 2px 8px;
+  text-align: right;
+  border-top: 1px solid var(--line, #8884);
+  white-space: nowrap;
+}
+.harm-runs-table th:nth-child(2),
+.harm-runs-table td:nth-child(2) {
+  text-align: left;
+}
+.harm-runs-table tbody tr {
+  cursor: pointer;
+}
+.harm-runs-table tbody tr:hover {
+  background: color-mix(in srgb, var(--g1) 8%, transparent);
+}
+.harm-runs-table tr.is-unsteady td:last-child {
+  color: var(--g2);
+}
 .harm-chip.is-lit {
   outline: 2px solid var(--g1);
   outline-offset: -1px;
   opacity: 1;
   background: color-mix(in srgb, var(--g1) 22%, transparent);
-}
-@media (max-width: 700px) {
-  .harm-member-view .bv-surface {
-    height: 70vw;
-  }
 }
