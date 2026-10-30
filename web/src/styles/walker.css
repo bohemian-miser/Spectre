@@ -690,7 +690,7 @@
 }
 .wk__found li {
   display: grid;
-  grid-template-columns: 3rem 5.5rem 6rem 6.5rem minmax(0, 1fr);
+  grid-template-columns: 3rem 5.5rem 6rem 6.5rem 9rem minmax(0, 1fr);
   gap: 0.5rem;
   padding: 0.15rem 0.5rem;
   cursor: pointer;
@@ -716,7 +716,7 @@
 }
 @media (max-width: 640px) {
   .wk__found li {
-    grid-template-columns: 2.2rem 4.8rem 5.5rem minmax(0, 1fr);
+    grid-template-columns: 2.2rem 4.8rem 5.5rem 4rem minmax(0, 1fr);
   }
   .wk__found-word {
     display: none;

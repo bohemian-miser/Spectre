@@ -124,3 +124,45 @@ export function closingsByLevel(cs: CircuitShapes): Closing[][] {
   }
   return out;
 }
+
+/** Where a circuit first closes as the supertiles are built up: the level, its family there, and the types it closes in. */
+export interface FirstClosing {
+  readonly level: number;
+  readonly family: string;
+  readonly types: readonly HexType[];
+}
+
+/**
+ * The lowest level each of these circuits closes at (`closingsByLevel`'s
+ * `first`), building levels only until every one has closed or `upTo` is
+ * built. Only circuits of the lengths asked for are read as words. Where a
+ * circuit closes in several types at its first level, its family is the
+ * Delta's, the copy `CircuitShapes` keeps with `onePerLength`. A circuit
+ * that has not closed by `upTo` is left out.
+ */
+export function firstClosings(cs: CircuitShapes, circuits: readonly { readonly key: string; readonly length: number }[], upTo: number): Map<string, FirstClosing> {
+  const out = new Map<string, FirstClosing>();
+  const left = new Map<number, Set<string>>();
+  for (const c of circuits) (left.get(c.length) ?? left.set(c.length, new Set()).get(c.length)!).add(c.key);
+  for (let n = 0; n <= upTo && left.size > 0; n++) {
+    if (n > cs.maxLevel) cs.extend(n);
+    const at = new Map<string, { circuit: BornCircuit; types: Set<HexType> }>();
+    for (const c of cs.born) {
+      const keys = c.level === n ? left.get(c.length) : undefined;
+      if (!keys) continue;
+      const key = keyOf.get(c) ?? circuitKey(cs.word(c));
+      keyOf.set(c, key);
+      if (!keys.has(key)) continue;
+      const e = at.get(key) ?? at.set(key, { circuit: c, types: new Set() }).get(key)!;
+      if (c.type === 'Delta' && e.circuit.type !== 'Delta') e.circuit = c;
+      e.types.add(c.type as HexType);
+    }
+    for (const [key, e] of at) {
+      out.set(key, { level: n, family: familyOf(e.circuit), types: [...e.types] });
+      const keys = left.get(e.circuit.length)!;
+      keys.delete(key);
+      if (keys.size === 0) left.delete(e.circuit.length);
+    }
+  }
+  return out;
+}

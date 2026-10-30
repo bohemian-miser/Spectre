@@ -13,6 +13,8 @@ import { HEX_OUTLINE, placeNear, placeWorld, pointOnEdge, strandPathD, supertile
 import { explorerCircuitHref } from '../shapes/explorerLink';
 import { tileColor } from '../../lib/palette';
 import { startSearch, type Search } from '../../workers/searchClient';
+import { createClosingsClient, type ClosingsClient } from '../../workers/closingsClient';
+import type { FirstClosing } from '../buildup/buildup';
 import { SearchTreeData, followKeys } from './search';
 import { choicesOf, concreteChain, circuitsAhead, followWord, makeWalker, reducePossible, replay, replayChoices, rotateWord, stageAfter, stageAhead, startWalk, type Ahead, type Outcome, type PossibleWalk, type Seen, type Stage, type Walker, type World } from './possible';
 import { AncestorFlow } from './AncestorFlow';
@@ -136,6 +138,8 @@ function searchStage(pw: PossibleWalk, keys: readonly string[]): Stage {
 }
 
 const CHAIN_ROWS = 5000;
+/** The highest level built to find where the circuits found first close. */
+const CLOSING_LEVEL = 8;
 /** How far the circuits ahead of each landing are looked for, and how far the nearest circuit is sought. */
 const AHEAD = { choices: 3, forks: 30, tiles: 3000 };
 const SEEK = { choices: 40, forks: 400, tiles: 30000 };
@@ -294,6 +298,19 @@ export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial
   };
   const searchVersion = searchShown?.version;
   const found = useMemo(() => (data.current ? foundIn(data.current.nodes) : []), [searchVersion]); // eslint-disable-line react-hooks/exhaustive-deps
+  // where each circuit found first closes as the supertiles are built up, asked once per circuit, in a worker
+  const combo = useMemo(() => matchingIndicesToCombo('hex', pattern.subset, pattern.matching), [pattern]);
+  const closings = useRef<{ client: ClosingsClient; asked: Set<string> } | null>(null);
+  const [closingOf, setClosingOf] = useState<ReadonlyMap<string, FirstClosing | null>>(() => new Map());
+  useEffect(() => () => { closings.current?.client.dispose(); closings.current = null; }, []);
+  useEffect(() => {
+    if (!combo) return;
+    const c = closings.current ?? (closings.current = { client: createClosingsClient(), asked: new Set() });
+    const fresh = found.filter((f) => !c.asked.has(f.key));
+    if (!fresh.length) return;
+    for (const f of fresh) c.asked.add(f.key);
+    c.client.ask(pattern.subset, combo, fresh.map((f) => ({ key: f.key, length: f.tiles })), CLOSING_LEVEL, (got) => setClosingOf((m) => new Map([...m, ...got])));
+  }, [found, combo, pattern]);
   // the way down to the branch each worker walked last
   const searchAt = useMemo(() => {
     const r = new Set<number>();
@@ -610,6 +627,7 @@ export function LandingWalk({ pattern, byType, start, startEdge, worlds, initial
         {found.length > 0 && (
           <FoundList
             found={found}
+            closings={combo ? { of: closingOf, upTo: CLOSING_LEVEL } : undefined}
             colour={circuitColor}
             onGoto={goSearch}
             onHover={canHover ? (f) => { setLit(f?.key ?? null); peekSearch(f ? f.node : null, f ? `${f.choices} ${f.choices === 1 ? 'choice' : 'choices'} from the start${f.branches > 1 ? `; ${f.branches} branches close on it` : ''}` : undefined); } : undefined}
