@@ -14,7 +14,7 @@ export interface ComboChoice {
 
 const LEVELS = [6, 7, 8, 9];
 
-export function ComboPicker(props: { busy: boolean; onAdd: (c: ComboChoice) => void; levels?: readonly number[]; verb?: string; initialLevel?: number; initialCombo?: string }): JSX.Element {
+export function ComboPicker(props: { busy: boolean; onAdd: (c: ComboChoice) => void; levels?: readonly number[] | 'any'; verb?: string; initialLevel?: number; initialCombo?: string }): JSX.Element {
   const levels = props.levels ?? LEVELS;
   const rules = useMemo(() => validEdgeSubsets('hex').filter((r) => r.edges.length > 0), []);
   const [rule, setRule] = useState('023468');
@@ -66,13 +66,17 @@ export function ComboPicker(props: { busy: boolean; onAdd: (c: ComboChoice) => v
       </div>
       <label>
         Up to level
-        <select value={level} onChange={(e) => setLevel(Number(e.target.value))} data-testid="shapes-combo-level">
-          {levels.map((l) => (
-            <option key={l} value={l}>
-              {l}
-            </option>
-          ))}
-        </select>
+        {levels === 'any' ? (
+          <input type="number" min={1} step={1} style={{ width: '4.5em' }} value={level} onChange={(e) => setLevel(Math.max(1, Math.floor(Number(e.target.value)) || 1))} data-testid="shapes-combo-level" />
+        ) : (
+          <select value={level} onChange={(e) => setLevel(Number(e.target.value))} data-testid="shapes-combo-level">
+            {levels.map((l) => (
+              <option key={l} value={l}>
+                {l}
+              </option>
+            ))}
+          </select>
+        )}
       </label>
       <button type="button" onClick={() => setDigits(counts.map((c) => Math.floor(Math.random() * Math.max(1, c))))}>
         Random

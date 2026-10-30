@@ -24,7 +24,6 @@ import '../styles/shapes.css';
 import '../styles/harmonics.css';
 
 const nf = (n: number) => n.toLocaleString('en-US');
-const LEVELS = [4, 5, 6, 7, 8, 9, 10];
 const DEFAULT: ComboChoice = { subset: [0, 2, 3, 4, 6, 8], combo: '000100000', level: 6 };
 
 interface Chain {
@@ -191,7 +190,7 @@ export default function HarmonicsPage(props: { forceSync?: boolean }): JSX.Eleme
         harmonic: the same circuit with every tile grown into a level-2 supertile. Every circuit of the combination born up to the level chosen is read from
         the renormalisation, so nothing is traced tile by tile; the renormalisation can be taken one level further at a time, as far as the machine allows.
       </p>
-      <ComboPicker busy={busy} onAdd={(c) => { setChoice(c); setPicked(null); setPartnerChoice(null); }} levels={LEVELS} verb="Read" initialLevel={DEFAULT.level} initialCombo={DEFAULT.combo} />
+      <ComboPicker busy={busy} onAdd={(c) => { setChoice(c); setPicked(null); setPartnerChoice(null); }} levels="any" verb="Read" initialLevel={DEFAULT.level} initialCombo={DEFAULT.combo} />
       {error ? <p className="shapes-note">Could not compute: {error}</p> : null}
       {busy && !result ? <p className="shapes-note">Computing…</p> : null}
       {result ? (
