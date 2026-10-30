@@ -14,19 +14,18 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { TileTypeId } from '../core';
-import { tileColor } from '../lib/palette';
 import { ComboPicker, type ComboChoice } from './shapes/ComboPicker';
 import { explorerCircuitHref } from './shapes/explorerLink';
+import { CircuitGlyph as Glyph, describeCircuit } from './compare/CompareView';
+import { ReadingsTable } from './compare/ReadingsTable';
+import { compareHref } from './compare/refs';
 import { createHarmonicsClient, sameCyclic, type CircuitInfo, type Comparison, type HarmonicsResult } from './harmonics/harmonicsJob';
-import { tokenType } from './harmonics/readings';
 import '../styles/shapes.css';
 import '../styles/harmonics.css';
 
 const nf = (n: number) => n.toLocaleString('en-US');
 const LEVELS = [4, 5, 6, 7, 8, 9];
 const DEFAULT: ComboChoice = { subset: [0, 2, 3, 4, 6, 8], combo: '000100000', level: 6 };
-/** Tokens shown of a reading before it is cut short. */
-const SHOWN = 80;
 
 interface Chain {
   readonly members: readonly number[];
@@ -86,37 +85,6 @@ function nearLineages(r: HarmonicsResult, fund: Map<number, number>): Near[] {
   return out;
 }
 
-function glyphPath(outline: Float64Array, size: number): string {
-  const n = outline.length / 2;
-  if (!n) return '';
-  let cx = 0;
-  let cy = 0;
-  for (let i = 0; i < n; i++) {
-    cx += outline[2 * i];
-    cy += outline[2 * i + 1];
-  }
-  cx /= n;
-  cy /= n;
-  let reach = 0;
-  for (let i = 0; i < n; i++) reach = Math.max(reach, Math.abs(outline[2 * i] - cx), Math.abs(outline[2 * i + 1] - cy));
-  const k = (size * 0.92) / 2 / (reach || 1);
-  let d = '';
-  for (let i = 0; i < n; i++) d += `${i ? 'L' : 'M'}${((outline[2 * i] - cx) * k).toFixed(1)} ${(-(outline[2 * i + 1] - cy) * k).toFixed(1)}`;
-  return `${d}Z`;
-}
-
-function Glyph(props: { circuit: CircuitInfo; size: number; colour: string; label: string }): JSX.Element {
-  const { size } = props;
-  return (
-    <svg className="shapes-glyph" width={size} height={size} viewBox={`${-size / 2} ${-size / 2} ${size} ${size}`} role="img" aria-label={props.label}>
-      <path d={glyphPath(props.circuit.outlines[0] ?? new Float64Array(0), size)} fill="none" stroke={props.colour} strokeWidth={1.2} strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-const describe = (c: CircuitInfo) => `${nf(c.length)} tiles, born at level ${c.level} in a ${c.type}, through children ${c.family}`;
-const short = (c: CircuitInfo) => `${nf(c.length)} L${c.level}`;
-
 function explorerHref(base: string, choice: ComboChoice, c: CircuitInfo): string {
   return explorerCircuitHref(base, {
     family: 'hex',
@@ -132,34 +100,8 @@ function explorerHref(base: string, choice: ComboChoice, c: CircuitInfo): string
   });
 }
 
-/** A token as a chip in its type's colour (grey where the token leaves the type out). */
-function Chip(props: { tok: string; differs: boolean }): JSX.Element {
-  const type = tokenType(props.tok);
-  const colour = type ? tileColor(type, 'bright') : '#8a8a8a';
-  return (
-    <span className={props.differs ? 'harm-token harm-chip harm-token-differs' : 'harm-token harm-chip'} style={{ ['--chip' as string]: colour }} title={type ?? 'type not compared at this level'}>
-      {props.tok}
-    </span>
-  );
-}
-
-/** A reading's tokens as chips, cut short when long; `matched` marks the ones the other reading shares. */
-function Tokens(props: { tokens: readonly string[]; matched?: readonly boolean[] }): JSX.Element {
-  const { tokens, matched } = props;
-  const shown = tokens.slice(0, SHOWN);
-  return (
-    <code className="harm-tokens">
-      {shown.map((t, i) => (
-        <Chip key={i} tok={t} differs={matched ? !matched[i] : false} />
-      ))}
-      {tokens.length > SHOWN ? (
-        <span className="harm-token harm-more">
-          … {nf(tokens.length - SHOWN)} more{matched ? `, ${nf(matched.slice(SHOWN).filter((m) => !m).length)} of them unshared` : ''}
-        </span>
-      ) : null}
-    </code>
-  );
-}
+const describe = describeCircuit;
+const short = (c: CircuitInfo) => `${nf(c.length)} L${c.level}`;
 
 export default function HarmonicsPage(props: { forceSync?: boolean }): JSX.Element {
   const base = import.meta.env.BASE_URL;
@@ -385,7 +327,14 @@ export default function HarmonicsPage(props: { forceSync?: boolean }): JSX.Eleme
                 {other ? (
                   <span className="shapes-note">
                     Level k + {picking.level - other.level} of the {nf(picking.length)} against level k of the {nf(other.length)}; tokens the other reading does not
-                    share are outlined.
+                    share are outlined.{' '}
+                    <a
+                      href={compareHref(base, { subset: choice.subset, combo: choice.combo, level: other.level, length: other.length }, { subset: choice.subset, combo: choice.combo, level: picking.level, length: picking.length })}
+                      data-testid="harm-compare-link"
+                    >
+                      Open in Compare
+                    </a>
+                    , with the Fourier terms.
                   </span>
                 ) : null}
               </div>
@@ -407,49 +356,7 @@ export default function HarmonicsPage(props: { forceSync?: boolean }): JSX.Eleme
                   </figure>
                 ) : null}
               </div>
-              <table className="harm-readings" data-testid="harm-readings">
-                <thead>
-                  <tr>
-                    <th>Level</th>
-                    <th>Visits</th>
-                    <th>Reading, backtracks cancelled</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {[...picking.readings].reverse().map((r) => {
-                    const offset = other ? picking.level - other.level : 0;
-                    const k = r.level - offset;
-                    const ra = other && k >= 0 ? other.readings.find((x) => x.level === k) ?? null : null;
-                    const row = comparing?.rows.find((x) => x.level === k) ?? null;
-                    const al = row?.state === 'differs' ? row.alignment ?? null : null;
-                    const word = !ra ? null : !row ? 'comparing…' : row.state === 'same' ? 'the same' : row.state === 'differs' ? 'differs' : row.state === 'long' ? 'too long to line up' : 'not read';
-                    return [
-                      <tr key={`b${r.level}`} className="harm-row-b">
-                        <td>{r.level}</td>
-                        <td>
-                          {nf(r.raw)} → {nf(r.tokens.length)}
-                        </td>
-                        <td>
-                          <Tokens tokens={al ? al.tokensB : r.tokens} matched={al?.matchedB} />
-                          {al && (al.rotation || al.back) ? <span className="harm-more"> read {al.back ? 'backwards ' : ''}from its token {al.rotation + 1}</span> : null}
-                        </td>
-                      </tr>,
-                      ra ? (
-                        <tr key={`a${k}`} className="harm-row-a">
-                          <td>{k} of the other</td>
-                          <td>
-                            {nf(ra.raw)} → {nf(ra.tokens.length)}
-                          </td>
-                          <td>
-                            <Tokens tokens={ra.tokens} matched={al?.matchedA} />
-                            <span className={word === 'the same' ? 'harm-same' : word === 'differs' ? 'harm-differs' : 'harm-more'}>{word}</span>
-                          </td>
-                        </tr>
-                      ) : null,
-                    ];
-                  })}
-                </tbody>
-              </table>
+              <ReadingsTable b={picking} a={other} rows={comparing?.rows ?? null} nameA="of the other" />
               {extras && lineage ? (
                 <p className="shapes-note" data-testid="harm-extras">
                   At level 2 the harmonic has {nf(extras.runs.length)} extra runs of visits and misses {nf(extras.unmatched)} of the fundamental&apos;s tiles:{' '}

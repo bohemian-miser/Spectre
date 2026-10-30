@@ -117,18 +117,7 @@ export class HarmonicsEngine {
   /** Circuits `ai` and `bi` of the last result lined up, B's level k + offset against A's level k. */
   compare(ai: number, bi: number): Comparison {
     const circuits = distinctCircuits(this.cs, 64).map((d) => this.info(d.circuit)).sort((a, b) => a.length - b.length || a.level - b.level);
-    const a = circuits[ai], b = circuits[bi];
-    const offset = b.level - a.level;
-    const rows: Comparison['rows'][number][] = [];
-    for (let k = 0; k < a.level; k++) {
-      const ra = a.readings.find((r) => r.level === k);
-      const rb = b.readings.find((r) => r.level === k + offset);
-      if (!ra || !rb) { rows.push({ level: k, state: 'unread' }); continue; }
-      if (sameCyclic(ra.tokens, rb.tokens)) { rows.push({ level: k, state: 'same' }); continue; }
-      const alignment = alignReadings(ra.tokens, rb.tokens);
-      rows.push(alignment ? { level: k, state: 'differs', alignment } : { level: k, state: 'long' });
-    }
-    return { a: ai, b: bi, offset, rows };
+    return { a: ai, b: bi, ...lineUp(circuits[ai], circuits[bi]) };
   }
 
   result(): HarmonicsResult {
@@ -149,6 +138,21 @@ export class HarmonicsEngine {
 }
 
 export { sameCyclic };
+
+/** B's readings lined up with A's: B's level k + offset against A's level k, offset being the difference of their birth levels. */
+export function lineUp(a: CircuitInfo, b: CircuitInfo): { offset: number; rows: Comparison['rows'] } {
+  const offset = b.level - a.level;
+  const rows: Comparison['rows'][number][] = [];
+  for (let k = 0; k < a.level; k++) {
+    const ra = a.readings.find((r) => r.level === k);
+    const rb = b.readings.find((r) => r.level === k + offset);
+    if (!ra || !rb) { rows.push({ level: k, state: 'unread' }); continue; }
+    if (sameCyclic(ra.tokens, rb.tokens)) { rows.push({ level: k, state: 'same' }); continue; }
+    const alignment = alignReadings(ra.tokens, rb.tokens);
+    rows.push(alignment ? { level: k, state: 'differs', alignment } : { level: k, state: 'long' });
+  }
+  return { offset, rows };
+}
 
 /** Two circuits lined up level by level: B at level k + offset against A at level k. */
 export interface Comparison {
