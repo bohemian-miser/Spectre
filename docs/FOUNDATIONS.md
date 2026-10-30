@@ -31,6 +31,19 @@ sweep's output in `web/public/data/foundations/hex-023468/`
 monsters the foundational circuits that start a chain at floor + 4 or later
 or are nuggets there (§6), and the 19 of at least 100,000 tiles.
 
+The page reads the precomputed data of 023468 and analyses any other rule,
+or any other level, live: the rule and combination chosen with the shared
+picker (and kept in the address, `?rule=…&combo=…&level=…`), the same
+`analyseCombo` run in a worker with its progress shown, to level 8 by
+default and one level further on request. Sweeping a rule runs every
+combination in the worker and fills the combination list and the Monsters
+tab as results arrive, keeping them in the browser (IndexedDB) for the next
+visit; the number of combinations is shown first, since some rules have far
+more than 320. The CLI sweep takes the rule as its first argument, so any
+rule can be precomputed and committed the same way. A test runs the live
+analysis of two combinations of 023468 afresh and finds the precomputed
+files.
+
 ## 1. Harmonics above a floor
 
 A circuit closing at level n is read at every level below it as on the
@@ -460,8 +473,9 @@ a finite automaton on crossing addresses.
 
 ```bash
 cd web
-node --max-old-space-size=3500 node_modules/.bin/vite-node circuit-classes/foundations-sweep.ts -- 023468 9 0 1   # shard 0 of 1
+node --max-old-space-size=3500 node_modules/.bin/vite-node circuit-classes/foundations-sweep.ts -- 023468 9 0 1   # rule, level, shard 0 of 1
 node node_modules/.bin/vite-node circuit-classes/foundations-index.ts -- 023468
+node node_modules/.bin/vite-node circuit-classes/foundations-page.ts -- 023468
 node node_modules/.bin/vite-node circuit-classes/foundations-page.ts -- 023468
 node --max-old-space-size=9000 node_modules/.bin/vite-node circuit-classes/foundations-predict.ts -- 023468 140000001 11
 node --max-old-space-size=12000 node_modules/.bin/vite-node circuit-classes/foundations-recurrence.ts -- 023468 140000001 11 147,07
