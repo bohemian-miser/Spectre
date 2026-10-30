@@ -336,11 +336,12 @@ export function bornAbove(level: number, type: string, walk: { steps: number[]; 
  * supertile of A's type two levels up. Every arc of the child at P's first
  * slot that passes through that supertile is followed through the children
  * (`walkAbove`); the closed walks through the same children as A that read
- * as A from `floor` up are the predictions.
+ * as A from `floor` up are the predictions (without `read`, every closed
+ * walk through the same children, unread, for circuits too long to read).
  */
-export function predictHarmonic(cs: CircuitShapes, a: BornCircuit, floor: number, maxRaw = 3e6): { predicted: BornCircuit[]; tried: number; reading: TopReadings } {
+export function predictHarmonic(cs: CircuitShapes, a: BornCircuit, floor: number, maxRaw = 3e6, read = true): { predicted: BornCircuit[]; tried: number; reading: TopReadings } {
   if (cs.maxLevel < a.level + 1) throw new Error(`predicting from level ${a.level} needs the build at level ${a.level + 1}`);
-  const ra = readCircuit(cs, a, floor, maxRaw);
+  const ra = readCircuit(cs, a, read ? floor : a.level - 1, maxRaw);
   // A's first visit at level `floor`: its slots from the birth down
   const path: number[] = [];
   {
@@ -383,9 +384,11 @@ export function predictHarmonic(cs: CircuitShapes, a: BornCircuit, floor: number
     for (const s of w.steps) if (slotOf(s) === path[0]) { seen.add(placeOf(s)); seen.add(cs.levels[top - 1][child].mate(placeOf(s))); }
     if (!w.closed) continue;
     const b = bornAbove(top, a.type, w);
+    if (familyOf(b) !== familyOf(a)) continue;
+    if (!read) { predicted.push(b); continue; }
     const rb = readCircuit(cs, b, floor + 2, maxRaw);
     const { floor: f } = agreement(ra, a.level, rb);
-    if (familyOf(b) === familyOf(a) && isHarmonic(f, a.level, floor)) predicted.push(b);
+    if (isHarmonic(f, a.level, floor)) predicted.push(b);
   }
   return { predicted, tried, reading: ra };
 }

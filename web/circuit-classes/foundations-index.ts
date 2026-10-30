@@ -34,7 +34,8 @@ interface ComboFile {
 export function limitOf(s: readonly number[]): number {
   const L = s.length - 1;
   const D = s[L] - s[L - 2], D0 = s[L - 2] - s[L - 4];
-  if (D === 0) return s[L];
+  // shares are ratios of exact counts; differences below this are rounding
+  if (Math.abs(D) < 1e-12) return s[L];
   const r = D / D0;
   return r > 0 && r < 1 ? s[L] + (D * r) / (1 - r) : NaN;
 }
@@ -73,16 +74,16 @@ const rows = readdirSync(dir)
   });
 writeFileSync(resolve(dir, 'index.json'), JSON.stringify({ family: 'hex', rule, combos: rows }));
 
-const L = rows[0].levels;
 const table = (title: string, key: (r: (typeof rows)[number]) => string): void => {
   const m = new Map<string, number>();
   for (const r of rows) m.set(key(r), (m.get(key(r)) ?? 0) + 1);
   console.log(`\n| ${title} | combinations |\n|---|---|`);
   for (const [k, v] of [...m].sort()) console.log(`| ${k} | ${v} |`);
 };
+table('levels built', (r) => String(r.levels));
 table('floor', (r) => `${r.floor}${r.settled ? '' : ' (unsettled)'}`);
 table('foundational circuits', (r) => String(r.foundational.length).padStart(3));
-table('tails and chains, extrapolated, add up to', (r) => (Number.isNaN(r.limits.total) ? 'no estimate' : Math.abs(r.limits.total - 1) < 0.01 ? 'within 1% of 1' : Math.abs(r.limits.total - 1) < 0.05 ? 'within 5% of 1' : 'further from 1'));
+table("tails' share, top level over the level below", (r) => (r.tailsRatio < 0.7 ? 'under 0.7' : r.tailsRatio < 0.9 ? '0.7 to 0.9' : r.tailsRatio < 0.97 ? '0.9 to 0.97' : '0.97 and over'));
 table('tails at the top level', (r) => (r.tails < 0.05 ? 'under 5%' : r.tails < 0.2 ? '5% to 20%' : r.tails < 0.5 ? '20% to 50%' : '50% and over'));
 const byLast = new Map<number, number>();
 for (const r of rows) byLast.set(r.lastNew, (byLast.get(r.lastNew) ?? 0) + 1);
@@ -92,8 +93,8 @@ const verdicts: Record<string, number> = {};
 for (const r of rows) for (const [k, v] of Object.entries(r.verdicts)) verdicts[k] = (verdicts[k] ?? 0) + v;
 console.log(`\n| prediction | count |\n|---|---|`);
 for (const [k, v] of Object.entries(verdicts)) console.log(`| ${k} | ${v} |`);
-console.log(`\nfoundational circuits first closing at level >= 7, or new at level ${L - 1} or ${L}:`);
+console.log(`\nfoundational circuits first closing at level >= 7, or new at either of the top two levels built:`);
 for (const r of rows) {
   const late = r.foundational.filter((f) => (f[0] as number) >= 7);
-  if (late.length || r.lastNew >= L - 1) console.log(`${r.combo} lastNew=${r.lastNew} tails@${L}=${r.tails.toFixed(3)} ratio=${r.tailsRatio.toFixed(3)} late=${JSON.stringify(late)} newShare=${r.newShare.slice(-3).map((x) => x.toFixed(4)).join(',')}`);
+  if (late.length || r.lastNew >= r.levels - 1) console.log(`${r.combo} levels=${r.levels} lastNew=${r.lastNew} tails@${r.levels}=${r.tails.toFixed(3)} ratio=${r.tailsRatio.toFixed(3)} late=${JSON.stringify(late)} newShare=${r.newShare.slice(-3).map((x) => x.toFixed(4)).join(',')}`);
 }
