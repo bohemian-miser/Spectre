@@ -266,6 +266,9 @@
   display: grid;
   gap: 14px;
 }
+.fd-combo > * {
+  min-width: 0;
+}
 .fd-combo h2 {
   margin: 0;
   font-size: 20px;
@@ -647,6 +650,82 @@
   font-size: 12px;
 }
 
+/* chains: the foundational circuit's card, then a column per level of harmonics */
+.fd-chains {
+  display: grid;
+  grid-template-columns: minmax(260px, 340px) repeat(var(--fd-cols), 124px);
+  gap: 8px 6px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  margin-bottom: 8px;
+}
+.fd-chain-row {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  align-items: start;
+}
+.fd-harm-col {
+  display: grid;
+  gap: 6px;
+  align-content: start;
+}
+.fd-harm {
+  display: grid;
+  justify-items: center;
+  gap: 1px;
+  padding: 6px 4px 5px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  text-decoration: none;
+  font-size: 11px;
+  line-height: 1.3;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+a.fd-harm:hover {
+  border-color: var(--accent);
+}
+.fd-harm .fd-glyph {
+  width: 64px;
+  height: 64px;
+  margin-bottom: 3px;
+}
+.fd-harm-tiles {
+  font-weight: 600;
+}
+.fd-harm-meta {
+  color: var(--muted);
+  white-space: nowrap;
+}
+.fd-harm-sign {
+  color: var(--text);
+}
+.fd-m-missed .fd-harm-sign {
+  color: var(--fd-monster);
+}
+.fd-harm-pred {
+  border-style: dashed;
+  background: transparent;
+}
+.fd-harm-pred .fd-harm-tiles {
+  font-weight: 400;
+}
+.fd-glyph-pred {
+  display: grid;
+  place-items: center;
+  border: 1px dashed var(--line);
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 18px;
+}
+.fd-chain-error {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
 /* monsters */
 .fd-monsters {
   display: grid;
@@ -706,6 +785,13 @@
   }
   .fd-grid-cards {
     grid-template-columns: minmax(0, 1fr);
+  }
+  /* a chain's card on a line of its own, its harmonics under it */
+  .fd-chains {
+    grid-template-columns: repeat(auto-fill, 116px);
+  }
+  .fd-chain-row > .fd-card {
+    grid-column: 1 / -1;
   }
   .fd-table th,
   .fd-table td {

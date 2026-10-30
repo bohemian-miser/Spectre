@@ -31,8 +31,9 @@ async function load<T>(url: string, signal: AbortSignal | undefined, fresh: (x: 
   throw new Error(`${url} is in an older format than this page reads; reload the page`);
 }
 
-/** A combination file of the current shape: every foundational row has its ten fields (the nugget flag last). */
-export const freshCombo = (p: PageCombo): boolean => Array.isArray(p.found) && p.found.every((f) => f.length >= 10) && Array.isArray(p.tails);
+/** A combination file of the current shape: every foundational row has its ten fields (the nugget flag last), every harmonic row its nine (the place drawn last). */
+export const freshCombo = (p: PageCombo): boolean =>
+  Array.isArray(p.found) && p.found.every((f) => f.length >= 10) && Array.isArray(p.harm) && p.harm.every((h) => h.length >= 9) && Array.isArray(p.tails);
 /** An index of the current shape: every row has its flags. */
 export const freshIndex = (i: PageIndex): boolean => Array.isArray(i.combos) && i.combos.every((r) => Array.isArray(r.flags));
 
@@ -92,9 +93,9 @@ export function writeAddress(a: Address): string {
 
 const root = (base: string): string => (base.endsWith('/') ? base : `${base}/`);
 
-/** The Harmonics page reading the combination up to `level`. */
-export const harmonicsHref = (base: string, combo: string, level: number, rule = RULE): string =>
-  `${root(base)}harmonics.html?rule=${rule}&combo=${combo}&level=${level}`;
+/** The Harmonics page reading the combination up to `level`, opened on a circuit (and with it its chain) when one is named. */
+export const harmonicsHref = (base: string, combo: string, level: number, rule = RULE, circuit?: { level: number; length: number }): string =>
+  `${root(base)}harmonics.html?rule=${rule}&combo=${combo}&level=${level}${circuit ? `&c=${circuit.level}-${circuit.length}` : ''}`;
 
 /** The Build-up page on the circuit of this many tiles closing at `level`. */
 export const buildupHref = (base: string, combo: string, level: number, tiles: number, rule = RULE): string =>
