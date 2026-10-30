@@ -226,6 +226,34 @@ three loops cancelled) and the 27 of the base combination into the 513
 (exact, no loops), on the map, by substitution alone: a check of the
 readings of §2 that shares no code with them.
 
+### Comparing any two
+
+Not every pair that looks like a lineage is one. In `023468-140000001` the
+303-tile circuit at level 4 and the 14,679-tile one at level 6 read the
+same at the 303's top two levels and differ below, and 2,079 at level 5 and
+103,851 at level 7 agree at the top three. The page lists such pairs as
+near-lineages (a dashed ≈ after the smaller circuit, with how many top
+levels agree) and lines any two circuits up on request: the bigger one's
+level k + d against the smaller one's level k, where d is the difference of
+their birth levels, each level marked the same or differing, and where they
+differ the tokens the other reading does not share outlined, after the
+best rotation and direction (longest common subsequence, for readings up to
+2,500 tokens). Tokens are drawn as chips in their type's colour.
+
+### The Compare page
+
+`compare.html` takes two circuits in its URL, each named by its
+combination, the level it is born at and its length
+(`#a=023468-140000001:4:303&b=023468-140000001:6:14679`), computes both from
+the renormalisation and shows them side by side: drawn, compared through
+their Fourier terms as the Corners page compares circuits (the loop is the
+circuit's tiles, or the ends of its arcs at the finest level drawn, sampled
+evenly; B is turned, restarted and if need be mirrored onto A), and read
+level by level with the unshared tokens outlined. The view is a component
+(`web/src/pages/compare/CompareView.tsx`) any page can embed, and
+`compareHref` builds the link; the Harmonics page links each pair it lines
+up.
+
 ## When the walker's search can stop, and when it cannot
 
 The walker searches from one start tile and entry edge over every stack at

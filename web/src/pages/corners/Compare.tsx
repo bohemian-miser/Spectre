@@ -124,8 +124,6 @@ export function Compare(props: {
   const classes = useClasses(base, props.combo, props.circuits);
   const [aPick, setAPick] = useState<ComparePick>({ combo: props.combo, index: props.pick });
   const [bPick, setBPick] = useState<ComparePick>(props.initial);
-  const [F, setF] = useState(30);
-  const [off, setOff] = useState<ReadonlySet<number>>(new Set());
 
   // The page's circuit changing brings A and B back to it and the one it suggests.
   useEffect(() => {
@@ -142,8 +140,42 @@ export function Compare(props: {
   const a = aList?.[aPick.index] ?? null;
   const b = bList?.[bPick.index] ?? null;
 
+  return (
+    <div className="corners-compare" data-testid="corners-compare">
+      <div className="corners-controls">
+        <Picker name="A" index={index} pick={aPick} list={aList} onPick={setAPick} colour="var(--k1)" />
+        <Picker name="B" index={index} pick={bPick} list={bList} onPick={setBPick} colour="var(--k2)" />
+      </div>
+      {a && b ? (
+        <TermsCompare
+          a={{ loop: a.loop, rg: a.rg, length: a.length, label: `${familyLabel(a)} L${a.level}` }}
+          b={{ loop: b.loop, rg: b.rg, length: b.length, label: `${familyLabel(b)} L${b.level}` }}
+        />
+      ) : (
+        <p className="corners-note">Loading…</p>
+      )}
+    </div>
+  );
+}
+
+/** A circuit as the terms see it: its tile positions as a loop, its radius of gyration, its length and a name. */
+export interface TermsSubject {
+  readonly loop: Loop;
+  readonly rg: number;
+  readonly length: number;
+  readonly label: string;
+}
+
+/**
+ * Two loops through their Fourier terms: the terms chart, the terms switched
+ * on, the gap between the drawings, and the epicycles. Any page with two
+ * loops can use it.
+ */
+export function TermsCompare(props: { a: TermsSubject; b: TermsSubject }): JSX.Element {
+  const { a, b } = props;
+  const [F, setF] = useState(30);
+  const [off, setOff] = useState<ReadonlySet<number>>(new Set());
   const fit = useMemo(() => {
-    if (!a || !b) return null;
     const ta = terms(a.loop, F);
     const A = canonical(ta);
     const aAl = align(A, ta, false);
@@ -151,20 +183,18 @@ export function Compare(props: {
     const bAl = align(A, tb, true);
     return { A, B: aligned(tb, bAl), aAl, bAl };
   }, [a, b, F]);
-  const tiles = useMemo(() => (a && b && fit ? { a: standard(a.loop, a.rg, fit.aAl), b: standard(b.loop, b.rg, fit.bAl) } : null), [a, b, fit]);
+  const tiles = useMemo(() => ({ a: standard(a.loop, a.rg, fit.aAl), b: standard(b.loop, b.rg, fit.bAl) }), [a, b, fit]);
 
-  const kept = fit ? { A: keep(fit.A, off), B: keep(fit.B, off) } : null;
+  const kept = { A: keep(fit.A, off), B: keep(fit.B, off) };
   const fs = harmonics(F);
   const on = fs.filter((f) => !off.has(f));
   const sumOn = (t: Terms) => on.reduce((s, f) => s + size(t, f) ** 2, 0);
-  const gap = fit ? Math.sqrt(on.reduce((s, f) => s + diff2(fit.A, fit.B, f), 0)) : 0;
+  const gap = Math.sqrt(on.reduce((s, f) => s + diff2(fit.A, fit.B, f), 0));
   const set = (pred: (f: number) => boolean) => setOff(new Set(harmonics(60).filter((f) => !pred(f))));
 
   return (
-    <div className="corners-compare" data-testid="corners-compare">
+    <div className="corners-terms-compare" data-testid="corners-terms-compare">
       <div className="corners-controls">
-        <Picker name="A" index={index} pick={aPick} list={aList} onPick={setAPick} colour="var(--k1)" />
-        <Picker name="B" index={index} pick={bPick} list={bList} onPick={setBPick} colour="var(--k2)" />
         <label>
           Terms each side
           <select value={F} onChange={(e) => setF(Number(e.target.value))}>
@@ -175,40 +205,31 @@ export function Compare(props: {
             ))}
           </select>
         </label>
+        <span className="corners-note">Terms on:</span>
+        <button type="button" onClick={() => set(() => true)} data-testid="corners-compare-all">
+          All
+        </button>
+        <button type="button" onClick={() => set((f) => f !== 1)} data-testid="corners-compare-nocircle">
+          All but the circle f = 1
+        </button>
+        <button type="button" onClick={() => set((f) => third(f))}>
+          Only f = 1 mod 3
+        </button>
+        <button type="button" onClick={() => set((f) => f === 1)}>
+          Only the circle
+        </button>
+        <label>
+          Lowest |f| up to {Math.max(0, ...on.map(Math.abs))}
+          <input type="range" min={1} max={F} value={Math.min(F, Math.max(1, ...on.map(Math.abs)))} onChange={(e) => set((f) => Math.abs(f) <= Number(e.target.value))} />
+        </label>
       </div>
-
-      {a && b && fit && kept && tiles ? (
-        <>
-          <div className="corners-controls">
-            <span className="corners-note">Terms on:</span>
-            <button type="button" onClick={() => set(() => true)} data-testid="corners-compare-all">
-              All
-            </button>
-            <button type="button" onClick={() => set((f) => f !== 1)} data-testid="corners-compare-nocircle">
-              All but the circle f = 1
-            </button>
-            <button type="button" onClick={() => set((f) => third(f))}>
-              Only f = 1 mod 3
-            </button>
-            <button type="button" onClick={() => set((f) => f === 1)}>
-              Only the circle
-            </button>
-            <label>
-              Lowest |f| up to {Math.max(0, ...on.map(Math.abs))}
-              <input type="range" min={1} max={F} value={Math.min(F, Math.max(1, ...on.map(Math.abs)))} onChange={(e) => set((f) => Math.abs(f) <= Number(e.target.value))} />
-            </label>
-          </div>
-          <TermsPicker A={fit.A} B={fit.B} off={off} onToggle={(f) => setOff((s) => toggled(s, f))} />
-          <p className="corners-note" data-testid="corners-compare-gap">
-            {on.length} of {fs.length} terms on, carrying {(100 * sumOn(fit.A)).toFixed(1)}% of A’s shape and {(100 * sumOn(fit.B)).toFixed(1)}% of B’s. The two
-            drawings differ by {gap.toFixed(3)} radii of gyration (rms). B has {nf(b.length)} tiles to A’s {nf(a.length)} and a radius of gyration{' '}
-            {(b.rg / a.rg).toFixed(3)} times A’s{fit.bAl.mirror ? '; it is mirrored to match A' : ''}.
-          </p>
-          <TwoEpicycles A={kept.A} B={kept.B} tilesA={tiles.a} tilesB={tiles.b} labelA={`${familyLabel(a)} L${a.level}`} labelB={`${familyLabel(b)} L${b.level}`} />
-        </>
-      ) : (
-        <p className="corners-note">Loading…</p>
-      )}
+      <TermsPicker A={fit.A} B={fit.B} off={off} onToggle={(f) => setOff((s) => toggled(s, f))} />
+      <p className="corners-note" data-testid="corners-compare-gap">
+        {on.length} of {fs.length} terms on, carrying {(100 * sumOn(fit.A)).toFixed(1)}% of A’s shape and {(100 * sumOn(fit.B)).toFixed(1)}% of B’s. The two
+        drawings differ by {gap.toFixed(3)} radii of gyration (rms). B has {nf(b.length)} tiles to A’s {nf(a.length)} and a radius of gyration{' '}
+        {(b.rg / a.rg).toFixed(3)} times A’s{fit.bAl.mirror ? '; it is mirrored to match A' : ''}.
+      </p>
+      <TwoEpicycles A={kept.A} B={kept.B} tilesA={tiles.a} tilesB={tiles.b} labelA={a.label} labelB={b.label} />
     </div>
   );
 }

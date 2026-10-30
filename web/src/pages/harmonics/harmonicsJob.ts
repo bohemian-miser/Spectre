@@ -7,7 +7,7 @@
  */
 import type { TileFamilyId } from '../../core';
 import { CircuitShapes, distinctCircuits, familyOf, type BornCircuit } from '../shapes/circuitShapes';
-import { cancelBacktracks, extraRuns, lineages, sameCyclic, token, visitsAt, type Lineage, type Reading } from './readings';
+import { alignReadings, cancelBacktracks, extraRuns, lineages, sameCyclic, token, visitsAt, type Alignment, type Lineage, type Reading } from './readings';
 
 export interface HarmonicsJob {
   readonly family: TileFamilyId;
@@ -114,6 +114,12 @@ export class HarmonicsEngine {
     return info;
   }
 
+  /** Circuits `ai` and `bi` of the last result lined up, B's level k + offset against A's level k. */
+  compare(ai: number, bi: number): Comparison {
+    const circuits = distinctCircuits(this.cs, 64).map((d) => this.info(d.circuit)).sort((a, b) => a.length - b.length || a.level - b.level);
+    return { a: ai, b: bi, ...lineUp(circuits[ai], circuits[bi]) };
+  }
+
   result(): HarmonicsResult {
     const circuits = distinctCircuits(this.cs, 64)
       .map((d) => this.info(d.circuit))
@@ -133,11 +139,43 @@ export class HarmonicsEngine {
 
 export { sameCyclic };
 
+/** B's readings lined up with A's: B's level k + offset against A's level k, offset being the difference of their birth levels. */
+export function lineUp(a: CircuitInfo, b: CircuitInfo): { offset: number; rows: Comparison['rows'] } {
+  const offset = b.level - a.level;
+  const rows: Comparison['rows'][number][] = [];
+  for (let k = 0; k < a.level; k++) {
+    const ra = a.readings.find((r) => r.level === k);
+    const rb = b.readings.find((r) => r.level === k + offset);
+    if (!ra || !rb) { rows.push({ level: k, state: 'unread' }); continue; }
+    if (sameCyclic(ra.tokens, rb.tokens)) { rows.push({ level: k, state: 'same' }); continue; }
+    const alignment = alignReadings(ra.tokens, rb.tokens);
+    rows.push(alignment ? { level: k, state: 'differs', alignment } : { level: k, state: 'long' });
+  }
+  return { offset, rows };
+}
+
+/** Two circuits lined up level by level: B at level k + offset against A at level k. */
+export interface Comparison {
+  readonly a: number;
+  readonly b: number;
+  readonly offset: number;
+  readonly rows: readonly {
+    readonly level: number;
+    /** 'same', 'differs' (with the alignment), 'unread' (a level one of them was not read at), or 'long' (too long to align). */
+    readonly state: 'same' | 'differs' | 'unread' | 'long';
+    readonly alignment?: Alignment;
+  }[];
+}
+
+export type WorkerMessage = { type: 'start'; job: HarmonicsJob } | { type: 'next' } | { type: 'compare'; a: number; b: number };
+
 export interface HarmonicsClient {
   /** Starts a combination afresh. */
   start(job: HarmonicsJob): Promise<HarmonicsResult>;
   /** One level more of the combination started. */
   next(): Promise<HarmonicsResult>;
+  /** Two circuits of the last result lined up. */
+  compare(a: number, b: number): Promise<Comparison>;
   dispose(): void;
 }
 
@@ -152,16 +190,16 @@ export function createHarmonicsClient(opts: { forceSync?: boolean } = {}): Harmo
   }
   let engine: HarmonicsEngine | null = null;
   let id = 1;
-  const waiting = new Map<number, { resolve: (r: HarmonicsResult) => void; reject: (e: Error) => void }>();
+  const waiting = new Map<number, { resolve: (r: unknown) => void; reject: (e: Error) => void }>();
   if (worker)
-    worker.onmessage = (e: MessageEvent<{ id: number; result?: HarmonicsResult; error?: string }>) => {
+    worker.onmessage = (e: MessageEvent<{ id: number; result?: unknown; error?: string }>) => {
       const h = waiting.get(e.data.id);
       if (!h) return;
       waiting.delete(e.data.id);
-      if (e.data.result) h.resolve(e.data.result);
+      if (e.data.result !== undefined) h.resolve(e.data.result);
       else h.reject(new Error(e.data.error ?? 'failed'));
     };
-  const sync = (f: () => HarmonicsResult): Promise<HarmonicsResult> =>
+  const sync = <T,>(f: () => T): Promise<T> =>
     new Promise((resolve, reject) =>
       setTimeout(() => {
         try {
@@ -171,21 +209,26 @@ export function createHarmonicsClient(opts: { forceSync?: boolean } = {}): Harmo
         }
       }, 0),
     );
-  const ask = (message: { type: 'start'; job: HarmonicsJob } | { type: 'next' }): Promise<HarmonicsResult> => {
+  const ask = <T,>(message: WorkerMessage): Promise<T> => {
     const n = id++;
     return new Promise((resolve, reject) => {
-      waiting.set(n, { resolve, reject });
+      waiting.set(n, { resolve: resolve as (r: unknown) => void, reject });
       worker!.postMessage({ id: n, ...message });
     });
   };
+  const need = (): HarmonicsEngine => { if (!engine) throw new Error('no combination started'); return engine; };
   return {
     start(job) {
       if (!worker) return sync(() => { engine = new HarmonicsEngine(job); return engine.result(); });
       return ask({ type: 'start', job });
     },
     next() {
-      if (!worker) return sync(() => { if (!engine) throw new Error('no combination started'); engine.next(); return engine.result(); });
+      if (!worker) return sync(() => { need().next(); return need().result(); });
       return ask({ type: 'next' });
+    },
+    compare(a, b) {
+      if (!worker) return sync(() => need().compare(a, b));
+      return ask({ type: 'compare', a, b });
     },
     dispose() {
       worker?.terminate();

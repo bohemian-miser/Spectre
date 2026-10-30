@@ -179,6 +179,14 @@ export const SITE_NAV: readonly NavItem[] = Object.freeze([
     blurb: 'Which circuits are the same circuit two levels up: every circuit read at every level, and the lineages among them.',
   },
   {
+    id: 'compare',
+    label: 'Compare',
+    short: 'Compare',
+    entry: 'compare.html',
+    status: 'ready',
+    blurb: 'Two circuits side by side: drawn, compared through their Fourier terms, and read level by level.',
+  },
+  {
     id: 'buildup',
     label: 'Build-up',
     short: 'Build-up',

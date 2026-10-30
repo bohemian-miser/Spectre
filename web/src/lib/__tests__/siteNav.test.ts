@@ -36,6 +36,7 @@ describe('siteNav', () => {
       'corners',
       'shapes',
       'harmonics',
+      'compare',
       'buildup',
       'legacy',
     ]);
@@ -62,6 +63,7 @@ describe('siteNav', () => {
       'corners',
       'shapes',
       'harmonics',
+      'compare',
       'buildup',
       'legacy',
     ]);
