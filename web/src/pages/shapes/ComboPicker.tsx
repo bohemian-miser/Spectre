@@ -14,10 +14,10 @@ export interface ComboChoice {
 
 const LEVELS = [6, 7, 8, 9];
 
-export function ComboPicker(props: { busy: boolean; onAdd: (c: ComboChoice) => void; levels?: readonly number[] | 'any'; verb?: string; initialLevel?: number; initialCombo?: string }): JSX.Element {
+export function ComboPicker(props: { busy: boolean; onAdd: (c: ComboChoice) => void; levels?: readonly number[] | 'any'; verb?: string; initialLevel?: number; initialCombo?: string; initialRule?: string }): JSX.Element {
   const levels = props.levels ?? LEVELS;
   const rules = useMemo(() => validEdgeSubsets('hex').filter((r) => r.edges.length > 0), []);
-  const [rule, setRule] = useState('023468');
+  const [rule, setRule] = useState(props.initialRule ?? '023468');
   const subset = useMemo(() => [...rule].map(Number), [rule]);
   const counts = useMemo(() => comboOptionCounts('hex', subset), [subset]);
   const types = leafOrder('hex');

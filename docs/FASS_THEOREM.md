@@ -419,6 +419,9 @@ its segments lie in a common finite simple arc, proper because a bounded set
 meets finitely many tiles, and it visits every tile of the plane tiling `φ(Σ)`
 exactly once. `05-chain.ts` confirms contiguity and two-sided growth to level 6.
 
+The same strand statements follow from the borders alone, read every other
+level, given the tables `B` and `G`: [`EVERY_OTHER_LEVEL.md`](EVERY_OTHER_LEVEL.md).
+
 ---
 
 ## 6. Self-avoidance at every level (Theorem part 4)

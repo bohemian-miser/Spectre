@@ -195,6 +195,14 @@ export const SITE_NAV: readonly NavItem[] = Object.freeze([
     blurb: "A combination's supertiles built level by level: every type's border table, and the circuits that close at each level.",
   },
   {
+    id: 'period',
+    label: 'Every other level',
+    short: 'Period',
+    entry: 'period.html',
+    status: 'ready',
+    blurb: 'Borders compared level by level: where they repeat every second level, and the infinite line that follows.',
+  },
+  {
     id: 'legacy',
     label: 'Legacy p5 app',
     short: 'Legacy',
