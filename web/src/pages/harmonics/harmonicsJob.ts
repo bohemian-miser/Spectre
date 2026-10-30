@@ -7,7 +7,7 @@
  */
 import type { TileFamilyId } from '../../core';
 import { CircuitShapes, distinctCircuits, familyOf, type BornCircuit } from '../shapes/circuitShapes';
-import { alignReadings, cancelBacktracks, extraRuns, lineages, sameCyclic, token, visitsAt, type Alignment, type Lineage, type Reading } from './readings';
+import { alignReadings, extraRuns, lineages, readDown, sameCyclic, type Alignment, type Lineage, type Reading } from './readings';
 
 export interface HarmonicsJob {
   readonly family: TileFamilyId;
@@ -44,25 +44,15 @@ export interface HarmonicsResult {
 
 /** Outlines are drawn at the levels where the circuit has at most this many points. */
 const MAX_POINTS = 3000;
-/** A level is read while its raw visits stay within this. */
-const MAX_VISITS = 1500000;
-
-/** The readings of a born circuit, from the top down while they stay within the budget. */
-function readDown(cs: CircuitShapes, c: BornCircuit): { readings: Reading[]; readFrom: number } {
-  const out: Reading[] = [];
-  let k = c.level - 1;
-  for (; k >= 0; k--) {
-    const raw = visitsAt(cs, c, k);
-    const cut = cancelBacktracks(raw);
-    out.unshift({ level: k, raw: raw.length, tokens: cut.map((v) => token(v, k, c.level)), tiles: cut.map((v) => v.tiles) });
-    if (raw.length * 6 > MAX_VISITS) break;
-  }
-  return { readings: out, readFrom: Math.max(0, k) };
-}
+/** Levels are read downwards until one has more raw visits than this; that one is the last read. */
+const LAST_VISITS = 250000;
 
 export class HarmonicsEngine {
   private readonly cs: CircuitShapes;
   private readonly cache = new Map<string, CircuitInfo>();
+  /** The circuits of the level last read, in the order of the result. */
+  private circuits: { level: number; list: CircuitInfo[] } | null = null;
+  private last: HarmonicsResult | null = null;
   private seconds = 0;
 
   constructor(readonly job: HarmonicsJob) {
@@ -86,7 +76,7 @@ export class HarmonicsEngine {
     const key = `${c.level}/${c.type}/${c.length}/${c.steps[0]}`;
     const hit = this.cache.get(key);
     if (hit) return hit;
-    const { readings, readFrom } = readDown(this.cs, c);
+    const { readings, readFrom } = readDown(this.cs, c, LAST_VISITS);
     const outlines: Float64Array[] = [];
     let drawnFrom = c.level - 1;
     for (let k = c.level - 1; k >= 0; k--) {
@@ -114,16 +104,28 @@ export class HarmonicsEngine {
     return info;
   }
 
+  /** The distinct circuits up to the level built, shortest first, worked out once per level. */
+  private list(): CircuitInfo[] {
+    if (this.circuits?.level !== this.cs.maxLevel) {
+      const list = distinctCircuits(this.cs, 1)
+        .map((d) => this.info(d.circuit))
+        .sort((a, b) => a.length - b.length || a.level - b.level);
+      this.circuits = { level: this.cs.maxLevel, list };
+    }
+    return this.circuits.list;
+  }
+
   /** Circuits `ai` and `bi` of the last result lined up, B's level k + offset against A's level k. */
   compare(ai: number, bi: number): Comparison {
-    const circuits = distinctCircuits(this.cs, 64).map((d) => this.info(d.circuit)).sort((a, b) => a.length - b.length || a.level - b.level);
+    const circuits = this.list();
     return { a: ai, b: bi, ...lineUp(circuits[ai], circuits[bi]) };
   }
 
+  /** The circuits, lineages and extra runs up to the level built; the seconds count the level's build and its reading. */
   result(): HarmonicsResult {
-    const circuits = distinctCircuits(this.cs, 64)
-      .map((d) => this.info(d.circuit))
-      .sort((a, b) => a.length - b.length || a.level - b.level);
+    if (this.last?.level === this.cs.maxLevel) return this.last;
+    const t0 = Date.now();
+    const circuits = this.list();
     const ls = lineages(circuits);
     const extras: Record<string, { unmatched: number; runs: string[][] }> = {};
     for (const l of ls) {
@@ -133,7 +135,8 @@ export class HarmonicsEngine {
       const e = a && b ? extraRuns(a.tokens, b.tokens) : null;
       if (e) extras[`${l.a}-${l.b}`] = e;
     }
-    return { level: this.cs.maxLevel, circuits, lineages: ls, extras, seconds: this.seconds };
+    this.last = { level: this.cs.maxLevel, circuits, lineages: ls, extras, seconds: this.seconds + (Date.now() - t0) / 1000 };
+    return this.last;
   }
 }
 
