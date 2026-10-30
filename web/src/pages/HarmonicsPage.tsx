@@ -5,29 +5,27 @@
  * backtracks across a seam cancelled). A circuit born two levels above
  * another, through the same children, that reads at level k + 2 as the
  * other reads at level k from level 2 up is its harmonic; harmonics link
- * into chains (`harmonics/chains.ts`). The circuits are listed by family
- * (the children of the birth supertile they run through), each family's
- * chains one row each.
+ * into chains (`harmonics/chains.ts`).
  *
- * A chosen chain is drawn whole over its supertiles, every member two
- * levels above the one before, one slider stepping them together
- * (`harmonics/ChainViews.tsx`), and expanded supertile by supertile with the
- * members side by side (`harmonics/ChainExplorer.tsx`). The chosen circuit's
- * readings are lined up with the member below it, or with any circuit
- * chosen by hand. Any circuit opens in the Explorer's infinite view. The
- * address can name the combination and the level to read to
- * (`?rule=023468&combo=140000001&level=7`).
+ * The circuits sit in a table, a column per level and a row per chain,
+ * grouped by family (`harmonics/ChainViews.tsx`). Clicking a circuit opens
+ * its row: every member drawn over its supertiles in linked pan and zoom
+ * views, the members' rows of visits level by level (`harmonics/rows.ts`),
+ * hovering lighting a visit's expansion in every member, and the readings of
+ * the circuit clicked lined up with its neighbour in the chain. Shift-clicking a second circuit
+ * compares exactly those two. The address names the rule, combination,
+ * level and selection (`?rule=023468&combo=140000001&level=7&c=7-103851`,
+ * with `&with=…` for a pair).
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { TileTypeId } from '../core';
 import { ComboPicker, type ComboChoice } from './shapes/ComboPicker';
 import { explorerCircuitHref } from './shapes/explorerLink';
-import { CircuitGlyph as Glyph, describeCircuit } from './compare/CompareView';
+import { describeCircuit } from './compare/CompareView';
 import { ReadingsTable } from './compare/ReadingsTable';
 import { compareHref } from './compare/refs';
-import { ChainExplorer } from './harmonics/ChainExplorer';
-import { ChainSupertiles, FamilyList, short } from './harmonics/ChainViews';
+import { ChainWorkspace, CircuitTable, short, Thumb, useThumbs } from './harmonics/ChainViews';
 import { createHarmonicsClient, type CircuitInfo, type Comparison, type HarmonicsResult } from './harmonics/harmonicsJob';
 import '../styles/shapes.css';
 import '../styles/harmonics.css';
@@ -35,13 +33,19 @@ import '../styles/harmonics.css';
 const nf = (n: number) => n.toLocaleString('en-US');
 const DEFAULT: ComboChoice = { subset: [0, 2, 3, 4, 6, 8], combo: '000100000', level: 6 };
 
+const params = () => new URLSearchParams(typeof location === 'undefined' ? '' : location.search);
+
 /** The rule, combination and level asked for in the address (`?rule=023468&combo=140000001&level=7`), else the default. */
 function fromAddress(): ComboChoice {
-  const q = new URLSearchParams(typeof location === 'undefined' ? '' : location.search);
+  const q = params();
   const rule = q.get('rule') ?? '023468', combo = q.get('combo'), level = Number(q.get('level'));
   if (!combo || !/^\d+$/.test(rule) || !/^[0-9a-z]{9}$/.test(combo)) return DEFAULT;
   return { subset: [...rule].map(Number), combo, level: Number.isInteger(level) && level >= 2 && level <= 12 ? level : DEFAULT.level };
 }
+
+/** A circuit named in the address as `level-length`. */
+const circuitKey = (c: CircuitInfo) => `${c.level}-${c.length}`;
+const findKey = (r: HarmonicsResult, key: string | null) => (key ? r.circuits.findIndex((c) => circuitKey(c) === key) : -1);
 
 function explorerHref(base: string, choice: ComboChoice, c: CircuitInfo): string {
   return explorerCircuitHref(base, {
@@ -60,6 +64,12 @@ function explorerHref(base: string, choice: ComboChoice, c: CircuitInfo): string
 
 const describe = describeCircuit;
 
+/** What is chosen: a circuit (and with it its chain), or two circuits compared. */
+interface Selection {
+  readonly focus: number;
+  readonly with: number | null;
+}
+
 export default function HarmonicsPage(props: { forceSync?: boolean }): JSX.Element {
   const base = import.meta.env.BASE_URL;
   const client = useRef(createHarmonicsClient({ forceSync: props.forceSync }));
@@ -67,10 +77,11 @@ export default function HarmonicsPage(props: { forceSync?: boolean }): JSX.Eleme
   const [result, setResult] = useState<HarmonicsResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [picked, setPicked] = useState<number | null>(null);
-  /** The circuit to line the picked one up with, chosen by hand; otherwise the member of its chain below it. */
-  const [partnerChoice, setPartnerChoice] = useState<number | null>(null);
+  const [sel, setSel] = useState<Selection | null>(null);
   const [comparison, setComparison] = useState<Comparison | null>(null);
+  const thumbs = useThumbs(client.current, result);
+  /** The selection the address asked for, kept until the first result. */
+  const asked = useRef<{ c: string | null; with: string | null } | null>({ c: params().get('c'), with: params().get('with') });
 
   const live = useRef(0);
   /** Runs a request against the engine; the newest request wins. */
@@ -84,8 +95,19 @@ export default function HarmonicsPage(props: { forceSync?: boolean }): JSX.Eleme
         setResult(r);
         setComparison(null);
         if (pick) {
-          setPicked(r.circuits.length ? r.circuits.length - 1 : null);
-          setPartnerChoice(null);
+          const want = asked.current;
+          asked.current = null;
+          const focus = want ? findKey(r, want.c) : -1;
+          const other = want ? findKey(r, want.with) : -1;
+          setSel(focus >= 0 ? { focus, with: other >= 0 && other !== focus ? other : null } : r.circuits.length ? { focus: r.circuits.length - 1, with: null } : null);
+        } else {
+          // the same circuits, by level and length, in the new result
+          setSel((s) => {
+            if (!s || !result) return s;
+            const focus = findKey(r, circuitKey(result.circuits[s.focus]));
+            const other = s.with === null ? -1 : findKey(r, circuitKey(result.circuits[s.with]));
+            return focus >= 0 ? { focus, with: other >= 0 ? other : null } : null;
+          });
         }
       })
       .catch((e: unknown) => n === live.current && setError(e instanceof Error ? e.message : String(e)))
@@ -96,6 +118,15 @@ export default function HarmonicsPage(props: { forceSync?: boolean }): JSX.Eleme
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [choice]);
   useEffect(() => () => client.current.dispose(), []);
+
+  // the address follows the choice and the selection
+  useEffect(() => {
+    if (typeof history === 'undefined' || !result) return;
+    const q = new URLSearchParams({ rule: choice.subset.join(''), combo: choice.combo, level: String(result.level) });
+    if (sel) q.set('c', circuitKey(result.circuits[sel.focus]));
+    if (sel?.with != null) q.set('with', circuitKey(result.circuits[sel.with]));
+    history.replaceState(null, '', `${location.pathname}?${q}`);
+  }, [choice, result, sel]);
 
   const chainOf = useMemo(() => {
     const m = new Map<number, number>();
@@ -108,20 +139,25 @@ export default function HarmonicsPage(props: { forceSync?: boolean }): JSX.Eleme
     const levels = [...new Set(result.circuits.map((c) => c.level))].sort((a, b) => a - b);
     return levels.map((l) => ({ level: l, born: result.circuits.filter((c) => c.level === l).length, fresh: result.circuits.filter((c, i) => c.level === l && !harmonic.has(i)).length }));
   }, [result]);
-  const picking = picked !== null && result ? result.circuits[picked] : null;
-  const chain = picked !== null && result ? result.chains[chainOf.get(picked) ?? -1] ?? null : null;
-  const below = chain && picked !== null ? chain.members[chain.members.indexOf(picked) - 1] ?? null : null;
-  const above = chain && picked !== null ? chain.members[chain.members.indexOf(picked) + 1] ?? null : null;
-  /** The circuit lined up with the picked one: chosen, else the member below it in its chain, else the one above. */
-  const partner = partnerChoice !== null && result && partnerChoice < result.circuits.length && partnerChoice !== picked ? partnerChoice : below ?? above ?? null;
+  const focus = sel && result ? result.circuits[sel.focus] ?? null : null;
+  /** The circuits in the workspace: the two compared, or the focus's chain, by level. */
+  const members = useMemo(() => {
+    if (!sel || !result) return [];
+    if (sel.with !== null) return [sel.focus, sel.with].sort((a, b) => result.circuits[a].level - result.circuits[b].level || result.circuits[a].length - result.circuits[b].length);
+    return result.chains[chainOf.get(sel.focus) ?? -1]?.members ?? [sel.focus];
+  }, [sel, result, chainOf]);
+  const at = sel ? members.indexOf(sel.focus) : -1;
+  /** The circuit the focus's readings are lined up with: the other one compared, else its neighbour in its chain (below, else above). */
+  const partner = sel === null ? null : sel.with ?? members[at - 1] ?? members[at + 1] ?? null;
   const other = partner !== null && result ? result.circuits[partner] : null;
-  const extras = result && picked !== null && below !== null && partner === below ? result.extras[`${below}-${picked}`] : undefined;
-  const compareKey = result && picked !== null && partner !== null ? `${result.level}/${partner}/${picked}` : null;
+  const below = partner !== null && result && other && focus && other.level < focus.level ? partner : null;
+  const extras = result && sel && below !== null ? result.extras[`${below}-${sel.focus}`] : undefined;
+  const compareKey = result && sel && partner !== null ? `${result.level}/${partner}/${sel.focus}` : null;
   useEffect(() => {
-    if (!compareKey || picked === null || partner === null) return;
+    if (!compareKey || !sel || partner === null) return;
     let on = true;
     client.current
-      .compare(partner, picked)
+      .compare(partner, sel.focus)
       .then((c) => on && setComparison(c))
       .catch((e: unknown) => on && setError(e instanceof Error ? e.message : String(e)));
     return () => {
@@ -129,12 +165,12 @@ export default function HarmonicsPage(props: { forceSync?: boolean }): JSX.Eleme
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [compareKey]);
-  const comparing = comparison && picked !== null && partner !== null && comparison.a === partner && comparison.b === picked ? comparison : null;
+  const comparing = comparison && sel && partner !== null && comparison.a === partner && comparison.b === sel.focus ? comparison : null;
   const inChains = result ? result.chains.filter((ch) => ch.members.length > 1) : [];
-  const pick = (i: number) => {
-    setPicked(i);
-    setPartnerChoice(null);
+  const pick = (i: number, shift: boolean) => {
+    setSel((s) => (shift && s && s.focus !== i ? { focus: s.focus, with: i } : { focus: i, with: null }));
   };
+  const chain = sel && result ? result.chains[chainOf.get(sel.focus) ?? -1] : null;
 
   return (
     <div className="shapes-page harm-page">
@@ -146,7 +182,7 @@ export default function HarmonicsPage(props: { forceSync?: boolean }): JSX.Eleme
         runs across seams at the lowest levels. Harmonics link into chains. Every circuit of the combination born up to the level chosen is read from the
         renormalisation, so nothing is traced tile by tile; the renormalisation can be taken one level further at a time, as far as the machine allows.
       </p>
-      <ComboPicker busy={busy} onAdd={(c) => { setChoice(c); setPicked(null); setPartnerChoice(null); }} levels="any" verb="Read" initialLevel={choice.level} initialCombo={choice.combo} initialRule={choice.subset.join('')} />
+      <ComboPicker busy={busy} onAdd={(c) => { asked.current = null; setChoice(c); setSel(null); }} levels="any" verb="Read" initialLevel={choice.level} initialCombo={choice.combo} initialRule={choice.subset.join('')} />
       {error ? <p className="shapes-note">Could not compute: {error}</p> : null}
       {busy && !result ? <p className="shapes-note">Computing…</p> : null}
       {result ? (
@@ -169,75 +205,67 @@ export default function HarmonicsPage(props: { forceSync?: boolean }): JSX.Eleme
               two or more. {newAt.map((n) => `Level ${n.level}: ${n.born} born, ${n.fresh} new`).join('; ')}.
             </p>
             <p className="shapes-note">
-              A <strong>family</strong> is every circuit through the same children of its birth supertile. A <strong>chain</strong> is circuits linked as
-              harmonics, each two levels above the one before, in one row with the growth at each step. A dashed chip before a chain is a circuit two levels
-              below its lowest member that reads the same at the top levels only. Circuits of a family in no chain with the others are listed apart, with how
-              many top levels they agree at with the nearest member two levels away.
+              Each circuit sits in the column of the level it closes at. A <strong>family</strong> is every circuit through the same children of its birth
+              supertile; a <strong>chain</strong> is a row of circuits linked as harmonics, two columns apart. A dashed ≈ cell is a circuit that reads as a
+              chain&apos;s lowest member at the top levels only. Click a circuit to open its row; shift-click a second to compare the two.
             </p>
-            <FamilyList r={result} picked={picked} onPick={pick} />
+            <CircuitTable r={result} thumbs={thumbs} selected={members} onPick={pick} />
           </section>
-          {picking && chain ? (
+          {focus && sel ? (
             <section data-testid="harm-detail">
+              {sel.with !== null ? (
+                <div className="harm-pairbar" data-testid="harm-pairbar">
+                  Comparing {members.map((m) => short(result.circuits[m])).join(' and ')} ·{' '}
+                  <button type="button" className="harm-crumb" onClick={() => setSel({ focus: sel.focus, with: null })} data-testid="harm-back">
+                    back to the chain
+                  </button>
+                </div>
+              ) : null}
               <h2>
-                {chain.members.length > 1
-                  ? `A chain of family ${chain.family}: ${chain.members.map((m) => short(result.circuits[m])).join(' → ')}`
-                  : `${nf(picking.length)} tiles at level ${picking.level}, in no chain`}
+                {sel.with !== null
+                  ? `${short(result.circuits[members[0]])} and ${short(result.circuits[members[1]])}`
+                  : chain && chain.members.length > 1
+                    ? `A chain of family ${chain.family}: ${chain.members.map((m) => short(result.circuits[m])).join(' → ')}`
+                    : `${nf(focus.length)} tiles at level ${focus.level}, in no chain`}
               </h2>
               <div className="harm-chain-glyphs">
-                {chain.members.map((m) => {
+                {members.map((m) => {
                   const c = result.circuits[m];
                   return (
-                    <figure key={m} className={m === picked ? 'is-picked' : ''}>
-                      <button type="button" className="harm-glyph-pick" onClick={() => pick(m)} title={`Line up the ${nf(c.length)} with its neighbours`}>
-                        <Glyph circuit={c} size={140} colour={m === picked ? 'var(--g1)' : 'var(--muted)'} label={describe(c)} />
+                    <figure key={m} className={m === sel.focus ? 'is-picked' : ''}>
+                      <button type="button" className="harm-glyph-pick" onClick={() => setSel({ focus: m, with: sel.with === null ? null : members.find((x) => x !== m)! })} title={`Line up the ${nf(c.length)}'s readings with its neighbour`}>
+                        <Thumb pts={thumbs.get(m)} size={120} label={describe(c)} />
                       </button>
                       <figcaption>
-                        {describe(c)}; drawn at level {c.drawnFrom}. <a href={explorerHref(base, choice, c)}>Explorer</a>
+                        {describe(c)}. <a href={explorerHref(base, choice, c)}>Explorer</a>
                       </figcaption>
                     </figure>
                   );
                 })}
               </div>
-              <ChainSupertiles client={client.current} level={result.level} members={chain.members} circuits={result.circuits} />
+              <ChainWorkspace client={client.current} level={result.level} members={members} circuits={result.circuits} />
               <h3>Readings</h3>
-              <div className="harm-compare">
-                <label>
-                  The {nf(picking.length)} lined up with{' '}
-                  <select value={partner ?? ''} onChange={(e) => setPartnerChoice(e.target.value === '' ? null : Number(e.target.value))} data-testid="harm-partner">
-                    <option value="">nothing</option>
-                    {result.circuits.map((c, i) =>
-                      i === picked ? null : (
-                        <option key={i} value={i}>
-                          {short(c)}
-                          {below === i ? ' (below it in its chain)' : above === i ? ' (above it in its chain)' : ''}
-                        </option>
-                      ),
-                    )}
-                  </select>
-                </label>
-                {other ? (
-                  <span className="shapes-note">
-                    Level k + {picking.level - other.level} of the {nf(picking.length)} against level k of the {nf(other.length)}; tokens the other reading does not
-                    share are outlined.{' '}
-                    <a
-                      href={compareHref(base, { subset: choice.subset, combo: choice.combo, level: other.level, length: other.length }, { subset: choice.subset, combo: choice.combo, level: picking.level, length: picking.length })}
-                      data-testid="harm-compare-link"
-                    >
-                      Open in Compare
-                    </a>
-                    , with the Fourier terms.
-                  </span>
-                ) : null}
-              </div>
-              <ReadingsTable b={picking} a={other} rows={comparing?.rows ?? null} nameA="of the other" />
-              {extras ? (
+              {other ? (
+                <p className="shapes-note">
+                  Level k + {focus.level - other.level} of the {nf(focus.length)} against level k of the {nf(other.length)}; tokens the other reading does not
+                  share are outlined.{' '}
+                  <a
+                    href={compareHref(base, { subset: choice.subset, combo: choice.combo, level: other.level, length: other.length }, { subset: choice.subset, combo: choice.combo, level: focus.level, length: focus.length })}
+                    data-testid="harm-compare-link"
+                  >
+                    Open in Compare
+                  </a>
+                  , with the Fourier terms.
+                </p>
+              ) : null}
+              <ReadingsTable b={focus} a={other} rows={comparing?.rows ?? null} nameA="of the other" />
+              {extras && other ? (
                 <p className="shapes-note" data-testid="harm-extras">
-                  At level 2 the {nf(picking.length)} has {nf(extras.runs.length)} extra runs of visits and misses {nf(extras.unmatched)} of the {nf(other!.length)}&apos;s tiles:{' '}
+                  At level 2 the {nf(focus.length)} has {nf(extras.runs.length)} extra runs of visits and misses {nf(extras.unmatched)} of the {nf(other.length)}&apos;s tiles:{' '}
                   {[...new Map(extras.runs.map((run) => [run.join(' '), 0])).keys()].map((run) => `[${run}]`).join(' ')}.
                   {extras.unmatched === 0 ? ' Every extra run is a loop out of one supertile and back into it, round a point where three supertiles meet.' : ''}
                 </p>
               ) : null}
-              <ChainExplorer client={client.current} level={result.level} members={chain.members} circuits={result.circuits} />
             </section>
           ) : null}
         </>

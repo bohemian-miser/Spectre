@@ -6,10 +6,11 @@
  * (`harmonics.worker.ts`) with a main-thread fallback.
  */
 import type { TileFamilyId } from '../../core';
+import type { Box } from '../../lib/viewport';
 import { CircuitShapes, distinctCircuits, familyOf, type BornCircuit } from '../shapes/circuitShapes';
 import { Geometry } from '../buildup/viewer';
-import { CircuitFocus, type FocusNode, type Sel } from './focus';
-import { chainPicture, type ChainPicture } from './pairView';
+import { chainRows, CircuitRows, type ChainRows } from './rows';
+import { chainPicture, SUPERTILE_CAP, type ChainPicture } from './pairView';
 import { chainsOf, closestInFamily, harmonicLinks, nearLinks, type Chain, type Link, type Near } from './chains';
 import { alignReadings, extraRuns, readDown, sameCyclic, type Alignment, type Reading } from './readings';
 
@@ -57,7 +58,8 @@ const MAX_POINTS = 3000;
 const LAST_VISITS = 250000;
 
 export class HarmonicsEngine {
-  private readonly cs: CircuitShapes;
+  /** The renormalisation, built up level by level. */
+  readonly cs: CircuitShapes;
   private readonly cache = new Map<string, CircuitInfo>();
   /** The circuits of the level last read, in the order of the result. */
   private circuits: { level: number; list: CircuitInfo[]; born: BornCircuit[] } | null = null;
@@ -132,24 +134,88 @@ export class HarmonicsEngine {
   }
 
   private geometry: Geometry | null = null;
-  private readonly focuses = new Map<BornCircuit, CircuitFocus>();
+  private readonly rowsOf = new Map<BornCircuit, CircuitRows>();
 
-  private focusOf(ci: number): CircuitFocus {
+  /** The born circuit behind circuit `ci` of the last result. */
+  bornOf(ci: number): BornCircuit {
     this.list();
-    const c = this.circuits!.born[ci];
-    let f = this.focuses.get(c);
-    if (!f) this.focuses.set(c, (f = new CircuitFocus(this.cs, (this.geometry ??= new Geometry(this.cs)), c)));
-    return f;
+    return this.circuits!.born[ci];
   }
 
-  /** A supertile of circuit `ci` of the last result, picked by its visit, with the visit circuit `other`'s reading pairs it with. */
-  node(ci: number, sel: Sel, other: number | null): FocusNode {
-    return this.focusOf(ci).node(sel, other === null ? null : this.focusOf(other));
+  private circuitRows(ci: number): CircuitRows {
+    const c = this.bornOf(ci);
+    let r = this.rowsOf.get(c);
+    if (!r) this.rowsOf.set(c, (r = new CircuitRows(this.cs, c)));
+    return r;
   }
 
-  /** Circuit `ci` of the last result as a closed line in its birth supertile's frame, runs of tiles within `share` of its radius of gyration drawn as one point. */
-  drawing(ci: number, share: number): Float64Array {
-    return this.focusOf(ci).drawing(share);
+  /** Circuits of the last result (a chain's members, by level) read row by row down to level k for the lowest (`rows.ts`). */
+  rows(members: readonly number[], k: number): ChainRows {
+    return chainRows(members.map((i) => this.circuitRows(i)), k, SUPERTILE_CAP);
+  }
+
+  /** Raw visits of circuit `ci` at a level below its birth: read, or carried on from the two lowest levels read by their ratio. */
+  private visitsAt(ci: number, level: number): number {
+    const rs = this.list()[ci].readings;
+    const at = (k: number) => rs.find((r) => r.level === k)?.raw;
+    const got = at(level);
+    if (got !== undefined) return got;
+    const lo = Math.min(...rs.map((r) => r.level));
+    const a = at(lo)!, b = at(lo + 1) ?? a;
+    return a * Math.pow(Math.max(1, a / b), lo - level);
+  }
+
+  /**
+   * Circuit `ci` drawn down to a level for a view (y up, its birth frame):
+   * as fine as `level - 2` while the crossings in view stay within about
+   * `budget`, children out of view passed over (`buildup/viewer.ts`). At
+   * `level` itself it is thinned to `budget` points when over, and `capped`.
+   */
+  detail(ci: number, level: number, view: Box | null, budget: number): { stop: number; pts: Float64Array; capped: boolean } {
+    const c = this.bornOf(ci);
+    const g = (this.geometry ??= new Geometry(this.cs));
+    let share = 1;
+    if (view) {
+      const o = this.cs.outline(c.level, c.type);
+      const x0 = Math.min(...o.map((p) => p.x)), x1 = Math.max(...o.map((p) => p.x)), y0 = Math.min(...o.map((p) => p.y)), y1 = Math.max(...o.map((p) => p.y));
+      const w = Math.max(0, Math.min(x1, view.max.x) - Math.max(x0, view.min.x)), h = Math.max(0, Math.min(y1, view.max.y) - Math.max(y0, view.min.y));
+      share = Math.min(1, (4 * w * h) / ((x1 - x0) * (y1 - y0) || 1));
+    }
+    for (let s = Math.max(0, level - 2); s <= level; s++) {
+      if (s < level && this.visitsAt(ci, s) * share > budget) continue;
+      const out: number[] = [];
+      for (const st of c.steps) {
+        const ch = this.cs.childOf(c.level, c.type, st);
+        g.walk(c.level - 1, ch.type, ch.k, ch.xform, s, view, out);
+      }
+      out.push(out[0], out[1]);
+      const pts = Float64Array.from(out);
+      if (s < level && pts.length > 4 * budget) continue;
+      const n = pts.length / 2;
+      if (n <= 2 * budget) return { stop: s, pts, capped: false };
+      return { stop: s, pts: thin(pts, budget), capped: true };
+    }
+    throw new Error('no level to draw at');
+  }
+
+  /**
+   * Thumbnails of circuits: each drawn at the lowest level at most two below
+   * its birth whose crossings stay within `budget`, or two below its birth
+   * thinned to `budget` points when even that has more; closed, in the birth
+   * frame.
+   */
+  thumbs(cis: readonly number[], budget: number): { stop: number; pts: Float64Array }[] {
+    return cis.map((ci) => {
+      const c = this.bornOf(ci);
+      let s = Math.max(0, c.level - 2);
+      while (s > 0 && this.visitsAt(ci, s - 1) <= budget) s--;
+      const all = this.cs.shape(c, s);
+      const pts = new Float64Array(2 * all.length + 2);
+      all.forEach((p, j) => { pts[2 * j] = p.x; pts[2 * j + 1] = p.y; });
+      pts[2 * all.length] = all[0].x;
+      pts[2 * all.length + 1] = all[0].y;
+      return { stop: s, pts: all.length > budget ? thin(pts, budget) : pts };
+    });
   }
 
   /** Circuits `ai` and `bi` of the last result lined up, B's level k + offset against A's level k. */
@@ -220,8 +286,9 @@ export type WorkerMessage =
   | { type: 'next' }
   | { type: 'compare'; a: number; b: number }
   | { type: 'picture'; members: readonly number[]; k: number }
-  | { type: 'node'; c: number; sel: Sel; other: number | null }
-  | { type: 'drawing'; c: number; share: number };
+  | { type: 'rows'; members: readonly number[]; k: number }
+  | { type: 'detail'; c: number; level: number; view: Box | null; budget: number }
+  | { type: 'thumbs'; cs: readonly number[]; budget: number };
 
 export interface HarmonicsClient {
   /** Starts a combination afresh. */
@@ -233,9 +300,12 @@ export interface HarmonicsClient {
   /** Two circuits of the last result over their supertiles, A at level k. */
   picture(members: readonly number[], k: number): Promise<ChainPicture>;
   /** A supertile of a circuit of the last result, picked by its visit, with the visit circuit `other` pairs it with. */
-  node(c: number, sel: Sel, other: number | null): Promise<FocusNode>;
-  /** A circuit of the last result as a closed line, runs of tiles within `share` of its radius of gyration as one point. */
-  drawing(c: number, share: number): Promise<Float64Array>;
+  /** Circuits of the last result read row by row (`rows.ts`). */
+  rows(members: readonly number[], k: number): Promise<ChainRows>;
+  /** A circuit of the last result drawn for a view, as fine as its budget allows. */
+  detail(c: number, level: number, view: Box | null, budget: number): Promise<{ stop: number; pts: Float64Array; capped: boolean }>;
+  /** Thumbnails of circuits of the last result. */
+  thumbs(cs: readonly number[], budget: number): Promise<{ stop: number; pts: Float64Array }[]>;
   dispose(): void;
 }
 
@@ -294,13 +364,17 @@ export function createHarmonicsClient(opts: { forceSync?: boolean } = {}): Harmo
       if (!worker) return sync(() => need().picture(members, k));
       return ask({ type: 'picture', members, k });
     },
-    node(c, sel, other) {
-      if (!worker) return sync(() => need().node(c, sel, other));
-      return ask({ type: 'node', c, sel, other });
+    rows(members, k) {
+      if (!worker) return sync(() => need().rows(members, k));
+      return ask({ type: 'rows', members, k });
     },
-    drawing(c, share) {
-      if (!worker) return sync(() => need().drawing(c, share));
-      return ask({ type: 'drawing', c, share });
+    detail(c, level, view, budget) {
+      if (!worker) return sync(() => need().detail(c, level, view, budget));
+      return ask({ type: 'detail', c, level, view, budget });
+    },
+    thumbs(cs, budget) {
+      if (!worker) return sync(() => need().thumbs(cs, budget));
+      return ask({ type: 'thumbs', cs, budget });
     },
     dispose() {
       worker?.terminate();
@@ -308,4 +382,18 @@ export function createHarmonicsClient(opts: { forceSync?: boolean } = {}): Harmo
       waiting.clear();
     },
   };
+}
+
+/** A closed line thinned to about `n` of its points, evenly spaced, still closed. */
+export function thin(pts: Float64Array, n: number): Float64Array {
+  const m = pts.length / 2 - 1;
+  const out = new Float64Array(2 * n + 2);
+  for (let j = 0; j < n; j++) {
+    const i = Math.floor((j * m) / n);
+    out[2 * j] = pts[2 * i];
+    out[2 * j + 1] = pts[2 * i + 1];
+  }
+  out[2 * n] = out[0];
+  out[2 * n + 1] = out[1];
+  return out;
 }

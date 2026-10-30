@@ -26,28 +26,12 @@ const MAX_FILLS = 600;
 const MAX_REST = 120000;
 /** Widths a route is drawn at, by how often it is passed. */
 const WIDTHS = [1.6, 2.6, 3.8];
-/** With `strong`: widths for the bold passes, and the faint ones' width and opacity. */
-const STRONG = [3, 4, 5.2];
-const FAINT = { width: 0.8, alpha: 0.18 };
 let drawings = 0;
 
 const tint = (hex: string, alpha: number): string => {
   const v = parseInt(hex.slice(1), 16);
   return `rgba(${v >> 16},${(v >> 8) & 255},${v & 255},${alpha})`;
 };
-
-/**
- * Passes worked out elsewhere (in a worker, `harmonics/focus.ts`): each
- * pass's line and each child's outline as `bentPass` and `ringOf` give
- * them, and a box round each child.
- */
-export interface DrawnPasses {
-  line(p: Pass): Float64Array;
-  ring(n: number, type: string): Float64Array;
-  box(n: number, type: string): Box;
-}
-
-const isGeometry = (g: Geometry | DrawnPasses): g is Geometry => 'cs' in g;
 
 /** The supertile drawn in: its outline and a box to frame. */
 export interface Frame {
@@ -58,7 +42,7 @@ export interface Frame {
 
 
 export function PassesPane(props: {
-  g: Geometry | DrawnPasses;
+  g: Geometry;
   frame: Frame;
   /** Changes when the view should frame `frame.box` again. */
   fitKey: string;
@@ -69,8 +53,6 @@ export function PassesPane(props: {
   rest?: boolean;
   /** Passes the other side has a match for: drawn faint, the rest bold. */
   matched?: readonly boolean[] | null;
-  /** Draw the bold passes thicker and the faint ones fainter, for a small pane. */
-  strong?: boolean;
   apiRef?: React.MutableRefObject<ViewerApi | null>;
   hovered: number | null;
   onHover: (i: number | null) => void;
@@ -90,7 +72,7 @@ export function PassesPane(props: {
     return [...m.values()];
   }, [passes]);
   const rest = useMemo(() => {
-    if (!props.rest || !isGeometry(g) || kids.length > MAX_FILLS) return [] as [Pt, Pt][];
+    if (!props.rest || kids.length > MAX_FILLS) return [] as [Pt, Pt][];
     const out: [Pt, Pt][] = [];
     for (const p of kids) {
       const T = g.cs.levels[p.level][p.type];
@@ -119,7 +101,7 @@ export function PassesPane(props: {
       points: (i) => {
         if (i < R) return fixedSource(Float64Array.of(rest[i][0].x, rest[i][0].y, rest[i][1].x, rest[i][1].y));
         // straight where that stays inside the child, bent through its own children where not
-        return fixedSource(isGeometry(g) ? bentPass(g, passes[i - R]) : g.line(passes[i - R]));
+        return fixedSource(bentPass(g, passes[i - R]));
       },
       style: (i) => {
         if (i < R) return 0;
@@ -129,18 +111,18 @@ export function PassesPane(props: {
       styles: [
         { color: '--muted', width: 0.8, alpha: 0.35 },
         ...TYPES.flatMap((t) => [
-          ...(props.strong ? STRONG : WIDTHS).map((w) => ({ color: TYPE_STROKE[t], width: w, alpha: 1 })),
-          ...WIDTHS.map((w) => ({ color: TYPE_STROKE[t], ...(props.strong ? FAINT : { width: Math.max(1.2, w - 0.8), alpha: 0.5 }) })),
+          ...WIDTHS.map((w) => ({ color: TYPE_STROKE[t], width: w, alpha: 1 })),
+          ...WIDTHS.map((w) => ({ color: TYPE_STROKE[t], width: Math.max(1.2, w - 0.8), alpha: 0.5 })),
         ]),
       ],
       stop: () => 0,
     };
-  }, [passes, matched, rest, R, most, props.testId, props.strong]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [passes, matched, rest, R, most, props.testId]); // eslint-disable-line react-hooks/exhaustive-deps
   const marks = useMemo(() => {
     const out: Mark[] = [];
     if (kids.length <= MAX_FILLS) {
       for (const p of kids) {
-        const r = isGeometry(g) ? ringOf(g, p.level, p.type).pts : g.ring(p.level, p.type);
+        const r = ringOf(g, p.level, p.type).pts;
         const pts = new Float64Array(r.length);
         for (let i = 0; i < r.length; i += 2) {
           pts[i] = p.x[0] * r[i] + p.x[1] * r[i + 1] + p.x[2];

@@ -22,11 +22,13 @@ scope.onmessage = (event) => {
         ? engine.compare(m.a, m.b)
         : m.type === 'picture'
           ? engine.picture(m.members, m.k)
-          : m.type === 'node'
-            ? engine.node(m.c, m.sel, m.other)
-            : m.type === 'drawing'
-              ? engine.drawing(m.c, m.share)
-              : engine.result();
+          : m.type === 'rows'
+            ? engine.rows(m.members, m.k)
+            : m.type === 'detail'
+                ? engine.detail(m.c, m.level, m.view, m.budget)
+                : m.type === 'thumbs'
+                  ? engine.thumbs(m.cs, m.budget)
+                  : engine.result();
     scope.postMessage({ id: m.id, result });
   } catch (err) {
     scope.postMessage({ id: m.id, error: err instanceof Error ? err.message : String(err) });

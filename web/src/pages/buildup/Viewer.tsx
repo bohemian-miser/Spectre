@@ -10,6 +10,7 @@
  */
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { usePanZoom } from '../../hooks/usePanZoom';
+import type { Pt } from '../../core';
 import type { Box, Camera } from '../../lib/viewport';
 import type { PointSource } from './viewer';
 
@@ -47,6 +48,8 @@ export interface Mark {
 export interface ViewerApi {
   /** Frame a box (y up). */
   fit(box: Box): void;
+  /** Show exactly a box (y up), as large as fits. */
+  show(box: Box): void;
 }
 
 interface Drawn {
@@ -91,13 +94,30 @@ export function Viewer(props: {
   onPick?: (i: number | null) => void;
   tooltip?: (i: number) => string;
   apiRef?: React.MutableRefObject<ViewerApi | null>;
+  /** The box in view (y up), each time the camera moves. */
+  onView?: (view: Box) => void;
+  /** The point under the pointer (y up), or null when it leaves. */
+  onPoint?: (p: Pt | null) => void;
   label: string;
   className?: string;
   children?: ReactNode;
 }): JSX.Element {
   const host = useRef<HTMLDivElement | null>(null);
   const cv = useRef<HTMLCanvasElement | null>(null);
-  const pz = usePanZoom(host, { fitBounds: flip(props.frame), fitKey: props.fitKey, padding: 0.04, minScale: 1e-4, maxScale: 1e5 });
+  const sized = useRef({ width: 0, height: 0 });
+  const viewOf = (c: Camera): Box => {
+    const { width: W, height: H } = sized.current;
+    return { min: { x: -c.x / c.scale, y: (c.y - H) / c.scale }, max: { x: (W - c.x) / c.scale, y: c.y / c.scale } };
+  };
+  const pz = usePanZoom(host, {
+    fitBounds: flip(props.frame),
+    fitKey: props.fitKey,
+    padding: 0.04,
+    minScale: 1e-4,
+    maxScale: 1e5,
+    onCameraChange: (c) => live.current.onView?.(viewOf(c)),
+  });
+  sized.current = pz.size;
   const cam = pz.camera;
   const drawn = useRef<Drawn | null>(null);
   const job = useRef<Drawn | null>(null);
@@ -366,7 +386,7 @@ export function Viewer(props: {
   useEffect(() => () => { job.current = null; clearTimeout(rest.current); cancelAnimationFrame(frameReq.current); frameReq.current = 0; }, []);
 
   useEffect(() => {
-    if (props.apiRef) props.apiRef.current = { fit: (b: Box) => pz.zoomToFit(flip(b), 0.08) };
+    if (props.apiRef) props.apiRef.current = { fit: (b: Box) => pz.zoomToFit(flip(b), 0.08), show: (b: Box) => pz.zoomToFit(flip(b), 0) };
   }, [props.apiRef, pz]);
 
   /** The line nearest a point (css px in the host), within a few pixels. */
@@ -409,6 +429,10 @@ export function Viewer(props: {
       return;
     }
     const p = local(e);
+    if (live.current.onPoint) {
+      const c = camRef.current;
+      live.current.onPoint({ x: (p.x - c.x) / c.scale, y: -(p.y - c.y) / c.scale });
+    }
     const i = nearest(p.x, p.y);
     if (i !== (live.current.hovered ?? null)) live.current.onHover?.(i);
     setTip(i !== null && props.tooltip ? { x: p.x, y: p.y, text: props.tooltip(i) } : null);
@@ -423,7 +447,7 @@ export function Viewer(props: {
         aria-label={props.label}
         role="img"
         onPointerMove={onMove}
-        onPointerLeave={() => { setTip(null); props.onHover?.(null); }}
+        onPointerLeave={() => { setTip(null); props.onHover?.(null); props.onPoint?.(null); }}
         onPointerDown={(e) => { press.current = local(e); }}
         onPointerUp={(e) => {
           const p = local(e);

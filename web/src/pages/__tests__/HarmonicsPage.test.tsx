@@ -2,60 +2,69 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import HarmonicsPage from '../HarmonicsPage';
+import { HarmonicsEngine } from '../harmonics/harmonicsJob';
 
 describe('HarmonicsPage', () => {
   afterEach(cleanup);
 
-  it('lists the default combination to level 6 by family and chain, and lines the chosen chain up', async () => {
+  it('puts every circuit once in a table, a column per level and a row per chain, and opens the chosen row', async () => {
     render(<HarmonicsPage forceSync />);
     await waitFor(() => expect(screen.getByTestId('harm-summary').textContent).toMatch(/^11 distinct circuits in 5 families; 4 chains of two or more/), { timeout: 60000 });
     expect(screen.getByTestId('harm-summary').textContent).toMatch(/Level 2: 3 born, 3 new; Level 4: 4 born, 3 new; Level 6: 4 born, 0 new/);
-    const families = screen.getByTestId('harm-families');
-    expect(families.textContent).toMatch(/Family 147 4 circuits through children 1, 4, 7Chain9 L2→ ×18\.0162 L4→ ×20\.13,258 L6In no chain18 L2/);
-    expect(families.textContent).toMatch(/Family 013467 2 circuits through children 0, 1, 3, 4, 6, 7Chain441 L4→ ×19\.98,784 L6/);
-    // The biggest circuit is picked first, with its chain; its readings from level 2 up are the 441's from level 0 up.
+    // Every circuit once, in the column of its level; the rows are the chains, those of one circuit included.
+    const r = new HarmonicsEngine({ family: 'hex', subset: [0, 2, 3, 4, 6, 8], combo: '000100000', level: 6 }).result();
+    const cells = screen.getAllByTestId('harm-cell');
+    expect(cells.map((c) => Number(c.dataset.circuit)).sort((a, b) => a - b)).toEqual(r.circuits.map((_, i) => i));
+    for (const c of cells) {
+      const i = Number(c.dataset.circuit);
+      expect(Number(c.dataset.level)).toBe(r.circuits[i].level);
+      const td = c.closest('td')!;
+      expect([...td.parentElement!.children].indexOf(td) - 1).toBe(r.circuits[i].level);
+    }
+    const rows = screen.getAllByTestId('harm-table-row').map((row) => row.dataset.members);
+    expect(rows.sort()).toEqual(r.chains.map((ch) => ch.members.join(' ')).sort());
+    // The biggest circuit is chosen first, with its chain; its readings from level 2 up are the 441's from level 0 up.
     const detail = screen.getByTestId('harm-detail');
     expect(detail.querySelector('h2')!.textContent).toBe('A chain of family 013467: 441 L4 → 8,784 L6');
     await waitFor(() => expect(screen.getByTestId('harm-readings').textContent).toContain('the same'), { timeout: 60000 });
-    const rows = [...screen.getByTestId('harm-readings').querySelectorAll('tbody tr')].map((r) => r.textContent!);
-    expect(rows[0]).toMatch(/^5183 → 3/);
-    expect(rows[1]).toMatch(/^3 of the other33 → 3/);
-    expect(rows.filter((r) => r.includes('the same'))).toHaveLength(3);
-    expect(rows.filter((r) => r.includes('differs'))).toHaveLength(1);
+    const lines = [...screen.getByTestId('harm-readings').querySelectorAll('tbody tr')].map((row) => row.textContent!);
+    expect(lines.filter((x) => x.includes('the same'))).toHaveLength(3);
+    expect(lines.filter((x) => x.includes('differs'))).toHaveLength(1);
     expect(screen.getByTestId('harm-extras').textContent).toMatch(/24 extra runs of visits and misses 0 of the 441's tiles/);
-    // The chain over its supertiles: at the top levels the members agree; at the tiles the bigger one's extra visits are marked.
+    // The chain over its supertiles: the members agree at the top levels.
     await waitFor(() => expect(screen.getAllByTestId('harm-side')).toHaveLength(2), { timeout: 10000 });
     expect(screen.getAllByTestId('harm-side')[1].textContent).toMatch(/8,784 L6 at level 5: 183 visits through 6 supertiles/);
     expect(screen.getAllByTestId('harm-step')[0].textContent).toBe('=');
-    fireEvent.change(screen.getByTestId('harm-k'), { target: { value: '0' } });
-    await waitFor(() => expect(screen.getAllByTestId('harm-side')[1].textContent).toMatch(/at level 2: 1,395 visits through 441 supertiles; 72 hold visits its neighbour lacks/), { timeout: 10000 });
-    expect(screen.getAllByTestId('harm-side')[1].querySelectorAll('.harm-st-unshared')).toHaveLength(72);
-    expect(screen.getAllByTestId('harm-step')[0].textContent).toBe('≠');
-    // Chips across the chain: the birth supertiles' children, the back-and-forth runs as one chip each.
-    await waitFor(() => expect(screen.getAllByTestId('harm-row')).toHaveLength(2), { timeout: 10000 });
-    expect(screen.getAllByTestId('harm-row')[1].textContent).toMatch(/^183 visits at level 5; 180 back and forth across seams, in 4 runs the reading cancels/);
-    // Hovering the 8,784's Delta previews it; clicking pins it and the 441's Delta paired with it, and both open a level further.
-    const delta = screen.getAllByTestId('harm-row')[1].querySelector('[data-testid="harm-item"]')!;
+    // The rows of visits: hovering the 8,784's Delta lights its run below and, through the readings, the 441's Delta and its run.
+    fireEvent.change(screen.getByTestId('harm-k'), { target: { value: '2' } });
+    await waitFor(() => expect(screen.getAllByTestId('harm-row')).toHaveLength(4), { timeout: 10000 });
+    const [top441, low441, top8784, low8784] = [0, 2, 1, 3].map((q) => screen.getAllByTestId('harm-row')[q]);
+    expect(top8784.textContent).toMatch(/^level 5 · 183 visits, 180 back and forth/);
+    const delta = [...top8784.querySelectorAll('[data-testid="harm-item"]')].find((x) => x.textContent === 'Delta 1')!;
     fireEvent.mouseEnter(delta);
-    await waitFor(() => expect(screen.getByTestId('harm-pop').textContent).toMatch(/^106 visits at level 4/), { timeout: 10000 });
-    fireEvent.mouseLeave(delta);
-    fireEvent.click(delta);
-    await waitFor(() => expect(screen.getAllByTestId('harm-row')[0].querySelector('.harm-chip-picked')?.textContent).toBe('Delta 1'), { timeout: 10000 });
-    expect(screen.getAllByTestId('harm-row')[1].querySelector('.harm-chip-picked')!.textContent).toBe('Delta 1');
-    await waitFor(() => expect(screen.getAllByTestId('harm-children').map((c) => c.textContent!.split(';')[0])).toEqual(['17 visits at level 2', '106 visits at level 4']), { timeout: 10000 });
-    // Any other circuit can be lined up with the picked one.
-    fireEvent.change(screen.getByTestId('harm-partner'), { target: { value: '5' } });
-    await waitFor(() => expect(screen.getByTestId('harm-readings').textContent).toMatch(/differs/), { timeout: 10000 });
-    fireEvent.click(screen.getAllByRole('button', { name: /^18/ })[0]);
+    await waitFor(() => expect(top441.querySelector('.is-lit')?.textContent).toBe('Delta 1'), { timeout: 10000 });
+    expect(low8784.querySelectorAll('.is-lit').length).toBeGreaterThan(0);
+    expect(low441.querySelectorAll('.is-lit').length).toBeGreaterThan(0);
+    // Shift-click: exactly two circuits compared, and back to the chain.
+    const cellOf = (len: string) => screen.getAllByTestId('harm-cell').find((c) => c.textContent === len)!;
+    fireEvent.click(cellOf('8,784'));
+    fireEvent.click(cellOf('162'), { shiftKey: true });
+    await waitFor(() => expect(screen.getByTestId('harm-pairbar').textContent).toMatch(/^Comparing 162 L4 and 8,784 L6/), { timeout: 10000 });
+    expect(screen.getAllByTestId('harm-cell').filter((c) => c.classList.contains('is-selected')).map((c) => c.textContent)).toEqual(['162', '8,784']);
+    await waitFor(() => expect(screen.getAllByTestId('harm-side')).toHaveLength(2), { timeout: 10000 });
+    fireEvent.click(screen.getByTestId('harm-back'));
+    expect(screen.getByTestId('harm-detail').querySelector('h2')!.textContent).toBe('A chain of family 013467: 441 L4 → 8,784 L6');
+    // A circuit in no chain.
+    fireEvent.click(cellOf('18'));
     expect(screen.getByTestId('harm-detail').querySelector('h2')!.textContent).toBe('18 tiles at level 2, in no chain');
     // One level more adds nothing new at level 7, and the chosen circuit stays chosen.
     fireEvent.click(screen.getByTestId('harm-next'));
     await waitFor(() => expect(screen.getByTestId('harm-summary').textContent).toMatch(/Level 6: 4 born, 0 new\.$/), { timeout: 60000 });
     expect(screen.getByText(/Families and chains of 023468 · 000100000 to level 7/)).toBeTruthy();
     expect(screen.getByTestId('harm-detail').querySelector('h2')!.textContent).toBe('18 tiles at level 2, in no chain');
-  }, 60000);
+  }, 120000);
 
-  it('keeps a family member in no chain with the others apart, with how many top levels it agrees at', async () => {
+  it('keeps a family member in no chain with the others in a row of its own', async () => {
     render(<HarmonicsPage forceSync />);
     await waitFor(() => expect(screen.getByTestId('harm-summary').textContent).toMatch(/^11 distinct circuits/), { timeout: 60000 });
     // 023468-140000001: Delta 1, Theta 4, Gamma 1.
@@ -69,14 +78,15 @@ describe('HarmonicsPage', () => {
     await waitFor(() => expect(screen.getByText(/Families and chains of 023468 · 140000001 to level 6/)).toBeTruthy(), { timeout: 60000 });
     await waitFor(() => expect(screen.getByTestId('harm-summary').textContent).toMatch(/^6 distinct circuits in 2 families; 1 chains of two or more/), { timeout: 60000 });
     // 14,679 at level 6 is the 303's harmonic from level 2 up; the 60 agrees with the 2,079 at the top level only.
-    const families = screen.getByTestId('harm-families').textContent!;
-    expect(families).toMatch(/Chain303 L4→ ×48\.414,679 L6/);
-    expect(families).toMatch(/60 L3agrees with the 2,079 L5 at the top level/);
-    fireEvent.click(screen.getAllByRole('button', { name: /^14,679/ })[0]);
+    const rows = screen.getAllByTestId('harm-table-row');
+    expect(rows.map((r) => r.querySelector('th')!.textContent)).toContain('alone · top 1');
+    const chainRow = rows.find((r) => r.textContent!.includes('303') && r.textContent!.includes('14,679'))!;
+    expect(chainRow.querySelector('th')!.textContent).toBe('chain');
+    fireEvent.click(screen.getAllByTestId('harm-cell').find((c) => c.textContent === '14,679')!);
     await waitFor(() => expect(screen.getByTestId('harm-detail').querySelector('h2')!.textContent).toBe('A chain of family 147: 303 L4 → 14,679 L6'), { timeout: 10000 });
     await waitFor(() => expect(screen.getByTestId('harm-readings').textContent).toMatch(/the same/), { timeout: 30000 });
-    const rows = [...screen.getByTestId('harm-readings').querySelectorAll('tbody tr')].map((r) => r.textContent!);
-    expect(rows.filter((r) => r.includes('the same'))).toHaveLength(2);
-    expect(rows.filter((r) => r.includes('differs'))).toHaveLength(2);
-  }, 60000);
+    const lines = [...screen.getByTestId('harm-readings').querySelectorAll('tbody tr')].map((r) => r.textContent!);
+    expect(lines.filter((r) => r.includes('the same'))).toHaveLength(2);
+    expect(lines.filter((r) => r.includes('differs'))).toHaveLength(2);
+  }, 120000);
 });
