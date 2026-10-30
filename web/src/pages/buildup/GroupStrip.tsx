@@ -125,6 +125,8 @@ interface Item {
   readonly names: readonly HexType[] | null;
   readonly label: string;
   readonly count: string;
+  /** What the count counts. */
+  readonly countTitle?: string;
   readonly pick: HexType | null;
   readonly dim: boolean;
 }
@@ -137,8 +139,14 @@ export function GroupStrip(props: {
   onPick: (t: HexType) => void;
   /** The routes of a followed circuit at this level. */
   use: LevelUse | null;
+  /** Per type, the routes at this level on circuits closing above it (`closedUse`). */
+  closed: ReadonlyMap<HexType, ReadonlySet<number>> | null;
+  /** A followed circuit closing at this level: the types it closes in, and the children's routes it joins. */
+  joins: { types: readonly HexType[]; joined: number; of: number } | null;
+  /** The top level built. */
+  built: number;
 }): JSX.Element {
-  const { g, level, groups, use } = props;
+  const { g, level, groups, use, closed, joins, built } = props;
   const [adds, setAdds] = useState(false);
   const px = typeof window !== 'undefined' && window.innerWidth < 640 ? 200 : 260;
   const items = useMemo((): Item[] => {
@@ -146,17 +154,29 @@ export function GroupStrip(props: {
     const dimOf = (gr: readonly HexType[]) => use !== null && !gr.some((t) => use.byType.has(t));
     // the group's types share one table, so a route counts as used when the circuit takes it in any of them
     const usedOf = (gr: readonly HexType[]) => new Set(gr.flatMap((t) => [...(use?.byType.get(t)?.keys() ?? [])])).size;
+    const pct = (x: number, of: number) => `${of ? Math.round((100 * x) / of) : 0}%`;
     const countOf = (gr: readonly HexType[]) => {
       const all = routesOf(gr[0]);
-      if (!use) return plural(all, 'route');
-      const used = usedOf(gr);
-      return `uses ${used.toLocaleString('en-US')} of ${plural(all, 'route')} (${all ? Math.round((100 * used) / all) : 0}%)`;
+      if (use) {
+        const used = usedOf(gr);
+        return `uses ${nf(used)} of ${plural(all, 'route')} (${pct(used, all)})`;
+      }
+      if (joins && gr.some((t) => joins.types.includes(t))) return `joins ${nf(joins.joined)} of its children's ${plural(joins.of, 'route')} (${pct(joins.joined, joins.of)})`;
+      const used = new Set(gr.flatMap((t) => [...(closed?.get(t) ?? [])])).size;
+      return `${plural(all, 'route')} · ${nf(used)} used (${pct(used, all)})`;
+    };
+    const titleOf = (gr: readonly HexType[]) => {
+      if (use) return `Routes of the table the followed circuit passes through at level ${level}`;
+      if (joins && gr.some((t) => joins.types.includes(t))) return `Routes of the children's tables at level ${level - 1} the followed circuit runs through where it closes`;
+      return level >= built
+        ? `Used: routes on a circuit closing above level ${level}. None is built above it yet.`
+        : `Used: routes on a circuit closing at any of levels ${level + 1}${built > level + 1 ? ` to ${built}` : ''}, in a supertile of any type`;
     };
     if (!adds) {
       return groups.map((gr) => {
         return {
           key: gr.join(), drawing: { type: gr[0], strong: null, use, types: gr }, names: gr, label: `Routes of ${gr.join(', ')}`,
-          count: countOf(gr), pick: gr[0], dim: dimOf(gr),
+          count: countOf(gr), countTitle: titleOf(gr), pick: gr[0], dim: dimOf(gr),
         };
       });
     }
@@ -169,7 +189,7 @@ export function GroupStrip(props: {
       if (!(CORE_TYPES as readonly string[]).includes(gr[0])) {
         out.push({
           key: gr.join(), drawing: { type: gr[0], strong: null, use, types: gr }, names: gr, label: `Routes of ${gr.join(', ')}`,
-          count: `not in the shared routes: ${countOf(gr)}`, pick: gr[0], dim: dimOf(gr),
+          count: `not in the shared routes: ${countOf(gr)}`, countTitle: titleOf(gr), pick: gr[0], dim: dimOf(gr),
         });
         continue;
       }
@@ -180,7 +200,7 @@ export function GroupStrip(props: {
       });
     }
     return out;
-  }, [g, level, groups, use, adds]);
+  }, [g, level, groups, use, closed, joins, built, adds]);
   const refs = useRef<(HTMLCanvasElement | null)[]>([]);
   // one drawing per task, so the page stays responsive while a deep level is drawn
   useEffect(() => {
@@ -212,7 +232,7 @@ export function GroupStrip(props: {
                   {it.names.map((t) => <span key={t} className="bu-name" style={{ background: tileColor(t) }}>{t}</span>)}
                 </span>
               ) : null}
-              <span className="bu-group-count">{it.count}</span>
+              <span className="bu-group-count" title={it.countTitle} data-testid="bu-group-count">{it.count}</span>
             </>
           );
           return it.pick ? (

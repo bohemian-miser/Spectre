@@ -19,7 +19,7 @@ import type { Box } from '../lib/viewport';
 import { CircuitShapes } from './shapes/circuitShapes';
 import { ComboPicker, type ComboChoice } from './shapes/ComboPicker';
 import { closingsByLevel, groupsAt, type Closing } from './buildup/buildup';
-import { circuitUse, type LevelUse } from './buildup/circuitRoutes';
+import { circuitUse, closedUse, joinedRoutes, type LevelUse } from './buildup/circuitRoutes';
 import { GroupStrip } from './buildup/GroupStrip';
 import { PassesPane, type Frame } from './buildup/PassesPane';
 import { Viewer, type Lines, type Mark, type ViewerApi } from './buildup/Viewer';
@@ -292,6 +292,9 @@ export default function BuildUpPage(): JSX.Element {
     return { c, k, passes, frame, counts, line };
   };
   const circuitView = circ && ready && level <= circ.circuit.level;
+  // routes on circuits closing above the level shown, once per level and build
+  const closed = useMemo(() => (ready && level > 0 ? closedUse(now!, level) : null), [ready, now, level, built]); // eslint-disable-line react-hooks/exhaustive-deps
+  const joins = useMemo(() => (circ && ready && level === circ.circuit.level ? { types: [circ.circuit.type as HexType], ...joinedRoutes(now!, circ.circuit) } : null), [circ, ready, now, level]);
   const left = useMemo(() => (circuitView && g ? sideOf(circ!, level) : null), [circuitView, g, circ, level]); // eslint-disable-line react-hooks/exhaustive-deps
   const right = useMemo(() => (circuitView && compare && twin && g ? sideOf(twin, level + twin.circuit.level - circ!.circuit.level) : null),
     [circuitView, compare, twin, g, circ, level]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -372,7 +375,7 @@ export default function BuildUpPage(): JSX.Element {
       {error && <p className="bu-error">{error}</p>}
       {ready && g && level > 0 && (
         <GroupStrip g={g} level={level} groups={groups} type={shownType} onPick={(t) => { setType(t); setRouteSel(null); setHover(null); }}
-          use={circ && level < circ.circuit.level ? useOf(circ)[level] : null} />
+          use={circ && level < circ.circuit.level ? useOf(circ)[level] : null} closed={closed} joins={joins} built={built} />
       )}
 
       <section className="bu-strip" data-testid="bu-circuits">

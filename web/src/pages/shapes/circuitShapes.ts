@@ -220,6 +220,8 @@ export class CircuitShapes {
   private readonly glued = new Map<string, ReturnType<CircuitShapes['glue']>>();
   /** With `keyOf`: how many circuits closed under each key. */
   private readonly copies = new Map<string, number>();
+  /** closed[n][type]: the child crossings of every walk closing in a level-n supertile of `type` (at least `keepAtLeast` tiles), whether `born` keeps it or not. */
+  readonly closed: Map<string, readonly Int32Array[]>[] = [new Map()];
 
   /** How many circuits closed like `c`: with `keyOf`, the copies under its key; otherwise 1. */
   copiesOf(c: BornCircuit): number {
@@ -369,7 +371,7 @@ export class CircuitShapes {
       const built: Built[] = [];
       const rows: Record<string, Int32Array[]> = {};
       const groups = new Map<string, number>();
-      const walked = new Map<number, { built: Built; closing: Omit<BornCircuit, 'type'>[] }>();
+      const walked = new Map<number, { built: Built; closing: Omit<BornCircuit, 'type'>[]; type: string }>();
       const born = (t: string, c: Omit<BornCircuit, 'type'>): void => {
         const b: BornCircuit = { ...c, type: t as TileTypeId };
         if (this.keyOf) {
@@ -385,6 +387,7 @@ export class CircuitShapes {
         }
       };
       const keyOf = new Map<string, number>();
+      const closedHere = new Map<string, readonly Int32Array[]>();
       for (const [t, node] of Object.entries(sys)) {
         const kids = (node as MetaNode).children;
         const childAt = new Int32Array(8).fill(-1);
@@ -408,6 +411,7 @@ export class CircuitShapes {
           rows[t] = rowsOf();
           built.push({ ...done.built, type: t });
           for (const c of done.closing) born(t, c);
+          closedHere.set(t, closedHere.get(done.type)!);
           continue;
         }
         const closing: Omit<BornCircuit, 'type'>[] = [];
@@ -515,8 +519,10 @@ export class CircuitShapes {
             born(t, c);
           }
         }
-        walked.set(group, { built: mine, closing });
+        walked.set(group, { built: mine, closing, type: t });
+        closedHere.set(t, closing.map((c) => Int32Array.from(c.steps)));
       }
+      this.closed.push(closedHere);
       this.rows.push(rows);
       this.groupOf.push(groups);
       this.borders.push(sampleRows(rows));
