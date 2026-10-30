@@ -83,7 +83,7 @@ export class Level {
 }
 
 /** A type's entry where it differs from the common table. */
-interface Own {
+export interface Own {
   readonly mate: number;
   readonly len: number;
   readonly forward: boolean;
@@ -113,6 +113,18 @@ export class Table {
   /** Overrides of the common table. */
   get overrides(): number {
     return this.own.size;
+  }
+
+  /** The overrides, by place. */
+  ownEntries(): Iterable<[number, Own]> {
+    return this.own.entries();
+  }
+
+  /** Places of the level the type does not have. */
+  absent(): number {
+    let had = 0;
+    for (const b of this.present) for (let x = b; x; x &= x - 1) had++;
+    return this.size - had;
   }
 
   has(k: number): boolean {
@@ -196,8 +208,8 @@ export class CircuitShapes {
   readonly born: BornCircuit[] = [];
   /** With `onePerLength`: where each family, level and length sits in `born`. */
   private readonly bornAt = new Map<string, number>();
-  /** The top level's crossings on each edge of each type, in order round the supertile: what the next level is glued by. */
-  private rows: Record<string, Int32Array[]> = {};
+  /** rows[n][type][edge]: a level-n type's places on each edge, in order round the supertile; what level n + 1 is glued by. */
+  private readonly rows: Record<string, Int32Array[]>[] = [{}];
 
   /** The highest level built so far; `extend` adds levels above it. */
   maxLevel = 0;
@@ -224,7 +236,7 @@ export class CircuitShapes {
         mate[edges[a]] = edges[b];
         mate[edges[b]] = edges[a];
       }
-      this.rows[t] = Array.from({ length: 6 }, (_, j) => Int32Array.from(edges.includes(j) ? [j] : []));
+      this.rows[0][t] = Array.from({ length: 6 }, (_, j) => Int32Array.from(edges.includes(j) ? [j] : []));
       const places = Int32Array.from([...edges].sort((x, y) => x - y));
       return {
         type: t,
@@ -338,8 +350,8 @@ export class CircuitShapes {
         // two children glued along an edge meet crossing for crossing, in reverse order
         for (const [a, b] of gluedPairs(t as HexType)) {
           const ca = childAt[a.s], cb = childAt[b.s];
-          const A = this.rows[kids[ca].node.type][a.e];
-          const B = this.rows[kids[cb].node.type][b.e];
+          const A = this.rows[n - 1][kids[ca].node.type][a.e];
+          const B = this.rows[n - 1][kids[cb].node.type][b.e];
           if (A.length !== B.length) throw new Error(`${t} glues ${A.length} crossings to ${B.length}`);
           for (let i = 0, m = A.length; i < m; i++) {
             const x = ca * Q + A[i], y = cb * Q + B[m - 1 - i];
@@ -364,7 +376,7 @@ export class CircuitShapes {
           const row: number[] = [];
           for (const part of edgeParts(t as HexType, j)) {
             const c = childAt[part.s];
-            const on = this.rows[kids[c].node.type][part.e];
+            const on = this.rows[n - 1][kids[c].node.type][part.e];
             for (let q = on.length - 1; q >= 0; q--) row.push(placeOfG[c * Q + on[q]]);
           }
           return Int32Array.from(row);
@@ -449,7 +461,7 @@ export class CircuitShapes {
           }
         }
       }
-      this.rows = rows;
+      this.rows.push(rows);
       this.levels.push(this.share(n, Int32Array.from(under), built, this.placer(n)));
       this.maxLevel = n;
     }
@@ -463,6 +475,11 @@ export class CircuitShapes {
       const step = this.levels[n].Delta.level.under[p];
       return transPt(xform[slotOf(step)], this.levels[n - 1].Delta.level.pts[placeOf(step)]);
     };
+  }
+
+  /** A level-n type's places on each of its six edges, in order round the supertile. */
+  border(n: number, type: string): readonly Int32Array[] {
+    return this.rows[n][type];
   }
 
   /** The child at each slot of a level-n supertile of `type`. */
