@@ -187,6 +187,14 @@ export const SITE_NAV: readonly NavItem[] = Object.freeze([
     blurb: 'Two circuits side by side: drawn, compared through their Fourier terms, and read level by level.',
   },
   {
+    id: 'buildup',
+    label: 'Build-up',
+    short: 'Build-up',
+    entry: 'buildup.html',
+    status: 'ready',
+    blurb: "A combination's supertiles built level by level: every type's border table, and the circuits that close at each level.",
+  },
+  {
     id: 'legacy',
     label: 'Legacy p5 app',
     short: 'Legacy',

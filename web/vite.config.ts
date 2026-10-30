@@ -42,6 +42,7 @@ export default defineConfig({
         shapes: resolve(__dirname, 'shapes.html'),
         harmonics: resolve(__dirname, 'harmonics.html'),
         compare: resolve(__dirname, 'compare.html'),
+        buildup: resolve(__dirname, 'buildup.html'),
         legacy: resolve(__dirname, 'legacy.html'),
         widgets: resolve(__dirname, 'widgets.html'),
       },

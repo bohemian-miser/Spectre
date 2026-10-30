@@ -1,0 +1,32 @@
+.bu-page { display: grid; gap: 22px; padding-block: 16px 48px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.bu-head { display: grid; gap: 10px; max-width: 760px; }
+.bu-head h1 { margin: 0; }
+.bu-head p { margin: 0; }
+.bu-muted { color: var(--muted); }
+.bu-error { color: var(--danger); }
+.bu-levels { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.bu-levels button { padding: 4px 12px; border-radius: 99px; border: 1px solid var(--line); background: var(--panel); color: var(--text); cursor: pointer; }
+.bu-levels button.is-active { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.bu-section { display: grid; gap: 10px; min-width: 0; }
+.bu-section h2 { margin: 0; font-size: 1.15rem; }
+.bu-tables { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
+.bu-table, .bu-circuit { margin: 0; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px; display: grid; gap: 6px; min-width: 0; }
+.bu-table.is-shared { border-color: var(--accent); }
+.bu-table svg, .bu-circuit svg { width: 100%; height: auto; display: block; aspect-ratio: 1; }
+.bu-table figcaption { font-family: var(--mono); font-size: 0.75rem; color: var(--muted); }
+.bu-names { display: flex; flex-wrap: wrap; gap: 4px; }
+.bu-name { font-size: 0.75rem; padding: 1px 8px; border-radius: 99px; border: 1px solid #1d2430; color: #1d2430; }
+.bu-route { fill: none; stroke: var(--accent); stroke-width: 1.4; }
+.bu-route:hover { stroke-width: 3.5; stroke-opacity: 1; }
+.bu-crossing { fill: var(--text); }
+.bu-circuits { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
+.bu-circuit.is-new { border-color: var(--accent); }
+.bu-outline { fill: none; stroke: var(--text); stroke-width: 1; stroke-linejoin: round; }
+.bu-circuit figcaption { display: grid; gap: 2px; font-size: 0.85rem; }
+.bu-circuit figcaption span { color: var(--muted); }
+.bu-summary-table { border-collapse: collapse; font-size: 0.9rem; font-variant-numeric: tabular-nums; }
+.bu-summary-table th, .bu-summary-table td { text-align: left; padding: 4px 14px 4px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+.bu-summary-table .num { text-align: right; }
+.bu-summary-table tbody tr { cursor: pointer; }
+.bu-summary-table tbody tr.is-active { background: var(--panel); font-weight: 600; }
+.bu-canvas { width: 100%; height: auto; display: block; aspect-ratio: 1; }
