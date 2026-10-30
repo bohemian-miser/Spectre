@@ -13,6 +13,8 @@ import { chainRows, CircuitRows, type ChainRows } from './rows';
 import { chainPicture, SUPERTILE_CAP, type ChainPicture } from './pairView';
 import { chainsOf, closestInFamily, harmonicLinks, nearLinks, type Chain, type Link, type Near } from './chains';
 import { alignReadings, extraRuns, readDown, sameCyclic, type Alignment, type Reading } from './readings';
+import { BreakdownStore, type BreakdownSets } from './breakdownStore';
+import type { Side } from './pairView';
 
 export interface HarmonicsJob {
   readonly family: TileFamilyId;
@@ -218,6 +220,20 @@ export class HarmonicsEngine {
     });
   }
 
+  private store: BreakdownStore | null = null;
+
+  /** Circuits of the last result (one, or two compared) read in every placement (`breakdownStore.ts`). */
+  breakdowns(cis: readonly number[]): BreakdownSets {
+    this.store ??= new BreakdownStore(this.job.family, this.job.subset, this.job.combo);
+    return this.store.sets(cis.map((ci) => this.bornOf(ci)), this.cs.maxLevel);
+  }
+
+  /** Breakdown `index` at level k of circuit `ci` of the last result, drawn over its supertiles. */
+  breakdownPicture(ci: number, k: number, index: number): Side {
+    this.store ??= new BreakdownStore(this.job.family, this.job.subset, this.job.combo);
+    return this.store.picture(this.bornOf(ci), this.cs.maxLevel, k, index);
+  }
+
   /** Circuits `ai` and `bi` of the last result lined up, B's level k + offset against A's level k. */
   compare(ai: number, bi: number): Comparison {
     const circuits = this.list();
@@ -288,7 +304,9 @@ export type WorkerMessage =
   | { type: 'picture'; members: readonly number[]; k: number }
   | { type: 'rows'; members: readonly number[]; k: number }
   | { type: 'detail'; c: number; level: number; view: Box | null; budget: number }
-  | { type: 'thumbs'; cs: readonly number[]; budget: number };
+  | { type: 'thumbs'; cs: readonly number[]; budget: number }
+  | { type: 'breakdowns'; cs: readonly number[] }
+  | { type: 'breakdownPicture'; c: number; k: number; index: number };
 
 export interface HarmonicsClient {
   /** Starts a combination afresh. */
@@ -306,6 +324,10 @@ export interface HarmonicsClient {
   detail(c: number, level: number, view: Box | null, budget: number): Promise<{ stop: number; pts: Float64Array; capped: boolean }>;
   /** Thumbnails of circuits of the last result. */
   thumbs(cs: readonly number[], budget: number): Promise<{ stop: number; pts: Float64Array }[]>;
+  /** Circuits of the last result read in every placement, and two compared. */
+  breakdowns(cs: readonly number[]): Promise<BreakdownSets>;
+  /** One breakdown of a circuit of the last result over its supertiles. */
+  breakdownPicture(c: number, k: number, index: number): Promise<Side>;
   dispose(): void;
 }
 
@@ -375,6 +397,14 @@ export function createHarmonicsClient(opts: { forceSync?: boolean } = {}): Harmo
     thumbs(cs, budget) {
       if (!worker) return sync(() => need().thumbs(cs, budget));
       return ask({ type: 'thumbs', cs, budget });
+    },
+    breakdowns(cs) {
+      if (!worker) return sync(() => need().breakdowns(cs));
+      return ask({ type: 'breakdowns', cs });
+    },
+    breakdownPicture(c, k, index) {
+      if (!worker) return sync(() => need().breakdownPicture(c, k, index));
+      return ask({ type: 'breakdownPicture', c, k, index });
     },
     dispose() {
       worker?.terminate();
