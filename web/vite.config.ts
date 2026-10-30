@@ -44,6 +44,7 @@ export default defineConfig({
         compare: resolve(__dirname, 'compare.html'),
         buildup: resolve(__dirname, 'buildup.html'),
         period: resolve(__dirname, 'period.html'),
+        limit: resolve(__dirname, 'limit.html'),
         legacy: resolve(__dirname, 'legacy.html'),
         widgets: resolve(__dirname, 'widgets.html'),
       },

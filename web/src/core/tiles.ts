@@ -188,14 +188,14 @@ export const SUPER_RULES: Readonly<Record<string, readonly string[]>> = {
 };
 
 /**
- * Verbatim port of `buildSupertiles` (sketch.ts:168–233).
+ * The eight shared child transforms of one substitution level (slot 0..7)
+ * and the supertile's key points, from the children's key points `quad`.
  *
  * Every child transform is pre-multiplied by the reflection R, so each
  * substitution level is a mirror image of the previous one — see
  * {@link levelMirror}.
  */
-export function buildSupertiles(sys: TileSystem): TileSystem {
-  const quad = sys['Delta'].quad;
+export function supertileTransforms(quad: readonly Pt[]): { Ts: Affine[]; quad: Pt[] } {
   const R = REFLECT_X;
 
   const Ts: Affine[] = [IDENT];
@@ -221,6 +221,12 @@ export function buildSupertiles(sys: TileSystem): TileSystem {
     transPt(Ts[3], quad[2]),
     transPt(Ts[0], quad[1]),
   ];
+  return { Ts, quad: superQuad };
+}
+
+/** Verbatim port of `buildSupertiles` (sketch.ts:168–233). */
+export function buildSupertiles(sys: TileSystem): TileSystem {
+  const { Ts, quad: superQuad } = supertileTransforms(sys['Delta'].quad);
 
   const ret: Record<string, TileNode> = {};
   for (const [lab, subs] of Object.entries(SUPER_RULES)) {
