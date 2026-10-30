@@ -1,6 +1,6 @@
 /**
  * Gathers the per-combination files of `foundations-sweep.ts` into
- * `public/data/foundations/hex-<rule>/index.json`: per combination, the last
+ * `circuit-classes/data/foundations/hex-<rule>/index.json`: per combination, the last
  * level with a foundational circuit, the foundational circuits, the share of
  * chords still on tails at the top level, the share of the room at each level
  * taken by foundational closings (the part harmonics and repeats do not
@@ -13,7 +13,7 @@ import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const rule = process.argv.slice(2).filter((a) => a !== '--')[0];
-const dir = resolve(__dirname, `../public/data/foundations/hex-${rule}`);
+const dir = resolve(__dirname, `data/foundations/hex-${rule}`);
 
 interface ComboFile {
   combo: string;

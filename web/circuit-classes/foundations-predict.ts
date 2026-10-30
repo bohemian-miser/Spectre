@@ -12,7 +12,7 @@
  *
  *   node --max-old-space-size=12000 node_modules/.bin/vite-node circuit-classes/foundations-predict.ts -- 023468 140000001 11
  *
- * Writes `public/data/foundations/hex-<rule>/<combo>-predicted.json`.
+ * Writes `circuit-classes/data/foundations/hex-<rule>/<combo>-predicted.json`.
  */
 import { writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -106,4 +106,4 @@ for (let n = 2; n + 2 <= L; n++) {
     console.log(`  ${row.fromLength}@${n} ${row.family} -> ${row.predicted ? `${row.predicted.length} tiles, ${row.predicted.steps} steps` : 'none'}: ${row.built}${c ? ` (${c.status})` : ''}, agrees from level ${row.floor} of ${n}`);
   }
 }
-writeFileSync(resolve(__dirname, `../public/data/foundations/hex-${rule}/${combo}-predicted.json`), JSON.stringify({ family: 'hex', rule, combo, floor: FLOOR, levels: L, rows, levelRows }));
+writeFileSync(resolve(__dirname, `data/foundations/hex-${rule}/${combo}-predicted.json`), JSON.stringify({ family: 'hex', rule, combo, floor: FLOOR, levels: L, rows, levelRows }));

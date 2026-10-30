@@ -43,6 +43,7 @@ export default defineConfig({
         harmonics: resolve(__dirname, 'harmonics.html'),
         compare: resolve(__dirname, 'compare.html'),
         buildup: resolve(__dirname, 'buildup.html'),
+        foundations: resolve(__dirname, 'foundations.html'),
         period: resolve(__dirname, 'period.html'),
         legacy: resolve(__dirname, 'legacy.html'),
         widgets: resolve(__dirname, 'widgets.html'),
