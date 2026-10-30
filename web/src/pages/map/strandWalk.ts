@@ -120,15 +120,6 @@ const CELL = 2;
 export const TRACE_MAX_INSTANCES = 200_000;
 
 /**
- * Points an UN-windowed trail holds before it stops growing (~240 MB of
- * doubles, plus the f32 render copy) — a memory backstop, not a length limit.
- * A walk given a `hold` window (see {@link AdvanceOptions}) trims itself
- * instead and never stops for size: its memory is bounded by the window, so
- * its length is unbounded.
- */
-export const TRAIL_MAX_POINTS = 10_000_000;
-
-/**
  * Steps one {@link advanceWalk} call takes before handing control back.
  * Panning across a wide view can legitimately expose tens of thousands of new
  * chords at once; this only bounds a single call, and a `'walking'` result asks
@@ -502,8 +493,7 @@ export const TRANSITION_TYPES = LEAF_ORDER.length;
  *                  next tile contributes no chord (an odd tile — the
  *                  tile-granularity tails invalid rules leave), not that we ran
  *                  out of map;
- *  - `junction`  — three or more strand ends met, so there is no single way on;
- *  - `full`      — the trail hit {@link TRAIL_MAX_POINTS}.
+ *  - `junction`  — three or more strand ends met, so there is no single way on.
  */
 export type WalkStatus =
   | 'walking'
@@ -511,12 +501,11 @@ export type WalkStatus =
   | 'offscreen'
   | 'closed'
   | 'end'
-  | 'junction'
-  | 'full';
+  | 'junction';
 
 /** True once the walk can never advance again, whatever the camera does. */
 export function isTerminal(status: WalkStatus): boolean {
-  return status === 'closed' || status === 'end' || status === 'junction' || status === 'full';
+  return status === 'closed' || status === 'end' || status === 'junction';
 }
 
 /**
@@ -538,8 +527,6 @@ export function describeWalk(status: WalkStatus): string {
       return 'strand ends here';
     case 'junction':
       return 'stopped at a junction';
-    case 'full':
-      return 'length limit reached';
   }
 }
 
@@ -795,9 +782,8 @@ export interface AdvanceOptions {
   /**
    * Moving-window size, in points. With it set the walk trims itself down to
    * the window as it goes (amortized — a trim runs every quarter-window of
-   * appends, never per step) and NEVER reports `'full'`: bounded memory buys
-   * unbounded length. Without it the trail grows until
-   * {@link TRAIL_MAX_POINTS} and stops there — the memory backstop.
+   * appends, never per step), so its memory is bounded by the window. Without
+   * it the trail keeps every point it passes, as many as memory holds.
    */
   readonly hold?: number | null;
 }
@@ -829,12 +815,7 @@ export function advanceWalk(
   const eps2 = closeEps * closeEps;
 
   for (let step = 0; step < maxSteps; step++) {
-    if (hold != null) {
-      if (trail.count >= trimAt) trimTrail(trail, hold);
-    } else if (trail.count >= TRAIL_MAX_POINTS) {
-      trail.status = 'full';
-      return trail;
-    }
+    if (hold != null && trail.count >= trimAt) trimTrail(trail, hold);
     const cont = continuationAt(index, trail.head, trail.prev);
     if (cont.kind === 'junction') {
       trail.status = 'junction';

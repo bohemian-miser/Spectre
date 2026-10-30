@@ -755,37 +755,59 @@ export class CircuitShapes {
   }
 
   /**
-   * A born circuit as a closed polyline through `samples` of its tiles, the
-   * crossing it enters each by (the points `shape(c, 0)` draws), at tiles
-   * round(j L / n). Arcs holding no sampled tile are passed over by their
-   * tile counts, so the work grows with the samples, not the circuit.
+   * A born circuit as a closed polyline at a resolution: its tiles cut into
+   * runs of consecutive tiles, each run as long as its chord midpoints stay
+   * within `share` of the circuit's radius of gyration (root mean square,
+   * about the run's mean), and each run drawn at its mean. Taken from the arc
+   * sums (`arcSums`): an arc whose tiles already fit joins the run whole, so
+   * the tiles are never listed and a circuit gives about as many points at a
+   * share as any other.
    */
-  sampled(c: BornCircuit, samples: number): Pt[] {
-    const n = Math.min(c.length, samples);
-    const out: Pt[] = [];
-    let passed = 0;
-    let next = 0;
-    const visit = (lvl: number, type: string, k: number, x: Affine): void => {
-      const T = this.levels[lvl][type];
-      if (out.length === n || passed + T.len(k) <= next) {
-        passed += T.len(k);
-        return;
+  coarse(c: BornCircuit, share: number): { pts: Pt[]; tiles: number[] } {
+    const all = this.circuitSums(c);
+    const r2 = (share * share * (all[3] + all[5])) / all[0];
+    const pts: Pt[] = [];
+    const tiles: number[] = [];
+    // the run so far: tiles, mean, sum of squared distances from the mean
+    let n = 0, mx = 0, my = 0, m2 = 0;
+    const join = (bn: number, bx: number, by: number, bm2: number): void => {
+      if (n > 0) {
+        const t = n + bn, dx = bx - mx, dy = by - my;
+        const m = m2 + bm2 + ((n * bn) / t) * (dx * dx + dy * dy);
+        if (m <= r2 * t) {
+          mx += (dx * bn) / t;
+          my += (dy * bn) / t;
+          m2 = m;
+          n = t;
+          return;
+        }
+        pts.push({ x: mx, y: my });
+        tiles.push(n);
       }
-      if (lvl === 0) {
-        out.push(transPt(x, T.pts[k]));
-        passed++;
-        next = Math.round((out.length * c.length) / n);
+      n = bn;
+      mx = bx;
+      my = by;
+      m2 = bm2;
+    };
+    const visit = (lvl: number, type: string, k: number, x: Affine): void => {
+      const o = this.arcSums(lvl, type, k);
+      const P = this.sumPool;
+      const [a, b, tx, d, e, ty] = x;
+      const bm2 = (a * a + d * d) * P[o + 3] + 2 * (a * b + d * e) * P[o + 4] + (b * b + e * e) * P[o + 5];
+      if (lvl === 0 || bm2 <= r2 * P[o]) {
+        join(P[o], a * P[o + 1] + b * P[o + 2] + tx, d * P[o + 1] + e * P[o + 2] + ty, bm2);
         return;
       }
       const kids = this.kidsAt(lvl, type);
-      for (const e of this.enters(lvl, type, k)) visit(lvl - 1, e.type, e.k, mul(x, kids[e.slot].xform as Affine));
+      for (const en of this.enters(lvl, type, k)) visit(lvl - 1, en.type, en.k, mul(x, kids[en.slot].xform as Affine));
     };
     for (const s of c.steps) {
-      if (out.length === n) break;
       const ch = this.childOf(c.level, c.type, s);
       visit(c.level - 1, ch.type, ch.k, ch.xform);
     }
-    return out;
+    pts.push({ x: mx, y: my });
+    tiles.push(n);
+    return { pts, tiles };
   }
 }
 

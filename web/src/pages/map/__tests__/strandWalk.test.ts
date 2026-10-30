@@ -40,7 +40,6 @@ import {
   ADVANCE_MAX_STEPS,
   MAX_CHORD_REACH,
   TRACE_MAX_INSTANCES,
-  TRAIL_MAX_POINTS,
   WELD_EPSILON,
   advanceWalk,
   buildChordIndex,
@@ -357,20 +356,6 @@ describe('walking a strand', () => {
     expect(ADVANCE_MAX_STEPS).toBeGreaterThan(1000);
   });
 
-  it('stops growing at the trail cap rather than eating the tab', () => {
-    const table = tableFor(OPEN_SUBSET, OPEN_COMBO);
-    const view = rect(20);
-    const cut = cutFor(view);
-    const index = buildChordIndex(cut, table);
-    const trail = startTrail(hitTestChord(index!, { x: 0, y: 0 }, 5)!);
-    trail.count = TRAIL_MAX_POINTS; // a walk that has been fed for a very long time
-
-    advanceWalk(trail, index, { covered: view });
-    expect(trail.status).toBe('full');
-    expect(isTerminal(trail.status)).toBe(true);
-    expect(trail.count).toBe(TRAIL_MAX_POINTS);
-  });
-
   it('will not call an end on a truncated cut', () => {
     // `covered: null` is what the canvas passes when the engine hit its
     // instance cap: the cut has holes, so a missing chord proves nothing.
@@ -492,7 +477,6 @@ describe('describeWalk', () => {
       'closed',
       'end',
       'junction',
-      'full',
     ];
     const said = all.map(describeWalk);
     expect(said.every((s) => s.length > 0)).toBe(true);
@@ -660,32 +644,21 @@ describe('trimTrail', () => {
   });
 });
 
-describe('hold window vs the memory backstop', () => {
-  it('a walk with a hold window never reports full — it trims and keeps going', () => {
+describe('hold window', () => {
+  it('a walk with a hold window trims and keeps going', () => {
     const table = tableFor(OPEN_SUBSET, OPEN_COMBO);
     const view = rect(60, 40);
     const index = buildChordIndex(cutFor(view), table)!;
     const trail = startTrail(hitTestChord(index, { x: 0, y: 0 }, 5)!);
-    // Same trick the 'full' test uses: pretend the buffer already sits at the
-    // backstop. Un-windowed, the very next advance stops with 'full'; with a
-    // window it must trim down and carry on walking instead.
-    trail.count = TRAIL_MAX_POINTS;
+    // Pretend the walk has been fed for a very long time; the window must
+    // trim it down and carry on walking.
+    const long = 10_000_000;
+    trail.count = long;
     advanceWalk(trail, index, { covered: view, hold: 64 });
-    expect(trail.status).not.toBe('full');
     expect(['walking', 'frontier', 'closed', 'end']).toContain(trail.status);
     // Memory stayed bounded by the window (plus the amortization slack).
     expect(trail.count).toBeLessThan(64 + 1024 + ADVANCE_MAX_STEPS);
-    expect(trail.count).toBeLessThan(TRAIL_MAX_POINTS / 100);
-  });
-
-  it('without a window the backstop still applies', () => {
-    const table = tableFor(OPEN_SUBSET, OPEN_COMBO);
-    const view = rect(20);
-    const index = buildChordIndex(cutFor(view), table)!;
-    const trail = startTrail(hitTestChord(index, { x: 0, y: 0 }, 5)!);
-    trail.count = TRAIL_MAX_POINTS;
-    advanceWalk(trail, index, { covered: view });
-    expect(trail.status).toBe('full');
+    expect(trail.count).toBeLessThan(long / 100);
   });
 });
 
