@@ -20,7 +20,6 @@ import { CircuitShapes } from './shapes/circuitShapes';
 import { ComboPicker, type ComboChoice } from './shapes/ComboPicker';
 import { closingsByLevel, groupsAt, type Closing } from './buildup/buildup';
 import { circuitUse, type LevelUse } from './buildup/circuitRoutes';
-import { CORE_TYPES, coreRoutes, extraRoutes } from './buildup/routes';
 import { GroupStrip } from './buildup/GroupStrip';
 import { PassesPane, type Frame } from './buildup/PassesPane';
 import { Viewer, type Lines, type Mark, type ViewerApi } from './buildup/Viewer';
@@ -81,7 +80,6 @@ export default function BuildUpPage(): JSX.Element {
   const [type, setType] = useState<HexType>('Delta');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [differs, setDiffers] = useState(false);
   const [circ, setCirc] = useState<Closing | null>(null);
   const [routeSel, setRouteSel] = useState<number | null>(null);
   const [hover, setHover] = useState<number | null>(null);
@@ -194,18 +192,11 @@ export default function BuildUpPage(): JSX.Element {
   const logMax = rs && rs.tiles.length ? Math.log(rs.tiles[rs.tiles.length - 1]) : 0;
   const shadeOf = (tiles: number) => (logMax > 0 ? Math.min(SHADES - 1, Math.floor((Math.log(tiles) / logMax) * SHADES)) : SHADES - 1);
 
-  const core = useMemo(() => (ready && differs ? coreRoutes(now!, level) : null), [ready, now, level, differs]);
-  const extras = useMemo(() => (core ? extraRoutes(now!, level, shownType, core) : null), [core, now, level, shownType]);
-  const isExtra = useMemo(() => {
-    if (!extras || !rs) return null;
-    const at = new Set(extras.map((r) => r[0]));
-    return Array.from(rs.from, (k) => at.has(k));
-  }, [extras, rs]);
 
   const routeLines: Lines | null = useMemo(() => {
     if (!g || !rs) return null;
     return {
-      key: `${choice.combo} ${level} ${shownType} ${isExtra ? 'core' : ''}`,
+      key: `${choice.combo} ${level} ${shownType}`,
       count: rs.from.length,
       points: (i, stop, view, edge) => g.source(level, shownType, rs.from[i], IDENTITY, stop, view, edge),
       // next to the outline, down to children under two pixels across, as the outline's own crossings are
@@ -214,18 +205,15 @@ export default function BuildUpPage(): JSX.Element {
         while (s + 1 < span.length && span[s + 1] * scale < 2) s++;
         return s;
       },
-      style: (i) => (isExtra?.[i] ? SHADES : shadeOf(rs.tiles[i])),
-      styles: [
-        ...Array.from({ length: SHADES }, (_, s) => ({
-          color: '--accent',
-          width: 0.7 + (0.9 * s) / (SHADES - 1),
-          alpha: (isExtra ? 0.3 : 1) * (0.32 + (0.68 * s) / (SHADES - 1)),
-        })),
-        { color: '--danger', width: 2.2, alpha: 1 },
-      ],
+      style: (i) => shadeOf(rs.tiles[i]),
+      styles: Array.from({ length: SHADES }, (_, s) => ({
+        color: '--accent',
+        width: 0.7 + (0.9 * s) / (SHADES - 1),
+        alpha: 0.32 + (0.68 * s) / (SHADES - 1),
+      })),
       stop: (scale, inView) => chooseStop(perStop, Math.min(1, 3 * inView), BUDGET, (s) => scale * span[s]),
     };
-  }, [g, rs, perStop, span, choice.combo, level, shownType, isExtra]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [g, rs, perStop, span, choice.combo, level, shownType]); // eslint-disable-line react-hooks/exhaustive-deps
   const routeMarks = useMemo(() => {
     if (!now || !ready) return () => [];
     // the outline through every crossing on the border, as fine as the routes beside it are drawn
@@ -235,12 +223,10 @@ export default function BuildUpPage(): JSX.Element {
   const selRoute = routeSel !== null && rs ? rs.from.indexOf(routeSel) : -1;
   const highlight = useMemo(() => {
     const out: { i: number; color: string; width: number }[] = [];
-    // a type's extras drawn again on top, so even a short one shows
-    if (isExtra && isExtra.filter(Boolean).length <= 2000) isExtra.forEach((x, i) => { if (x) out.push({ i, color: '--danger', width: 2.5 }); });
     if (selRoute >= 0) out.push({ i: selRoute, color: '--danger', width: 3 });
     if (hover !== null && hover !== selRoute) out.push({ i: hover, color: '--text', width: 2.5 });
     return out;
-  }, [selRoute, hover, isExtra]);
+  }, [selRoute, hover]);
   const routeInfo = useMemo(() => {
     if (!g || !T || routeSel === null || level === 0) return null;
     const steps = g.enters(level, shownType, routeSel);
@@ -254,12 +240,11 @@ export default function BuildUpPage(): JSX.Element {
     return { steps: steps.length, children: seen, box: (slot: number, t: string) => mapBox(kx[slot], g.box(level - 1, t)) };
   }, [g, T, routeSel, level, shownType]);
 
-  // every route of the supertile as its children's routes (with the toggle, only the routes beyond the core)
+  // every route of the supertile as its children's routes
   const allPasses = useMemo(() => {
     if (!g || !now || !ready || level === 0 || mode !== 'children') return null;
-    const from = differs && extras ? extras.filter((r) => r[1] >= 0).map((r) => r[0]) : Array.from(routeSet(now, level, shownType).from);
-    return from.flatMap((k) => routePasses(g, level, shownType, k));
-  }, [g, now, ready, level, shownType, mode, differs, extras]);
+    return Array.from(routeSet(now, level, shownType).from).flatMap((k) => routePasses(g, level, shownType, k));
+  }, [g, now, ready, level, shownType, mode]);
 
   // ---- a selected circuit, level by level ----
   const twin = useMemo(() => {
@@ -365,10 +350,6 @@ export default function BuildUpPage(): JSX.Element {
         </div>
         {!circuitView && (
           <>
-            <label className="bu-check">
-              <input type="checkbox" checked={differs} onChange={(e) => setDiffers(e.target.checked)} data-testid="bu-differs" />
-              What each type adds to the shared routes
-            </label>
             <div className="bu-toggle" role="group" aria-label="Drawing">
               <button type="button" aria-pressed={showing === 'children'} className={showing === 'children' ? 'is-active' : ''} disabled={level === 0} onClick={() => setMode('children')} data-testid="bu-mode-children">Built from children</button>
               <button type="button" aria-pressed={showing === 'paths'} className={showing === 'paths' ? 'is-active' : ''} onClick={() => setMode('paths')} data-testid="bu-mode-paths">Strand paths</button>
@@ -463,7 +444,6 @@ export default function BuildUpPage(): JSX.Element {
                   Built from its children's route tables alone, glued at the crossings they share: each child filled in its type's colour, each line one of its routes, straight from where the strand enters the child to where it leaves. Pick a circuit below to follow it down the levels.
                 </p>
                 {group.length > 1 && <p className="bu-muted">{shownType} has the same routes as {group.filter((t) => t !== shownType).join(', ')}.</p>}
-                {extras && core && <p className="bu-muted" data-testid="bu-extras">{shownType}: {nf(extras.length)} {extras.length === 1 ? 'route' : 'routes'} beyond the {nf(core.length)} all types but Gamma share; only those are drawn.</p>}
               </>
             ) : routeSel !== null && T && routeInfo ? (
               <>
@@ -484,11 +464,6 @@ export default function BuildUpPage(): JSX.Element {
                 <p className="bu-muted">
                   {group.length > 1 ? `The same routes as ${group.filter((t) => t !== shownType).join(', ')}. ` : ''}Drag to move, scroll or pinch to zoom; point at a route to read it, click to select it.
                 </p>
-                {extras && core && (
-                  <p className="bu-muted" data-testid="bu-extras">
-                    <span className="bu-swatch is-danger" /> {shownType}: {nf(extras.length)} {extras.length === 1 ? 'route' : 'routes'} beyond the {nf(core.length)} routes all types but Gamma share{(CORE_TYPES as readonly string[]).includes(shownType) ? '' : ' (Gamma is not one of them)'}; those {nf(core.length)} drawn faint.
-                  </p>
-                )}
               </>
             )}
           </aside>
