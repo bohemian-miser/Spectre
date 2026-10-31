@@ -1,7 +1,7 @@
 /**
- * `ViewportTools` — the button cluster pinned to the viewport's top-right
- * corner: start/stop following the traced strand, show/hide the stats
- * overlay, record, and fullscreen. It lives
+ * `ViewportTools` — the row along the top of the viewport: record, show/hide
+ * the stats overlay, fullscreen, follow the traced strand, then the page's
+ * own tools. It lives
  * INSIDE the `InfiniteCanvas` host on purpose: the Fullscreen API displays
  * only the fullscreen element's subtree, so any control that must survive
  * going fullscreen (starting and above all STOPPING a take) has to be in
@@ -43,7 +43,7 @@ export interface ViewportToolsProps {
   /** Whether the camera follows the traced strand, shown as a toggle when `onToggleFollow` is given. */
   readonly followOn?: boolean;
   onToggleFollow?(): void;
-  /** The page's own tools, first in the row (they wrap with the buttons). */
+  /** The page's own tools, after the buttons in the row. */
   readonly children?: React.ReactNode;
 }
 
@@ -87,29 +87,6 @@ export function ViewportTools(props: ViewportToolsProps): JSX.Element {
       onPointerUp={swallow}
       onClick={swallow}
     >
-      {props.children}
-      {onToggleFollow ? (
-        <button
-          type="button"
-          data-testid="tools-follow"
-          aria-pressed={followOn ?? false}
-          title="Start or stop the camera following the traced strand"
-          onClick={onToggleFollow}
-        >
-          {followOn ? '■ Stop follow' : '▶ Follow'}
-        </button>
-      ) : null}
-      {onToggleHud ? (
-        <button
-          type="button"
-          data-testid="tools-stats"
-          aria-pressed={hudShown ?? true}
-          title="Show or hide the stats overlay"
-          onClick={onToggleHud}
-        >
-          {(hudShown ?? true) ? 'Hide stats' : 'Show stats'}
-        </button>
-      ) : null}
       <button
         type="button"
         className={rec.recording ? 'is-recording' : undefined}
@@ -120,6 +97,17 @@ export function ViewportTools(props: ViewportToolsProps): JSX.Element {
       >
         {compactRecordingLabel(rec.recording, rec.elapsed)}
       </button>
+      {onToggleHud ? (
+        <button
+          type="button"
+          data-testid="tools-stats"
+          aria-pressed={hudShown ?? true}
+          title="Show or hide the stats overlay"
+          onClick={onToggleHud}
+        >
+          Stats
+        </button>
+      ) : null}
       {fullscreenEnabled() ? (
         <button
           type="button"
@@ -131,6 +119,13 @@ export function ViewportTools(props: ViewportToolsProps): JSX.Element {
           {isFull ? 'Exit full screen' : 'Full screen'}
         </button>
       ) : null}
+      {onToggleFollow ? (
+        <label className="viewport-tools-check" title="Keep the camera on the traced strand">
+          <input type="checkbox" data-testid="tools-follow" checked={followOn ?? false} onChange={onToggleFollow} />
+          Follow
+        </label>
+      ) : null}
+      {props.children}
       {isFull && rec.note ? (
         <span className="viewport-tools-note" role="status">
           {rec.note}
