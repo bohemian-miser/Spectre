@@ -46,6 +46,7 @@ export default defineConfig({
         foundations: resolve(__dirname, 'foundations.html'),
         period: resolve(__dirname, 'period.html'),
         limit: resolve(__dirname, 'limit.html'),
+        identify: resolve(__dirname, 'identify.html'),
         legacy: resolve(__dirname, 'legacy.html'),
         widgets: resolve(__dirname, 'widgets.html'),
       },
