@@ -478,26 +478,6 @@
 .fd-col-forecast rect:not(.fd-hit) {
   opacity: 0.55;
 }
-.fd-expected {
-  stroke: var(--text);
-  stroke-width: 2;
-  stroke-dasharray: 3 2;
-}
-.fd-limit {
-  stroke: var(--text);
-  stroke-width: 1;
-  stroke-dasharray: 6 3;
-}
-.fd-legend i.fd-key-line {
-  width: 14px;
-  height: 0;
-  border-radius: 0;
-  border-top: 2px dashed var(--text);
-  vertical-align: 3px;
-}
-.fd-legend i.fd-key-limit {
-  border-top-width: 1px;
-}
 .fd-tails {
   display: flex;
   flex-wrap: wrap;
