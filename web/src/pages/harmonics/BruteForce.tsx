@@ -27,7 +27,7 @@ function describeResult(r: BruteResult): string {
   const work = `${nf(r.tried)} arc${r.tried === 1 ? '' : 's'} followed through ${through}; ${nf(r.work.calls)} routes worked out above level ${BASE}, in ${secs(r.seconds)}.`;
   if (f) {
     const reads = f.limited && f.agreed > r.floor ? `from level ${f.agreed} up, as far down as both were read` : `from level ${f.agreed} up`;
-    return `Level ${r.level}: a ${nf(f.length)}-tile circuit of family ${f.family} closes in the ${r.type}, reading as the ${nf(fromLength)} two levels down ${reads}; key ${f.key}. ${work}`;
+    return `Level ${r.level}: a ${nf(f.length)}-tile circuit of family ${f.family} closes in the ${r.type}, reading as the ${nf(fromLength)} two levels down ${reads}; ${f.key.includes('/') ? 'place' : 'word'} key ${f.key}. ${work}`;
   }
   const others = r.others.length ? ` Closed there instead: ${r.others.map((o) => `${nf(o.length)} (family ${o.family})`).join(', ')}.` : '';
   const beyond = r.beyond.length ? ` The ${r.open} walks that leave it close at ${r.beyond.map((b) => `level ${b.level} (${nf(b.length)})`).join(', ')}.` : r.open ? ` ${nf(r.open)} walks leave it.` : '';

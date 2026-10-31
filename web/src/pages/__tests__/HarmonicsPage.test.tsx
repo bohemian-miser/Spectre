@@ -101,7 +101,7 @@ describe('HarmonicsPage', () => {
     expect([...row.children].indexOf(td) - 1).toBe(8);
     fireEvent.click(go);
     await waitFor(() => expect(row.querySelector('[data-testid="harm-brute-done"]')?.textContent).toBe('✓175,221'), { timeout: 60000 });
-    expect(screen.getByTestId('harm-brute-note').textContent).toMatch(/Level 8: a 175,221-tile circuit of family 013467 closes in the Delta, reading as the 8,784 two levels down from level 1 up/);
+    expect(screen.getByTestId('harm-brute-note').textContent).toMatch(/Level 8: a 175,221-tile circuit of family 013467 closes in the Delta, reading as the 8,784 two levels down from level 1 up; word key/);
     // the next one along, two levels further
     const next = row.querySelector<HTMLButtonElement>('[data-testid="harm-brute"]')!;
     expect([...row.children].indexOf(next.closest('td')!) - 1).toBe(10);
