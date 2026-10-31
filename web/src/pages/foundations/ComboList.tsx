@@ -7,9 +7,9 @@ type SortKey = 'combo' | 'floor' | 'lastNew' | 'found' | 'largest' | 'monsters' 
 
 const COLUMNS: readonly { key: SortKey; label: string; title: string }[] = [
   { key: 'combo', label: 'Combination', title: 'Combination digits' },
-  { key: 'floor', label: 'Floor', title: 'Floor' },
-  { key: 'lastNew', label: 'Last', title: 'Last level with a foundational circuit' },
-  { key: 'found', label: 'Found.', title: 'Foundational circuits' },
+  { key: 'floor', label: 'First', title: 'Level the first circuit closes at (the floor)' },
+  { key: 'lastNew', label: 'Last new', title: 'Level the last foundational circuit first closes at' },
+  { key: 'found', label: 'Foundational', title: 'Foundational circuits' },
   { key: 'largest', label: 'Largest', title: 'Tiles of the largest foundational circuit' },
   { key: 'monsters', label: '', title: 'Monsters' },
   { key: 'flags', label: '⚑', title: 'Flags' },
@@ -94,7 +94,7 @@ export function ComboList(props: { rows: readonly IndexRow[]; selected: string |
           data-testid="fd-search"
         />
         <label>
-          Floor
+          First
           <select value={filters.floor ?? ''} onChange={(e) => set({ floor: e.target.value ? Number(e.target.value) : null })}>
             <option value="">any</option>
             {floors.map((f) => (
@@ -105,7 +105,7 @@ export function ComboList(props: { rows: readonly IndexRow[]; selected: string |
           </select>
         </label>
         <label>
-          Last
+          Last new
           <select value={filters.lastNew ?? ''} onChange={(e) => set({ lastNew: e.target.value ? Number(e.target.value) : null })} aria-label="Last foundational level">
             <option value="">any</option>
             {lasts.map((f) => (
@@ -150,7 +150,7 @@ export function ComboList(props: { rows: readonly IndexRow[]; selected: string |
             aria-selected={r.combo === props.selected}
             className="fd-row"
             onClick={() => props.onSelect(r.combo)}
-            title={`floor ${r.floor}, last foundational level ${r.lastNew}, ${r.found} foundational circuits, largest ${r.largest.toLocaleString('en-US')} tiles${r.misses ? `, ${r.misses} missed predictions` : ''}`}
+            title={`first circuit at level ${r.floor}, last new foundational circuit at level ${r.lastNew}, ${r.found} foundational circuits, largest ${r.largest.toLocaleString('en-US')} tiles${r.misses ? `, ${r.misses} missed predictions` : ''}`}
           >
             <span className="fd-digits">{r.combo}</span>
             <span>{r.floor}</span>

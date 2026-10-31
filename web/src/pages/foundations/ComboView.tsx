@@ -139,10 +139,10 @@ export function ComboView(props: { data: PageCombo; client: DrawClient; brute: C
         </h2>
         <p className="fd-summary" data-testid="fd-summary">
           <span>
-            Floor <b>{data.floor}</b>
+            First circuit at level <b>{data.floor}</b>
           </span>
           <span>
-            Last foundational level <b>{data.lastNew}</b>
+            Last new foundational circuit at level <b>{data.lastNew}</b>
           </span>
           <span>
             <b>{data.found.length}</b> foundational circuits: <b>{data.found.filter(([id]) => withChains.has(id)).length}</b> chains,{' '}

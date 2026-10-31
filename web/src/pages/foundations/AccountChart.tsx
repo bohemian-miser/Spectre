@@ -9,7 +9,7 @@
  * gives each segment's share.
  */
 import { Fragment, useMemo, useState } from 'react';
-import { account, expectedTails, STOP_TEXT, type PageCombo, type Split } from './pageData';
+import { account, STOP_TEXT, type PageCombo, type Split } from './pageData';
 import { pct } from './data';
 
 const H = 150;
@@ -42,10 +42,6 @@ export function AccountChart(props: { data: PageCombo }): JSX.Element {
   const W = xOf(columns.length - 1) + COL + 4;
   const y = (share: number): number => TOP + H * (1 - share);
   const shown = hover ?? top;
-  const exp = useMemo(() => expectedTails(data), [data]);
-  // the next members' first closings forecast from the top level (`expectedTails`), drawn into the top column's tails from below
-  const mark = 1 - data.tails[top] + exp.expected;
-  const limit = Math.min(1, pr.limit);
   const name = (root: number): string => {
     const f = data.found.find((x) => x[0] === root);
     return f ? `the chain of ${f[2].toLocaleString('en-US')} at level ${f[1]}` : `chain ${root}`;
@@ -73,12 +69,6 @@ export function AccountChart(props: { data: PageCombo }): JSX.Element {
             <i className={classOf(s.key)} /> {s.label}
           </span>
         ))}
-        <span title={`the next members of the known chains, where each first closes, forecast from level ${top} as two levels below forecast the build`}>
-          <i className="fd-key-line" /> Next harmonics, forecast
-        </span>
-        <span>
-          <i className="fd-key-line fd-key-limit" /> Limit
-        </span>
       </div>
       <div className="fd-chart-body">
         <svg
@@ -118,12 +108,6 @@ export function AccountChart(props: { data: PageCombo }): JSX.Element {
               </g>
             );
           })}
-          <line x1={xOf(top) + 3} x2={xOf(top) + COL - 3} y1={y(mark)} y2={y(mark)} className="fd-expected">
-            <title>{`the next members' first closings, forecast from level ${top}: ${pct(exp.expected)} of the chords`}</title>
-          </line>
-          <line x1={xOf(top + 1)} x2={W - 2} y1={y(limit)} y2={y(limit)} className="fd-limit" data-testid="fd-limit">
-            <title>{`the limit: ${pct(pr.limit)} of the chords on known circuits`}</title>
-          </line>
         </svg>
         <div className="fd-chart-read" aria-live="polite">
           <strong>{colName(shown)}</strong>
@@ -141,11 +125,8 @@ export function AccountChart(props: { data: PageCombo }): JSX.Element {
         </div>
       </div>
       <figcaption className="fd-muted">
-        Shares of a supertile&apos;s chords by the level it is built to, each type weighted by how often it occurs; level {top} is built one past the
-        circuits sorted. The tails are split by what becomes of them: closed later by circuits known at level {top} (as built to {top}, forecast past it),
-        or not accounted for. Levels {top + 1} to {pr.ahead} (lighter) and the limit (∞) are forecast: each circuit closes again as its closings have
-        fallen level by level, and each chain gains a member every two levels, its share the last member&apos;s times the ratio between the last two. In
-        the limit known circuits take <b data-testid="fd-limit-share">{pct(pr.limit)}</b> of the chords
+        Shares of a supertile&apos;s chords by level, built to {top}; the lighter columns and ∞ are forecast from the known chains. In the limit known
+        circuits take <b data-testid="fd-limit-share">{pct(pr.limit)}</b> of the chords
         {acc.over > 0.0005 ? `, ${pct(acc.over)} more than the tails hold; the forecast parts are drawn scaled to fit.` : `; ${pct(1 - pr.limit)} is not accounted for.`}
         {stopped.length ? (
           <span data-testid="fd-not-forecast">

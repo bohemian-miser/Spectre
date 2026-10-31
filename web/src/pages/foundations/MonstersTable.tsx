@@ -25,7 +25,7 @@ interface Row {
 
 const COLUMNS: readonly { key: Key; label: string }[] = [
   { key: 'combo', label: 'Combination' },
-  { key: 'floor', label: 'Floor' },
+  { key: 'floor', label: 'First' },
   { key: 'level', label: 'Level' },
   { key: 'length', label: 'Tiles' },
   { key: 'count', label: 'Children' },
