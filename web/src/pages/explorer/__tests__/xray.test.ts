@@ -22,7 +22,7 @@ import {
 import { HEX_CENTRE, HEX_OUTLINE, supertileEdges } from '../../../lib/hexBoard';
 import { addressFromId } from '../../../core/transducer';
 import { polygonArea } from '../../map/glyphs';
-import { countAtDepth, leafMesh, outlineAtLevel, lowestXrayLevel, outlineOf, pathFromAncestor, supertileAt, supertilesAt, tintFromEngine, xrayFromEngine, XRAY_MAX_SUPERTILES } from '../xray';
+import { countAtDepth, leafMesh, outlineAtLevel, lowestXrayLevel, outlineOf, pathFromAncestor, supertileAt, supertilesAt, tintFromEngine, xrayFromEngine, xrayLevelForView, XRAY_MAX_SUPERTILES } from '../xray';
 
 const HEX_AREA = Math.abs(polygonArea(HEX_OUTLINE));
 const segKey = (a: { x: number; y: number }, b: { x: number; y: number }): string =>
@@ -158,5 +158,20 @@ describe('the X-ray on the infinite plane', () => {
     expect(pathFromAncestor(chain, 3, '1:2.4')).toBe('0.5.2.4');
     expect(pathFromAncestor(chain, 3, '0:')).toBe('0.5.3');
     expect(pathFromAncestor(chain, 2, '3:1')).toBeNull();
+  });
+
+  it('zoomed far out, shows the lowest level whose supertiles in view the engine lists within the cap', () => {
+    const engine = createUnrootedEngine(1, 'hex');
+    const cap = 500;
+    const view = { cx: 3, cy: -2, halfW: 4000, halfH: 3000 };
+    const shown = xrayLevelForView('hex', view, 1, cap);
+    expect(shown).toBeGreaterThan(1);
+    const cut = xrayFromEngine(engine, view, shown, cap);
+    expect(cut.tooMany).toBe(false);
+    expect(cut.items.length).toBeGreaterThan(0);
+    // One level finer, the engine's own listing runs past the cap.
+    expect(engine.query(view, 100_000, { cutLevel: shown - 1 }).count).toBeGreaterThan(cap);
+    // Zoomed in, the level asked for stands.
+    expect(xrayLevelForView('hex', { cx: 3, cy: -2, halfW: 30, halfH: 20 }, 1, cap)).toBe(1);
   });
 });

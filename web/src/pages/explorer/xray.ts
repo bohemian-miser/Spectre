@@ -14,6 +14,7 @@ import {
   averageLeafArea,
   buildSystem,
   SUBSTITUTION_GROWTH,
+  UNROOTED_MAX_LEVEL,
   leafOrder,
   leafPts,
   instanceAffine,
@@ -273,6 +274,18 @@ export interface XrayCut {
  */
 export function supertilesInView(family: TileFamilyId, view: ViewRect, level: number): number {
   return (4 * view.halfW * view.halfH) / (averageLeafArea(family) * SUBSTITUTION_GROWTH ** level);
+}
+
+/**
+ * The level the infinite view's X-ray shows for `view`: `wanted`, or the
+ * lowest level above it at which about `cap` supertiles or fewer meet the
+ * view, so zooming out keeps the X-ray drawn at coarser levels. At most
+ * `UNROOTED_MAX_LEVEL`.
+ */
+export function xrayLevelForView(family: TileFamilyId, view: ViewRect, wanted: number, cap: number): number {
+  let level = wanted;
+  while (level < UNROOTED_MAX_LEVEL && supertilesInView(family, view, level) > cap) level++;
+  return level;
 }
 
 export function xrayFromEngine(engine: UnrootedEngine, view: ViewRect, level: number, cap: number): XrayCut {

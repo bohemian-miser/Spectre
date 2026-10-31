@@ -416,7 +416,8 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
   const [xrayOn, setXrayOn] = useState(false);
   const [xrayWanted, setXrayWanted] = useState(1);
   const [xrayBusy, setXrayBusy] = useState(false);
-  const [xrayTooMany, setXrayTooMany] = useState(false);
+  /** The level the infinite X-ray draws when zoomed out past the slider's. */
+  const [xrayShown, setXrayShown] = useState<number | null>(null);
 
   const highlightMajors = useMemo(() => {
     const major = hoverEdge?.major ?? hoverMajor;
@@ -1043,7 +1044,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
       lowest={xrayLowest}
       highest={xrayHighest}
       busy={xrayOn && xrayBusy}
-      note={xrayOn && infinite && xrayTooMany ? 'zoom in' : null}
+      note={xrayOn && infinite && xrayShown !== null ? `showing ${xrayShown}` : null}
       onToggle={(on) => {
         // Open two levels below the patch (or the zoom), where a few dozen supertiles show.
         if (on) setXrayWanted(Math.max(0, state.level - 2));
@@ -1861,7 +1862,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
                 level={xrayLevel}
                 apiRef={infiniteApiRef}
                 colorOf={xrayColour}
-                onTooMany={setXrayTooMany}
+                onShownLevel={setXrayShown}
               />
             ) : null}
             {hasFlag(state, FLAG.HIDE_STATS) ? null : (
