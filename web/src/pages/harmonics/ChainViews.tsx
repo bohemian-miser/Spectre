@@ -172,9 +172,11 @@ export function CircuitTable(props: {
   onPick: (i: number, shift: boolean) => void;
   /** The pairs linked, by `a-b`, with their scores. */
   linked?: ReadonlyMap<string, Scored> | null;
+  /** Columns above the level built, to `upTo`: each row's cells there (a `td` each), by its members (`members.join(' ')`) and level. */
+  beyond?: { readonly upTo: number; readonly cells: ReadonlyMap<string, ReadonlyMap<number, JSX.Element>> };
 }): JSX.Element {
-  const { r } = props;
-  const levels = Array.from({ length: r.level + 1 }, (_, l) => l);
+  const { r, beyond } = props;
+  const levels = Array.from({ length: Math.max(r.level, beyond?.upTo ?? 0) + 1 }, (_, l) => l);
   const groups = useMemo(() => tableRows(r), [r]);
   const sel = new Set(props.selected);
   return (
@@ -184,7 +186,7 @@ export function CircuitTable(props: {
           <tr>
             <th />
             {levels.map((l) => (
-              <th key={l} scope="col">
+              <th key={l} scope="col" className={l > r.level ? 'is-beyond' : undefined}>
                 {l}
               </th>
             ))}
@@ -216,6 +218,7 @@ export function CircuitTable(props: {
                       {row.members.length > 1 ? 'chain' : alone ? `alone · top ${alone.top}` : 'alone'}
                     </th>
                     {levels.map((l) => {
+                      if (l > r.level) return <Fragment key={l}>{beyond?.cells.get(row.members.join(' '))?.get(l) ?? <td />}</Fragment>;
                       const here = row.members.filter((i) => r.circuits[i].level === l);
                       if (!here.length) {
                         // the links across this column: a member a level below to one a level above

@@ -17,7 +17,7 @@
  * supertile taken as a child of its own type where the substitution has one.
  */
 import { agreement, canonicalCycle, cancelCyclic, isHarmonic, NONE, tokenCode, wordKeyOf, type TopReadings } from '../foundations/foundations';
-import { SparseRoutes, TYPES, typeIndex, type Walked, type Work } from './sparseRoutes';
+import { RouteLimit, SparseRoutes, TYPES, typeIndex, type Walked, type Work } from './sparseRoutes';
 
 /** Child slots a walk runs through, sorted: its family. */
 export const familyOfSteps = (steps: readonly number[]): string => [...new Set(steps.map((s) => s % 8))].sort((x, y) => x - y).join('');
@@ -148,7 +148,7 @@ export function lift(R: SparseRoutes, n: number, q: number, pti: number, slot: n
   if (w.end === 'closed') return { end: 'closed', length: w.length, steps };
   if (w.end === 'ends') return { end: 'ends' };
   const z = R.across(n + 1, pti, x0);
-  if (z < 0) return { end: 'out', place: x0 };
+  if (z < 0) return { end: 'out', place: R.placeOf(n + 1, x0) };
   const back = R.walk(n + 1, pti, z);
   return back.end === 'out' ? { end: 'out', place: back.exit } : { end: 'ends' };
 }
@@ -187,6 +187,8 @@ export interface Closure {
 
 export interface BruteResult {
   readonly from: { readonly level: number; readonly length: number };
+  /** The level from which up the harmonic must read as A. */
+  readonly floor: number;
   readonly level: number;
   readonly type: string;
   readonly found: Harmonic | null;
@@ -309,6 +311,7 @@ export function harmonicAbove(R: SparseRoutes, a: Walked, opts: BruteOptions = {
   R.onWork = null;
   return {
     from: { level: a.level, length: a.length },
+    floor,
     level: top,
     type: a.type,
     found: best ? { ...best, key } : null,
@@ -325,25 +328,35 @@ export function harmonicAbove(R: SparseRoutes, a: Walked, opts: BruteOptions = {
 export interface ClimbResult {
   /** The arc at each level climbed, from the start: its supertile's type, its tiles and the crossing it enters by. */
   readonly levels: readonly { readonly level: number; readonly type: string; readonly length: number; readonly place: number }[];
-  /** Where the strand closed, or null when it reached the cap open (or ended in a tile). */
+  /** Where the strand closed, or null when it reached the cap open, ended in a tile or met the routes' limit. */
   readonly closed: Closure | null;
+  /** The level the routes' limit (`SparseRoutes.limit`) stopped the climb at, or null. */
+  readonly limitedAt: number | null;
   readonly work: Work;
   readonly seconds: number;
 }
 
 /**
  * The strand entering crossing `place` of a level-n supertile of type ti,
- * climbed a level at a time (`parentOf`) until it closes or the arc reaches
- * level `cap`.
+ * climbed a level at a time (`parentOf`) until it closes, the arc reaches
+ * level `cap` or the routes reach their limit.
  */
 export function climb(R: SparseRoutes, n: number, ti: number, place: number, cap: number, onLevel?: (level: number) => void): ClimbResult {
   const t0 = Date.now();
   const levels: { level: number; type: string; length: number; place: number }[] = [{ level: n, type: TYPES[ti], length: R.len(n, ti, place), place }];
   let closed: Closure | null = null;
+  let limitedAt: number | null = null;
   while (n < cap) {
     const p = parentOf(R, ti);
     onLevel?.(n + 1);
-    const up = lift(R, n, place, p.type, p.slot);
+    let up: Lift;
+    try {
+      up = lift(R, n, place, p.type, p.slot);
+    } catch (err) {
+      if (!(err instanceof RouteLimit)) throw err;
+      limitedAt = n + 1;
+      break;
+    }
     if (up.end === 'closed') {
       closed = { level: n + 1, type: TYPES[p.type], length: up.length, family: familyOfSteps(up.steps) };
       break;
@@ -354,7 +367,7 @@ export function climb(R: SparseRoutes, n: number, ti: number, place: number, cap
     place = up.place;
     levels.push({ level: n, type: TYPES[ti], length: R.len(n, ti, place), place });
   }
-  return { levels, closed, work: R.work, seconds: (Date.now() - t0) / 1000 };
+  return { levels, closed, limitedAt, work: R.work, seconds: (Date.now() - t0) / 1000 };
 }
 
 /** The longest arc of a level-n supertile of type ti held by the full tables: its crossing. */

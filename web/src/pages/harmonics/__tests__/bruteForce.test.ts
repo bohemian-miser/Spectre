@@ -55,6 +55,16 @@ describe('the harmonic of 023468 · 000100000’s 441', () => {
     expect(r.found).toMatchObject({ level: 6, length: 8784, family: familyOf(a) });
     expect(r.found!.key).toBe(wordKey(cs, bornAt(cs, 6, 8784)));
   });
+
+  it('then the 175,221 at level 8, every level of it in the full tables', () => {
+    const cs = build('000100000', 8);
+    const R = new SparseRoutes(cs, 8);
+    const r = harmonicAbove(R, R.walked(bornAt(cs, 6, 8784)), { floor: 1 });
+    expect(r.found).toMatchObject({ level: 8, length: 175221, family: '013467' });
+    expect(r.windows).toBe(1);
+    expect(r.work.calls).toBe(0);
+    expect(r.found!.key).toBe(wordKey(cs, bornAt(cs, 8, 175221)));
+  });
 });
 
 describe('climbing a strand', () => {
@@ -92,6 +102,18 @@ describe('climbing a strand', () => {
         expect(c.closed.level).toBe(at.level + 1);
       }
     });
+  });
+
+  it('stops at the routes’ limit, open', () => {
+    const cs = build('140000001', 8);
+    const R = new SparseRoutes(cs, 8);
+    R.limit = 1000;
+    const D = typeIndex.get('Delta')!;
+    const c = climb(R, 8, D, longestArc(R, 8, D), 16);
+    expect(c.closed).toBeNull();
+    expect(c.limitedAt).toBeGreaterThan(9);
+    expect(c.levels[c.levels.length - 1].level).toBe(c.limitedAt! - 1);
+    expect(c.work.calls).toBe(1000);
   });
 });
 

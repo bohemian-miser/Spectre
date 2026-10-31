@@ -31,7 +31,7 @@ export interface Walked {
   readonly steps: readonly number[];
 }
 
-/** How a walk through a supertile's children ended: back where it started, at the outline (by `exit`), or at a tile it cannot leave. */
+/** How a walk through a supertile's children ended: back where it started, at the outline (by `exit`, the supertile's crossing), or at a tile it cannot leave. */
 export interface Walk {
   readonly end: 'closed' | 'out' | 'ends';
   readonly exit: number;
@@ -77,6 +77,8 @@ export class SparseRoutes {
 
   /** Called every so many routes with the work done. */
   onWork: ((w: Work) => void) | null = null;
+  /** Routes worked out at most: asking for one more throws `RouteLimit`. */
+  limit = Infinity;
 
   constructor(
     readonly cs: CircuitShapes,
@@ -196,6 +198,7 @@ export class SparseRoutes {
     const key = a * 16 + ti;
     const hit = memo.get(key);
     if (hit >= 0) return hit;
+    if (this.callCount >= this.limit) throw new RouteLimit(this.limit);
     this.callCount++;
     const steps: number[] = [];
     const w = this.walk(n, ti, a, steps);
@@ -259,7 +262,7 @@ export class SparseRoutes {
       length += this.len(n - 1, ct, c);
       const y = m * 8 + s;
       const z = this.across(n, ti, y);
-      if (z < 0) return { end: 'out', exit: y, length };
+      if (z < 0) return { end: 'out', exit: this.placeOf(n, y), length };
       if (z === x0) return { end: 'closed', exit: -1, length };
       x = z;
     }
@@ -286,6 +289,20 @@ export class SparseRoutes {
     }
   }
 
+  /** The address of the level-n crossing a child crossing (`childAddress * 8 + slot`) is: itself above the base, the table's place at or below it. */
+  placeOf(n: number, step: number): number {
+    if (n > this.base) return step;
+    let at = this.placeAt[n];
+    if (!at) {
+      const under = this.cs.levels[n].Delta.level.under;
+      at = this.placeAt[n] = new Int32Array(8 * this.cs.levels[n - 1].Delta.size).fill(-1);
+      for (let p = 0; p < under.length; p++) at[under[p]] = p;
+    }
+    return at[step];
+  }
+
+  private readonly placeAt: Int32Array[] = [];
+
   /** The address of place p of a level-n full table (built that far). */
   address(n: number, p: number): number {
     if (n <= this.base) return p;
@@ -304,6 +321,13 @@ export class SparseRoutes {
     const out: number[] = [];
     for (let j = 0; j < 6; j++) for (let i = 0, m = this.rowLen(n, ti, j); i < m; i++) out.push(this.rowAt(n, ti, j, i));
     return out;
+  }
+}
+
+/** Thrown when a route is asked for past `SparseRoutes.limit`. */
+export class RouteLimit extends Error {
+  constructor(readonly limit: number) {
+    super(`more than ${limit} routes`);
   }
 }
 
