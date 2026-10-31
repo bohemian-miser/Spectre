@@ -116,6 +116,7 @@ import type {
   MapRenderStats,
   MapRenderStyle,
   MapRenderer,
+  RegionFillGeometry,
   RendererMode,
   TrailGeometry,
 } from './rendererTypes';
@@ -400,6 +401,13 @@ export interface InfiniteCanvasApi {
   /** Drop the traced strand. */
   clearTrace(): void;
   /**
+   * Colour tiles from outside the canvas (the Explorer's X-ray washes each
+   * tile in its supertile's colour): drawn as region colours are, over the
+   * fills and under the strands, at leaf cuts, while region colours are off.
+   * Null clears it.
+   */
+  setTint(tint: RegionFillGeometry | null): void;
+  /**
    * Zoom to the widest view that find-all can still analyse — as far out as
    * the display can go while the engine is still emitting individual tiles
    * within the find pass's ceiling. Only the scale moves; the centre stays.
@@ -653,6 +661,7 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
   regionOnRef.current = regionFill;
   const regionTrackerRef = useRef<RegionTracker | null>(null);
   const regionMeshRef = useRef<RegionMesh | null>(null);
+  const tintRef = useRef<RegionFillGeometry | null>(null);
 
   /**
    * Recolour the regions of the cut on screen (or clear them). Cheap enough
@@ -664,7 +673,7 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
     const table = chordsRef.current;
     const cut = lastCutRef.current;
     if (!regionOnRef.current || !table || table.chordCount === 0 || !cut || cut.cutLevel !== 0) {
-      renderer.setRegionFill(null);
+      renderer.setRegionFill(cut && cut.cutLevel === 0 ? tintRef.current : null);
       return;
     }
     if (!regionMeshRef.current) regionMeshRef.current = buildRegionMesh(table);
@@ -2227,6 +2236,11 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
       isBusy: () => schedulerRef.current?.inFlight ?? false,
       traceAt,
       clearTrace,
+      setTint: (tint) => {
+        tintRef.current = tint;
+        syncRegionFill();
+        scheduleDraw();
+      },
       zoomToCircuitView: () => {
         const { width, height } = sizeRef.current;
         if (width <= 0 || height <= 0) return null;
@@ -2300,7 +2314,7 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
     return () => {
       apiRef.current = null;
     };
-  }, [apiRef, onCameraChanged, stopInertia, traceAt, clearTrace, draw, scheduleDraw]);
+  }, [apiRef, onCameraChanged, stopInertia, traceAt, clearTrace, draw, scheduleDraw, syncRegionFill]);
 
   return (
     <div

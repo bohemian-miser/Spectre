@@ -12,6 +12,8 @@
 
 import {
   buildSystem,
+  leafOrder,
+  leafPts,
   instanceAffine,
   instanceTypeId,
   inv,
@@ -26,7 +28,8 @@ import {
   type UnrootedEngine,
   type ViewRect,
 } from '../../core';
-import { boundaryLoop, decimateLoop } from '../map/glyphs';
+import { boundaryLoop, decimateLoop, earClip } from '../map/glyphs';
+import type { RegionFillGeometry, RegionMeshTable } from '../map/rendererTypes';
 
 /** One supertile: its type, its slot path from the root, the node it is, and where it sits. */
 export interface XraySupertile {
@@ -228,4 +231,73 @@ export function pathFromAncestor(chain: readonly { readonly slot: number }[], ro
   for (let i = rootLevel - 1; i >= d; i--) slots.push(chain[i].slot);
   if (m[2] !== '') slots.push(...m[2].split('.').map(Number));
   return slots.join('.');
+}
+
+/** Most single tiles the infinite view's X-ray colours under the strands; past it the view shows supertile glyphs and no strands. */
+export const TINT_CAP = 40_000;
+
+const leafMeshes = new Map<TileFamilyId, RegionMeshTable>();
+
+/** Every leaf type's outline triangulated, one row per type in `leafOrder` order (the byte the engine emits). */
+export function leafMesh(family: TileFamilyId): RegionMeshTable {
+  const hit = leafMeshes.get(family);
+  if (hit) return hit;
+  const polys = leafOrder(family).map((t) => leafPts(family, t));
+  const tris = polys.map((poly) => earClip(poly).flatMap((i) => [poly[i].x, poly[i].y]));
+  const verts = Math.max(3, ...tris.map((t) => t.length / 2));
+  const data = new Float32Array(polys.length * verts * 2);
+  tris.forEach((t, row) => {
+    data.set(t, row * verts * 2);
+    // Padding repeats the last vertex: degenerate triangles.
+    for (let j = t.length / 2; j < verts; j++) {
+      data[(row * verts + j) * 2] = t[t.length - 2] ?? 0;
+      data[(row * verts + j) * 2 + 1] = t[t.length - 1] ?? 0;
+    }
+  });
+  const mesh: RegionMeshTable = { rows: polys.length, verts, data, rowPolys: polys };
+  leafMeshes.set(family, mesh);
+  return mesh;
+}
+
+/**
+ * The single tiles meeting `view`, each coloured as the level-`level`
+ * supertile of `cut` that holds it, for `InfiniteCanvasApi.setTint`; null
+ * when more than {@link TINT_CAP} tiles meet the view or none is placed.
+ */
+export function tintFromEngine(
+  engine: UnrootedEngine,
+  view: ViewRect,
+  cut: XrayCut,
+  level: number,
+  rgbOf: (type: TileTypeId) => readonly [number, number, number],
+  alpha: number,
+): RegionFillGeometry | null {
+  if (cut.tooMany) return null;
+  const leaves = engine.query(view, TINT_CAP, { cutLevel: 0, emitIds: true });
+  if (leaves.truncated || leaves.cutLevel !== 0 || !leaves.ids) return null;
+  const typeAt = new Map(cut.items.map((s) => [s.path, s.type]));
+  const chain = engine.chain();
+  const keep: number[] = [];
+  const rgb: number[] = [];
+  for (let i = 0; i < leaves.count; i++) {
+    const path = pathFromAncestor(chain, cut.rootLevel, leaves.ids[i]);
+    if (path === null) continue;
+    const slots = path === '' ? [] : path.split('.');
+    if (slots.length < level) continue;
+    const type = typeAt.get(slots.slice(0, slots.length - level).join('.'));
+    if (!type) continue;
+    keep.push(i);
+    rgb.push(...rgbOf(type));
+  }
+  if (!keep.length) return null;
+  const pos = new Float32Array(keep.length * 2);
+  const code = new Uint8Array(keep.length);
+  const row = new Uint8Array(keep.length);
+  keep.forEach((i, q) => {
+    pos[2 * q] = leaves.pos[2 * i];
+    pos[2 * q + 1] = leaves.pos[2 * i + 1];
+    code[q] = leaves.code[i];
+    row[q] = leaves.type[i];
+  });
+  return { mesh: leafMesh(engine.family), origin: leaves.origin, count: keep.length, pos, code, row, rgb: Uint8Array.from(rgb), alpha };
 }

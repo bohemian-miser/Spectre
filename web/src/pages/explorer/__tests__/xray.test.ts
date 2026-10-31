@@ -6,6 +6,8 @@ import {
   countTiles,
   createUnrootedEngine,
   flatten,
+  instanceAffine,
+  leafOrder,
   leafPts,
   mul,
   transPt,
@@ -14,12 +16,13 @@ import {
   type Affine,
   type MetaNode,
   type TileNode,
+  type TileTypeId,
   type ZAffine,
 } from '../../../core';
 import { HEX_CENTRE, HEX_OUTLINE, supertileEdges } from '../../../lib/hexBoard';
 import { addressFromId } from '../../../core/transducer';
 import { polygonArea } from '../../map/glyphs';
-import { countAtDepth, lowestXrayLevel, outlineOf, pathFromAncestor, supertileAt, supertilesAt, xrayFromEngine, XRAY_MAX_SUPERTILES } from '../xray';
+import { countAtDepth, leafMesh, lowestXrayLevel, outlineOf, pathFromAncestor, supertileAt, supertilesAt, tintFromEngine, xrayFromEngine, XRAY_MAX_SUPERTILES } from '../xray';
 
 const HEX_AREA = Math.abs(polygonArea(HEX_OUTLINE));
 const segKey = (a: { x: number; y: number }, b: { x: number; y: number }): string =>
@@ -113,6 +116,31 @@ describe('the X-ray on the infinite plane', () => {
         for (let i = 0; i < 6; i++) expect(placed[i]).toBeCloseTo(s.xform[i], 4); // positions come through f32
       }
     }
+  });
+
+  it('colours each single tile under the strands as the supertile its centre lies in', () => {
+    const engine = createUnrootedEngine(1, 'hex');
+    const view = { cx: 3, cy: -2, halfW: 30, halfH: 20 };
+    const level = 2;
+    const cut = xrayFromEngine(engine, view, level, 4000);
+    const types = [...new Set(cut.items.map((s) => s.type))];
+    const rgbOf = (t: TileTypeId) => [types.indexOf(t), 0, 0] as const;
+    const tint = tintFromEngine(engine, view, cut, level, rgbOf, 0.3)!;
+    expect(tint.count).toBeGreaterThan(100);
+    expect(tint.alpha).toBe(0.3);
+    expect(tint.mesh).toBe(leafMesh('hex'));
+    let placed = 0;
+    for (let i = 0; i < tint.count; i++) {
+      const pts = leafPts('hex', leafOrder('hex')[tint.row[i]]);
+      const mid = { x: pts.reduce((a, p) => a + p.x, 0) / pts.length, y: pts.reduce((a, p) => a + p.y, 0) / pts.length };
+      const centre = transPt(instanceAffine(tint.origin.x + tint.pos[2 * i], tint.origin.y + tint.pos[2 * i + 1], tint.code[i]), mid);
+      // Independent of the ids: the outline the tile's centre falls in.
+      const s = supertileAt(cut.items, centre, 'hex');
+      if (!s) continue;
+      placed++;
+      expect(tint.rgb[3 * i]).toBe(types.indexOf(s.type));
+    }
+    expect(placed).toBeGreaterThan(tint.count * 0.9);
   });
 
   it('reads engine ids against the chain', () => {

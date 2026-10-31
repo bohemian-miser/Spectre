@@ -1,11 +1,18 @@
 /**
  * The X-ray over the Explorer's tiling: the supertiles of one level, each
- * outlined and washed in its type's colour, the tiles still showing through.
- * Hovering a supertile names its type and slot path.
+ * washed in its type's colour and outlined. The wash goes under the strands
+ * (between the tiles and the lines), so the strands keep their colours; the
+ * outlines go on top, thin. Hovering a supertile names its type and slot
+ * path.
  *
- * `XrayRooted` lays it over a rooted patch, redrawn with the PanZoom camera;
- * `XrayInfinite` over the infinite plane, reading the canvas's camera each
- * frame and asking the unrooted engine for the supertiles in view.
+ * On a rooted patch the wash is `XrayWashSvg` inside the SVG scene or
+ * `washXray` as the canvas scene's underlay, and `XrayRooted` draws the
+ * outlines over it, redrawn with the PanZoom camera. On the infinite plane
+ * `XrayInfinite` reads the canvas's camera each frame and asks the unrooted
+ * engine for the supertiles in view; at a cut of single tiles it hands the
+ * canvas each tile's supertile colour (`InfiniteCanvasApi.setTint`), drawn
+ * under the strands; zoomed out to supertile glyphs, where no strands are
+ * drawn, only the outlines show.
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -14,18 +21,25 @@ import { useElementSize } from '../../hooks/useElementSize';
 import { cameraAffine, type Camera } from '../../lib/viewport';
 import type { MapCamera } from '../map/camera';
 import type { InfiniteCanvasApi } from '../map/InfiniteCanvas';
-import { outlineAtSize, outlineOf, supertileAt, supertilesAt, xrayFromEngine, type XraySupertile } from './xray';
+import { outlineAtSize, outlineOf, supertileAt, supertilesAt, tintFromEngine, xrayFromEngine, type XraySupertile } from './xray';
+
+/** The channels of a CSS colour written `rgb(r,g,b)` or `#rrggbb`. */
+export function cssRgb(css: string): readonly [number, number, number] {
+  const hex = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(css);
+  if (hex) return [parseInt(hex[1], 16), parseInt(hex[2], 16), parseInt(hex[3], 16)];
+  const n = css.match(/\d+(\.\d+)?/g)?.map(Number) ?? [];
+  return [n[0] ?? 200, n[1] ?? 200, n[2] ?? 200];
+}
 
 /** Supertiles smaller than this on screen (CSS px) are not drawn. */
 const MIN_DRAWN_PX = 2;
-const WASH_ALPHA = 0.35;
+/** Opacity of the wash over the tiles. */
+export const WASH_ALPHA = 0.3;
 /**
  * Outline vertices per CSS px of a supertile's size. Neighbours decimate their
  * shared boundary independently, so this keeps the two copies within a pixel.
  */
 const POINTS_PER_PX = 2;
-/** Below this mean size on screen (CSS px) the outlines are drawn thinner, so they do not bury small supertiles. */
-const THIN_BELOW_PX = 48;
 
 function screenBox(m: Affine, s: XraySupertile): { x0: number; y0: number; x1: number; y1: number } {
   let x0 = Infinity;
@@ -58,9 +72,53 @@ function tracePath(path: Path2D, m: Affine, loop: readonly Pt[]): void {
   path.closePath();
 }
 
+/** The supertiles on screen, each with its outline at a size that looks right. */
+function onScreen(width: number, height: number, family: TileFamilyId, items: readonly XraySupertile[], toScreen: Affine): { s: XraySupertile; loop: readonly Pt[] }[] {
+  const out: { s: XraySupertile; loop: readonly Pt[] }[] = [];
+  for (const s of items) {
+    const b = screenBox(toScreen, s);
+    if (b.x1 < 0 || b.y1 < 0 || b.x0 > width || b.y0 > height) continue;
+    const size = Math.max(b.x1 - b.x0, b.y1 - b.y0);
+    if (size < MIN_DRAWN_PX) continue;
+    out.push({ s, loop: outlineAtSize(outlineOf(s.node, family), size * POINTS_PER_PX) });
+  }
+  return out;
+}
+
 /**
- * Draw the supertiles onto a canvas whose CSS size is `width` × `height`.
- * `toScreen` maps the supertiles' frame to CSS px.
+ * Wash the supertiles in their types' colours, at {@link WASH_ALPHA}, onto a
+ * canvas whose current transform maps CSS px to its pixels. `toScreen` maps
+ * the supertiles' frame to CSS px. The canvas scene calls this between its
+ * tiles and its strands.
+ */
+export function washXray(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  family: TileFamilyId,
+  items: readonly XraySupertile[],
+  toScreen: Affine,
+  colorOf: (type: TileTypeId) => string,
+): void {
+  const fills = new Map<TileTypeId, Path2D>();
+  for (const { s, loop } of onScreen(width, height, family, items, toScreen)) {
+    let fill = fills.get(s.type);
+    if (!fill) fills.set(s.type, (fill = new Path2D()));
+    tracePath(fill, mul(toScreen, s.xform), loop);
+  }
+  const alpha = ctx.globalAlpha;
+  ctx.globalAlpha = WASH_ALPHA;
+  for (const [type, path] of fills) {
+    ctx.fillStyle = colorOf(type);
+    ctx.fill(path);
+  }
+  ctx.globalAlpha = alpha;
+}
+
+/**
+ * Outline the supertiles on a canvas whose CSS size is `width` × `height`,
+ * thin, the hovered one heavier. `toScreen` maps the supertiles' frame to
+ * CSS px. Nothing is filled: the canvas lies over the strands.
  */
 export function drawXray(
   ctx: CanvasRenderingContext2D,
@@ -70,60 +128,62 @@ export function drawXray(
   family: TileFamilyId,
   items: readonly XraySupertile[],
   toScreen: Affine,
-  colorOf: (type: TileTypeId) => string,
   hovered: XraySupertile | null,
 ): void {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  const fills = new Map<TileTypeId, Path2D>();
   const lines = new Path2D();
-  let sizes = 0;
-  let drawn = 0;
-  for (const s of items) {
-    const b = screenBox(toScreen, s);
-    if (b.x1 < 0 || b.y1 < 0 || b.x0 > width || b.y0 > height) continue;
-    const size = Math.max(b.x1 - b.x0, b.y1 - b.y0);
-    if (size < MIN_DRAWN_PX) continue;
-    sizes += size;
-    drawn++;
-    const loop = outlineAtSize(outlineOf(s.node, family), size * POINTS_PER_PX);
-    const m = mul(toScreen, s.xform);
-    let fill = fills.get(s.type);
-    if (!fill) fills.set(s.type, (fill = new Path2D()));
-    tracePath(fill, m, loop);
-    tracePath(lines, m, loop);
-  }
-  ctx.globalAlpha = WASH_ALPHA;
-  for (const [type, path] of fills) {
-    ctx.fillStyle = colorOf(type);
-    ctx.fill(path);
-  }
-  ctx.globalAlpha = 1;
+  for (const { s, loop } of onScreen(width, height, family, items, toScreen)) tracePath(lines, mul(toScreen, s.xform), loop);
   ctx.lineJoin = 'round';
-  const thin = drawn > 0 && sizes / drawn < THIN_BELOW_PX;
-  ctx.strokeStyle = 'rgba(255,255,255,0.75)';
-  ctx.lineWidth = thin ? 2.5 : 3.5;
+  ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+  ctx.lineWidth = 2.25;
   ctx.stroke(lines);
   ctx.strokeStyle = 'rgba(12,14,20,0.95)';
-  ctx.lineWidth = thin ? 1 : 1.5;
+  ctx.lineWidth = 1;
   ctx.stroke(lines);
   if (hovered) {
     const b = screenBox(toScreen, hovered);
     const loop = outlineAtSize(outlineOf(hovered.node, family), Math.max(b.x1 - b.x0, b.y1 - b.y0) * POINTS_PER_PX);
     const one = new Path2D();
     tracePath(one, mul(toScreen, hovered.xform), loop);
-    ctx.globalAlpha = WASH_ALPHA;
-    ctx.fillStyle = colorOf(hovered.type);
-    ctx.fill(one);
-    ctx.globalAlpha = 1;
     ctx.strokeStyle = 'rgba(255,255,255,0.9)';
-    ctx.lineWidth = 6;
+    ctx.lineWidth = 4;
     ctx.stroke(one);
     ctx.strokeStyle = 'rgba(12,14,20,1)';
-    ctx.lineWidth = 3;
+    ctx.lineWidth = 2;
     ctx.stroke(one);
   }
+}
+
+/** The supertiles' wash inside an SVG scene, between the tiles and the strands: one outline per node, placed once per supertile. */
+export function XrayWashSvg(props: { family: TileFamilyId; items: readonly XraySupertile[]; colorOf: (type: TileTypeId) => string; idPrefix: string }): JSX.Element {
+  const { family, items, colorOf, idPrefix } = props;
+  const defs = useMemo(() => {
+    const ids = new Map<TileNode, string>();
+    const out: JSX.Element[] = [];
+    for (const s of items) {
+      if (ids.has(s.node)) continue;
+      const id = `${idPrefix}-${ids.size}`;
+      ids.set(s.node, id);
+      const loop = outlineOf(s.node, family).full;
+      out.push(<path key={id} id={id} d={`M${loop.map((p) => `${p.x} ${p.y}`).join('L')}Z`} />);
+    }
+    return { ids, out };
+  }, [family, items, idPrefix]);
+  return (
+    <g className="xray-wash" opacity={WASH_ALPHA} stroke="none" data-testid="xray-wash">
+      <defs>{defs.out}</defs>
+      {items.map((s) => (
+        <use
+          key={s.path}
+          href={`#${defs.ids.get(s.node)}`}
+          fill={colorOf(s.type)}
+          transform={`matrix(${s.xform[0]} ${s.xform[3]} ${s.xform[1]} ${s.xform[4]} ${s.xform[2]} ${s.xform[5]})`}
+        />
+      ))}
+    </g>
+  );
 }
 
 const devicePixels = (): number => Math.min(2, (typeof devicePixelRatio === 'number' ? devicePixelRatio : 1) || 1);
@@ -140,14 +200,13 @@ interface Hover {
  */
 function XrayCanvas(props: {
   family: TileFamilyId;
-  colorOf: (type: TileTypeId) => string;
   frame: () => { items: readonly XraySupertile[]; toScreen: Affine } | null;
   redraw: unknown;
   /** Subscribe to per-frame redraws (the infinite plane moves without React). */
   tick?: (draw: () => void) => () => void;
   label: (s: XraySupertile) => string;
 }): JSX.Element {
-  const { family, colorOf, frame, redraw, tick, label } = props;
+  const { family, frame, redraw, tick, label } = props;
   const hostRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const size = useElementSize(hostRef);
@@ -173,9 +232,9 @@ function XrayCanvas(props: {
         ctx.clearRect(0, 0, w, h);
         return;
       }
-      drawXray(ctx, dpr, size.width, size.height, family, f.items, f.toScreen, colorOf, hoverRef.current?.s ?? null);
+      drawXray(ctx, dpr, size.width, size.height, family, f.items, f.toScreen, hoverRef.current?.s ?? null);
     },
-    [size, family, colorOf],
+    [size, family],
   );
 
   useEffect(() => {
@@ -226,39 +285,41 @@ function XrayCanvas(props: {
   );
 }
 
-/** The X-ray over a rooted patch: `root` is the level-`patchLevel` node the patch flattens, drawn under `viewTransform`. */
-export function XrayRooted(props: {
-  family: TileFamilyId;
-  root: TileNode;
-  patchLevel: number;
-  level: number;
-  viewTransform: Affine;
-  camera: Camera;
-  colorOf: (type: TileTypeId) => string;
-  onBusy?: (busy: boolean) => void;
-}): JSX.Element {
-  const { family, root, patchLevel, level, viewTransform, camera, colorOf, onBusy } = props;
+/**
+ * The supertiles of one level of a rooted patch (`root` is the level-`patchLevel`
+ * node the patch flattens, placed by `viewTransform`), or null while off or
+ * being listed. Listed off the input path: a deep level's outline is worked
+ * out once, and can take a moment.
+ */
+export function useXrayItems(
+  on: boolean,
+  family: TileFamilyId,
+  root: TileNode,
+  patchLevel: number,
+  level: number,
+  viewTransform: Affine,
+  onBusy?: (busy: boolean) => void,
+): readonly XraySupertile[] | null {
   const [items, setItems] = useState<readonly XraySupertile[] | null>(null);
-  // Listed off the input path: a deep level's outline is worked out once, and can take a moment.
   useEffect(() => {
+    setItems(null);
+    if (!on) return;
     onBusy?.(true);
     const id = setTimeout(() => {
       setItems(supertilesAt(family, root, patchLevel, level, viewTransform));
       onBusy?.(false);
     }, 0);
     return () => clearTimeout(id);
-  }, [family, root, patchLevel, level, viewTransform, onBusy]);
+  }, [on, family, root, patchLevel, level, viewTransform, onBusy]);
+  return items;
+}
+
+/** The X-ray's outlines over a rooted patch, under the PanZoom camera. */
+export function XrayRooted(props: { family: TileFamilyId; items: readonly XraySupertile[] | null; camera: Camera }): JSX.Element {
+  const { family, items, camera } = props;
   const toScreen = useMemo(() => cameraAffine(camera), [camera]);
   const frame = useMemo(() => () => (items ? { items, toScreen } : null), [items, toScreen]);
-  return (
-    <XrayCanvas
-      family={family}
-      colorOf={colorOf}
-      frame={frame}
-      redraw={frame}
-      label={(s) => `${s.type} · ${s.path === '' ? 'the root' : s.path}`}
-    />
-  );
+  return <XrayCanvas family={family} frame={frame} redraw={frame} label={(s) => `${s.type} · ${s.path === '' ? 'the root' : s.path}`} />;
 }
 
 /** Most supertiles one view of the infinite plane lists. */
@@ -286,10 +347,13 @@ export function XrayInfinite(props: {
   }>({ cam: null, w: 0, h: 0, rect: null, cut: null });
   const [root, setRoot] = useState<{ level: number; type: TileTypeId } | null>(null);
   const tooManyRef = useRef<boolean | null>(null);
+  const colorRef = useRef(colorOf);
+  colorRef.current = colorOf;
   useEffect(() => {
     state.current.rect = null;
     state.current.cut = null;
-  }, [engine, level]);
+  }, [engine, level, colorOf]);
+  useEffect(() => () => apiRef.current?.setTint(null), [apiRef]);
 
   const frame = useMemo(
     () => () => {
@@ -302,8 +366,10 @@ export function XrayInfinite(props: {
       const inside = r && cam.cx - hw >= r.x0 && cam.cx + hw <= r.x1 && cam.cy - hh >= r.y0 && cam.cy + hh <= r.y1;
       if (!inside) {
         st.rect = { x0: cam.cx - 2 * hw, y0: cam.cy - 2 * hh, x1: cam.cx + 2 * hw, y1: cam.cy + 2 * hh };
-        st.cut = xrayFromEngine(engine, { cx: cam.cx, cy: cam.cy, halfW: 2 * hw, halfH: 2 * hh }, level, INFINITE_CAP);
+        const view = { cx: cam.cx, cy: cam.cy, halfW: 2 * hw, halfH: 2 * hh };
+        st.cut = xrayFromEngine(engine, view, level, INFINITE_CAP);
         const c = st.cut;
+        apiRef.current?.setTint(tintFromEngine(engine, view, c, level, (t) => cssRgb(colorRef.current(t)), WASH_ALPHA));
         setRoot((prev) => (prev?.level === c.rootLevel && prev.type === c.rootType ? prev : { level: c.rootLevel, type: c.rootType }));
         if (tooManyRef.current !== c.tooMany) {
           tooManyRef.current = c.tooMany;
@@ -313,7 +379,7 @@ export function XrayInfinite(props: {
       const toScreen: Affine = [cam.scale, 0, st.w / 2 - cam.cx * cam.scale, 0, cam.scale, st.h / 2 - cam.cy * cam.scale];
       return st.cut ? { items: st.cut.items, toScreen } : null;
     },
-    [engine, level, onTooMany],
+    [engine, level, onTooMany, apiRef],
   );
 
   // Follow the canvas's camera, which moves without React (panning, the follow camera).
@@ -346,7 +412,6 @@ export function XrayInfinite(props: {
   return (
     <XrayCanvas
       family={family}
-      colorOf={colorOf}
       frame={frame}
       redraw={frame}
       tick={tick}

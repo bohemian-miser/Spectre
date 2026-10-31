@@ -135,7 +135,7 @@ import { ViewportTools } from './map/ViewportTools';
 import { TraceTicker } from './map/TraceTicker';
 import { TransitionGraph } from './map/TransitionGraph';
 import { shapesCircuitHref } from './shapes/explorerLink';
-import { XrayInfinite, XrayRooted } from './explorer/XrayLayer';
+import { useXrayItems, washXray, XrayInfinite, XrayRooted, XrayWashSvg } from './explorer/XrayLayer';
 import { lowestXrayLevel } from './explorer/xray';
 import { XrayControl, XRAY_INFINITE_MAX } from './explorer/XrayControl';
 import { TraceActions } from './explorer/TraceActions';
@@ -909,6 +909,14 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
   const xrayColour = useCallback(
     (type: TileTypeId) => tileColor(type, state.colorScheme, state.customColors),
     [state.colorScheme, state.customColors],
+  );
+  const xrayItems = useXrayItems(xrayOn && !infinite, drawFamily, model.root, renderLevel, xrayLevel, model.viewTransform, setXrayBusy);
+  const xrayUnderlay = useMemo(
+    () =>
+      xrayItems
+        ? (ctx: CanvasRenderingContext2D, width: number, height: number, toScreen: Affine) => washXray(ctx, width, height, drawFamily, xrayItems, toScreen, xrayColour)
+        : null,
+    [xrayItems, drawFamily, xrayColour],
   );
   const dualOn = hasFlag(state, FLAG.DUAL);
   const regionsOn = hasFlag(state, FLAG.REGIONS);
@@ -1820,6 +1828,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
                 alignToHex={asSpectres}
                 idPrefix="ex"
               >
+                {xrayItems && !heavy ? <XrayWashSvg family={drawFamily} items={xrayItems} colorOf={xrayColour} idPrefix="ex-xray" /> : null}
                 {overlayDefs.length ? (
                   <g className="tiling-overlays" fill="none" stroke="currentColor" strokeWidth={0.14}>
                     <defs>
@@ -1883,18 +1892,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
                   </g>
                 ) : null}
               </TilingView>
-              {xrayOn ? (
-                <XrayRooted
-                  family={drawFamily}
-                  root={model.root}
-                  patchLevel={renderLevel}
-                  level={xrayLevel}
-                  viewTransform={model.viewTransform}
-                  camera={api.camera}
-                  colorOf={xrayColour}
-                  onBusy={setXrayBusy}
-                />
-              ) : null}
+              {xrayOn ? <XrayRooted family={drawFamily} items={xrayItems} camera={api.camera} /> : null}
               </>
             )}
           </PanZoom>
@@ -1934,19 +1932,9 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
                 centreScale={lineWidth}
                 strokeWidth={BASE_CIRCUIT_STROKE * lineWidth}
                 regionFill={linesOn && regionsOn ? analysis.result?.dual : undefined}
+                underlay={xrayUnderlay}
               />
-              {xrayOn ? (
-                <XrayRooted
-                  family={drawFamily}
-                  root={model.root}
-                  patchLevel={renderLevel}
-                  level={xrayLevel}
-                  viewTransform={model.viewTransform}
-                  camera={api.camera}
-                  colorOf={xrayColour}
-                  onBusy={setXrayBusy}
-                />
-              ) : null}
+              {xrayOn ? <XrayRooted family={drawFamily} items={xrayItems} camera={api.camera} /> : null}
               </>
             )}
           </PanZoom>

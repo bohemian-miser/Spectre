@@ -160,9 +160,9 @@ describe('ExplorerPage', () => {
     expect(svg.title).toContain('no SVG scene');
   });
 
-  it('X-ray: a switch over the field opens a level slider from the tiles to the patch', () => {
+  it('X-ray: a switch over the field opens a level slider from the tiles to the patch', async () => {
     window.history.replaceState(null, '', '/#/explorer?v=1&f=hex&lv=4');
-    const { container, getByTestId, queryByTestId } = render(<ExplorerPage />);
+    const { container, getByTestId, queryByTestId, findByTestId } = render(<ExplorerPage />);
     expect(queryByTestId('xray-level')).toBeNull();
     fireEvent.click(getByTestId('xray-toggle'));
     const slider = getByTestId('xray-level') as HTMLInputElement;
@@ -170,8 +170,15 @@ describe('ExplorerPage', () => {
     fireEvent.change(slider, { target: { value: '3' } });
     expect(getByTestId('xray-level-label').textContent).toContain('level 3');
     expect(container.querySelector('.xray-layer canvas')).not.toBeNull();
+    // The wash lies in the scene under the strands: inside the camera group, before any circuit layer.
+    const wash = await findByTestId('xray-wash');
+    expect(wash.closest('.tiling-camera')).not.toBeNull();
+    const after = [...(wash.parentElement?.children ?? [])].slice([...(wash.parentElement?.children ?? [])].indexOf(wash) + 1);
+    expect(after.some((el) => el.classList.contains('tiling-tiles'))).toBe(false);
+    expect(wash.querySelectorAll('use').length).toBe(8);
     fireEvent.click(getByTestId('xray-toggle'));
     expect(container.querySelector('.xray-layer')).toBeNull();
+    expect(queryByTestId('xray-wash')).toBeNull();
   });
 
   it('steps the supertile level and re-renders the patch', () => {
