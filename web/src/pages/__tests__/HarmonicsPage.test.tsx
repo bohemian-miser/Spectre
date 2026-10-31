@@ -100,12 +100,34 @@ describe('HarmonicsPage', () => {
     const td = go.closest('td')!;
     expect([...row.children].indexOf(td) - 1).toBe(8);
     fireEvent.click(go);
-    await waitFor(() => expect(row.querySelector('[data-testid="harm-brute-done"]')?.textContent).toBe('✓175,221'), { timeout: 60000 });
-    expect(screen.getByTestId('harm-brute-note').textContent).toMatch(/Level 8: a 175,221-tile circuit of family 013467 closes in the Delta, reading as the 8,784 two levels down from level 1 up; word key/);
+    // the member found takes the cell like a built one: drawn, with its tiles; how it was found on hover
+    await waitFor(() => expect(row.querySelector('[data-testid="harm-brute-done"]')?.textContent).toBe('175,221'), { timeout: 60000 });
+    const done = row.querySelector<HTMLButtonElement>('[data-testid="harm-brute-done"]')!;
+    expect(done.querySelector('canvas')).toBeTruthy();
+    expect(done.title).toMatch(/Level 8: a 175,221-tile circuit of family 013467 closes in the Delta, reading as the 8,784 two levels down from level 1 up; word key/);
+    expect([...row.children].indexOf(done.closest('td')!) - 1).toBe(8);
     // the next one along, two levels further
     const next = row.querySelector<HTMLButtonElement>('[data-testid="harm-brute"]')!;
     expect([...row.children].indexOf(next.closest('td')!) - 1).toBe(10);
+    // clicking it opens its chain, the member found after the built ones
+    await waitFor(() => expect(done.disabled).toBe(false), { timeout: 30000 });
+    fireEvent.click(done);
+    await waitFor(() => expect(screen.getByTestId('harm-detail').querySelector('h2')!.textContent).toBe('A chain of family 013467: 441 L4 → 8,784 L6 → 175,221 L8'), { timeout: 30000 });
+    await waitFor(() => expect(screen.getAllByTestId('harm-side')).toHaveLength(3), { timeout: 30000 });
+    expect(screen.getAllByTestId('harm-side')[2].textContent).toMatch(/^=?175,221 L8 at level 7: [\d,]+ visits through/);
+    expect(screen.getAllByTestId('harm-step')[1].textContent).toBe('=');
+    await waitFor(() => expect(screen.getByTestId('harm-readings').textContent).toContain('the same'), { timeout: 30000 });
+    // the address names it, and a page opened there finds it again
+    expect(location.search).toMatch(/&c=8-175221&bf=6-8784\.8-175221$/);
+    const address = location.search;
     fireEvent.click(screen.getByTestId('harm-climb-go'));
     await waitFor(() => expect(screen.getByTestId('harm-climb-result').textContent).toMatch(/^ L6 [\d,]+ → L7 /), { timeout: 60000 });
-  }, 120000);
+    cleanup();
+    history.replaceState(null, '', address);
+    render(<HarmonicsPage forceSync />);
+    await waitFor(() => expect(screen.getByTestId('harm-detail').querySelector('h2')!.textContent).toBe('A chain of family 013467: 441 L4 → 8,784 L6 → 175,221 L8'), { timeout: 60000 });
+    expect(screen.getAllByTestId('harm-brute-done').map((c) => c.textContent)).toEqual(['175,221']);
+    expect(screen.getAllByTestId('harm-brute-done')[0].classList.contains('is-selected')).toBe(true);
+    expect(location.search).toBe(address);
+  }, 180000);
 });
