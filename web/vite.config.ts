@@ -45,6 +45,7 @@ export default defineConfig({
         buildup: resolve(__dirname, 'buildup.html'),
         foundations: resolve(__dirname, 'foundations.html'),
         period: resolve(__dirname, 'period.html'),
+        line: resolve(__dirname, 'line.html'),
         limit: resolve(__dirname, 'limit.html'),
         identify: resolve(__dirname, 'identify.html'),
         legacy: resolve(__dirname, 'legacy.html'),
