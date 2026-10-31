@@ -49,7 +49,7 @@ export function TailsPanel(props: { data: PageCombo }): JSX.Element {
         <table className="fd-small fd-fates" data-testid="fd-fates">
           <thead>
             <tr>
-              <th>By level</th>
+              <th>Level</th>
               {cols.map((r) => (
                 <th key={r} title="chain: its foundational circuit's tiles and level">
                   {name(r)}
@@ -79,10 +79,7 @@ export function TailsPanel(props: { data: PageCombo }): JSX.Element {
             })}
           </tbody>
         </table>
-        <p className="fd-muted">
-          Shares of the chords on tails at level {L}: each row adds up to 100%. Level {top} is built one past the circuits sorted; what closes there is a
-          known circuit, a predicted harmonic or unseen.
-        </p>
+        <p className="fd-muted">Each row adds up to 100%.</p>
       </div>
       <div className="fd-tails-block">
         <h3>Where each level&apos;s tails went by level {top}</h3>
@@ -119,19 +116,15 @@ export function TailsPanel(props: { data: PageCombo }): JSX.Element {
         </svg>
         <div className="fd-legend">
           <span>
-            <i className="fd-seg-harm" /> closed into chains known by then
+            <i className="fd-seg-harm" /> known chains
           </span>
           <span>
-            <i className="fd-seg-unseen" /> closed into new chains
+            <i className="fd-seg-unseen" /> new chains
           </span>
           <span>
-            <i className="fd-seg-tails" /> still open at level {top}
+            <i className="fd-seg-tails" /> still open
           </span>
         </div>
-        <p className="fd-muted">
-          Each column is the chords on tails at that level, followed to level {top}. Of what has closed, the new chains are the only part the circuits known by
-          then do not explain; the grey has not closed yet and is not accounted for either way.
-        </p>
         {fc.length ? (
           <table className="fd-small fd-forecast" data-testid="fd-forecast">
             <thead>
@@ -153,9 +146,8 @@ export function TailsPanel(props: { data: PageCombo }): JSX.Element {
           </table>
         ) : null}
         <p className="fd-muted" data-testid="fd-expected">
-          Of the {pct(exp.actual)} of chords on tails at level {top}, the known chains&apos; next members are expected to take {pct(exp.expected)}:{' '}
-          {pct(exp.actual > 0 ? exp.expected / exp.actual : 0)} of the tails. The other {pct(exp.actual > 0 ? 1 - exp.expected / exp.actual : 0)} is room
-          for known circuits closing again in more places, for new circuits and for open strands.
+          Next members of known chains: {pct(exp.expected)} of the {pct(exp.actual)} on tails at level {top} ({pct(exp.actual > 0 ? exp.expected / exp.actual : 0)}; the
+          other {pct(exp.actual > 0 ? 1 - exp.expected / exp.actual : 0)} is left for closings again, new circuits and open strands).
         </p>
       </div>
     </section>

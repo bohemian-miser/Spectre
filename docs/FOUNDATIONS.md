@@ -32,7 +32,21 @@ monsters the foundational circuits that start a chain at floor + 4 or later
 or are nuggets there (§6), and the 19 of at least 100,000 tiles. A late
 monster that starts a chain is explained: the page shows its chain and
 what it is forecast to take (§5); only the two late nuggets of 120000001
-and 121000001 are not.
+and 121000001 are not. A combination whose limit (§5) is under 99.5% is
+short, and a monster too: its tails are not all accounted for, and the page
+names the chain not forecast.
+
+Each combination carries marks a reader can filter by: short; not forecast
+(a chain not carried on past the build, for any reason but having ended);
+unexplained monster (a late monster with no chain); missed (a prediction
+checked against the build that missed).
+
+| mark | combinations of 023468 |
+|---|---|
+| short | 4 |
+| not forecast | 3 |
+| unexplained monster | 2 |
+| missed | 6 |
 
 The page reads the precomputed data of 023468 and analyses any other rule,
 or any other level, live: the rule and combination chosen with the shared
@@ -306,8 +320,7 @@ The forecast's one assumption fails in places: a harmonic closes in a
 different number of places per supertile of some type than its parent two
 levels down in 891 of 20,214 checks, in 71 combinations. In 82
 combinations a chain closes into itself one level after its last member,
-so the forecast made at that level takes more than the build shows. The
-page flags both, per combination.
+so the forecast made at that level takes more than the build shows.
 
 ## 5. Shares in the limit
 

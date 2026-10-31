@@ -1,57 +1,69 @@
-/** A rule's combinations, sortable and filtered, one compact row each. */
+/** A rule's combinations, sortable and filtered, one compact row each, with their marks (`MARKS`). */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { FLAG_TEXT, type IndexRow } from './pageData';
-import { compact } from './data';
+import { MARKS, marksOf, SHORT, type IndexRow, type Mark } from './pageData';
+import { compact, limitPct } from './data';
 
-type SortKey = 'combo' | 'floor' | 'lastNew' | 'found' | 'largest' | 'monsters' | 'flags';
+export type SortKey = 'combo' | 'floor' | 'lastNew' | 'found' | 'largest' | 'monsters' | 'limit';
 
 const COLUMNS: readonly { key: SortKey; label: string; title: string }[] = [
   { key: 'combo', label: 'Combination', title: 'Combination digits' },
   { key: 'floor', label: 'First', title: 'Level the first circuit closes at (the floor)' },
-  { key: 'lastNew', label: 'Last new', title: 'Level the last foundational circuit first closes at' },
+  { key: 'lastNew', label: 'Last found', title: 'Highest level a foundational circuit first closes at' },
   { key: 'found', label: 'Foundational', title: 'Foundational circuits' },
   { key: 'largest', label: 'Largest', title: 'Tiles of the largest foundational circuit' },
-  { key: 'monsters', label: '', title: 'Monsters' },
-  { key: 'flags', label: '⚑', title: 'Flags' },
+  { key: 'monsters', label: 'M', title: 'Monsters: late or giant circuits, and the combination itself when short' },
+  { key: 'limit', label: 'Limit', title: 'Share of chords on known circuits in the limit' },
 ];
+
+export const MARK_KEYS = Object.keys(MARKS) as Mark[];
 
 export interface Filters {
   readonly search: string;
   readonly floor: number | null;
   readonly lastNew: number | null;
-  readonly monsters: boolean;
-  readonly misses: boolean;
-  readonly flagged: boolean;
+  /** Rows with any of these marks; none chosen, every row. */
+  readonly marks: readonly Mark[];
 }
 
-export const NO_FILTERS: Filters = { search: '', floor: null, lastNew: null, monsters: false, misses: false, flagged: false };
+export const NO_FILTERS: Filters = { search: '', floor: null, lastNew: null, marks: [] };
+
+/** The rows the search and level filters keep, before the marks. */
+function unmarked(rows: readonly IndexRow[], f: Filters): IndexRow[] {
+  const digits = f.search.replace(/[^0-9a-z]/gi, '').toLowerCase();
+  return rows.filter((r) => r.combo.startsWith(digits) && (f.floor === null || r.floor === f.floor) && (f.lastNew === null || r.lastNew === f.lastNew));
+}
 
 export function filterRows(rows: readonly IndexRow[], f: Filters): IndexRow[] {
-  const digits = f.search.replace(/[^0-9a-z]/gi, '').toLowerCase();
-  return rows.filter(
-    (r) =>
-      r.combo.startsWith(digits) &&
-      (f.floor === null || r.floor === f.floor) &&
-      (f.lastNew === null || r.lastNew === f.lastNew) &&
-      (!f.monsters || r.monsters > 0) &&
-      (!f.misses || r.misses > 0) &&
-      (!f.flagged || r.flags.length > 0),
-  );
+  return unmarked(rows, f).filter((r) => !f.marks.length || f.marks.some((m) => MARKS[m].has(r)));
 }
+
+/** Per mark, the rows the other filters keep that have it: what choosing that mark alone shows. */
+export function markCounts(rows: readonly IndexRow[], f: Filters): Record<Mark, number> {
+  const kept = unmarked(rows, f);
+  return Object.fromEntries(MARK_KEYS.map((m) => [m, kept.filter((r) => MARKS[m].has(r)).length])) as Record<Mark, number>;
+}
+
+export function sortRows(rows: readonly IndexRow[], sort: { key: SortKey; desc: boolean }): IndexRow[] {
+  const k = sort.key;
+  return [...rows].sort((a, b) => {
+    const d = k === 'combo' ? a.combo.localeCompare(b.combo) : a[k] - b[k];
+    return (sort.desc ? -d : d) || a.combo.localeCompare(b.combo);
+  });
+}
+
+/** Where a column's sort starts: the combination and the limit (short ones first) ascending, the counts largest first. */
+const firstDesc = (k: SortKey): boolean => k !== 'combo' && k !== 'limit';
+const BY_LIMIT = { key: 'limit', desc: false } as const;
 
 export function ComboList(props: { rows: readonly IndexRow[]; selected: string | null; onSelect: (combo: string) => void }): JSX.Element {
   const [filters, setFilters] = useState<Filters>(NO_FILTERS);
   const [sort, setSort] = useState<{ key: SortKey; desc: boolean }>({ key: 'combo', desc: false });
   const floors = useMemo(() => [...new Set(props.rows.map((r) => r.floor))].sort(), [props.rows]);
   const lasts = useMemo(() => [...new Set(props.rows.map((r) => r.lastNew))].sort(), [props.rows]);
-  const shown = useMemo(() => {
-    const out = filterRows(props.rows, filters);
-    const k = sort.key;
-    return out.sort((a, b) => {
-      const d = k === 'combo' ? a.combo.localeCompare(b.combo) : k === 'flags' ? a.flags.length - b.flags.length : (a[k] as number) - (b[k] as number);
-      return (sort.desc ? -d : d) || a.combo.localeCompare(b.combo);
-    });
-  }, [props.rows, filters, sort]);
+  const counts = useMemo(() => markCounts(props.rows, filters), [props.rows, filters]);
+  // a mark no combination of the rule has gets no toggle
+  const present = useMemo(() => MARK_KEYS.filter((m) => props.rows.some((r) => MARKS[m].has(r))), [props.rows]);
+  const shown = useMemo(() => sortRows(filterRows(props.rows, filters), sort), [props.rows, filters, sort]);
 
   // arrow keys move through the rows shown, wherever the focus is but a menu
   const ref = useRef({ shown, selected: props.selected, onSelect: props.onSelect });
@@ -82,6 +94,12 @@ export function ComboList(props: { rows: readonly IndexRow[]; selected: string |
   }, [props.selected, shown]);
 
   const set = (patch: Partial<Filters>): void => setFilters((f) => ({ ...f, ...patch }));
+  const toggle = (m: Mark): void => {
+    const on = !filters.marks.includes(m);
+    setFilters((f) => ({ ...f, marks: on ? [...f.marks, m] : f.marks.filter((x) => x !== m) }));
+    // the short ones are read by how short
+    if (on && m === 'short') setSort(BY_LIMIT);
+  };
   return (
     <div className="fd-list">
       <div className="fd-filters">
@@ -105,7 +123,7 @@ export function ComboList(props: { rows: readonly IndexRow[]; selected: string |
           </select>
         </label>
         <label>
-          Last new
+          Last found
           <select value={filters.lastNew ?? ''} onChange={(e) => set({ lastNew: e.target.value ? Number(e.target.value) : null })} aria-label="Last foundational level">
             <option value="">any</option>
             {lasts.map((f) => (
@@ -115,18 +133,20 @@ export function ComboList(props: { rows: readonly IndexRow[]; selected: string |
             ))}
           </select>
         </label>
-        <label className="fd-check">
-          <input type="checkbox" checked={filters.monsters} onChange={(e) => set({ monsters: e.target.checked })} data-testid="fd-only-monsters" />
-          Monsters
-        </label>
-        <label className="fd-check">
-          <input type="checkbox" checked={filters.misses} onChange={(e) => set({ misses: e.target.checked })} title="Combinations with a prediction that missed" />
-          Misses
-        </label>
-        <label className="fd-check">
-          <input type="checkbox" checked={filters.flagged} onChange={(e) => set({ flagged: e.target.checked })} data-testid="fd-only-flagged" />
-          Flagged
-        </label>
+      </div>
+      <div className="fd-marks" role="group" aria-label="Show combinations with these marks">
+        {present.map((m) => (
+          <button
+            key={m}
+            type="button"
+            aria-pressed={filters.marks.includes(m)}
+            title={MARKS[m].title}
+            onClick={() => toggle(m)}
+            data-testid={`fd-mark-${m}`}
+          >
+            <i className={`fd-dot fd-mark-${m}`} /> {MARKS[m].label} <span className="fd-mark-n">{counts[m]}</span>
+          </button>
+        ))}
       </div>
       <div className="fd-rows" role="listbox" aria-label="Combinations" ref={body} data-testid="fd-rows">
         <div className="fd-row fd-head" role="presentation">
@@ -136,33 +156,36 @@ export function ComboList(props: { rows: readonly IndexRow[]; selected: string |
               type="button"
               title={`Sort by ${c.title.toLowerCase()}`}
               className={sort.key === c.key ? 'fd-sorted' : undefined}
-              onClick={() => setSort((s) => ({ key: c.key, desc: s.key === c.key ? !s.desc : c.key !== 'combo' }))}
+              onClick={() => setSort((s) => ({ key: c.key, desc: s.key === c.key ? !s.desc : firstDesc(c.key) }))}
+              data-testid={`fd-sort-${c.key}`}
             >
-              {c.label || 'M'}
+              {c.label}
               {sort.key === c.key ? (sort.desc ? ' ↓' : ' ↑') : ''}
             </button>
           ))}
+          <span />
         </div>
-        {shown.map((r) => (
-          <div
-            key={r.combo}
-            role="option"
-            aria-selected={r.combo === props.selected}
-            className="fd-row"
-            onClick={() => props.onSelect(r.combo)}
-            title={`first circuit at level ${r.floor}, last new foundational circuit at level ${r.lastNew}, ${r.found} foundational circuits, largest ${r.largest.toLocaleString('en-US')} tiles${r.misses ? `, ${r.misses} missed predictions` : ''}`}
-          >
-            <span className="fd-digits">{r.combo}</span>
-            <span>{r.floor}</span>
-            <span>{r.lastNew}</span>
-            <span>{r.found}</span>
-            <span>{compact(r.largest)}</span>
-            <span>{r.monsters ? <span className="fd-badge" title={`${r.monsters} monsters`}>{r.monsters}</span> : null}</span>
-            <span title={r.flags.map((f) => FLAG_TEXT[f]).join('; ')} data-testid="fd-flags">
-              {r.flags.length ? <span className="fd-flag">⚑{r.flags.length > 1 ? r.flags.length : ''}</span> : null}
-            </span>
-          </div>
-        ))}
+        {shown.map((r) => {
+          const marks = marksOf(r);
+          return (
+            <div key={r.combo} role="option" aria-selected={r.combo === props.selected} className="fd-row" onClick={() => props.onSelect(r.combo)} data-testid="fd-row">
+              <span className="fd-digits">{r.combo}</span>
+              <span>{r.floor}</span>
+              <span>{r.lastNew}</span>
+              <span>{r.found}</span>
+              <span title={`${r.largest.toLocaleString('en-US')} tiles`}>{compact(r.largest)}</span>
+              <span>{r.monsters ? <span className="fd-badge" title={`${r.monsters} monsters`}>{r.monsters}</span> : null}</span>
+              <span data-testid="fd-limit" className={r.limit < SHORT ? 'fd-short' : undefined}>
+                {limitPct(r.limit)}
+              </span>
+              <span className="fd-row-marks" title={marks.map((m) => MARKS[m].label).join(', ')} data-testid="fd-marks" data-marks={marks.join(' ')}>
+                {marks.map((m) => (
+                  <i key={m} className={`fd-dot fd-mark-${m}`} />
+                ))}
+              </span>
+            </div>
+          );
+        })}
       </div>
       <p className="fd-count">
         {shown.length === props.rows.length ? `${props.rows.length} combinations` : `${shown.length} of ${props.rows.length}`}; ↑ ↓ to move

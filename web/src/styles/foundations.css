@@ -73,6 +73,34 @@
   letter-spacing: 0.02em;
 }
 
+.fd-how {
+  margin-top: 6px;
+  font-size: 13px;
+  max-width: 88ch;
+}
+.fd-how summary {
+  cursor: pointer;
+  color: var(--accent);
+  font-size: 12px;
+}
+.fd-how dl {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 3px 14px;
+  margin: 8px 0 0;
+  font-size: 12px;
+}
+.fd-how dt {
+  font-weight: 600;
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+}
+.fd-how dd {
+  margin: 0;
+  color: var(--muted);
+}
+
 /* rule, level and sweep */
 .fd-intro .shapes-combo {
   margin-top: 10px;
@@ -135,7 +163,7 @@
 /* list and main */
 .fd-split {
   display: grid;
-  grid-template-columns: 370px minmax(0, 1fr);
+  grid-template-columns: 420px minmax(0, 1fr);
   gap: 20px;
   align-items: start;
 }
@@ -145,7 +173,7 @@
   display: grid;
   gap: 6px;
   max-height: calc(100vh - var(--site-header-h) - 24px);
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
 }
 .fd-filters {
   display: flex;
@@ -185,8 +213,8 @@
 }
 .fd-row {
   display: grid;
-  grid-template-columns: 1fr 30px 50px 74px 48px 26px 22px;
-  gap: 4px;
+  grid-template-columns: minmax(72px, 1fr) 28px 50px 72px 44px 22px 50px 34px;
+  gap: 3px;
   align-items: center;
   padding: 2px 8px;
   font-size: 12px;
@@ -232,9 +260,55 @@
   font-size: 11px;
   color: var(--muted);
 }
-.fd-flag {
-  color: var(--fd-monster);
+.fd-marks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.fd-marks button {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  font: inherit;
   font-size: 11px;
+  padding: 1px 7px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+}
+.fd-marks button[aria-pressed='true'] {
+  background: color-mix(in srgb, var(--accent) 22%, var(--panel));
+  border-color: var(--accent);
+}
+.fd-mark-n {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.fd-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+}
+.fd-row-marks {
+  display: inline-flex;
+  gap: 2px;
+  justify-content: flex-end;
+}
+.fd-mark-short {
+  background: var(--fd-unseen);
+}
+.fd-mark-notForecast {
+  background: var(--fd-c2);
+}
+.fd-mark-unexplained {
+  background: var(--fd-c5);
+}
+.fd-mark-missed {
+  background: var(--fd-o3);
 }
 .fd-badge {
   display: inline-block;
@@ -278,26 +352,57 @@
   font-family: inherit;
   font-weight: 400;
 }
-.fd-summary {
+.fd-combo {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  padding: 14px 16px 18px;
+}
+.fd-combo-head {
+  display: grid;
+  gap: 8px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+.fd-keys {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 18px;
-  margin: 4px 0 0;
-  font-size: 13px;
+  gap: 6px 22px;
+  margin: 0;
+}
+.fd-keys dt {
+  font-size: 11px;
   color: var(--muted);
 }
-.fd-summary b {
-  color: var(--text);
+.fd-keys dd {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
-.fd-note {
-  margin: 0;
-  padding: 8px 12px 8px 26px;
-  border-left: 2px solid var(--line);
+.fd-mark-chip {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  margin-right: 8px;
+  font-size: 13px;
+  font-weight: 500;
+}
+.fd-facts {
+  border-collapse: collapse;
   font-size: 12px;
-  line-height: 1.5;
-  color: var(--muted);
   max-width: 90ch;
+}
+.fd-facts th {
+  text-align: left;
+  font-weight: 400;
+  color: var(--muted);
+  padding: 2px 16px 2px 0;
+  white-space: nowrap;
+  vertical-align: top;
+}
+.fd-facts td {
+  padding: 2px 0;
 }
 
 /* chart */
@@ -336,9 +441,20 @@
 .fd-legend {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 14px;
+  gap: 4px 28px;
   font-size: 12px;
   color: var(--muted);
+}
+.fd-legend-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  align-items: center;
+}
+.fd-legend-group b {
+  font-weight: 600;
+  color: var(--text);
+  font-size: 11px;
 }
 .fd-legend i {
   display: inline-block;
@@ -581,6 +697,12 @@
   height: 8px;
   border-radius: 2px;
 }
+.fd-chart-read .fd-read-group {
+  color: var(--text);
+  font-weight: 600;
+  font-size: 11px;
+  margin-top: 4px;
+}
 .fd-chart-read dd {
   margin: 0;
   text-align: right;
@@ -778,6 +900,9 @@ a.fd-harm:hover {
   display: grid;
   gap: 8px;
 }
+.fd-monsters > p {
+  margin: 0;
+}
 .fd-table-wrap {
   max-width: 100%;
   overflow-x: auto;
@@ -853,6 +978,13 @@ a.fd-harm:hover {
   .fd-rows {
     max-height: 34vh;
   }
+  /* the tiles of the largest circuit give way to the limit */
+  .fd-row {
+    grid-template-columns: minmax(70px, 1fr) 26px 48px 64px 22px 50px 30px;
+  }
+  .fd-row > :nth-child(5) {
+    display: none;
+  }
   .fd-grid-cards {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -868,4 +1000,23 @@ a.fd-harm:hover {
     padding-left: 5px;
     padding-right: 5px;
   }
+}
+
+/* the short mark: the limit falls short of every chord */
+.fd-short,
+.fd-tab-short {
+  color: var(--fd-unseen);
+  font-weight: 600;
+}
+.fd-chip-short {
+  color: var(--fd-unseen);
+  font-weight: 700;
+}
+.fd-short-block h3,
+.fd-monsters h3 {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin: 4px 0 6px;
+  font-size: 15px;
 }

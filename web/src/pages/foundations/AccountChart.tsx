@@ -9,7 +9,7 @@
  * gives each segment's share.
  */
 import { Fragment, useMemo, useState } from 'react';
-import { account, STOP_TEXT, type PageCombo, type Split } from './pageData';
+import { account, type PageCombo, type Segment, type Split } from './pageData';
 import { pct } from './data';
 
 const H = 150;
@@ -22,9 +22,15 @@ const GAP = 2;
 const BREAK = 14;
 
 const SPLITS: readonly { key: Split; label: string }[] = [
-  { key: 'class', label: 'Off' },
-  { key: 'order', label: 'By order' },
-  { key: 'chain', label: 'By chain' },
+  { key: 'class', label: 'Class' },
+  { key: 'order', label: 'Order' },
+  { key: 'chain', label: 'Chain' },
+];
+
+/** The segments in two groups: chords on closed circuits, and on tails. */
+const groups = (segs: readonly Segment[]): [string, Segment[]][] => [
+  ['Closed', segs.filter((s) => !s.tail)],
+  ['Tails', segs.filter((s) => s.tail)],
 ];
 
 /** A segment's class, by its key: the colour follows the segment's identity. */
@@ -42,11 +48,6 @@ export function AccountChart(props: { data: PageCombo }): JSX.Element {
   const W = xOf(columns.length - 1) + COL + 4;
   const y = (share: number): number => TOP + H * (1 - share);
   const shown = hover ?? top;
-  const name = (root: number): string => {
-    const f = data.found.find((x) => x[0] === root);
-    return f ? `the chain of ${f[2].toLocaleString('en-US')} at level ${f[1]}` : `chain ${root}`;
-  };
-  const stopped = pr.fits.filter((f) => f.stop && f.stop !== 'ended' && f.stop !== 'loop');
   const colName = (c: number): string => {
     const l = columns[c].level;
     return l === null ? 'The limit' : l > top ? `Level ${l}, forecast` : `Level ${l}`;
@@ -54,7 +55,7 @@ export function AccountChart(props: { data: PageCombo }): JSX.Element {
   return (
     <figure className="fd-chart" data-testid="fd-chart">
       <div className="fd-chart-tools">
-        <span className="fd-muted">Harmonics</span>
+        <span className="fd-muted">Split</span>
         <div className="fd-toggle" role="radiogroup" aria-label="Split the chains">
           {SPLITS.map((s) => (
             <button key={s.key} type="button" role="radio" aria-checked={split === s.key} className={split === s.key ? 'fd-on' : undefined} onClick={() => setSplit(s.key)}>
@@ -64,10 +65,15 @@ export function AccountChart(props: { data: PageCombo }): JSX.Element {
         </div>
       </div>
       <div className="fd-legend" data-testid="fd-legend">
-        {segs.map((s) => (
-          <span key={s.key}>
-            <i className={classOf(s.key)} /> {s.label}
-          </span>
+        {groups(segs).map(([title, list]) => (
+          <div key={title} className="fd-legend-group">
+            <b>{title}</b>
+            {list.map((s) => (
+              <span key={s.key}>
+                <i className={classOf(s.key)} /> {s.label}
+              </span>
+            ))}
+          </div>
         ))}
       </div>
       <div className="fd-chart-body">
@@ -111,37 +117,28 @@ export function AccountChart(props: { data: PageCombo }): JSX.Element {
         </svg>
         <div className="fd-chart-read" aria-live="polite">
           <strong>{colName(shown)}</strong>
-          {hover === null ? <span className="fd-muted"> (top built; hover a column)</span> : null}
+          {hover === null ? <span className="fd-muted"> · hover a column</span> : null}
           <dl>
-            {segs.map((s) => (
-              <Fragment key={s.key}>
-                <dt>
-                  <i className={classOf(s.key)} /> {s.label}
-                </dt>
-                <dd>{pct(s.values[shown])}</dd>
+            {groups(segs).map(([title, list]) => (
+              <Fragment key={title}>
+                <dt className="fd-read-group">{title}</dt>
+                <dd className="fd-read-group" />
+                {list.map((s) => (
+                  <Fragment key={s.key}>
+                    <dt>
+                      <i className={classOf(s.key)} /> {s.label}
+                    </dt>
+                    <dd>{pct(s.values[shown])}</dd>
+                  </Fragment>
+                ))}
               </Fragment>
             ))}
           </dl>
         </div>
       </div>
       <figcaption className="fd-muted">
-        Shares of a supertile&apos;s chords by level, built to {top}; the lighter columns and ∞ are forecast from the known chains. In the limit known
-        circuits take <b data-testid="fd-limit-share">{pct(pr.limit)}</b> of the chords
-        {acc.over > 0.0005 ? `, ${pct(acc.over)} more than the tails hold; the forecast parts are drawn scaled to fit.` : `; ${pct(1 - pr.limit)} is not accounted for.`}
-        {stopped.length ? (
-          <span data-testid="fd-not-forecast">
-            {' '}
-            Not forecast:{' '}
-            {stopped.map((f, i) => (
-              <Fragment key={f.root}>
-                {i ? '; ' : ''}
-                {name(f.root)}, {STOP_TEXT[f.stop!]}
-                {f.stop === 'growing' && f.ratio !== null ? ` (ratio ${f.ratio.toFixed(2)})` : ''}
-              </Fragment>
-            ))}
-            .
-          </span>
-        ) : null}
+        Lighter columns and ∞ are forecast.
+        {acc.over > 0.0005 ? ` The forecast takes ${pct(acc.over)} more than the tails hold; its parts are drawn scaled to fit.` : ''}
       </figcaption>
     </figure>
   );
