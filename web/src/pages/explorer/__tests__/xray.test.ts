@@ -22,7 +22,7 @@ import {
 import { HEX_CENTRE, HEX_OUTLINE, supertileEdges } from '../../../lib/hexBoard';
 import { addressFromId } from '../../../core/transducer';
 import { polygonArea } from '../../map/glyphs';
-import { countAtDepth, leafMesh, lowestXrayLevel, outlineOf, pathFromAncestor, supertileAt, supertilesAt, tintFromEngine, xrayFromEngine, XRAY_MAX_SUPERTILES } from '../xray';
+import { countAtDepth, leafMesh, outlineAtLevel, lowestXrayLevel, outlineOf, pathFromAncestor, supertileAt, supertilesAt, tintFromEngine, xrayFromEngine, XRAY_MAX_SUPERTILES } from '../xray';
 
 const HEX_AREA = Math.abs(polygonArea(HEX_OUTLINE));
 const segKey = (a: { x: number; y: number }, b: { x: number; y: number }): string =>
@@ -35,6 +35,16 @@ describe('the X-ray’s supertiles', () => {
       const list = supertilesAt('hex', root, 3, k);
       expect(list.length).toBe(countAtDepth(root, 3 - k));
       for (const s of list) expect(Math.abs(polygonArea(outlineOf(s.node, 'hex').full))).toBeCloseTo(countTiles(s.node) * HEX_AREA, 6);
+    }
+  });
+
+  it('above the exact levels, scale a level-6 outline up to about the area the supertile’s hexagons cover', () => {
+    for (const level of [7, 8, 10]) {
+      for (const type of ['Delta', 'Psi', 'Gamma'] as const) {
+        const node = buildSystem('hex', level)[type];
+        const area = Math.abs(polygonArea(outlineAtLevel(node, 'hex', level).full));
+        expect(Math.abs(area / (countAtDepth(node, level) * HEX_AREA) - 1)).toBeLessThan(0.03);
+      }
     }
   });
 

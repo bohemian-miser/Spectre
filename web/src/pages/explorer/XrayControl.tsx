@@ -1,6 +1,6 @@
 /** The X-ray switch and its level slider, one item of the viewport's tool row. */
 
-/** Highest supertile level the X-ray shows on the infinite plane (its outline is worked out whole, once). */
+/** Highest supertile level the X-ray offers on the infinite plane before the view has been zoomed out further. */
 export const XRAY_INFINITE_MAX = 6;
 
 export function XrayControl(props: {

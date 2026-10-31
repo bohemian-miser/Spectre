@@ -34,6 +34,7 @@ import {
   TILE_NAMES,
   TILE_PALETTES,
   averageLeafArea,
+  UNROOTED_MAX_LEVEL,
   hexToRgb,
   leafOrder,
   rgbToCss,
@@ -547,6 +548,9 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
   /** Record-the-canvas wiring, shared with the map page (`map/useRecording`). */
   const rec = useCanvasRecording(infiniteApiRef, drawFamily, INFINITE_SEED);
   const pendingLevelRef = useRef<number | null>(null);
+  /** The deepest supertile level the infinite view has shown this session: how far up its X-ray goes. */
+  const [deepest, setDeepest] = useState(0);
+  const deepestRef = useRef(0);
 
   /** Strand chords: local geometry, identical to what the rooted view draws. */
   const infiniteChords = useMemo(
@@ -628,13 +632,20 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
   const onInfiniteStatus = useCallback(
     (s: InfiniteCanvasStatus): void => {
       infiniteStatusRef.current = s;
+      if (s.draw && s.size.width > 0) {
+        const depth = Math.round(levelForScale(s.draw.scale, s.size.width, s.size.height, averageLeafArea(drawFamily)));
+        if (depth > deepestRef.current) {
+          deepestRef.current = depth;
+          setDeepest(depth);
+        }
+      }
       if (pendingLevelRef.current !== null && applyLevelZoom(pendingLevelRef.current)) {
         pendingLevelRef.current = null;
       }
       infiniteHudSubRef.current?.(s);
       infiniteStatsSubRef.current?.(s);
     },
-    [applyLevelZoom],
+    [applyLevelZoom, drawFamily],
   );
 
   const initialInfiniteCamera = useRef(createCamera(0, 0, 36)).current;
@@ -904,7 +915,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
   const tileCount = model.tileCount;
   const heavy = !infinite && state.level > SVG_MAX_LEVEL;
   const xrayLowest = useMemo(() => (infinite ? 0 : lowestXrayLevel(model.root, renderLevel)), [infinite, model.root, renderLevel]);
-  const xrayHighest = infinite ? XRAY_INFINITE_MAX : renderLevel;
+  const xrayHighest = infinite ? Math.min(UNROOTED_MAX_LEVEL, Math.max(XRAY_INFINITE_MAX, deepest)) : renderLevel;
   const xrayLevel = Math.min(xrayHighest, Math.max(xrayLowest, xrayWanted));
   const xrayColour = useCallback(
     (type: TileTypeId) => tileColor(type, state.colorScheme, state.customColors),
