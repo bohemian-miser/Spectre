@@ -281,7 +281,7 @@ export function createCanvas2dRenderer(
       // Region colours — leaf cuts only, over the fills, under the strands.
       const rf = regionFill;
       if (!aggregate && rf) {
-        C.globalAlpha = showFills ? REGION_FILL_ALPHA : 1;
+        C.globalAlpha = rf.alpha ?? (showFills ? REGION_FILL_ALPHA : 1);
         const n = Math.min(rf.count, CANVAS2D_MAX_INSTANCES * 4);
         for (let i = 0; i < n; i++) {
           const path = regionPaths[rf.row[i]];

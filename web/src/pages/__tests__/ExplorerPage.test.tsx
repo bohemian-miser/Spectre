@@ -7,7 +7,7 @@
  * Geometry, matching and circuit correctness are covered by the core/lib
  * suites; what can only break here is the wiring.
  */
-import { act, cleanup, fireEvent, render } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import ExplorerPage from '../ExplorerPage';
 import { leafOrder } from '../../core';
@@ -160,9 +160,9 @@ describe('ExplorerPage', () => {
     expect(svg.title).toContain('no SVG scene');
   });
 
-  it('X-ray: a switch over the field opens a level slider from the tiles to the patch', () => {
+  it('X-ray: a switch over the field opens a level slider from the tiles to the patch', async () => {
     window.history.replaceState(null, '', '/#/explorer?v=1&f=hex&lv=4');
-    const { container, getByTestId, queryByTestId } = render(<ExplorerPage />);
+    const { container, getByTestId, queryByTestId, findByTestId } = render(<ExplorerPage />);
     expect(queryByTestId('xray-level')).toBeNull();
     fireEvent.click(getByTestId('xray-toggle'));
     const slider = getByTestId('xray-level') as HTMLInputElement;
@@ -170,8 +170,36 @@ describe('ExplorerPage', () => {
     fireEvent.change(slider, { target: { value: '3' } });
     expect(getByTestId('xray-level-label').textContent).toContain('level 3');
     expect(container.querySelector('.xray-layer canvas')).not.toBeNull();
+    // The wash lies in the scene under the strands: inside the camera group, before any circuit layer.
+    const wash = await findByTestId('xray-wash');
+    expect(wash.closest('.tiling-camera')).not.toBeNull();
+    const after = [...(wash.parentElement?.children ?? [])].slice([...(wash.parentElement?.children ?? [])].indexOf(wash) + 1);
+    expect(after.some((el) => el.classList.contains('tiling-tiles'))).toBe(false);
+    expect(wash.querySelectorAll('use').length).toBe(8);
     fireEvent.click(getByTestId('xray-toggle'));
     expect(container.querySelector('.xray-layer')).toBeNull();
+    expect(queryByTestId('xray-wash')).toBeNull();
+  });
+
+  it('harmonics: a circuit picked out offers a search of the patch’s strands two levels up', async () => {
+    window.history.replaceState(null, '', '/#/explorer?v=1&f=hex&lv=4&e=023468&c=140000001');
+    const { container, findByTestId, getByTestId, queryByTestId } = render(<ExplorerPage />);
+    expect(queryByTestId('harmonic-control')).toBeNull();
+    const chip = await waitFor(() => {
+      const c = [...container.querySelectorAll('.length-chip')].find((b) => b.textContent?.startsWith('303 '));
+      if (!c) throw new Error('no 303 yet');
+      return c;
+    }, { timeout: 8000 });
+    fireEvent.click(chip);
+    fireEvent.click(getByTestId('harmonic-toggle'));
+    // A level-4 patch reads the circuit at level 0 or 1, against level 2 or 3.
+    expect([...(getByTestId('harmonic-m') as HTMLSelectElement).options].map((o) => o.value)).toEqual(['0', '1']);
+    expect([...(getByTestId('harmonic-up') as HTMLSelectElement).options].map((o) => o.value)).toEqual(['3']);
+    const summary = await findByTestId('harmonic-summary', {}, { timeout: 8000 });
+    expect(summary.textContent).toMatch(/visits at level 1; \d+ of \d+ strands that leave a level-3 supertile match/);
+    expect(container.querySelector('[data-testid=harmonic-layer] canvas')).not.toBeNull();
+    fireEvent.click(getByTestId('harmonic-toggle'));
+    expect(queryByTestId('harmonic-layer')).toBeNull();
   });
 
   it('steps the supertile level and re-renders the patch', () => {

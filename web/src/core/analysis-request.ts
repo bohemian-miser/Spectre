@@ -41,6 +41,8 @@ export interface AnalysisRequest {
   readonly curved?: boolean;
   /** Return each circuit's count vector (`circuitVectors`). */
   readonly loopVectors?: boolean;
+  /** Return the tiles each path runs through (`circuitTiles`, `tailTiles`). */
+  readonly pathTiles?: boolean;
 }
 
 export interface PathSummary {
@@ -65,7 +67,33 @@ export interface AnalysisResponse {
   readonly dual?: DualGraph;
   /** Each circuit's crossings per class, aligned with `circuits` (`loopVectors`). */
   readonly circuitVectors?: readonly Readonly<Record<number, number>>[];
+  /**
+   * Present when the request asked for `pathTiles`: per circuit and per tail
+   * (aligned with `circuits` and `tails`), the tile each counted segment lies
+   * in, in order, as its slot path from the root read as a base-8 number
+   * (`slotPathCode`).
+   */
+  readonly circuitTiles?: readonly Int32Array[];
+  readonly tailTiles?: readonly Int32Array[];
   readonly elapsedMs: number;
+}
+
+/**
+ * A slot path from a level-`level` root (`1.7.0`) as one number: its first
+ * `level` slots in base 8, the root's child the most significant. The
+ * level-j supertile holding the tile is the code divided by 8^j, rounded down.
+ */
+export function slotPathCode(id: string, level: number): number {
+  let code = 0;
+  let digits = 0;
+  for (let i = 0; i < id.length && digits < level; i++) {
+    const c = id.charCodeAt(i) - 48;
+    if (c < 0 || c > 9) continue;
+    code = code * 8 + c;
+    digits++;
+  }
+  for (; digits < level; digits++) code *= 8;
+  return code;
 }
 
 function summarize(paths: readonly Path[]): PathSummary[] {
@@ -109,8 +137,15 @@ export function runAnalysis(req: AnalysisRequest): AnalysisResponse {
       chords: drawing?.chords,
       auxChords: drawing?.auxChords,
     },
-    { rainbowTails: req.rainbowTails, curved: req.curved, loopVectors: req.loopVectors },
+    { rainbowTails: req.rainbowTails, curved: req.curved, loopVectors: req.loopVectors, pathTiles: req.pathTiles },
   );
+  let codes: Int32Array | null = null;
+  const asCodes = (tiles: Int32Array): Int32Array => {
+    codes ??= Int32Array.from(instances, (inst) => slotPathCode(inst.id, req.level));
+    const out = new Int32Array(tiles.length);
+    for (let i = 0; i < tiles.length; i++) out[i] = codes[tiles[i]];
+    return out;
+  };
   return {
     id: req.id,
     tileCount: instances.length,
@@ -124,6 +159,8 @@ export function runAnalysis(req: AnalysisRequest): AnalysisResponse {
     segmentControls: result.segmentControl ? [...result.segmentControl.entries()] : undefined,
     dual,
     circuitVectors: result.circuitVectors,
+    circuitTiles: result.circuitTiles?.map(asCodes),
+    tailTiles: result.tailTiles?.map(asCodes),
     elapsedMs: Date.now() - started,
   };
 }

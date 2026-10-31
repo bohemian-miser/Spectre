@@ -153,11 +153,12 @@ describe('MapPage', () => {
     stubContexts(gl, null);
     const { container } = render(<MapPage forceSyncClient />);
     await settle();
+    // the far cut is drawn on a later frame than the query; under load that can be past one settle
+    await act(() => vi.waitFor(() => expect(gl.drawArraysInstanced).toHaveBeenCalled(), { timeout: 5000 }));
 
     const instances = hudNumber(container, 'hud-instances');
     expect(instances).toBeGreaterThan(0);
     expect(container.querySelector('[data-testid="hud-cut"]')?.textContent).toContain('glyphs');
-    expect(gl.drawArraysInstanced).toHaveBeenCalled();
     const lastDraw = gl.drawArraysInstanced.mock.calls.at(-1) as unknown[];
     expect(lastDraw[3]).toBe(instances); // instanceCount
     expect(container.querySelector('[data-testid="hud-draw-ms"]')?.textContent).toContain(

@@ -602,6 +602,7 @@ export function createWebGLRenderer(
   let regionMesh: RegionMeshTable | null = null;
   let regionCount = 0;
   let regionOrigin = { x: 0, y: 0 };
+  let regionAlpha: number | null = null;
 
   // --- traced strand --------------------------------------------------------
   // Segment i reads points i and i+1, so ONE point buffer is bound twice at a
@@ -853,6 +854,7 @@ export function createWebGLRenderer(
       regionMesh = fill.mesh;
     }
     regionOrigin = fill.origin;
+    regionAlpha = fill.alpha ?? null;
     G.bindBuffer(G.ARRAY_BUFFER, vboRegionPos);
     G.bufferData(G.ARRAY_BUFFER, fill.pos, G.DYNAMIC_DRAW);
     G.bindBuffer(G.ARRAY_BUFFER, vboRegionCode);
@@ -1011,7 +1013,7 @@ export function createWebGLRenderer(
             const roff = originRelativeCenter(cam, regionOrigin);
             G.useProgram(progRegion);
             G.uniform4f(uRegionView, -roff.x, -roff.y, kx, ky);
-            G.uniform1f(uRegionAlpha, showFills ? REGION_FILL_ALPHA : 1);
+            G.uniform1f(uRegionAlpha, regionAlpha ?? (showFills ? REGION_FILL_ALPHA : 1));
             G.activeTexture(G.TEXTURE0);
             G.bindTexture(G.TEXTURE_2D, regionTex);
             G.uniform1i(uRegionTexLoc, 0);
