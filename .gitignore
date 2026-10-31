@@ -23,3 +23,6 @@ web/public/data/circuit-atlas/*.partial
 
 # Corner-triple listings from circuit-index/points.ts run to gigabytes; summaries are committed instead
 web/circuit-index/data/*/points.6.csv
+
+# Pictures from the trail-scale harness
+web/trail-scale/out/
