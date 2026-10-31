@@ -43,6 +43,8 @@ export interface ViewportToolsProps {
   /** Whether the camera follows the traced strand, shown as a toggle when `onToggleFollow` is given. */
   readonly followOn?: boolean;
   onToggleFollow?(): void;
+  /** The page's own tools, first in the row (they wrap with the buttons). */
+  readonly children?: React.ReactNode;
 }
 
 /** `● Rec` / `■ 1:07` — the cluster is small; the page button has the words. */
@@ -85,6 +87,7 @@ export function ViewportTools(props: ViewportToolsProps): JSX.Element {
       onPointerUp={swallow}
       onClick={swallow}
     >
+      {props.children}
       {onToggleFollow ? (
         <button
           type="button"

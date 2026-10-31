@@ -1,4 +1,4 @@
-/** The X-ray switch and its level slider, over the top of the Explorer's viewport. */
+/** The X-ray switch and its level slider, one item of the viewport's tool row. */
 
 /** Highest supertile level the X-ray shows on the infinite plane (its outline is worked out whole, once). */
 export const XRAY_INFINITE_MAX = 6;
@@ -10,14 +10,12 @@ export function XrayControl(props: {
   highest: number;
   busy: boolean;
   note: string | null;
-  /** Sit below the infinite view's own tools. */
-  belowTools?: boolean;
   onToggle(on: boolean): void;
   onLevel(level: number): void;
 }): JSX.Element {
-  const { on, level, lowest, highest, busy, note, belowTools, onToggle, onLevel } = props;
+  const { on, level, lowest, highest, busy, note, onToggle, onLevel } = props;
   return (
-    <div className={belowTools ? 'xray-control is-below-tools' : 'xray-control'} data-testid="xray-control" data-panzoom-ignore="">
+    <div className="xray-control" data-testid="xray-control" data-panzoom-ignore="">
       <label title="Outline the supertiles of one level over the tiles; hover one for its type and slot path">
         <input type="checkbox" checked={on} onChange={(e) => onToggle(e.target.checked)} data-testid="xray-toggle" />
         X-ray

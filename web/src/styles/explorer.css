@@ -361,21 +361,19 @@
   white-space: nowrap;
 }
 .xray-control {
-  position: absolute;
-  top: 8px;
-  right: 8px;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 4px 10px;
+  padding: 3px 9px;
+  border: 1px solid rgba(244, 246, 251, 0.28);
   border-radius: var(--radius);
   background: rgba(8, 10, 16, 0.72);
   color: #e7ecf6;
   font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
-/* Under the infinite view's own tools. */
-.xray-control.is-below-tools {
-  top: 42px;
+/* The rooted view's tool row: the infinite view's (.viewport-tools), without its buttons. */
+.explorer-tools {
+  z-index: 2;
 }
 .xray-control label {
   display: inline-flex;
@@ -385,6 +383,11 @@
 }
 .xray-control input[type='range'] {
   width: 120px;
+}
+@media (max-width: 600px) {
+  .xray-control input[type='range'] {
+    width: 72px;
+  }
 }
 .xray-level {
   min-width: 6ch;

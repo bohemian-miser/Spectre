@@ -915,6 +915,23 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
   /** Tiles a level-L patch holds — the count the infinite view targets. */
   const levelTiles = Math.round(SUBSTITUTION_GROWTH ** state.level);
 
+  const xrayControl = (
+    <XrayControl
+      on={xrayOn}
+      level={xrayLevel}
+      lowest={xrayLowest}
+      highest={xrayHighest}
+      busy={xrayOn && xrayBusy}
+      note={xrayOn && infinite && xrayTooMany ? 'zoom in' : null}
+      onToggle={(on) => {
+        // Open two levels below the patch (or the zoom), where a few dozen supertiles show.
+        if (on) setXrayWanted(Math.max(0, state.level - 2));
+        setXrayOn(on);
+      }}
+      onLevel={setXrayWanted}
+    />
+  );
+
   // --- render --------------------------------------------------------------
 
   return (
@@ -1769,7 +1786,9 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
                   ? () => dispatch({ type: 'setFollow', follow: !followOn })
                   : undefined
               }
-            />
+            >
+              {xrayControl}
+            </ViewportTools>
           </InfiniteCanvas>
         ) : !heavy ? (
           <PanZoom
@@ -1933,21 +1952,11 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
           </PanZoom>
         )}
 
-        <XrayControl
-          on={xrayOn}
-          level={xrayLevel}
-          lowest={xrayLowest}
-          highest={xrayHighest}
-          busy={xrayOn && xrayBusy}
-          note={xrayOn && infinite && xrayTooMany ? 'zoom in' : null}
-          belowTools={infinite}
-          onToggle={(on) => {
-            // Open two levels below the patch (or the zoom), where a few dozen supertiles show.
-            if (on) setXrayWanted(Math.max(0, state.level - 2));
-            setXrayOn(on);
-          }}
-          onLevel={setXrayWanted}
-        />
+        {infinite ? null : (
+          <div className="viewport-tools explorer-tools" data-testid="explorer-tools" data-panzoom-ignore="">
+            {xrayControl}
+          </div>
+        )}
 
         {morph ? (
           <MorphCanvas
