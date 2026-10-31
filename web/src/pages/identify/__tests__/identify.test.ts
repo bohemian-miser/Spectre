@@ -99,6 +99,22 @@ describe('identifying a strand from one of its tiles', () => {
     expect(cancelOpen([1, 2, 1, 3, 4, 3, 5])).toEqual(Int32Array.from([0, 3, 6]));
   });
 
+  it('reads and walks the link the Explorer writes', () => {
+    const p = readIdentify('?rule=023468&combo=140000001&tile=0.5.0.0.0.0&edge=5&level=6');
+    expect(p).toEqual({ subset: SUBSET, combo: COMBO, tile: '0.5.0.0.0.0', edge: 5, level: 6 });
+    const reports = run(p!.level, p!.tile, p!.edge, 7);
+    expect(reports.length).toBeGreaterThan(0);
+    for (const r of reports) expect(r.tiles).toBeGreaterThan(0);
+    // open within the Explorer's level-6 root, closing one level above it as the 2,079's harmonic
+    expect(reports.slice(0, 6).every((r) => r.found === 'open')).toBe(true);
+    const last = reports[reports.length - 1];
+    expect(last.found).toBe('closed');
+    expect(last.level).toBe(7);
+    expect(last.identified?.circuit).toEqual({ level: 7, length: 103851 });
+    const h = known.harm.find((r) => r[1] === 7 && r[2] === 103851)!;
+    expect(last.identified?.known).toEqual({ order: h[7], root: { level: 5, length: 2079 } });
+  }, 60000);
+
   it('writes an address that reads back', () => {
     const p = { subset: SUBSET, combo: COMBO, tile: '1.7.0', edge: 2, level: 3 };
     const href = identifyHref('/Spectre/', p);

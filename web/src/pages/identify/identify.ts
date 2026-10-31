@@ -53,7 +53,7 @@ export interface Ancestry {
 
 /** The ancestors of the tile at slot path `tile` under a level-`root` Delta, carried on to level `upTo`. */
 export function ancestry(tile: string, root: number, upTo: number): Ancestry {
-  const path = tile.split('.').map(Number);
+  const path = tile === '' ? [] : tile.split('.').map(Number);
   if (path.length !== root || path.some((s) => !Number.isInteger(s) || s < 0 || s > 7)) throw new Error(`a tile under a level-${root} supertile has ${root} slots`);
   const types: HexType[] = [];
   const slots: number[] = [-1];
