@@ -723,6 +723,28 @@ describe('InfiniteCanvas — shareable trace seed', () => {
   });
 });
 
+describe('InfiniteCanvas — a shared seed starts at any zoom', () => {
+  it('starts the chase when the view opens at aggregate LOD, without a zoom in', async () => {
+    const seeds: (readonly [number, number, number, number] | null)[] = [];
+    const m = await mount({ onTraceSeed: (s) => seeds.push(s) });
+    const target = chordTargetOn(createCamera(0, 0, 36));
+    tap(m.host, target.x, target.y);
+    await settle();
+    const seed = seeds.at(-1)!;
+    expect(seed).not.toBeNull();
+
+    // A fresh mount with the seed, opening so far out that the display cut
+    // has no single tiles in it.
+    const m2 = await mount({ traceSeed: seed, camera: createCamera(seed[0], seed[1], 0.05), follow: true });
+    await settleUntil(() => (m2.status().cut?.cutLevel ?? 0) > 0, 'an aggregate cut');
+    await settleUntil(() => m2.status().trace.active, 'the chase to start');
+    expect(m2.status().trace.active).toBe(true);
+    await settleUntil(() => m2.status().trace.length > 0, 'the walk to move');
+    // And nobody zoomed in.
+    expect(m2.api.current!.getCamera().scale).toBe(0.05);
+  });
+});
+
 describe('InfiniteCanvas — kept tails, circuit colour, find-all', () => {
   const oddTable = (): LeafChordTable =>
     buildLeafChordTable('spectre', [2], comboToMatchingIndices('spectre', [2], '0000000000'));

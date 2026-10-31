@@ -1733,18 +1733,42 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
   );
 
   /**
-   * Start the shared-link trace once a leaf cut holds its chord. One shot:
-   * the first cut that COULD answer (chord point inside its covered rect,
-   * walkable index built) either finds the chord and starts the walk, or
-   * proves the link's rule no longer draws it and gives up quietly.
+   * A leaf cut of the feeder's own around a waiting shared-link seed, for a
+   * display that cannot answer for it: a view opening past tile zoom (a
+   * large or sharp screen, a deep link) would otherwise leave the seed
+   * waiting until someone zoomed in.
    */
-  const tryReplay = useCallback((): void => {
+  const requestSeedFeed = useCallback((): void => {
+    const seed = replayRef.current;
+    const scheduler = feedSchedulerRef.current;
+    if (!seed || trailRef.current || !scheduler || !chordsRef.current) return;
+    scheduler.request({
+      id: ++feedSeqRef.current,
+      seed: worldRef.current.seed >>> 0,
+      family: worldRef.current.family,
+      ...(worldRef.current.chain ? { chain: worldRef.current.chain } : {}),
+      view: { cx: seed[0], cy: seed[1], halfW: FEED_HALF_MIN, halfH: FEED_HALF_MIN },
+      budget: FEED_BUDGET,
+    });
+  }, []);
+
+  /**
+   * Start the shared-link trace from a leaf cut that holds its chord. One
+   * shot: the first cut that COULD answer (chord point inside its covered
+   * rect, walkable index built) either finds the chord and starts the walk,
+   * or proves the link's rule no longer draws it and gives up quietly. The
+   * cut is the display's unless the feeder brought one (`fed`).
+   */
+  const tryReplay = useCallback((fed?: { index: ChordIndex | null; covered: ViewRect }): void => {
     const seed = replayRef.current;
     if (!seed || trailRef.current || !traceOnRef.current) return;
-    const index = ensureIndex();
-    if (!index) return;
-    const cov = coveredRef.current;
-    if (!cov) return;
+    const index = fed ? fed.index : ensureIndex();
+    const cov = fed ? fed.covered : coveredRef.current;
+    if (!index || !cov) {
+      // The display is past tile zoom (or has not cut yet): ask the feeder.
+      if (!fed) requestSeedFeed();
+      return;
+    }
     if (Math.abs(seed[0] - cov.cx) > cov.halfW || Math.abs(seed[1] - cov.cy) > cov.halfH) return;
     const hit = hitTestChord(index, { x: seed[0], y: seed[1] }, 1.5);
     replayRef.current = null;
@@ -1763,7 +1787,7 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
     followStateRef.current = followOnRef.current ? createFollowCamera(fresh) : null;
     publishSeed(oriented);
     runWalk();
-  }, [ensureIndex, publishSeed, runWalk]);
+  }, [ensureIndex, publishSeed, runWalk, requestSeedFeed]);
   const tryReplayRef = useRef(tryReplay);
   tryReplayRef.current = tryReplay;
 
@@ -1844,10 +1868,15 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
         if (res.seed !== (worldRef.current.seed >>> 0)) return;
         if (res.family !== worldRef.current.family) return;
         if (res.chain !== worldRef.current.chain) return;
-        const trail = trailRef.current;
-        if (!trail || isTerminal(trail.status)) return;
         const table = chordsRef.current;
         if (!table || res.cut.cutLevel !== 0) return;
+        if (!trailRef.current && replayRef.current) {
+          // A shared-link seed the display could not start: this cut is
+          // centred on it, so it can.
+          tryReplayRef.current?.({ index: buildChordIndex(res.cut, table), covered: req.view });
+        }
+        const trail = trailRef.current;
+        if (!trail || isTerminal(trail.status)) return;
         const index = buildChordIndex(res.cut, table);
         const { cx, cy, halfW, halfH } = req.view;
         const trusted = {
