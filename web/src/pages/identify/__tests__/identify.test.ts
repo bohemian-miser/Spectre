@@ -72,6 +72,20 @@ describe('identifying a strand from one of its tiles', () => {
     expect(best.lengthFrom).toBe('data');
     expect(best.similarity).toBeGreaterThan(last.candidates[1]?.similarity ?? 0);  }, 30000);
 
+  it('built to level 5, still takes the 14,679 for the 303\'s harmonic, compared where harmonics read alike', () => {
+    const at = addressOf(6, 14679);
+    const last = run(6, at.tile, at.edge, 5).pop()!;
+    expect(last.found).toBe('open');
+    const best = last.candidates[0];
+    expect(best.member).toEqual({ level: 4, length: 303 });
+    expect(best.level).toBe(6);
+    // compared only at levels where the 303, two levels down, is at level 2 or above
+    expect(best.levels.every((j) => j - 2 >= 2)).toBe(true);
+    // the sweep's list: the 14,679 closes at level 6 as the 303's harmonic
+    const h = known.harm.find((r) => r[1] === 6 && r[2] === 14679)!;
+    expect(known.found.find((f) => f[0] === h[4])![2]).toBe(303);
+  }, 30000);
+
   it('follows a strand level by level as the tables do', () => {
     const cs = new CircuitShapes('hex', SUBSET, digits, 5, 1, true);
     const r = randomOpenStrand(cs, 5, mulberry(7))!;

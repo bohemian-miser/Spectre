@@ -18,11 +18,14 @@
  * b, lifted h harmonic steps, closes at b + 2h and reads at level j as the
  * member reads at j - 2h (`buildup/deep.ts`). The arc's reading is placed
  * where it fits best in the candidate's cyclic reading, either way round
- * (the least edit distance to any part of it), and candidates are ranked by
- * how much of the arc's reading they account for.
+ * (the least edit distance to any part of it), at the deepest levels where
+ * the lifted member reads as the candidate (from the member's level 2 up,
+ * `harmonics/chains.ts`), and candidates are ranked by how much of the
+ * arc's reading they account for, ties going to the fewest harmonic steps.
  */
 import { buildSystem, mul, transPt, type Affine, type HexType, type MetaNode, type Pt } from '../../core';
 import { HarmonicsEngine, type HarmonicsResult } from '../harmonics/harmonicsJob';
+import { FLOOR } from '../harmonics/chains';
 import { cancelOpen, expandVisits, token, type VisitColumns } from '../harmonics/readings';
 import { topReading, type TopReading } from '../buildup/deep';
 import { bornAbove, predictHarmonic, wordKey } from '../foundations/foundations';
@@ -609,7 +612,7 @@ export class IdentifyEngine {
     // the deepest levels with a short enough reading
     const usable = reading.filter((x) => x.kept && x.kept.type.length <= ARC_TOKENS);
     if (!usable.length) return [];
-    const deepest = usable.slice(-COMPARED_LEVELS).map((x) => x.level);
+    const all = usable.map((x) => x.level);
     type Pending = { chain: ChainView; member: Named; order: number; born: BornCircuit; B: number; levels: { level: number; depth: number; arc: Int32Array; near: Int32Array }[] };
     const pending: Pending[] = [];
     for (const ch of r.chains) {
@@ -622,7 +625,10 @@ export class IdentifyEngine {
         const top = Math.max(...same.map((m) => m.c.level));
         for (const m of same.filter((x) => x.c.level === top)) {
           const born = this.harm.bornOf(m.i);
-          const levels = deepest.filter((j) => B - j >= 1 && B - j <= m.c.level);
+          // the deepest levels where the member, lifted, reads as the candidate: from level FLOOR of the member up, else from its tiles up
+          const lift = B - m.c.level;
+          const sure = all.filter((j) => B - j >= 1 && j - lift >= FLOOR);
+          const levels = (sure.length ? sure : all.filter((j) => B - j >= 1 && j >= lift)).slice(-COMPARED_LEVELS);
           if (!levels.length) continue;
           const read = this.readingOf(born, Math.max(...levels.map((j) => B - j)));
           const got: Pending['levels'] = [];
@@ -678,7 +684,7 @@ export class IdentifyEngine {
       return { candidate, born: p.born, levels, rank: (tokens - dist) / (tokens + PRIOR) };
     });
     // a candidate sharing no visit with the arc is no guess
-    return out.filter((x) => x.candidate.similarity > 0).sort((a, b) => b.rank - a.rank || a.candidate.level - b.candidate.level);
+    return out.filter((x) => x.candidate.similarity > 0).sort((a, b) => b.rank - a.rank || a.candidate.steps - b.candidate.steps || a.candidate.level - b.candidate.level);
   }
 
   /** A candidate's tiles: from the precomputed analysis, or the harmonic predicted from the build one step up. */
