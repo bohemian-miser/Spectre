@@ -900,6 +900,9 @@ a.fd-harm:hover {
   display: grid;
   gap: 8px;
 }
+.fd-monsters > * {
+  min-width: 0;
+}
 .fd-monsters > p {
   margin: 0;
 }
@@ -984,6 +987,10 @@ a.fd-harm:hover {
   }
   .fd-row > :nth-child(5) {
     display: none;
+  }
+  .fd-head button {
+    white-space: normal;
+    line-height: 1.15;
   }
   .fd-grid-cards {
     grid-template-columns: minmax(0, 1fr);
