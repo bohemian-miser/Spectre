@@ -30,7 +30,7 @@ import { CircuitShapes, familyOf, placeOf, slotOf, type BornCircuit } from '../s
 const TYPES = leafOrder('hex') as readonly string[];
 const typeIndex = new Map(TYPES.map((t, i) => [t, i] as const));
 /** A token's code for a left-out type or parent. */
-const NONE = 9;
+export const NONE = 9;
 
 /** Each level's child types: kids[n][type][slot] = child type index, -1 for an empty slot. */
 function kidTypes(family: TileFamilyId, n: number): Int8Array[] {
@@ -241,7 +241,11 @@ export function wordCodes(cs: CircuitShapes, c: BornCircuit): Int32Array {
  * independent 32-bit hashes collide.
  */
 export function wordKey(cs: CircuitShapes, c: BornCircuit): string {
-  const w = wordCodes(cs, c);
+  return wordKeyOf(wordCodes(cs, c));
+}
+
+/** `wordKey` of a word given as `wordCodes`. */
+export function wordKeyOf(w: Int32Array): string {
   const n = w.length;
   const back = new Int32Array(n);
   for (let j = 0; j < n; j++) {

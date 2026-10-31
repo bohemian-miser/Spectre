@@ -345,7 +345,8 @@ export type WorkerMessage =
   | { type: 'thumbs'; cs: readonly number[]; budget: number }
   | { type: 'similarities'; fold: Fold }
   | { type: 'breakdowns'; cs: readonly number[] }
-  | { type: 'breakdownPicture'; c: number; k: number; index: number };
+  | { type: 'breakdownPicture'; c: number; k: number; index: number }
+  | { type: 'born'; c: number };
 
 export interface HarmonicsClient {
   /** Starts a combination afresh. */
@@ -369,6 +370,8 @@ export interface HarmonicsClient {
   breakdowns(cs: readonly number[]): Promise<BreakdownSets>;
   /** One breakdown of a circuit of the last result over its supertiles. */
   breakdownPicture(c: number, k: number, index: number): Promise<Side>;
+  /** The born circuit behind a circuit of the last result: its supertile and the child crossings it enters. */
+  born(c: number): Promise<BornCircuit>;
   dispose(): void;
 }
 
@@ -450,6 +453,10 @@ export function createHarmonicsClient(opts: { forceSync?: boolean } = {}): Harmo
     breakdownPicture(c, k, index) {
       if (!worker) return sync(() => need().breakdownPicture(c, k, index));
       return ask({ type: 'breakdownPicture', c, k, index });
+    },
+    born(c) {
+      if (!worker) return sync(() => need().bornOf(c));
+      return ask({ type: 'born', c });
     },
     dispose() {
       worker?.terminate();

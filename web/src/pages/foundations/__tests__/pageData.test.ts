@@ -128,7 +128,11 @@ describe('what the tails become', () => {
   it('back-tests to nothing unexplained once the last foundational circuit is found, and forecasts the next members of known chains', () => {
     for (const combo of ['140000001', '000100000']) {
       const p = read<PageCombo>(resolve(pageDir, `${combo}.json`));
-      for (const b of backTest(p)) if (b.level >= p.lastNew) expect(b.unexplained).toBeLessThan(1e-9);
+      for (const b of backTest(p)) {
+        if (b.level >= p.lastNew) expect(b.unexplained).toBeLessThan(1e-9);
+        // a level's tails all close into a known chain, close into a new one, or are still open at the top
+        expect(b.explained + b.unexplained + b.open).toBeCloseTo(1, 3);
+      }
       const checks = forecastChecks(p).filter((c) => c.actual > 0);
       expect(checks.length).toBeGreaterThan(1);
       for (const c of checks) expect(Math.abs(c.forecast - c.actual) / c.actual).toBeLessThan(0.15);

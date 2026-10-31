@@ -15,7 +15,8 @@
  * views, the members' rows of visits level by level (`harmonics/rows.ts`),
  * hovering lighting a visit's expansion in every member, and the readings of
  * the circuit clicked lined up with its neighbour in the chain. Shift-clicking a second circuit
- * compares exactly those two. The address names the rule, combination,
+ * compares exactly those two. Past the level built, each chain's next member
+ * can be brute-forced (`harmonics/BruteForce.tsx`). The address names the rule, combination,
  * level and selection (`?rule=023468&combo=140000001&level=7&c=7-103851`,
  * with `&with=…` for a pair).
  */
@@ -32,6 +33,7 @@ import { chainsOf } from './harmonics/chains';
 import { FOLDS, type Fold } from './harmonics/rows';
 import { linksAt, MIN_SCORE, type Scored } from './harmonics/similarity';
 import { BreakdownSets } from './harmonics/BreakdownSets';
+import { useBruteForce } from './harmonics/BruteForce';
 import { createHarmonicsClient, type CircuitInfo, type Comparison, type HarmonicsResult } from './harmonics/harmonicsJob';
 import '../styles/shapes.css';
 import '../styles/harmonics.css';
@@ -200,6 +202,7 @@ export default function HarmonicsPage(props: { forceSync?: boolean }): JSX.Eleme
     setSel((s) => (shift && s && s.focus !== i ? { focus: s.focus, with: i } : { focus: i, with: null }));
   };
   const chain = sel && result ? chains[chainOf.get(sel.focus) ?? -1] : null;
+  const brute = useBruteForce(client.current, choice, result, chains, props.forceSync);
 
   return (
     <div className="shapes-page harm-page">
@@ -236,7 +239,9 @@ export default function HarmonicsPage(props: { forceSync?: boolean }): JSX.Eleme
             <p className="shapes-note">
               Each circuit sits in the column of the level it closes at. A <strong>family</strong> is every circuit through the same children of its birth
               supertile; a <strong>chain</strong> is a row of circuits linked as harmonics, two columns apart. A dashed ≈ cell is a circuit that reads as a
-              chain&apos;s lowest member at the top levels only. Click a circuit to open its row; shift-click a second to compare the two.
+              chain&apos;s lowest member at the top levels only. Click a circuit to open its row; shift-click a second to compare the two. Past the level
+              built, a ? is a chain&apos;s next member, two levels above its last: Brute force follows the strands through that supertile, working out
+              only the routes they use, until one closes reading as the last member (✓ with its tiles; hover for the rest).
             </p>
             <div className="shapes-controls harm-link-controls">
               <label className="harm-threshold">
@@ -267,7 +272,9 @@ export default function HarmonicsPage(props: { forceSync?: boolean }): JSX.Eleme
               distance between the readings (best rotation, either way round) over the longer one&apos;s length, under the fold chosen. 100% folding weaving
               and detours is the exact rule. Each link shows its least share between the two; hover it for every level.
             </p>
-            <CircuitTable r={shown!} thumbs={thumbs} selected={members} onPick={pick} linked={linked} />
+            <CircuitTable r={shown!} thumbs={thumbs} selected={members} onPick={pick} linked={linked} beyond={brute.beyond} />
+            {brute.note}
+            {brute.climbLine}
           </section>
           {focus && sel ? (
             <section data-testid="harm-detail">

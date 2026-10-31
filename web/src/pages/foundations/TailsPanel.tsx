@@ -85,8 +85,8 @@ export function TailsPanel(props: { data: PageCombo }): JSX.Element {
         </p>
       </div>
       <div className="fd-tails-block">
-        <h3>Unexplained tails by level</h3>
-        <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} role="img" aria-label="Share of each level's tails closing into circuits not known by that level" data-testid="fd-backtest">
+        <h3>Where each level&apos;s tails went by level {top}</h3>
+        <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} role="img" aria-label="Each level's tails, split into those closed into chains known by then, closed into new chains, and still open" data-testid="fd-backtest">
           {[0, 0.5, 1].map((t) => (
             <g key={t}>
               <line x1={PAD.l} x2={W - PAD.r} y1={y(t)} y2={y(t)} className="fd-grid" />
@@ -95,24 +95,42 @@ export function TailsPanel(props: { data: PageCombo }): JSX.Element {
               </text>
             </g>
           ))}
-          <polyline className="fd-line" points={bt.map((b) => `${x(b.level)},${y(b.unexplained)}`).join(' ')} />
-          {bt.map((b) => (
-            <g key={b.level}>
-              <circle cx={x(b.level)} cy={y(b.unexplained)} r={b.found.length ? 4 : 2.5} className={b.found.length ? 'fd-dot fd-dot-found' : 'fd-dot'}>
-                <title>
-                  {`level ${b.level}: ${pct(b.unexplained)} of its tails close into circuits not known by then`}
-                  {b.found.length ? `; found at level ${b.level + 1}: ${b.found.map(([r, s]) => `${name(r)} (${pct(s)})`).join(', ')}` : ''}
-                </title>
-              </circle>
-              <text x={x(b.level)} y={H - 6} textAnchor="middle" className="fd-axis">
-                {b.level}
-              </text>
-            </g>
-          ))}
+          {bt.map((b) => {
+            const parts: [string, number, string][] = [
+              ['fd-seg-harm', b.explained, 'closed into chains known by then'],
+              ['fd-seg-unseen', b.unexplained, 'closed into chains not known by then'],
+              ['fd-seg-tails', b.open, `still open at level ${top}`],
+            ];
+            let base = 0;
+            return (
+              <g key={b.level}>
+                <title>{`level ${b.level}: ${parts.map(([, v, t]) => `${pct(v)} ${t}`).join('; ')}${b.found.length ? `; found at level ${b.level + 1}: ${b.found.map(([r, v]) => `${name(r)} (${pct(v)})`).join(', ')}` : ''}`}</title>
+                {parts.map(([cls, v]) => {
+                  const from = base;
+                  base += v;
+                  return v > 0 ? <rect key={cls} x={x(b.level) - 7} y={y(Math.min(1, base))} width={14} height={y(from) - y(Math.min(1, base))} className={cls} /> : null;
+                })}
+                <text x={x(b.level)} y={H - 6} textAnchor="middle" className="fd-axis">
+                  {b.level}
+                </text>
+              </g>
+            );
+          })}
         </svg>
+        <div className="fd-legend">
+          <span>
+            <i className="fd-seg-harm" /> closed into chains known by then
+          </span>
+          <span>
+            <i className="fd-seg-unseen" /> closed into new chains
+          </span>
+          <span>
+            <i className="fd-seg-tails" /> still open at level {top}
+          </span>
+        </div>
         <p className="fd-muted">
-          At each level, the share of its tails that close (to level {top}) into circuits whose chain was not known by then; large dots mark a level whose
-          next level brings new foundational circuits, which take exactly that drop.
+          Each column is the chords on tails at that level, followed to level {top}. Of what has closed, the new chains are the only part the circuits known by
+          then do not explain; the grey has not closed yet and is not accounted for either way.
         </p>
         {fc.length ? (
           <table className="fd-small fd-forecast" data-testid="fd-forecast">

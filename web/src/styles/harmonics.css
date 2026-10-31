@@ -247,6 +247,48 @@
 .harm-table td > .harm-cell + .harm-cell {
   margin-top: 4px;
 }
+/* Past the level built: a chain's next members, brute-forced. */
+.harm-table thead th.is-beyond {
+  font-style: italic;
+}
+.harm-table td.harm-cell-brute {
+  font-size: 11px;
+  white-space: nowrap;
+  border: 1px dashed var(--line, #8884);
+  border-radius: 5px;
+  padding: 2px 4px;
+}
+.harm-cell-brute .harm-brute-q {
+  display: block;
+  font-size: 15px;
+  color: var(--muted);
+}
+.harm-cell-brute button {
+  font: inherit;
+  font-size: 10px;
+  padding: 1px 4px;
+  margin-top: 2px;
+}
+.harm-cell-brute.is-running span {
+  display: block;
+  color: var(--muted);
+}
+.harm-table td.harm-cell-brute.is-found {
+  border-style: solid;
+  border-color: var(--line, #8884);
+  cursor: help;
+}
+.harm-cell-brute.is-found .harm-brute-q {
+  color: var(--g1);
+}
+.harm-cell-brute.is-failed {
+  color: var(--muted);
+  cursor: help;
+}
+.harm-climb button {
+  font: inherit;
+  padding: 1px 8px;
+}
 .harm-thumb {
   display: block;
   color: var(--text, #222);
