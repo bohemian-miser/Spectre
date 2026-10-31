@@ -504,3 +504,81 @@
   background: transparent;
   cursor: pointer;
 }
+
+/* Tail classes: an item of the viewport's tool row; open, it takes a line of its own. */
+.tails-control {
+  padding: 3px 9px;
+  border: 1px solid rgba(244, 246, 251, 0.28);
+  border-radius: var(--radius);
+  background: rgba(8, 10, 16, 0.8);
+  color: #e7ecf6;
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+.tails-control.is-open {
+  flex-basis: 100%;
+  max-width: 420px;
+}
+.tails-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+}
+.tails-row label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+.tails-progress,
+.tails-count {
+  color: #9aa3b5;
+}
+.tails-legend {
+  margin: 3px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.viewport-tools .tails-legend button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 0 3px;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.viewport-tools .tails-legend button[aria-pressed='true'] {
+  background: rgba(244, 246, 251, 0.16);
+}
+.tails-legend i {
+  flex: none;
+  width: 14px;
+  height: 0;
+  border-top: 4px solid;
+}
+.tails-legend i.is-dashed {
+  border-top-style: dashed;
+}
+.tails-label {
+  flex: 1;
+}
+.tails-count {
+  white-space: nowrap;
+}
+.tails-detail {
+  margin: 4px 0 0;
+  color: #cfd6e4;
+}
+.tails-detail a {
+  color: #cfeee6;
+}
+.tails-tip {
+  max-width: 280px;
+  white-space: normal;
+}
