@@ -428,3 +428,82 @@
   color: inherit;
   padding: 0 7px;
 }
+
+/* Harmonic search: an item of the viewport's tool row; open, it takes the row's width. */
+.harmonic-control {
+  padding: 3px 9px;
+  border: 1px solid rgba(244, 246, 251, 0.28);
+  border-radius: var(--radius);
+  background: rgba(8, 10, 16, 0.8);
+  color: #e7ecf6;
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+.harmonic-control.is-open {
+  flex-basis: 100%;
+}
+.viewport-tools:has(.harmonic-control.is-open) {
+  width: min(520px, calc(100% - 16px));
+  max-width: none;
+}
+.harmonic-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+}
+.harmonic-row label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+.harmonic-row select,
+.harmonic-row input[type='number'] {
+  font: inherit;
+  color: inherit;
+  background: #1a1e28;
+  border: 1px solid rgba(244, 246, 251, 0.28);
+  border-radius: 4px;
+}
+.harmonic-row input[type='number'] {
+  width: 7ch;
+}
+.harmonic-panel p {
+  margin: 4px 0 0;
+}
+.harmonic-note {
+  color: #9aa3b5;
+}
+.harmonic-hits {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.harmonic-hits li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 8px;
+}
+.viewport-tools .harmonic-hits button,
+.harmonic-hits a {
+  font: inherit;
+  color: #cfeee6;
+}
+.viewport-tools .harmonic-frame {
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+.harmonic-frame b {
+  color: #ffc24a;
+}
+.viewport-tools .harmonic-hits .hud-action {
+  padding: 0 7px;
+  border: 1px solid rgba(244, 246, 251, 0.4);
+  border-radius: var(--radius);
+  background: transparent;
+  cursor: pointer;
+}

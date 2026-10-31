@@ -5,14 +5,12 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import { compareHref, formatRef, sameRef, type CircuitRef } from '../compare/refs';
-import { BORN_SEARCH_MAX, circuitRefOf, readPending, writePending } from '../compare/fromTrace';
+import { formatRef, sameRef, type CircuitRef } from '../compare/refs';
+import { BORN_SEARCH_MAX, circuitRefOf } from '../compare/fromTrace';
 import { identifyHref } from '../identify/href';
 import type { InfiniteCanvasStatus } from '../map/InfiniteCanvas';
+import { useComparePick } from './comparePick';
 import { locateTraceStart } from './locate';
-
-/** The window Compare opens in, so later picks update it rather than open another. */
-const COMPARE_WINDOW = 'spectre-compare';
 
 const stop = (e: React.PointerEvent): void => e.stopPropagation();
 
@@ -24,7 +22,7 @@ export function TraceActions(props: {
   traceSeed: readonly [number, number, number, number] | null;
 }): JSX.Element | null {
   const { trace, rule, seed, worldChain, traceSeed } = props;
-  const [pending, setPending] = useState<CircuitRef | null>(() => readPending());
+  const { pending, pick, clear } = useComparePick();
   const closedLength = trace?.active && trace.status === 'closed' ? trace.steps : null;
   const open = !!trace?.active && trace.status !== null && trace.status !== 'closed';
 
@@ -44,19 +42,6 @@ export function TraceActions(props: {
   }, [open, rule, traceSeed, seed, worldChain]);
 
   if (!rule) return null;
-
-  const pick = (r: CircuitRef): void => {
-    const a = readPending();
-    if (!a) {
-      writePending(r);
-      setPending(r);
-      return;
-    }
-    if (sameRef(a, r)) return;
-    writePending(null);
-    setPending(null);
-    window.open(compareHref(import.meta.env.BASE_URL, a, r), COMPARE_WINDOW);
-  };
 
   const ready = ref && ref.length === closedLength ? ref : null;
   return (
@@ -89,10 +74,7 @@ export function TraceActions(props: {
             type="button"
             aria-label="Clear the circuit waiting to be compared"
             onPointerDown={stop}
-            onClick={() => {
-              writePending(null);
-              setPending(null);
-            }}
+            onClick={clear}
             data-testid="inf-compare-clear"
           >
             ×

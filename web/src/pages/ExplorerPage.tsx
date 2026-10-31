@@ -140,6 +140,13 @@ import { useXrayItems, washXray, XrayInfinite, XrayRooted, XrayWashSvg } from '.
 import { lowestXrayLevel } from './explorer/xray';
 import { XrayControl, XRAY_INFINITE_MAX } from './explorer/XrayControl';
 import { TraceActions } from './explorer/TraceActions';
+import { useComparePick } from './explorer/comparePick';
+import { clampSettings, DEFAULT_HARMONIC_SETTINGS, HarmonicControl, HarmonicLayer, openStrandStart, useHarmonicSearch, type HarmonicSettings } from './explorer/HarmonicSearch';
+import type { PatchStrands } from './explorer/harmonicSearchClient';
+import type { Hit } from './explorer/harmonicSearch';
+import { circuitRefOf } from './compare/fromTrace';
+import { formatRef } from './compare/refs';
+import { identifyHref } from './identify/href';
 import type { GraphSelection } from './map/transitions';
 import { DEFAULT_LINE_COLOR, LIGHT_LINE_COLOR } from './map/webglRenderer';
 import '../styles/map.css';
@@ -148,6 +155,11 @@ export type OverlayTool = 'cursor' | 'line' | 'erase';
 
 /** SVG renderer ceiling; above this the Canvas2D renderer takes over (§5.2). */
 const SVG_MAX_LEVEL = 4;
+
+/** A number per analysis result, naming the patch the harmonic search's worker holds. */
+const patchKeys = new WeakMap<object, number>();
+let nextPatchKey = 1;
+const patchKeyOf = (r: object): number => patchKeys.get(r) ?? (patchKeys.set(r, nextPatchKey++), nextPatchKey - 1);
 
 /**
  * Deepest rooted level whose region colours are filled. Piece polygons cost
@@ -394,7 +406,10 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
   const [highlightLengths, setHighlightLengths] = useState<ReadonlySet<number>>(
     () => new Set<number>(),
   );
-  const [, setExampleIndex] = useState(0);
+  const [exampleIndex, setExampleIndex] = useState(0);
+  /** The harmonic search: on or off, and its settings. */
+  const [harmonicOn, setHarmonicOn] = useState(false);
+  const [harmonicSettings, setHarmonicSettings] = useState<HarmonicSettings>(DEFAULT_HARMONIC_SETTINGS);
   const [tool, setTool] = useState<OverlayTool>('cursor');
   const [exportStatus, setExportStatus] = useState<string | null>(null);
   /** The X-ray: off, or the supertile level it shows (clamped to what the view offers). */
@@ -461,9 +476,12 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
             curved: curvedStrands,
             // Count vectors are only meaningful for a rule's own chords.
             loopVectors: !asSpectres,
+            // The harmonic search reads strands from their tiles' slot paths.
+            pathTiles: harmonicOn,
           }
         : null,
     [
+      harmonicOn,
       infinite,
       strandsOn,
       drawFamily,
@@ -477,6 +495,27 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
     ],
   );
   const analysis = useCircuitAnalysis(analysisInput, { workerMinLevel: 3 });
+
+  // --- harmonic search -------------------------------------------------------
+
+  /** The circuit picked out: the example of the one length selected that the view last framed. */
+  const selectedCircuit = useMemo(() => {
+    const circuits = analysis.result?.circuits;
+    if (infinite || !circuits || highlightLengths.size !== 1) return null;
+    const [length] = highlightLengths;
+    const of: number[] = [];
+    circuits.forEach((p, i) => pathLength(p) === length && of.push(i));
+    return of.length ? of[((exampleIndex % of.length) + of.length) % of.length] : null;
+  }, [infinite, analysis.result, highlightLengths, exampleIndex]);
+  const harmonicLevel = state.level >= 3 && state.level <= ROOTED_MATERIALIZE_MAX ? state.level : null;
+  const harmonicPatch = useMemo<PatchStrands | null>(() => {
+    const r = analysis.result;
+    if (!harmonicOn || harmonicLevel === null || !r?.circuitTiles || !r.tailTiles) return null;
+    return { key: `${patchKeyOf(r)}`, family: drawFamily, rootType: state.rootTile, level: harmonicLevel, circuits: r.circuitTiles, tails: r.tailTiles };
+  }, [harmonicOn, harmonicLevel, analysis.result, drawFamily, state.rootTile]);
+  const harmonicSettingsIn = useMemo(() => clampSettings(harmonicSettings, harmonicLevel ?? 3), [harmonicSettings, harmonicLevel]);
+  const harmonics = useHarmonicSearch(harmonicPatch, selectedCircuit, harmonicSettingsIn);
+  const comparePick = useComparePick();
 
   /**
    * Circuit colours, the same scheme in both views: by default each length
@@ -933,6 +972,69 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
   const regionsOn = hasFlag(state, FLAG.REGIONS);
   /** Tiles a level-L patch holds — the count the infinite view targets. */
   const levelTiles = Math.round(SUBSTITUTION_GROWTH ** state.level);
+
+  const strandPath = useCallback(
+    (i: number): Path | undefined => {
+      const r = analysis.result;
+      if (!r) return undefined;
+      return i < r.circuits.length ? r.circuits[i] : r.tails[i - r.circuits.length];
+    },
+    [analysis.result],
+  );
+  const harmonicAction = (h: Hit): React.ReactNode => {
+    if (!hexRule) return null;
+    if (h.closed) {
+      return (
+        <button
+          type="button"
+          className="hud-action"
+          onClick={() => {
+            const ref = circuitRefOf(hexRule.subset, hexRule.combo, h.tiles);
+            if (ref) comparePick.pick(ref);
+          }}
+          title={comparePick.pending ? `Compare it with A, ${formatRef(comparePick.pending)}` : 'Keep it as A for the next circuit'}
+        >
+          Add to comparison
+        </button>
+      );
+    }
+    const r = analysis.result;
+    const p = strandPath(h.strand);
+    const tiles = r?.tailTiles?.[h.strand - (r?.circuits.length ?? 0)];
+    if (state.rootTile !== 'Delta' || harmonicLevel === null || !p || !tiles?.length) return null;
+    const at = openStrandStart('hex', model.root, harmonicLevel, tiles[0], p.points[0]);
+    return at ? <a href={identifyHref(import.meta.env.BASE_URL, { subset: hexRule.subset, combo: hexRule.combo, tile: at.tile, edge: at.edge, level: harmonicLevel })}>Identify</a> : null;
+  };
+  const harmonicControl =
+    !infinite && selectedCircuit !== null && harmonicLevel !== null && linesOn ? (
+      <HarmonicControl
+        on={harmonicOn}
+        onToggle={setHarmonicOn}
+        patchLevel={harmonicLevel}
+        settings={harmonicSettingsIn}
+        onSettings={setHarmonicSettings}
+        circuitTiles={pathLength(analysis.result!.circuits[selectedCircuit])}
+        result={harmonics.result}
+        busy={harmonics.busy || analysis.running}
+        error={harmonics.error}
+        action={harmonicAction}
+        onFrame={(hits) => focusPaths(hits.flatMap((h) => strandPath(h.strand) ?? []))}
+      />
+    ) : null;
+  const harmonicLayer = (camera: Camera): React.ReactNode =>
+    harmonicControl && harmonicOn && harmonics.result && harmonicLevel !== null ? (
+      <HarmonicLayer
+        family={drawFamily}
+        root={model.root}
+        patchLevel={harmonicLevel}
+        viewTransform={model.viewTransform}
+        camera={camera}
+        result={harmonics.result}
+        threshold={harmonicSettingsIn.threshold}
+        pathOf={strandPath}
+        circuit={selectedCircuit!}
+      />
+    ) : null;
 
   const xrayControl = (
     <XrayControl
@@ -1904,6 +2006,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
                 ) : null}
               </TilingView>
               {xrayOn ? <XrayRooted family={drawFamily} items={xrayItems} camera={api.camera} /> : null}
+              {harmonicLayer(api.camera)}
               </>
             )}
           </PanZoom>
@@ -1946,6 +2049,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
                 underlay={xrayUnderlay}
               />
               {xrayOn ? <XrayRooted family={drawFamily} items={xrayItems} camera={api.camera} /> : null}
+              {harmonicLayer(api.camera)}
               </>
             )}
           </PanZoom>
@@ -1954,6 +2058,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
         {infinite ? null : (
           <div className="viewport-tools explorer-tools" data-testid="explorer-tools" data-panzoom-ignore="">
             {xrayControl}
+            {harmonicControl}
           </div>
         )}
 

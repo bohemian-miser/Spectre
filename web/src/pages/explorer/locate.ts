@@ -32,6 +32,15 @@ function distanceToSegment(p: Pt, a: Pt, b: Pt): number {
   return Math.hypot(p.x - a.x - t * dx, p.y - a.y - t * dy);
 }
 
+/** The edge of a polygon (index of its first corner) nearest a point. */
+export function nearestEdge(pts: readonly Pt[], p: Pt): number {
+  let edge = 0;
+  for (let e = 1; e < pts.length; e++) {
+    if (distanceToSegment(p, pts[e], pts[(e + 1) % pts.length]) < distanceToSegment(p, pts[edge], pts[(edge + 1) % pts.length])) edge = e;
+  }
+  return edge;
+}
+
 /** Locate the start of a trace in the engine's hexagon plane, or null when the seed is not in a tile. */
 export function locateSeed(engine: UnrootedEngine, seed: readonly [number, number, number, number]): LocatedTile | null {
   if (engine.family !== 'hex') return null;
@@ -43,11 +52,7 @@ export function locateSeed(engine: UnrootedEngine, seed: readonly [number, numbe
     const pts = leafPts('hex', type);
     const back = inv(instanceAffine(cut.pos[2 * i] + cut.origin.x, cut.pos[2 * i + 1] + cut.origin.y, cut.code[i]));
     if (!insideLoop(pts, transPt(back, mid))) continue;
-    const local = transPt(back, to);
-    let edge = 0;
-    for (let e = 1; e < pts.length; e++) {
-      if (distanceToSegment(local, pts[e], pts[(e + 1) % pts.length]) < distanceToSegment(local, pts[edge], pts[(edge + 1) % pts.length])) edge = e;
-    }
+    const edge = nearestEdge(pts, transPt(back, to));
     const id = cut.ids?.[i];
     const m = id ? /^(\d+):/.exec(id) : null;
     if (!id || !m) return null;

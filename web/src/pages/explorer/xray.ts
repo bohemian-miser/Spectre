@@ -189,6 +189,42 @@ export function supertilesAt(family: TileFamilyId, root: TileNode, patchLevel: n
   return out;
 }
 
+/**
+ * Level-`level` supertiles of a patch named by code: a slot path from the
+ * root (a level-`patchLevel` node) read in base 8, as `slotPathCode` writes a
+ * tile's, over 8^level. Codes naming no supertile are passed over.
+ */
+export function supertilesByCode(
+  family: TileFamilyId,
+  root: TileNode,
+  patchLevel: number,
+  level: number,
+  codes: Iterable<number>,
+  frame: Affine = [1, 0, 0, 0, 1, 0],
+): XraySupertile[] {
+  const depth = patchLevel - level;
+  const place = (code: number): XraySupertile | null => {
+    let node = root;
+    let x = frame;
+    const slots: number[] = [];
+    for (let d = depth - 1; d >= 0; d--) {
+      const slot = Math.floor(code / 8 ** d) % 8;
+      const c = node.kind === 'leaf' ? undefined : (node as MetaNode).children.find((ch) => ch.pos === slot);
+      if (!c) return null;
+      x = mul(x, c.xform);
+      node = c.node;
+      slots.push(slot);
+    }
+    return boxed(node.type, slots.join('.'), node, x, family);
+  };
+  const out: XraySupertile[] = [];
+  for (const code of codes) {
+    const s = place(code);
+    if (s) out.push(s);
+  }
+  return out;
+}
+
 /** Even-odd test of a point against a closed loop. */
 export function insideLoop(loop: readonly Pt[], p: Pt): boolean {
   let inside = false;
