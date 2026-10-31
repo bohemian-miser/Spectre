@@ -40,6 +40,7 @@ describe('siteNav', () => {
       'buildup',
       'foundations',
       'period',
+      'line',
       'limit',
       'legacy',
     ]);
@@ -70,6 +71,7 @@ describe('siteNav', () => {
       'buildup',
       'foundations',
       'period',
+      'line',
       'limit',
       'legacy',
     ]);

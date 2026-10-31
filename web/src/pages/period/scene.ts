@@ -148,7 +148,7 @@ export function graphOf(cs: CircuitShapes, n: number, type: HexType, border: Bor
 }
 
 /** The transform of the descendant at this slot path, in the frame of a level-`level` supertile of `type`. */
-function pathXform(level: number, type: HexType, path: readonly number[]): Affine {
+export function pathXform(level: number, type: HexType, path: readonly number[]): Affine {
   let x: Affine = [1, 0, 0, 0, 1, 0];
   let t: string = type;
   path.forEach((s, i) => {

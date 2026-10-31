@@ -7,7 +7,7 @@ Psi, one line through the whole tiling) from a finite computation on the
 supertiles' borders, read every other level. The [Every other level page](https://bohemian-miser.github.io/Spectre/period.html)
 computes everything below for any combination and animates the step two
 levels up; `web/src/pages/period/period.ts` is the computation and
-`period/__tests__/period.test.ts` checks it against the leaf tiles' strands.
+`period/__tests__/period.test.ts` checks it against the leaf tiles' strands. The [Infinite line page](https://bohemian-miser.github.io/Spectre/line.html) sets out the same argument as numbered claims, with each figure drawn from the tiles.
 
 ## The border of a supertile
 
