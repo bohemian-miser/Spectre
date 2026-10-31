@@ -29,7 +29,10 @@ sweep's output in `web/public/data/foundations/hex-023468/`
 ([`foundations-page.ts`](../web/circuit-classes/foundations-page.ts),
 [`pageData.ts`](../web/src/pages/foundations/pageData.ts)). It marks as
 monsters the foundational circuits that start a chain at floor + 4 or later
-or are nuggets there (§6), and the 19 of at least 100,000 tiles.
+or are nuggets there (§6), and the 19 of at least 100,000 tiles. A late
+monster that starts a chain is explained: the page shows its chain and
+what it is forecast to take (§5); only the two late nuggets of 120000001
+and 121000001 are not.
 
 The page reads the precomputed data of 023468 and analyses any other rule,
 or any other level, live: the rule and combination chosen with the shared
@@ -328,6 +331,59 @@ that ratio holds, every chord but a share 0 lies on a closed circuit in the
 limit, and the other half belongs to the seam chains (the 57 and 447 and
 their harmonics), closing again in more places every level, counts the
 account has level by level but no formula carries on yet.
+
+### Every combination in the limit
+
+The page forecasts every combination past its build (`project` in
+[`pageData.ts`](../web/src/pages/foundations/pageData.ts)). Each circuit
+closes again by the ratios of its own shares, level by level from where it
+first closed; where it has none yet, by an earlier member's of its chain
+whose ratios agree with its own to 5%; past the last level known, by the
+last ratio. Each chain goes on with a member every two levels, its share
+where it first closes the last member's times the ratio between the last
+two (taken level by level over every level both close at), closing again
+as its predecessors do. The sum is a geometric series in closed form. A
+chain is not carried on when it has ended (a member due within the build
+did not close), closes into itself, has two members of one order at
+different levels, has its last two members more than two levels apart, or
+when its members' shares do not fall; the page names such a chain and why.
+
+The ratio holds back to every earlier harmonic within 15% (within 2% in
+96% of 1,737 checks); the step from a foundational circuit to its first
+harmonic often differs, which is why the ratio is taken from the last two.
+Made with the top two levels cut off, the forecast gives what the chains
+it fits close there to within 1.5% of the chords.
+
+| share of chords on known circuits in the limit | combinations |
+|---|---|
+| below 98% | 2 |
+| 98% to 99.5% | 2 |
+| 99.5% to 100.5% | 315 |
+| 100.5% to 102% | 1 |
+
+The two below 98% are 110000001 (63.3%) and 111000001 (64.9%): in each,
+the chain of the 60 at level 5 has a harmonic whose share is 1.27 times its
+predecessor's (1,662 at level 7, 130,434 at level 9 in 110000001), so it is
+not forecast, and its place in the limit is open. Everywhere else the known
+circuits take every chord in the limit to within a percent, which leaves
+under a percent, as forecast, for strands that never close and for circuits
+not yet found.
+140000001 comes to 99.5%, 011001100 to 100.4%.
+
+In 011001100 the 381 and the 384 first close at level 6, floor + 4, so they
+are monsters, but their chains are known. The brute force of the Harmonics
+page, from the level-8 harmonics, finds the members above the build:
+
+| chain | level 8 | level 10 (predicted) | level 12 |
+|---|---|---|---|
+| 381 | 19,866 | 1,099,992 | 60,984,498 |
+| 384 | 25,710 | 1,428,504 | 79,198,422 |
+
+The level-10 members are the ones predicted. From level 10 to 12 the tiles
+grow by 55.44 against the chords' 61.98 (the growth squared), a share ratio
+of 0.8945 against the 0.893 fitted from the build. The chain rows of the
+page brute-force these members on request and draw them; the forecast puts
+25.3% and 34.0% of all chords on the two chains' members to come.
 
 ## 6. Every combination of 023468
 
