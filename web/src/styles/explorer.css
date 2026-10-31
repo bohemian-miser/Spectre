@@ -582,3 +582,12 @@
   max-width: 280px;
   white-space: normal;
 }
+/* On a phone the panel's line under the legend says what the tip would. */
+@media (max-width: 600px) {
+  .tails-control {
+    font-size: 11px;
+  }
+  .tails-tip {
+    display: none;
+  }
+}

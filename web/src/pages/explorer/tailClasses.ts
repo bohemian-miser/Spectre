@@ -14,11 +14,21 @@
  * followed once.
  *
  * A closed walk is named from the combination's own circuits (the
- * Foundations data, or `analyseCombo` run live): by its word
- * (`foundations.wordKey`) against each circuit's place in the build, or,
- * failing that, as a harmonic, by reading it from the floor up against the
- * circuits two levels down, as the brute force does (`agreement`). What
- * neither names is a circuit not known.
+ * Foundations data, or `analyseCombo` run live), in turn:
+ *
+ * 1. by its word (`foundations.wordKey`) against each circuit's place in the build;
+ * 2. by its place (`closingKey`), which the analysis counts as one circuit's
+ *    even where two words share it;
+ * 3. as a harmonic first closing here, read from the floor up against the
+ *    circuits two levels down in the same children, as the brute force does
+ *    (`agreement`);
+ * 4. as a known circuit or its harmonic closing again, in another supertile
+ *    or a bigger one: the same reading (two levels up for the harmonic) at
+ *    every level from the floor to one below the highest where neither
+ *    leaves types out, at least `SAME_LEVELS`.
+ *
+ * What none names is a circuit not known, shown with the circuit it reads
+ * most like at the lowest levels.
  */
 import type { HexType } from '../../core';
 import { agreement, buildShapes, canonicalCycle, closingGroups, isHarmonic, wordKeyOf, type Group, type TopReadings } from '../foundations/foundations';
@@ -225,6 +235,18 @@ export class Catalog {
   /** The circuit a closing walk is: by its word, else as a harmonic of a circuit two levels down; null when neither. */
   name(b: Walked, word: string | null): Named | null {
     this.near = null;
+    const seen = word === null ? undefined : this.aliases.get(word);
+    if (seen) return seen;
+    const named = this.nameOf(b, word);
+    // a word named other than by its own: the same name when it closes again
+    if (named && word !== null && named.how !== 'word') this.aliases.set(word, named);
+    return named;
+  }
+
+  /** Words named by place or reading, with their names. */
+  private readonly aliases = new Map<string, Named>();
+
+  private nameOf(b: Walked, word: string | null): Named | null {
     if (word !== null) {
       for (const e of this.byLength.get(b.length) ?? []) {
         if (this.wordOf(e) !== word) continue;
@@ -255,14 +277,14 @@ export class Catalog {
         if (isHarmonic(g.floor, a.named.level, this.floor) || (g.limited && g.floor <= a.named.level - 2)) return found(a, 2);
       }
     }
-    // a known circuit or its harmonic closing again, in another supertile or a bigger one: the same reading, at the same levels or two up, at every level from the floor to the highest where neither closing leaves anything out
+    // a known circuit or its harmonic closing again, in another supertile or a bigger one: the same reading, at the same levels or two up, from the floor to one level below the highest where neither closing leaves types out (there a token's parent is a child of the supertile it closes in)
     for (const lift of [0, 2]) {
       for (const [level, list] of this.byLevel) {
         if (level > b.level - lift) continue;
         for (const a of list) {
           if (lift === 0 && a.named.length !== b.length) continue;
           for (const w of this.placesOf(a)) {
-            const top = Math.min(w.level - 3, b.level - 3 - lift);
+            const top = Math.min(w.level - 4, b.level - 4 - lift);
             if (top - this.floor + 1 < SAME_LEVELS) continue;
             const ra = this.readOf(a, w);
             const rB = readB();
