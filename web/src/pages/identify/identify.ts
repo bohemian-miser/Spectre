@@ -18,19 +18,21 @@
  * b, lifted h harmonic steps, closes at b + 2h and reads at level j as the
  * member reads at j - 2h (`buildup/deep.ts`). The arc's reading is placed
  * where it fits best in the candidate's cyclic reading, either way round
- * (the least edit distance to any part of it), and candidates are ranked by
- * how much of the arc's reading they account for.
+ * (the least edit distance to any part of it), at the deepest levels where
+ * the lifted member reads as the candidate (from the member's level 2 up,
+ * `harmonics/chains.ts`), and candidates are ranked by how much of the
+ * arc's reading they account for, ties going to the fewest harmonic steps.
  */
 import { buildSystem, mul, transPt, type Affine, type HexType, type MetaNode, type Pt } from '../../core';
 import { HarmonicsEngine, type HarmonicsResult } from '../harmonics/harmonicsJob';
-import { alignReadings, cancelBacktracksAt, cancelOpen, expandVisits, token, type VisitColumns } from '../harmonics/readings';
-
-export { cancelOpen };
-import { visitsWithFrames } from '../harmonics/pairView';
-import { middleOf, placeOfPath, topReading, type TopReading } from '../buildup/deep';
+import { FLOOR } from '../harmonics/chains';
+import { cancelOpen, expandVisits, token, type VisitColumns } from '../harmonics/readings';
+import { topReading, type TopReading } from '../buildup/deep';
 import { bornAbove, predictHarmonic, wordKey } from '../foundations/foundations';
 import type { PageCombo } from '../foundations/pageData';
 import { CircuitShapes, placeOf, slotOf, type BornCircuit } from '../shapes/circuitShapes';
+
+export { cancelOpen };
 
 /** The type at the root of every slot path. */
 export const ROOT: HexType = 'Delta';
@@ -136,6 +138,11 @@ export class Strand {
     const arc: Arc = { level: n, type, entry, exit, tiles };
     this.arcs.push(arc);
     return { kind: 'open', arc };
+  }
+
+  /** The ancestors known up to level n. */
+  reach(n: number): void {
+    grow(this.anc, n);
   }
 
   /** The tile's frame in its level-n ancestor. */
@@ -294,6 +301,29 @@ export function fitAlignment(a: Int32Array, b: Int32Array, fit: Fit): { matchedA
   return { matchedA, run, matchedRun };
 }
 
+/**
+ * A strand's reading `a` paired with a circuit's cyclic reading `b` where
+ * it fits best (`bestFit`): each matched token of `a` with the token of `b`
+ * it is matched to, both ways, -1 where unmatched; null when the two are too
+ * long to fit.
+ */
+export function fitPairs(a: readonly string[], b: readonly string[], most = 4e7): { ab: Int32Array; ba: Int32Array } | null {
+  if (!a.length || !b.length || a.length * (b.length + 2 * a.length) > most) return null;
+  const codes = new Codes();
+  const A = codes.of(a), B = codes.of(b);
+  const al = fitAlignment(A, B, bestFit(A, B));
+  const ab = new Int32Array(a.length).fill(-1);
+  const ba = new Int32Array(b.length).fill(-1);
+  const ia: number[] = [];
+  al.matchedA.forEach((m, q) => m && ia.push(q));
+  const ib = al.run.filter((_, x) => al.matchedRun[x]);
+  ia.forEach((q, t) => {
+    ab[q] = ib[t];
+    ba[ib[t]] = q;
+  });
+  return { ab, ba };
+}
+
 /** Tokens as numbers, the same token the same number. */
 class Codes {
   private readonly map = new Map<string, number>();
@@ -363,29 +393,8 @@ export interface LevelRow {
   readonly visits: number | null;
   /** Above the root level of the address: the ancestors there are Delta's Delta children. */
   readonly above: boolean;
-}
-
-/** Supertiles at one level drawn as outlines, x, y pairs, each with whether its visit is matched. */
-export interface Drawn {
-  readonly outlines: readonly Float64Array[];
-  readonly matched: readonly boolean[];
-  /** The strand or circuit: x, y pairs. */
-  readonly line: Float64Array;
-}
-
-/** The two pictures and the readings lined up. */
-export interface View {
-  /** The level whose supertiles are drawn and read. */
-  readonly level: number;
-  /** The strand's ancestor at the level analysed, its supertiles and the strand, and the strand's tile (its chord). */
-  readonly frame: Float64Array;
-  readonly left: Drawn;
-  readonly chord: readonly [number, number, number, number];
-  /** The nearest circuit, moved onto the strand where their readings match; null when nothing is matched. */
-  readonly right: Drawn | null;
-  /** Whether the right picture is mirrored to match. */
-  readonly mirrored: boolean;
-  readonly tokens: { readonly arc: readonly string[]; readonly arcMatched: readonly boolean[]; readonly near: readonly string[]; readonly nearMatched: readonly boolean[] };
+  /** The candidates while open, best first. */
+  readonly candidates: readonly Candidate[];
 }
 
 export interface Report {
@@ -396,7 +405,8 @@ export interface Report {
   readonly tiles: number;
   readonly identified: Identified | null;
   readonly candidates: readonly Candidate[];
-  readonly view: View | null;
+  /** The chains of the build so far, members by level. */
+  readonly chains: readonly ChainView[];
   /** Nothing more will come: closed, ended, at the cap or out of room. */
   readonly done: boolean;
   readonly why: string | null;
@@ -427,9 +437,6 @@ const NEAR_TOKENS = 30000;
 const ALIGNED = 12;
 /** Tokens a candidate is charged for, as if unmatched, so a fit over a few tokens ranks below a fit over many. */
 const PRIOR = 3;
-/** Most supertiles drawn, and most points of a strand. */
-const DRAW_TOKENS = 300;
-const LINE_POINTS = 20000;
 /** A level with more places than this is not built. */
 const MAX_PLACES = 4e7;
 
@@ -473,57 +480,6 @@ function knownAbove(known: PageCombo, id: number, steps: number): Named | null {
   return at;
 }
 
-const toXY = (pts: readonly Pt[]): Float64Array => {
-  const out = new Float64Array(2 * pts.length);
-  pts.forEach((p, i) => { out[2 * i] = p.x; out[2 * i + 1] = p.y; });
-  return out;
-};
-
-const placed = (pts: readonly Pt[], x: Affine): Float64Array => toXY(pts.map((p) => transPt(x, p)));
-
-/** The motion (turn, move, and a mirror when it fits better) taking points `q` nearest onto points `p`, pair for pair, by least squares. */
-export function motion(p: readonly Pt[], q: readonly Pt[]): { map: (pt: Pt) => Pt; mirrored: boolean } {
-  const n = p.length;
-  const mean = (s: readonly Pt[]): Pt => ({ x: s.reduce((a, b) => a + b.x, 0) / n, y: s.reduce((a, b) => a + b.y, 0) / n });
-  const fitWith = (flip: boolean) => {
-    const qq = q.map((v) => ({ x: v.x, y: flip ? -v.y : v.y }));
-    const mp = mean(p), mq = mean(qq);
-    let c = 0, s = 0;
-    for (let i = 0; i < n; i++) {
-      const ax = qq[i].x - mq.x, ay = qq[i].y - mq.y, bx = p[i].x - mp.x, by = p[i].y - mp.y;
-      c += ax * bx + ay * by;
-      s += ax * by - ay * bx;
-    }
-    const t = n > 1 ? Math.atan2(s, c) : 0;
-    const cos = Math.cos(t), sin = Math.sin(t);
-    const map = (pt: Pt): Pt => {
-      const x = pt.x - mq.x, y = (flip ? -pt.y : pt.y) - mq.y;
-      return { x: mp.x + cos * x - sin * y, y: mp.y + sin * x + cos * y };
-    };
-    let err = 0;
-    for (let i = 0; i < n; i++) {
-      const m = map(q[i]);
-      err += (m.x - p[i].x) ** 2 + (m.y - p[i].y) ** 2;
-    }
-    return { map, err };
-  };
-  const a = fitWith(false), b = fitWith(true);
-  return b.err < a.err - 1e-9 * (1 + a.err) ? { map: b.map, mirrored: true } : { map: a.map, mirrored: false };
-}
-
-const moveLine = (xy: Float64Array, map: (p: Pt) => Pt): Float64Array => {
-  const out = new Float64Array(xy.length);
-  for (let i = 0; i < xy.length; i += 2) {
-    const m = map({ x: xy[i], y: xy[i + 1] });
-    out[i] = m.x;
-    out[i + 1] = m.y;
-  }
-  return out;
-};
-
-/** Evenly spaced points of a line, at most `n`. */
-const capLine = (pts: readonly Pt[], n: number): Pt[] => (pts.length <= n ? [...pts] : Array.from({ length: n }, (_, j) => pts[Math.floor((j * pts.length) / n)]));
-
 /**
  * The analysis of one strand, a level at a time (`step`), from the
  * renormalisation of its combination and the harmonic chains over it
@@ -539,6 +495,8 @@ export class IdentifyEngine {
   private readonly words = new Map<BornCircuit, string>();
   private readonly predicted = new Map<BornCircuit, number | null>();
   private readonly codes = new Codes();
+  /** The strand closed: the walk it closes by. */
+  closed: BornCircuit | null = null;
 
   constructor(readonly job: IdentifyJob) {
     this.harm = new HarmonicsEngine({ family: 'hex', subset: job.subset, combo: job.combo, level: 1 });
@@ -563,14 +521,12 @@ export class IdentifyEngine {
     const r = this.harm.result();
     let identified: Identified | null = null;
     let candidates: Candidate[] = [];
-    let view: View | null = null;
     let tiles = 0;
     let why: string | null = null;
     if (found.kind === 'closed') {
       tiles = found.circuit.length;
-      const got = this.identify(found.circuit, r);
-      identified = got.identified;
-      view = this.closedView(found.circuit, got.rep);
+      identified = this.identify(found.circuit, r);
+      this.closed = found.circuit;
       why = `closes at level ${n}`;
     } else if (found.kind === 'ends') {
       tiles = this.strand.arcs[n - 1].tiles;
@@ -581,7 +537,6 @@ export class IdentifyEngine {
       const ranked = this.rank(found.arc, reading, r);
       for (const x of ranked.slice(0, 2)) this.fillLength(x);
       candidates = ranked.slice(0, 5).map((x) => x.candidate);
-      view = this.openView(found.arc, reading, ranked[0] ?? null);
     }
     const best = candidates[0] ?? null;
     this.rows.push({
@@ -592,6 +547,7 @@ export class IdentifyEngine {
       similarity: identified ? 1 : best ? best.similarity : null,
       visits: !identified && best ? best.tokens : null,
       above: n > this.job.level,
+      candidates,
     });
     if (found.kind !== 'open') this.finished = true;
     else if (n >= this.job.cap) {
@@ -609,7 +565,7 @@ export class IdentifyEngine {
       tiles,
       identified,
       candidates,
-      view,
+      chains: r.chains.map((ch) => ({ members: ch.members.map((i) => named(r.circuits[i])) })),
       done: this.finished,
       why,
       seconds: (Date.now() - t0) / 1000,
@@ -621,26 +577,23 @@ export class IdentifyEngine {
   }
 
   /** The circuit of the build a closed strand is, by its word, with its chain. */
-  private identify(c: BornCircuit, r: HarmonicsResult): { identified: Identified; rep: BornCircuit | null } {
+  private identify(c: BornCircuit, r: HarmonicsResult): Identified {
     const key = wordKey(this.cs, c);
     const at = r.circuits.findIndex((x, i) => x.length === c.length && this.wordOf(this.harm.bornOf(i)) === key);
     const known = this.job.known;
-    if (at < 0) return { identified: { level: c.level, length: c.length, circuit: null, chain: null, order: null, known: null }, rep: null };
+    if (at < 0) return { level: c.level, length: c.length, circuit: null, chain: null, order: null, known: null };
     const info = r.circuits[at];
     const chain = r.chains.find((ch) => ch.members.includes(at))!;
     const members = chain.members.map((i) => named(r.circuits[i]));
     const kr = known ? knownRow(known, named(info)) : null;
     const root = kr && known ? knownById(known, kr.root) : null;
     return {
-      identified: {
-        level: c.level,
-        length: c.length,
-        circuit: named(info),
-        chain: { members },
-        order: (info.level - members[0].level) / 2,
-        known: kr && root ? { order: kr.order, root } : null,
-      },
-      rep: this.harm.bornOf(at),
+      level: c.level,
+      length: c.length,
+      circuit: named(info),
+      chain: { members },
+      order: (info.level - members[0].level) / 2,
+      known: kr && root ? { order: kr.order, root } : null,
     };
   }
 
@@ -659,7 +612,7 @@ export class IdentifyEngine {
     // the deepest levels with a short enough reading
     const usable = reading.filter((x) => x.kept && x.kept.type.length <= ARC_TOKENS);
     if (!usable.length) return [];
-    const deepest = usable.slice(-COMPARED_LEVELS).map((x) => x.level);
+    const all = usable.map((x) => x.level);
     type Pending = { chain: ChainView; member: Named; order: number; born: BornCircuit; B: number; levels: { level: number; depth: number; arc: Int32Array; near: Int32Array }[] };
     const pending: Pending[] = [];
     for (const ch of r.chains) {
@@ -672,7 +625,10 @@ export class IdentifyEngine {
         const top = Math.max(...same.map((m) => m.c.level));
         for (const m of same.filter((x) => x.c.level === top)) {
           const born = this.harm.bornOf(m.i);
-          const levels = deepest.filter((j) => B - j >= 1 && B - j <= m.c.level);
+          // the deepest levels where the member, lifted, reads as the candidate: from level FLOOR of the member up, else from its tiles up
+          const lift = B - m.c.level;
+          const sure = all.filter((j) => B - j >= 1 && j - lift >= FLOOR);
+          const levels = (sure.length ? sure : all.filter((j) => B - j >= 1 && j >= lift)).slice(-COMPARED_LEVELS);
           if (!levels.length) continue;
           const read = this.readingOf(born, Math.max(...levels.map((j) => B - j)));
           const got: Pending['levels'] = [];
@@ -728,7 +684,7 @@ export class IdentifyEngine {
       return { candidate, born: p.born, levels, rank: (tokens - dist) / (tokens + PRIOR) };
     });
     // a candidate sharing no visit with the arc is no guess
-    return out.filter((x) => x.candidate.similarity > 0).sort((a, b) => b.rank - a.rank || a.candidate.level - b.candidate.level);
+    return out.filter((x) => x.candidate.similarity > 0).sort((a, b) => b.rank - a.rank || a.candidate.steps - b.candidate.steps || a.candidate.level - b.candidate.level);
   }
 
   /** A candidate's tiles: from the precomputed analysis, or the harmonic predicted from the build one step up. */
@@ -764,202 +720,6 @@ export class IdentifyEngine {
     x.candidate = { ...c, length, lengthFrom: from };
   }
 
-  /** The supertiles of a level-n arc at level j, with their frames in the arc's ancestor. */
-  private arcFrames(arc: Arc, j: number): { v: VisitColumns; xform: Affine[] } {
-    const cs = this.cs;
-    let v = arcTop(cs, arc);
-    let xform = v.slot.map((s) => cs.childOf(arc.level, arc.type, s).xform);
-    while (v.level > j) {
-      const below = expandVisits(cs, v);
-      xform = below.up.map((u, i) => mul(xform[u], cs.childOf(v.level, v.type[u], below.slot[i]).xform));
-      v = below;
-    }
-    return { v, xform };
-  }
-
-  /** The lowest level a strand of these raw visits per level is drawn at within `LINE_POINTS`. */
-  private static stopFor(raw: (j: number) => number | undefined, top: number): number {
-    let s = top;
-    while (s > 0 && (raw(s - 1) ?? Infinity) <= LINE_POINTS) s--;
-    return s;
-  }
-
-  private openView(arc: Arc, reading: readonly ArcReading[], best: Ranked | null): View {
-    const cs = this.cs;
-    const k = arc.level;
-    // the level drawn: the deepest compared for the best candidate with few enough supertiles, or the deepest short reading
-    const short = reading.filter((x) => x.kept && x.kept.type.length <= DRAW_TOKENS);
-    const compared = best ? best.levels.filter((l) => l.arc.length <= DRAW_TOKENS) : [];
-    const j = compared.length ? Math.min(...compared.map((l) => l.level)) : short.length ? short[short.length - 1].level : k - 1;
-    const { v, xform } = this.arcFrames(arc, j);
-    const keep = cancelOpen(v.id);
-    const stop = IdentifyEngine.stopFor((s) => reading.find((x) => x.level === s)?.raw, k - 1);
-    const pts: Pt[] = [];
-    cs.arc(k, arc.type, arc.entry, IDENTITY, stop, pts);
-    pts.push(cs.levels[k][arc.type].pt(arc.exit));
-    const leftLine = toXY(capLine(pts, LINE_POINTS));
-    const frame = toXY(cs.outline(k, arc.type));
-    const chord = this.strand.chord(k);
-    const outlineAt = (i: number): Float64Array => placed(cs.outline(j, v.type[i]), xform[i]);
-    const middleAt = (i: number): Pt => transPt(xform[i], middleOf(cs, j, v.type[i] as HexType));
-    const lv = best?.levels.find((l) => l.level === j);
-    let arcMatched: boolean[] = new Array<boolean>(keep.length).fill(false);
-    let right: Drawn | null = null;
-    let mirrored = false;
-    let nearTokens: string[] = [];
-    let nearMatched: boolean[] = [];
-    if (best && lv) {
-      const al = fitAlignment(lv.arc, lv.near, lv.fit);
-      arcMatched = al.matchedA;
-      const read = this.readingOf(best.born, lv.depth);
-      const paths = read.paths[lv.depth];
-      const toks = read.tokens[lv.depth];
-      const B = best.candidate.level;
-      const type = best.born.type as HexType;
-      const at = paths.map((id) => placeOfPath(cs.family, B, type, id, lv.depth));
-      const middles = at.map((p) => transPt(p.x, middleOf(cs, j, p.type)));
-      // matched pairs: the arc's i-th kept visit with the run's token it is aligned to
-      const p: Pt[] = [], q: Pt[] = [];
-      const runMatched = al.run.filter((_, x) => al.matchedRun[x]);
-      let ir = 0;
-      for (let ia = 0; ia < lv.arc.length && ir < runMatched.length; ia++) {
-        if (!al.matchedA[ia]) continue;
-        p.push(middleAt(keep[ia]));
-        q.push(middles[runMatched[ir++]]);
-      }
-      const fit = p.length ? motion(p, q) : { map: (x: Pt) => x, mirrored: false };
-      mirrored = fit.mirrored;
-      const runSet = new Set(al.run.filter((_, x) => al.matchedRun[x]));
-      const drawn = new Set<number>();
-      const outlines: Float64Array[] = [];
-      const matched: boolean[] = [];
-      for (let i = 0; i < at.length && outlines.length < DRAW_TOKENS * 2; i++) {
-        if (drawn.has(paths[i])) continue;
-        drawn.add(paths[i]);
-        outlines.push(moveLine(placed(cs.outline(j, at[i].type), at[i].x), fit.map));
-        matched.push(runSet.has(i));
-      }
-      const line = moveLine(toXY([...middles, middles[0]]), fit.map);
-      right = { outlines, matched, line };
-      nearTokens = al.run.map((x) => toks[x]);
-      nearMatched = al.matchedRun;
-    }
-    const outlines: Float64Array[] = [];
-    const matched: boolean[] = [];
-    const seen = new Map<number, number>();
-    keep.forEach((i, q) => {
-      const id = v.id[i];
-      const at = seen.get(id);
-      if (at !== undefined) {
-        matched[at] ||= arcMatched[q];
-        return;
-      }
-      if (outlines.length >= DRAW_TOKENS) return;
-      seen.set(id, outlines.length);
-      outlines.push(outlineAt(i));
-      matched.push(arcMatched[q]);
-    });
-    const arcToks = best && lv ? arcTokens({ level: j, raw: v.type.length, kept: { type: Array.from(keep, (i) => v.type[i]), slot: Array.from(keep, (i) => v.slot[i]), parent: Array.from(keep, (i) => v.parent[i]), id: Array.from(keep, (i) => v.id[i]) } }, best.candidate.level) : Array.from(keep, (i) => token({ id: '', type: v.type[i], slot: v.slot[i], parent: v.parent[i], tiles: 0 }, j, k + 1));
-    return {
-      level: j,
-      frame,
-      left: { outlines, matched, line: leftLine },
-      chord: [chord[0].x, chord[0].y, chord[1].x, chord[1].y],
-      right,
-      mirrored,
-      tokens: { arc: arcToks, arcMatched, near: nearTokens, nearMatched },
-    };
-  }
-
-  /** A closed strand beside the circuit of the build it is, their readings lined up at a level with few enough supertiles. */
-  private closedView(c: BornCircuit, rep: BornCircuit | null): View {
-    const cs = this.cs;
-    const k = c.level;
-    let j = Math.min(k, rep ? rep.level : k) - 1;
-    let ours = visitsWithFrames(cs, c, j);
-    for (;;) {
-      if (j === 0) break;
-      const below = visitsWithFrames(cs, c, j - 1);
-      if (cancelBacktracksAt(below.v.id, below.v.tiles).keep.length > DRAW_TOKENS) break;
-      ours = below;
-      j--;
-    }
-    const birth = rep ? Math.min(rep.level, k) : k;
-    const read = (w: { v: VisitColumns }) => {
-      const keep = cancelBacktracksAt(w.v.id, w.v.tiles).keep;
-      return { keep, tokens: Array.from(keep, (i) => token({ id: '', type: w.v.type[i], slot: w.v.slot[i], parent: w.v.parent[i], tiles: 0 }, j, birth)) };
-    };
-    const a = read(ours);
-    const drawSide = (w: { v: VisitColumns; xform: Affine[] }, keep: Int32Array, hit: readonly boolean[]): { outlines: Float64Array[]; matched: boolean[]; middles: Pt[] } => {
-      const outlines: Float64Array[] = [];
-      const matched: boolean[] = [];
-      const middles: Pt[] = [];
-      const seen = new Map<number, number>();
-      keep.forEach((i, q) => {
-        middles.push(transPt(w.xform[i], middleOf(cs, j, w.v.type[i] as HexType)));
-        const at = seen.get(w.v.id[i]);
-        if (at !== undefined) { matched[at] ||= hit[q]; return; }
-        seen.set(w.v.id[i], outlines.length);
-        outlines.push(placed(cs.outline(j, w.v.type[i]), w.xform[i]));
-        matched.push(hit[q]);
-      });
-      return { outlines, matched, middles };
-    };
-    const stopOf = (circuit: BornCircuit): number => {
-      let s = Math.max(0, circuit.level - 1);
-      while (s > 0 && visitsWithFrames(cs, circuit, s - 1).v.id.length <= LINE_POINTS) s--;
-      return s;
-    };
-    const line = (circuit: BornCircuit): Float64Array => {
-      const pts = cs.shape(circuit, stopOf(circuit));
-      return toXY(capLine([...pts, pts[0]], LINE_POINTS));
-    };
-    const chord = this.strand.chord(k);
-    const frame = toXY(cs.outline(k, c.type));
-    if (!rep) {
-      const left = drawSide(ours, a.keep, a.keep.length ? new Array<boolean>(a.keep.length).fill(false) : []);
-      return { level: j, frame, left: { outlines: left.outlines, matched: left.matched, line: line(c) }, chord: [chord[0].x, chord[0].y, chord[1].x, chord[1].y], right: null, mirrored: false, tokens: { arc: a.tokens, arcMatched: a.tokens.map(() => false), near: [], nearMatched: [] } };
-    }
-    const theirs = visitsWithFrames(cs, rep, j);
-    const b = read(theirs);
-    const al = alignReadings(a.tokens, b.tokens);
-    const matchedA = al ? al.matchedA : a.tokens.map(() => false);
-    // B's tokens in its own order, with whether matched
-    const inB = new Array<boolean>(b.tokens.length).fill(false);
-    if (al) al.matchedB.forEach((m, q) => {
-      const i = (al.rotation + q) % b.tokens.length;
-      inB[al.back ? b.tokens.length - 1 - i : i] = m;
-    });
-    const left = drawSide(ours, a.keep, matchedA);
-    const right = drawSide(theirs, b.keep, inB);
-    const p: Pt[] = [], q: Pt[] = [];
-    if (al) {
-      const order = al.tokensB.map((_, x) => {
-        const i = (al.rotation + x) % b.tokens.length;
-        return al.back ? b.tokens.length - 1 - i : i;
-      });
-      const bm = order.filter((_, x) => al.matchedB[x]);
-      let ib = 0;
-      matchedA.forEach((m, ia) => {
-        if (!m) return;
-        const bi = bm[ib++];
-        if (bi === undefined) return;
-        p.push(left.middles[ia]);
-        q.push(right.middles[bi]);
-      });
-    }
-    const fit = p.length ? motion(p, q) : { map: (x: Pt) => x, mirrored: false };
-    const rl = line(rep);
-    return {
-      level: j,
-      frame,
-      left: { outlines: left.outlines, matched: left.matched, line: line(c) },
-      chord: [chord[0].x, chord[0].y, chord[1].x, chord[1].y],
-      right: { outlines: right.outlines.map((o) => moveLine(o, fit.map)), matched: right.matched, line: moveLine(rl, fit.map) },
-      mirrored: fit.mirrored,
-      tokens: { arc: a.tokens, arcMatched: matchedA, near: al ? [...al.tokensB] : b.tokens, nearMatched: al ? [...al.matchedB] : b.tokens.map(() => false) },
-    };
-  }
 }
 
 /** A candidate in a few words: `harmonic 1 of the 303, closing at level 6`. */

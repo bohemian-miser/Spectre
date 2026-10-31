@@ -139,10 +139,13 @@ export function pairReadings(a: readonly string[], b: readonly string[], gaps?: 
   return { ab, ba };
 }
 
-/** A circuit's rows, worked out downwards as asked for. */
+/**
+ * A circuit's rows, worked out downwards as asked for. The rows begin at
+ * the level below `c.level`, which the members of a chain line up by.
+ */
 export class CircuitRows {
   private readonly rows = new Map<number, Row>();
-  private readonly pairs = new Map<string, { ab: Int32Array; ba: Int32Array } | null>();
+  private readonly pairs = new Map<CircuitRows, Map<string, { ab: Int32Array; ba: Int32Array } | null>>();
 
   constructor(
     readonly cs: CircuitShapes,
@@ -154,19 +157,25 @@ export class CircuitRows {
     return this.row(level).v;
   }
 
+  /** The visits at a level, worked out from the level above (or from the birth). */
+  protected visitsOf(level: number): VisitColumns {
+    if (level === this.c.level - 1) return topVisits(this.cs, this.c);
+    const above = this.row(level + 1).v;
+    let n = 0;
+    for (let i = 0; i < above.type.length; i++) n += this.cs.levels[above.level][above.type[i]].route(above.cross[i]).steps.length;
+    if (n > MAX_ROW) throw new Error(`level ${level} has ${n.toLocaleString('en-US')} visits, too many to list`);
+    return expandVisits(this.cs, above);
+  }
+
+  /** The visits the fixpoint keeps: every backtrack cancelled round the loop. */
+  protected fixpoint(v: VisitColumns): Int32Array {
+    return cancelBacktracksAt(v.id, v.tiles).keep;
+  }
+
   private row(level: number): Row {
     const hit = this.rows.get(level);
     if (hit) return hit;
-    let v: VisitColumns;
-    if (level === this.c.level - 1) v = topVisits(this.cs, this.c);
-    else {
-      const above = this.row(level + 1).v;
-      let n = 0;
-      for (let i = 0; i < above.type.length; i++) n += this.cs.levels[above.level][above.type[i]].route(above.cross[i]).steps.length;
-      if (n > MAX_ROW) throw new Error(`level ${level} has ${n.toLocaleString('en-US')} visits, too many to list`);
-      v = expandVisits(this.cs, above);
-    }
-    const row = { v, folds: {} };
+    const row = { v: this.visitsOf(level), folds: {} };
     this.rows.set(level, row);
     return row;
   }
@@ -177,7 +186,7 @@ export class CircuitRows {
     const hit = r.folds[fold];
     if (hit) return hit;
     const v = r.v;
-    const keep = fold === 'fixpoint' ? cancelBacktracksAt(v.id, v.tiles).keep : fold === 'weave' ? weaveKeep(v.id) : Int32Array.from(v.id, (_, i) => i);
+    const keep = fold === 'fixpoint' ? this.fixpoint(v) : fold === 'weave' ? weaveKeep(v.id) : Int32Array.from(v.id, (_, i) => i);
     const keptAt = new Int32Array(v.type.length).fill(-1);
     keep.forEach((i, q) => { keptAt[i] = q; });
     const tokens = Array.from(keep, (i) => token({ id: '', type: v.type[i], slot: v.slot[i], parent: v.parent[i], tiles: 0 }, level, this.c.level));
@@ -188,12 +197,15 @@ export class CircuitRows {
 
   /** Its reading's visits at `level` paired with the other's at the level as far below the other's birth, under a fold. */
   pairing(level: number, other: CircuitRows, fold: Fold = 'fixpoint'): { ab: Int32Array; ba: Int32Array } | null {
-    const key = `${level} ${fold} ${other.c.level} ${other.c.type} ${other.c.length}`;
-    if (!this.pairs.has(key)) {
-      const lo = level + other.c.level - this.c.level;
-      this.pairs.set(key, pairReadings(this.fold(level, fold).tokens, other.fold(lo, fold).tokens, [this.gaps(level, fold), other.gaps(lo, fold)]));
-    }
-    return this.pairs.get(key)!;
+    const key = `${level} ${fold}`;
+    const mine = this.pairs.get(other) ?? this.pairs.set(other, new Map()).get(other)!;
+    if (!mine.has(key)) mine.set(key, this.pair(level, other, level + other.c.level - this.c.level, fold));
+    return mine.get(key)!;
+  }
+
+  /** Its visits at `level` paired with the other's at `lo`, by their readings. */
+  protected pair(level: number, other: CircuitRows, lo: number, fold: Fold): { ab: Int32Array; ba: Int32Array } | null {
+    return pairReadings(this.fold(level, fold).tokens, other.fold(lo, fold).tokens, [this.gaps(level, fold), other.gaps(lo, fold)]);
   }
 
   /** Per kept visit, the visits folded after it before the next kept one (the row read as a loop). */
@@ -203,8 +215,8 @@ export class CircuitRows {
     return Int32Array.from(keep, (i, q) => (q + 1 < keep.length ? keep[q + 1] : keep[0] + n) - i - 1);
   }
 
-  /** Where each visit's run starts in the row below, and the row's length at the end. */
-  starts(level: number): Int32Array {
+  /** Where each visit's run starts in the row below, and the row's length at the end; null when the rows do not say. */
+  starts(level: number): Int32Array | null {
     const below = this.row(level - 1).v.up;
     const n = this.row(level).v.type.length;
     const out = new Int32Array(n + 1);
@@ -381,7 +393,7 @@ function itemsOf(m: CircuitRows, level: number, fold: Fold): { items: RowItem[];
  * supertiles of the last row are numbered, as `pairView.ts` draws them.
  */
 export function chainRows(members: readonly CircuitRows[], k: number, cap: number, fold: Fold = 'fixpoint'): ChainRows {
-  const base = members[0].c.level;
+  const base = Math.min(...members.map((m) => m.c.level));
   const depth = base - k;
   const out = members.map((m) => {
     const levels: RowLevel[] = [];

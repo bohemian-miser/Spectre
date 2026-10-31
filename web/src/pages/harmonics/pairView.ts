@@ -4,14 +4,14 @@
  * member before, those holding a visit the neighbouring member's reading
  * does not share marked.
  */
-import { mul, transPt, type Affine } from '../../core';
+import { mul, transPt, type Affine, type Pt } from '../../core';
 import type { BornCircuit, CircuitShapes } from '../shapes/circuitShapes';
 import { alignReadings, cancelBacktracksAt, expandVisits, pathOf, sameCyclic, topVisits, type Reading, type VisitColumns } from './readings';
 
 /** Supertiles are drawn for a level while the circuit has at most this many raw visits there. */
 export const VISIT_CAP = 400000;
 /** The circuit is drawn through at most this many of its crossings at the level, evenly spaced. */
-const CIRCUIT_POINTS = 20000;
+export const CIRCUIT_POINTS = 20000;
 /** At most this many supertiles are drawn per picture, the first the circuit enters. */
 export const SUPERTILE_CAP = 600;
 
@@ -23,6 +23,10 @@ export interface Supertile {
   readonly outline: Float64Array;
   /** Whether it holds a visit the other reading does not share. */
   readonly unshared: boolean;
+  /** Whether it holds a visit matched in the neighbouring member's reading, where the two are a strand and a circuit it is set against. */
+  readonly matched?: boolean;
+  /** The slot path it is linked by in the other members, when not its own: a strand's supertile linked to the one its visit is matched with. */
+  readonly link?: string;
 }
 
 export interface Side {
@@ -34,6 +38,8 @@ export interface Side {
   readonly supertiles: readonly Supertile[];
   /** The circuit at this level (each arc a chord, through at most `CIRCUIT_POINTS` crossings), x, y pairs; empty when not drawn. */
   readonly circuit: Float64Array;
+  /** An open strand: its line is not closed. */
+  readonly open?: boolean;
 }
 
 export type Agreement = 'same' | 'differs' | 'long' | 'unread';
@@ -77,31 +83,58 @@ export function sideAt(cs: CircuitShapes, c: BornCircuit, level: number, reading
   const visits = reading?.raw ?? Infinity;
   if (visits > VISIT_CAP) return { level, visits, count: 0, supertiles: [], circuit: new Float64Array(0) };
   const { v, xform } = visitsWithFrames(cs, c, level);
-  const unshared = new Set<number>();
-  if (shared) {
-    const keep = kept ?? cancelBacktracksAt(v.id, v.tiles).keep;
-    keep.forEach((i, q) => { if (!shared[q]) unshared.add(v.id[i]); });
-  }
+  const keep = shared ? kept ?? cancelBacktracksAt(v.id, v.tiles).keep : null;
+  const { count, supertiles } = supertilesOf(cs, v, xform, c.level - level, unsharedIds(v, keep, shared));
+  return { level, visits: v.type.length, count, supertiles, circuit: lineOf(cs.shape(c, level)) };
+}
+
+/** The supertiles holding a kept visit (`keep`, indices into the visits) that `shared` (per kept visit) says the other reading lacks. */
+export function unsharedIds(v: VisitColumns, keep: Int32Array | null, shared: readonly boolean[] | null): Set<number> {
+  const out = new Set<number>();
+  if (keep && shared) keep.forEach((i, q) => { if (!shared[q]) out.add(v.id[i]); });
+  return out;
+}
+
+/**
+ * The supertiles of visits `v`, each placed by its visit's frame, the first
+ * `SUPERTILE_CAP` met; `depth` levels below the supertile the ids count
+ * from. Ids in `unshared` and `matched` mark theirs; `link` names the slot
+ * path a supertile is linked by in the other members.
+ */
+export function supertilesOf(
+  cs: CircuitShapes,
+  v: VisitColumns,
+  xform: readonly Affine[],
+  depth: number,
+  unshared: ReadonlySet<number>,
+  matched?: ReadonlySet<number>,
+  link?: ReadonlyMap<number, string>,
+): { count: number; supertiles: Supertile[] } {
   const first = new Map<number, number>();
   v.id.forEach((id, i) => { if (!first.has(id)) first.set(id, i); });
-  const depth = c.level - level;
   const supertiles: Supertile[] = [];
   for (const [id, i] of first) {
     if (supertiles.length === SUPERTILE_CAP) break;
-    const pts = cs.outline(level, v.type[i]);
+    const pts = cs.outline(v.level, v.type[i]);
     const outline = new Float64Array(2 * pts.length);
     pts.forEach((p, j) => {
       const q = transPt(xform[i], p);
       outline[2 * j] = q.x;
       outline[2 * j + 1] = q.y;
     });
-    supertiles.push({ path: pathOf(id, depth), type: v.type[i], outline, unshared: unshared.has(id) });
+    const s: Supertile = { path: pathOf(id, depth), type: v.type[i], outline, unshared: unshared.has(id) };
+    const to = link?.get(id);
+    supertiles.push(matched?.has(id) || to !== undefined ? { ...s, ...(matched?.has(id) ? { matched: true } : {}), ...(to !== undefined ? { link: to } : {}) } : s);
   }
-  const all = cs.shape(c, level);
+  return { count: first.size, supertiles };
+}
+
+/** Points as x, y pairs, at most `CIRCUIT_POINTS` of them, evenly spaced. */
+export function lineOf(all: readonly Pt[]): Float64Array {
   const pts = all.length <= CIRCUIT_POINTS ? all : Array.from({ length: CIRCUIT_POINTS }, (_, j) => all[Math.floor((j * all.length) / CIRCUIT_POINTS)]);
-  const circuit = new Float64Array(2 * pts.length);
-  pts.forEach((p, j) => { circuit[2 * j] = p.x; circuit[2 * j + 1] = p.y; });
-  return { level, visits: v.type.length, count: first.size, supertiles, circuit };
+  const out = new Float64Array(2 * pts.length);
+  pts.forEach((p, j) => { out[2 * j] = p.x; out[2 * j + 1] = p.y; });
+  return out;
 }
 
 /**
@@ -111,7 +144,7 @@ export function sideAt(cs: CircuitShapes, c: BornCircuit, level: number, reading
  * against the member above).
  */
 export function chainPicture(cs: CircuitShapes, members: readonly { circuit: BornCircuit; readings: readonly Reading[]; keep?: (level: number) => Int32Array }[], k: number): ChainPicture {
-  const base = members[0].circuit.level;
+  const base = Math.min(...members.map((m) => m.circuit.level));
   const reading = (j: number) => members[j].readings.find((r) => r.level === k + members[j].circuit.level - base);
   const steps: Agreement[] = [];
   const shared: (boolean[] | null)[] = members.map(() => null);

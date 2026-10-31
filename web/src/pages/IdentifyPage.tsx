@@ -1,8 +1,13 @@
 /**
  * Identify: a strand named by one of its tiles, followed up the tile's
  * ancestors a level at a time until it closes (`identify/identify.ts`).
- * Each level built shows the strand so far beside the nearest circuit the
- * build knows or its chains predict, their readings lined up.
+ * At each level climbed, the strand's piece there (its arc in its ancestor
+ * at that level) is set against the circuits the build knows or its chains
+ * predict, best first. The piece and its candidate are drawn side by side
+ * with the built members of the candidate's chain, over their supertiles
+ * and in rows of visits, as the Harmonics page draws a chain
+ * (`harmonics/ChainViews.tsx`, `identify/members.ts`); hovering a visit of
+ * the strand lights the visit its reading is matched with.
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -10,10 +15,16 @@ import { CircuitShapes } from './shapes/circuitShapes';
 import { ComboPicker } from './shapes/ComboPicker';
 import { harmonicsHref, loadCombo, nf } from './foundations/data';
 import { compareHref, type CircuitRef } from './compare/refs';
+import { ChainWorkspace, type ChainSource, type MemberInfo } from './harmonics/ChainViews';
+import { FLOOR } from './harmonics/chains';
+import { createBruteClient, fromBorn, STOPPED, type BruteFrom } from './harmonics/bruteJob';
+import type { Progress } from './harmonics/bruteForce';
 import { identifyHref, readIdentify } from './identify/href';
 import { startIdentify, type IdentifyRun } from './identify/client';
-import { labelOf, randomOpenStrand, type Candidate, type Drawn, type Report, type View } from './identify/identify';
+import { specKey, type MemberSpec } from './identify/members';
+import { labelOf, randomOpenStrand, type Candidate, type ChainView, type Named, type Report } from './identify/identify';
 import '../styles/shapes.css';
+import '../styles/harmonics.css';
 import '../styles/identify.css';
 
 interface Target {
@@ -26,10 +37,10 @@ interface Target {
 
 const DEFAULT = { subset: [0, 2, 3, 4, 6, 8], combo: '140000001', level: 5 };
 const DEFAULT_CAP = 10;
-const PANEL = 360;
 
 const pct = (s: number): string => `${Math.round(100 * s)}%`;
 const base = (): string => import.meta.env.BASE_URL;
+const same = (a: Named, b: Named): boolean => a.level === b.level && a.length === b.length;
 
 /** An open strand to start from when the address names none. */
 function randomTarget(subset: readonly number[], combo: string, level: number): Target | null {
@@ -38,252 +49,81 @@ function randomTarget(subset: readonly number[], combo: string, level: number): 
   return r ? { subset, combo, level, ...r } : null;
 }
 
-const pathOf = (xy: Float64Array, close = false): string => {
-  let d = '';
-  for (let i = 0; i < xy.length; i += 2) d += `${i ? 'L' : 'M'}${xy[i].toFixed(3)} ${(-xy[i + 1]).toFixed(3)}`;
-  return close ? `${d}Z` : d;
-};
+const named = (subset: readonly number[], combo: string, c: Named): CircuitRef => ({ subset, combo, level: c.level, length: c.length });
 
-type Box = [number, number, number, number];
-
-function boxOf(lines: readonly Float64Array[]): Box {
-  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-  for (const xy of lines)
-    for (let i = 0; i < xy.length; i += 2) {
-      x0 = Math.min(x0, xy[i]); x1 = Math.max(x1, xy[i]);
-      y0 = Math.min(y0, xy[i + 1]); y1 = Math.max(y1, xy[i + 1]);
-    }
-  const m = 0.03 * Math.max(x1 - x0, y1 - y0, 1e-9);
-  return [x0 - m, y0 - m, x1 + m, y1 + m];
+/** A circuit of a chain in a few words: `harmonic 2 of the 303, level 8`. */
+function placeIn(chain: ChainView, c: Named): string {
+  const root = chain.members[0];
+  const order = (c.level - root.level) / 2;
+  return order === 0 ? `the ${nf(c.length)}, level ${c.level}` : `harmonic ${order} of the ${nf(root.length)}, level ${c.level}`;
 }
 
-/** One picture: supertile outlines (matched ones shaded), the strand or circuit, and optionally the frame and the start tile. */
-function Picture(props: { drawn: Drawn; box: Box; frame?: Float64Array; chord?: readonly number[]; label: string; testId: string }): JSX.Element {
-  const [x0, y0, x1, y1] = props.box;
-  const w = x1 - x0, h = y1 - y0;
-  const side = Math.max(w, h);
-  const vb = `${x0 - (side - w) / 2} ${-y1 - (side - h) / 2} ${side} ${side}`;
-  const dot = side / 70;
-  return (
-    <svg className="identify-svg" viewBox={vb} width={PANEL} height={PANEL} role="img" aria-label={props.label} data-testid={props.testId}>
-      {props.frame && <path d={pathOf(props.frame, true)} className="identify-frame" vectorEffect="non-scaling-stroke" />}
-      {props.drawn.outlines.map((o, i) => (
-        <path key={i} d={pathOf(o, true)} className={props.drawn.matched[i] ? 'identify-st is-matched' : 'identify-st'} vectorEffect="non-scaling-stroke" />
-      ))}
-      <path d={pathOf(props.drawn.line)} className="identify-line" vectorEffect="non-scaling-stroke" />
-      {props.chord && (
-        <>
-          <path d={`M${props.chord[0]} ${-props.chord[1]}L${props.chord[2]} ${-props.chord[3]}`} className="identify-chord" vectorEffect="non-scaling-stroke" />
-          <circle cx={(props.chord[0] + props.chord[2]) / 2} cy={-(props.chord[1] + props.chord[3]) / 2} r={dot} className="identify-start" />
-        </>
-      )}
-    </svg>
-  );
+/** What is compared at a level climbed: the strand's piece, what it is set against, and the members drawn. */
+interface Comparison {
+  readonly level: number;
+  readonly state: 'open' | 'closed' | 'ends';
+  readonly tiles: number;
+  /** The candidates while open; the one compared. */
+  readonly candidates: readonly Candidate[];
+  readonly chosen: Candidate | null;
+  /** The circuit set against: its chain, and where it closes; its tiles when known. */
+  readonly chain: ChainView | null;
+  readonly against: { readonly level: number; readonly length: number | null; readonly built: boolean } | null;
+  readonly members: readonly { spec: MemberSpec; info: MemberInfo }[];
+  /** The highest level the lowest-born member is drawn at: the strand's piece stays below its own level. */
+  readonly top: number;
 }
 
-/** A reading as a row of visits, the matched ones marked; long rows cut round the first match. */
-function ReadingRow(props: { tokens: readonly string[]; matched: readonly boolean[]; label: string }): JSX.Element {
-  const MAX = 60;
-  const { tokens, matched } = props;
-  const first = Math.max(0, matched.indexOf(true));
-  const from = tokens.length <= MAX ? 0 : Math.min(Math.max(0, first - 10), tokens.length - MAX);
-  const shown = tokens.slice(from, from + MAX);
-  return (
-    <div className="identify-reading">
-      <span className="identify-reading-label">{props.label}</span>
-      <span className="identify-tokens">
-        {from > 0 && <span className="identify-more">… </span>}
-        {shown.map((t, i) => (
-          <span key={i} className={matched[from + i] ? 'identify-tok is-matched' : 'identify-tok'}>
-            {t}
-          </span>
-        ))}
-        {from + MAX < tokens.length && <span className="identify-more"> … {nf(tokens.length - from - MAX)} more</span>}
-      </span>
-    </div>
-  );
-}
+/** The chain of the latest build holding a circuit, else the one given. */
+const chainOf = (chains: readonly ChainView[], c: Named, fallback: ChainView): ChainView => chains.find((ch) => ch.members.some((m) => same(m, c))) ?? fallback;
 
-const named = (subset: readonly number[], combo: string, c: { level: number; length: number }): CircuitRef => ({ subset, combo, level: c.level, length: c.length });
-
-function Links(props: { target: Target; report: Report }): JSX.Element | null {
-  const { target, report } = props;
-  const rule = target.subset.join('');
+function compareAt(report: Report, n: number, pick: number): Comparison {
+  const row = report.rows[n - 1];
+  const strandInfo = (birth: number): { spec: MemberSpec; info: MemberInfo } => ({
+    spec: { kind: 'strand', level: n, birth },
+    info: { level: birth, length: row.tiles, label: 'this strand' },
+  });
+  const built = (c: Named, label?: string): { spec: MemberSpec; info: MemberInfo } => ({ spec: { kind: 'built', level: c.level, length: c.length }, info: { ...c, label } });
+  const below = (chain: ChainView, top: number, lowest: number) =>
+    chain.members
+      .filter((m) => m.level < top && m.level >= lowest)
+      .sort((a, b) => b.level - a.level)
+      .map((m) => built(m));
   const id = report.identified;
-  const best = report.candidates[0];
-  if (id?.circuit) {
+  if (row.state === 'closed' && id?.circuit && id.chain) {
     const c = id.circuit;
-    const members = id.chain?.members ?? [];
-    const at = members.findIndex((m) => m.level === c.level && m.length === c.length);
-    const other = members[at - 1] ?? members[at + 1] ?? null;
-    return (
-      <p className="identify-links">
-        <a href={harmonicsHref(base(), target.combo, Math.max(report.level, other?.level ?? 0), rule, c)}>Harmonics</a>
-        {other && <a href={compareHref(base(), named(target.subset, target.combo, other.level < c.level ? other : c), named(target.subset, target.combo, other.level < c.level ? c : other))}>Compare with the {nf(other.length)}</a>}
-      </p>
-    );
+    const members = [strandInfo(n), built(c, placeIn(id.chain, c)), ...below(id.chain, c.level, 0)];
+    return { level: n, state: 'closed', tiles: row.tiles, candidates: [], chosen: null, chain: id.chain, against: { ...c, built: true }, members, top: Math.min(...members.map((m) => m.info.level)) - 1 };
   }
-  if (!best) return null;
-  return (
-    <p className="identify-links">
-      <a href={harmonicsHref(base(), target.combo, Math.min(9, Math.max(report.level, best.member.level)), rule, best.member)}>Harmonics</a>
-      {best.length !== null && best.level <= 12 && (
-        <a href={compareHref(base(), named(target.subset, target.combo, best.member), named(target.subset, target.combo, { level: best.level, length: best.length }))}>
-          Compare the {nf(best.member.length)} with the {nf(best.length)}
-        </a>
-      )}
-    </p>
-  );
+  const chosen = row.state === 'open' ? (row.candidates[pick] ?? row.candidates[0] ?? null) : null;
+  if (!chosen) return { level: n, state: row.state, tiles: row.tiles, candidates: row.candidates, chosen: null, chain: null, against: null, members: [strandInfo(n)], top: n - 1 };
+  const B = chosen.level;
+  const chain = chainOf(report.chains, chosen.member, chosen.chain);
+  const builtThere = chain.members.find((m) => m.level === B) ?? null;
+  const label = labelOf(chosen);
+  const against = builtThere
+    ? built(builtThere, label)
+    : { spec: { kind: 'predicted', from: chosen.member, level: B } as MemberSpec, info: { level: B, length: chosen.length ?? 0, label } };
+  // the members born too low to read at a level the strand's piece is drawn at are left out
+  const members = [strandInfo(B), against, ...below(chain, B, B - n + 1)];
+  const lowest = Math.min(...members.map((m) => m.info.level));
+  return {
+    level: n,
+    state: 'open',
+    tiles: row.tiles,
+    candidates: row.candidates,
+    chosen,
+    chain,
+    against: { level: B, length: builtThere ? builtThere.length : chosen.length, built: !!builtThere },
+    members,
+    top: n - 1 - B + lowest,
+  };
 }
 
-const chainText = (members: readonly { length: number }[]): string => members.map((m) => nf(m.length)).join(' → ');
+/** A brute force of a candidate above the build: running, found, or not. */
+type Brute = { readonly key: string; readonly progress: Progress | null; readonly found?: { level: number; length: number } | null; readonly error?: string };
 
-function lengthText(c: Candidate): string {
-  if (c.length === null) return '';
-  return c.lengthFrom === 'data' ? `, ${nf(c.length)} tiles` : `, ${nf(c.length)} tiles as predicted from the build`;
-}
-
-function Verdict(props: { report: Report; running: boolean }): JSX.Element {
-  const r = props.report;
-  if (r.found === 'ends') return <p className="identify-verdict">The strand ends inside a tile at level {r.level}.</p>;
-  if (r.identified) {
-    const id = r.identified;
-    if (!id.circuit) return <p className="identify-verdict">Closes at level {id.level} after {nf(id.length)} tiles, a circuit the build has no other copy of.</p>;
-    const root = id.chain?.members[0];
-    return (
-      <div className="identify-verdict">
-        <p>
-          Closes at level {id.level}: the <strong>{nf(id.circuit.length)}</strong>
-          {id.circuit.level < id.level ? `, which first closes at level ${id.circuit.level}` : ''}.{' '}
-          {id.order === 0 ? 'It starts its chain' : `Harmonic ${id.order} of the ${nf(root!.length)}`}
-          {id.chain && id.chain.members.length > 1 ? ` (${chainText(id.chain.members)})` : ''}.
-        </p>
-        {id.known && (
-          <p className="shapes-note">
-            The precomputed analysis of this combination {id.known.order === id.order && id.known.root.length === root?.length ? 'agrees' : 'differs'}:{' '}
-            {id.known.order === 0 ? 'a foundational circuit' : `harmonic ${id.known.order} of the ${nf(id.known.root.length)}`}.
-          </p>
-        )}
-      </div>
-    );
-  }
-  const [best, next] = r.candidates;
-  return (
-    <div className="identify-verdict">
-      <p>
-        {props.running ? 'Open' : 'Still open'} at level {r.level} after {nf(r.tiles)} tiles.
-        {best ? (
-          <>
-            {' '}Most likely <strong>{labelOf(best)}</strong>
-            {lengthText(best)}.
-          </>
-        ) : (
-          ' Too short to compare yet.'
-        )}
-      </p>
-      {best && (
-        <p className="shapes-note">
-          Its reading accounts for {pct(best.similarity)} of the strand&apos;s {nf(best.tokens)} visits at level{best.levels.length > 1 ? 's' : ''} {best.levels.join(', ')}
-          {next ? `; next best ${labelOf(next)}, ${pct(next.similarity)}` : '; no other chain compares'}.
-        </p>
-      )}
-    </div>
-  );
-}
-
-function Comparison(props: { view: View; report: Report }): JSX.Element {
-  const { view, report } = props;
-  const [whole, setWhole] = useState(false);
-  // the strand and the supertiles it runs through, with the frame only when the strand reaches its border
-  const leftBox = useMemo(() => boxOf(report.found === 'open' ? [view.frame, view.left.line] : [view.left.line, ...view.left.outlines]), [view, report.found]);
-  const rightBox = useMemo(() => (view.right ? (whole ? boxOf([view.right.line, ...view.right.outlines]) : leftBox) : leftBox), [view, whole, leftBox]);
-  const best = report.candidates[0];
-  const nearName = report.identified?.circuit ? `the ${nf(report.identified.circuit.length)} as the build has it` : best ? `${labelOf(best)}, read as the ${nf(best.member.length)} ${best.steps === 1 ? 'two levels' : `${2 * best.steps} levels`} up and drawn through the middles of its supertiles` : '';
-  return (
-    <section className="identify-compare">
-      <div className="identify-pair">
-        <figure>
-          <Picture drawn={view.left} box={leftBox} frame={view.frame} chord={view.chord} label="The strand over its supertiles" testId="identify-left" />
-          <figcaption>
-            The strand in its level-{report.level} supertile, over the level-{view.level} supertiles it runs through. The dot is its tile.
-          </figcaption>
-        </figure>
-        <figure>
-          {view.right ? (
-            <Picture drawn={view.right} box={rightBox} label="The nearest circuit" testId="identify-right" />
-          ) : (
-            <div className="identify-empty" style={{ width: PANEL, height: PANEL }}>Nothing to compare yet</div>
-          )}
-          <figcaption>
-            {nearName ? `Nearest: ${nearName}, ` : ''}moved onto the strand where their readings match{view.mirrored ? ' (mirrored)' : ''}.{' '}
-            {view.right && (
-              <label className="shapes-check">
-                <input type="checkbox" checked={whole} onChange={(e) => setWhole(e.target.checked)} /> whole
-              </label>
-            )}
-          </figcaption>
-        </figure>
-      </div>
-      <div className="identify-readings" data-testid="identify-readings">
-        <ReadingRow tokens={view.tokens.arc} matched={view.tokens.arcMatched} label="strand" />
-        {view.tokens.near.length > 0 && <ReadingRow tokens={view.tokens.near} matched={view.tokens.nearMatched} label="nearest" />}
-        <p className="shapes-note">
-          Level {view.level}: each visit is a supertile&apos;s type, its slot and its parent&apos;s type; shaded visits are in both, in order.
-        </p>
-      </div>
-    </section>
-  );
-}
-
-function LevelTable(props: { report: Report; root: number; running: boolean }): JSX.Element {
-  const { report } = props;
-  const above = report.rows.some((r) => r.above);
-  return (
-    <section>
-      <div className="shapes-tablewrap">
-        <table className="shapes-table identify-table" data-testid="identify-levels">
-          <thead>
-            <tr>
-              <th>Level</th>
-              <th>Tiles</th>
-              <th>Strand</th>
-              <th>Most likely</th>
-              <th>Similarity</th>
-              <th>Over visits</th>
-            </tr>
-          </thead>
-          <tbody>
-            {report.rows.map((r) => (
-              <tr key={r.level}>
-                <td>
-                  {r.level}
-                  {r.above ? '*' : ''}
-                </td>
-                <td>{nf(r.tiles)}</td>
-                <td>{r.state === 'open' ? 'open' : r.state === 'closed' ? 'closes' : 'ends'}</td>
-                <td className="identify-best">{r.best ?? '–'}</td>
-                <td>{r.similarity === null ? '–' : pct(r.similarity)}</td>
-                <td>{r.visits === null ? '–' : nf(r.visits)}</td>
-              </tr>
-            ))}
-            {props.running && (
-              <tr>
-                <td>{report.level + 1}</td>
-                <td colSpan={5} className="identify-best">
-                  building…
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-      {above && <p className="shapes-note">* Above level {props.root} the supertile of the address is taken as slot 1 of a Delta, which every Delta has.</p>}
-      {report.why && !props.running && <p className="shapes-note">Done: {report.why}.</p>}
-    </section>
-  );
-}
-
-export default function IdentifyPage(): JSX.Element {
+export default function IdentifyPage(props: { forceSync?: boolean }): JSX.Element {
   const asked = useRef(typeof location === 'undefined' ? null : readIdentify(location.search));
   const capAsked = useRef(typeof location === 'undefined' ? null : Number(new URLSearchParams(location.search).get('upto')) || null);
   const [target, setTarget] = useState<Target | null>(asked.current);
@@ -292,38 +132,48 @@ export default function IdentifyPage(): JSX.Element {
   const [report, setReport] = useState<Report | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
+  const [climb, setClimb] = useState<number | null>(null);
+  const [pick, setPick] = useState(0);
+  const [brute, setBrute] = useState<Brute | null>(null);
+  const [run, setRun] = useState<{ n: number; run: IdentifyRun } | null>(null);
   const runRef = useRef<IdentifyRun | null>(null);
   const token = useRef(0);
+  const bruteClient = useRef<ReturnType<typeof createBruteClient> | null>(null);
 
   const go = (t: Target, upTo: number): void => {
     runRef.current?.stop();
+    bruteClient.current?.stop();
     const mine = ++token.current;
     setTarget(t);
     setCap(upTo);
     setDraft({ tile: t.tile, edge: String(t.edge), level: String(t.level) });
     setReport(null);
     setError(null);
+    setClimb(null);
+    setPick(0);
+    setBrute(null);
     setRunning(true);
-    const href = identifyHref(base(), t);
-    history.replaceState(null, '', `${href}${upTo !== DEFAULT_CAP ? `&upto=${upTo}` : ''}`);
-    const rule = t.subset.join('');
-    loadCombo(base(), t.combo, undefined, rule)
+    if (typeof history !== 'undefined') history.replaceState(null, '', `${identifyHref(base(), t)}${upTo !== DEFAULT_CAP ? `&upto=${upTo}` : ''}`);
+    loadCombo(base(), t.combo, undefined, t.subset.join(''))
       .catch(() => null)
       .then((known) => {
         if (token.current !== mine) return;
-        runRef.current = startIdentify(
+        const r = startIdentify(
           { subset: t.subset, combo: t.combo, tile: t.tile, edge: t.edge, level: t.level, cap: upTo, known },
-          (r) => {
+          (rep) => {
             if (token.current !== mine) return;
-            setReport(r);
-            if (r.done) setRunning(false);
+            setReport(rep);
+            if (rep.done) setRunning(false);
           },
           (m) => {
             if (token.current !== mine) return;
             setError(m);
             setRunning(false);
           },
+          { forceSync: props.forceSync },
         );
+        runRef.current = r;
+        setRun({ n: mine, run: r });
       });
   };
 
@@ -346,113 +196,250 @@ export default function IdentifyPage(): JSX.Element {
     started.current = true;
     if (asked.current) go(asked.current, cap);
     else random(DEFAULT.subset, DEFAULT.combo, DEFAULT.level, cap);
-    return () => runRef.current?.stop();
+    return () => {
+      runRef.current?.stop();
+      bruteClient.current?.dispose();
+    };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const n = report ? Math.min(climb ?? report.level, report.level) : 0;
+  const cmp = useMemo(() => (report && n ? compareAt(report, n, pick) : null), [report, n, pick]);
+
+  // the members drawn, each numbered once per run so the views know them again
+  const registry = useRef<{ n: number; keys: Map<string, number>; specs: MemberSpec[] }>({ n: -1, keys: new Map(), specs: [] });
+  if (run && registry.current.n !== run.n) registry.current = { n: run.n, keys: new Map(), specs: [] };
+  const bruteFound = brute?.found ?? null;
+  const drawn = useMemo(() => {
+    if (!cmp) return null;
+    const reg = registry.current;
+    const circuits: MemberInfo[] = [];
+    const members = cmp.members.map(({ spec, info }) => {
+      const key = specKey(spec);
+      let i = reg.keys.get(key);
+      if (i === undefined) {
+        i = reg.specs.length;
+        reg.keys.set(key, i);
+        reg.specs.push(spec);
+      }
+      const found = spec.kind === 'predicted' && bruteFound && bruteFound.level === spec.level ? bruteFound : null;
+      circuits[i] = found ? { ...info, label: `${info.label}: ${nf(found.length)} tiles` } : info;
+      return i;
+    });
+    return { members, circuits };
+  }, [cmp, run, bruteFound]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const source = useMemo<ChainSource | null>(() => {
+    if (!run) return null;
+    const spec = (i: number) => registry.current.specs[i];
+    const m = run.run.members;
+    return {
+      picture: (ms, k, fold = 'fixpoint') => m.picture(ms.map(spec), k, fold),
+      rows: (ms, k, fold = 'fixpoint') => m.rows(ms.map(spec), k, fold),
+      detail: (c, level, view, budget) => m.detail(spec(c), level, view, budget),
+    };
+  }, [run]);
 
   const subset = target?.subset ?? DEFAULT.subset;
   const combo = target?.combo ?? DEFAULT.combo;
+  const rule = subset.join('');
   const rootLevel = Math.max(1, Math.min(12, Number(draft.level) || DEFAULT.level));
   const draftTarget = (s: readonly number[], c: string): Target => ({ subset: s, combo: c, tile: draft.tile.trim(), edge: Number(draft.edge) || 0, level: rootLevel });
   const draftOk = /^[0-7](\.[0-7])*$/.test(draft.tile.trim()) && draft.tile.trim().split('.').length === rootLevel;
 
+  const bruteKey = cmp?.chosen && cmp.against && !cmp.against.built ? `${run?.n} ${specKey({ kind: 'predicted', from: cmp.chosen.member, level: cmp.chosen.level })}` : null;
+  const bruteForce = (): void => {
+    if (!cmp?.chosen || !run || !bruteKey) return;
+    const c = cmp.chosen;
+    const key = bruteKey;
+    bruteClient.current ??= createBruteClient({ forceSync: props.forceSync });
+    const client = bruteClient.current;
+    const job = { subset, combo };
+    setBrute({ key, progress: null });
+    const progress = (p: Progress) => setBrute((b) => (b?.key === key ? { key, progress: p } : b));
+    const step = async (): Promise<{ level: number; length: number } | null> => {
+      let from: BruteFrom = fromBorn(await run.run.members.born({ kind: 'built', ...c.member }), FLOOR);
+      for (let s = 0; s < c.steps; s++) {
+        const r = await client.harmonic(job, from, progress);
+        if (!r.found) return null;
+        from = { circuit: r.found, addressed: true, floor: FLOOR };
+      }
+      return { level: from.circuit.level, length: from.circuit.length };
+    };
+    step()
+      .then((found) => setBrute((b) => (b?.key === key ? { key, progress: null, found } : b)))
+      .catch((e: unknown) => {
+        const msg = e instanceof Error ? e.message : String(e);
+        setBrute((b) => (b?.key === key ? (msg === STOPPED ? null : { key, progress: null, error: msg }) : b));
+      });
+  };
+  const bruteHere = brute && brute.key === bruteKey ? brute : null;
+
+  const harmonicsLink = (): string | null => {
+    if (!cmp?.chain || !cmp.against) return null;
+    const a = cmp.against;
+    const c = a.length !== null && a.level <= 9 ? { level: a.level, length: a.length } : cmp.chosen?.member ?? null;
+    return c ? harmonicsHref(base(), combo, Math.max(c.level, Math.min(9, report?.level ?? 0)), rule, c) : null;
+  };
+  const compareLink = (): { href: string; text: string } | null => {
+    if (!cmp?.chain || !cmp.against || cmp.against.length === null || cmp.against.level > 12) return null;
+    const c = { level: cmp.against.level, length: cmp.against.length };
+    const other = cmp.state === 'open' && cmp.chosen ? cmp.chosen.member : [...cmp.chain.members].filter((m) => m.level < c.level).pop() ?? null;
+    if (!other || same(other, c)) return null;
+    return { href: compareHref(base(), named(subset, combo, other), named(subset, combo, c)), text: `Compare the ${nf(other.length)} with the ${nf(c.length)}` };
+  };
+
+  const hl = harmonicsLink();
+  const cl = compareLink();
+  const row = report && n ? report.rows[n - 1] : null;
+
   return (
-    <div className="shapes-page identify-page">
-      <div>
-        <h1>Identify a strand</h1>
-        <p className="shapes-note">
-          A strand named by one of its tiles: its slot path under a Delta and the edge it enters by. Each level up, the strand is followed through its supertile until it
-          closes; while it is open, its reading is set against every chain of the combination carried above the build.
-        </p>
-      </div>
-      <section className="identify-controls">
-        <ComboPicker
-          key={`${subset.join('')}-${combo}`}
-          busy={false}
-          levels="any"
-          verb="Identify"
-          initialRule={subset.join('')}
-          initialCombo={combo}
-          initialLevel={cap}
-          onAdd={(c) => {
-            if (draftOk) go(draftTarget(c.subset, c.combo), c.level);
-            else setError(`the tile needs ${rootLevel} slots, such as ${Array.from({ length: rootLevel }, () => '1').join('.')}`);
-          }}
-        />
-        <div className="shapes-controls">
-          <label>
-            Tile
-            <input value={draft.tile} onChange={(e) => setDraft({ ...draft, tile: e.target.value })} size={18} data-testid="identify-tile" />
-          </label>
-          <label>
-            Edge
-            <select value={draft.edge} onChange={(e) => setDraft({ ...draft, edge: e.target.value })} data-testid="identify-edge">
-              {[0, 1, 2, 3, 4, 5].map((e) => (
-                <option key={e} value={e}>
-                  {e}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Root level
-            <input type="number" min={1} max={12} value={draft.level} onChange={(e) => setDraft({ ...draft, level: e.target.value })} style={{ width: '4.5em' }} data-testid="identify-root" />
-          </label>
-          <button type="button" onClick={() => random(subset, combo, rootLevel, cap)} data-testid="identify-random">
-            Random open strand
+    <div className="shapes-page harm-page identify-page">
+      <h1>Identify a strand</h1>
+      <p className="shapes-note">A strand named by one of its tiles, followed up its ancestors a level at a time and set against the chains of its combination.</p>
+      <ComboPicker
+        key={`${rule}-${combo}`}
+        busy={false}
+        levels="any"
+        verb="Identify"
+        count={false}
+        initialRule={rule}
+        initialCombo={combo}
+        initialLevel={cap}
+        onAdd={(c) => {
+          if (draftOk) go(draftTarget(c.subset, c.combo), c.level);
+          else setError(`the tile needs ${rootLevel} slots, such as ${Array.from({ length: rootLevel }, () => '1').join('.')}`);
+        }}
+      >
+        <label>
+          Tile
+          <input value={draft.tile} onChange={(e) => setDraft({ ...draft, tile: e.target.value })} size={14} data-testid="identify-tile" />
+        </label>
+        <label>
+          Edge
+          <select value={draft.edge} onChange={(e) => setDraft({ ...draft, edge: e.target.value })} data-testid="identify-edge">
+            {[0, 1, 2, 3, 4, 5].map((e) => (
+              <option key={e} value={e}>
+                {e}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Root level
+          <input type="number" min={1} max={12} value={draft.level} onChange={(e) => setDraft({ ...draft, level: e.target.value })} style={{ width: '4.5em' }} data-testid="identify-root" />
+        </label>
+        <button type="button" onClick={() => random(subset, combo, rootLevel, cap)} data-testid="identify-random">
+          Random open strand
+        </button>
+        {running ? (
+          <button
+            type="button"
+            onClick={() => {
+              runRef.current?.halt();
+              setRunning(false);
+            }}
+            data-testid="identify-stop"
+          >
+            Stop
           </button>
-          {running && (
-            <button
-              type="button"
-              onClick={() => {
-                runRef.current?.stop();
-                token.current++;
-                setRunning(false);
-              }}
-            >
-              Stop
-            </button>
-          )}
-        </div>
-      </section>
-      {error && <p className="identify-error">{error}</p>}
-      {target && (
+        ) : null}
+      </ComboPicker>
+      {error ? <p className="identify-error">{error}</p> : null}
+      {target ? (
         <p className="shapes-note" data-testid="identify-target">
-          {target.subset.join('')} · {target.combo}, tile {target.tile} under a level-{target.level} Delta, entered by edge {target.edge}
+          {rule} · {combo}, tile {target.tile} under a level-{target.level} Delta, entered by edge {target.edge}
           {report ? ` (a ${report.start.type}, left by edge ${report.start.exit})` : ''}.
         </p>
-      )}
-      {report && <Verdict report={report} running={running} />}
-      {report && target && <Links target={target} report={report} />}
-      {report?.view && <Comparison view={report.view} report={report} />}
-      {report && <LevelTable report={report} root={target?.level ?? 0} running={running} />}
-      {!report && running && <p className="shapes-note">Building level 1…</p>}
-      {report && report.candidates.length > 1 && (
-        <section>
-          <h2>Candidates</h2>
-          <div className="shapes-tablewrap">
-            <table className="shapes-table identify-table">
-              <thead>
-                <tr>
-                  <th>Candidate</th>
-                  <th>Chain</th>
-                  <th>Tiles</th>
-                  <th>Similarity</th>
-                </tr>
-              </thead>
-              <tbody>
-                {report.candidates.map((c, i) => (
-                  <tr key={i}>
-                    <td className="identify-best">{labelOf(c)}</td>
-                    <td>{chainText(c.chain.members)}</td>
-                    <td>{c.length === null ? '–' : nf(c.length)}</td>
-                    <td>{pct(c.similarity)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+      ) : null}
+      {!report && running ? <p className="shapes-note">Building level 1…</p> : null}
+      {report ? (
+        <section data-testid="identify-detail">
+          <h2 data-testid="identify-verdict">{verdict(report)}</h2>
+          <p className="identify-links">
+            {running ? <span className="shapes-note">Building level {report.level + 1}…</span> : report.why ? <span className="shapes-note">Done: {report.why}.</span> : null}
+            {hl ? (
+              <a href={hl} data-testid="identify-harmonics-link">
+                Open on Harmonics
+              </a>
+            ) : null}
+            {cl ? (
+              <a href={cl.href} data-testid="identify-compare-link">
+                {cl.text}
+              </a>
+            ) : null}
+          </p>
+          {cmp && row ? (
+            <div className="identify-climb">
+              <div className="harm-canvas-controls">
+                <label className="harm-slider">
+                  Strand at level {n}
+                  <input
+                    type="range"
+                    min={1}
+                    max={report.level}
+                    step={1}
+                    value={n}
+                    onChange={(e) => {
+                      setClimb(Number(e.target.value) >= report.level ? null : Number(e.target.value));
+                      setPick(0);
+                    }}
+                    data-testid="identify-climb"
+                  />
+                </label>
+                <span data-testid="identify-at">
+                  {cmp.state === 'open' ? 'open' : cmp.state === 'closed' ? 'closes' : 'ends'}, {nf(cmp.tiles)} tiles
+                  {cmp.chosen ? `; ${pct(cmp.chosen.similarity)} of its ${nf(cmp.chosen.tokens)} visits found in ${labelOf(cmp.chosen)}` : ''}
+                  {cmp.chosen && cmp.candidates.length > 1 ? `; next ${labelOf(cmp.candidates[pick === 0 ? 1 : 0])}, ${pct(cmp.candidates[pick === 0 ? 1 : 0].similarity)}` : ''}
+                  {row.above ? `; above level ${target?.level}, its ancestors taken as a Delta's Delta child` : ''}.
+                </span>
+              </div>
+              {cmp.candidates.length > 1 ? (
+                <ol className="identify-candidates" aria-label="Candidates at this level">
+                  {cmp.candidates.map((c, i) => (
+                    <li key={i}>
+                      <button type="button" className={`harm-cell${c === cmp.chosen ? ' is-selected' : ''}`} onClick={() => setPick(i)} data-testid="identify-candidate">
+                        <span>{labelOf(c)}</span>
+                        <small>
+                          {c.length === null ? '' : `${nf(c.length)} tiles · `}
+                          {pct(c.similarity)}
+                        </small>
+                      </button>
+                    </li>
+                  ))}
+                </ol>
+              ) : null}
+              {bruteKey ? (
+                <p className="identify-links">
+                  <button type="button" disabled={!!bruteHere && !bruteHere.error && bruteHere.found === undefined} onClick={bruteForce} data-testid="identify-brute">
+                    Brute force {labelOf(cmp.chosen!)}
+                  </button>
+                  {bruteHere ? <span className="shapes-note">{bruteText(bruteHere)}</span> : null}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+          {drawn && source && run && cmp ? (
+            <ChainWorkspace key={run.n} client={source} level={n} members={drawn.members} circuits={drawn.circuits} top={cmp.top} brief />
+          ) : null}
         </section>
-      )}
+      ) : null}
     </div>
   );
+}
+
+function verdict(r: Report): string {
+  if (r.found === 'ends') return `Ends inside a tile at level ${r.level}`;
+  const id = r.identified;
+  if (id) {
+    if (!id.circuit || !id.chain) return `Closes at level ${id.level} after ${nf(id.length)} tiles, a circuit the build has no other copy of`;
+    return `Closes at level ${id.level}: ${placeIn(id.chain, id.circuit)}${id.chain.members.length > 1 ? ` (${id.chain.members.map((m) => nf(m.length)).join(' → ')})` : ''}`;
+  }
+  const best = r.candidates[0];
+  return `Open at level ${r.level} after ${nf(r.tiles)} tiles${best ? `; most likely ${labelOf(best)}${best.length === null ? '' : `, ${nf(best.length)} tiles`}` : ''}`;
+}
+
+function bruteText(b: Brute): string {
+  if (b.error) return `Could not brute force: ${b.error}.`;
+  if (b.found === undefined) return b.progress ? `Following strands at level ${b.progress.level}…` : 'Starting…';
+  return b.found ? `Found: ${nf(b.found.length)} tiles, closing at level ${b.found.level}.` : 'No harmonic closes where predicted.';
 }

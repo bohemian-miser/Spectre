@@ -422,6 +422,7 @@
   min-width: 0;
   font-size: 12px;
   display: grid;
+  align-content: start;
   gap: 3px;
   padding: 4px 0;
   border-top: 1px solid var(--line, #8884);
