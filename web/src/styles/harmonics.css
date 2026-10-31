@@ -552,3 +552,8 @@ button.harm-run {
   content-visibility: auto;
   contain-intrinsic-size: auto 1500px;
 }
+/* The page's column, and each section's, takes the screen's width, not its widest row's: the table and the members' row scroll inside it. */
+.harm-page,
+.harm-page section {
+  grid-template-columns: minmax(0, 1fr);
+}

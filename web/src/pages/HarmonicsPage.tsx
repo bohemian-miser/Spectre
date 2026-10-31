@@ -327,8 +327,8 @@ export default function HarmonicsPage(props: { forceSync?: boolean }): JSX.Eleme
               supertile; a <strong>chain</strong> is a row of circuits linked as harmonics, two columns apart. A dashed ≈ cell is a circuit that reads as a
               chain&apos;s lowest member at the top levels only. Click a circuit to open its row; shift-click a second to compare the two. Past the level
               built, a ? is a chain&apos;s next member, two levels above its last: Brute force follows the strands through that supertile, working out
-              only the routes they use, until one closes reading as the last member. The member found takes the cell, dotted, drawn through the middles
-              of the supertiles it visits at the lowest level with at most {nf(THUMB_POINTS)} of them; hover it for how it was found.
+              only the routes they use, until one closes reading as the last member. The member found takes the cell, drawn as a built one, its border
+              dotted; hover it for how it was found. It opens with its chain like any circuit.
             </p>
             <div className="shapes-controls harm-link-controls">
               <label className="harm-threshold">

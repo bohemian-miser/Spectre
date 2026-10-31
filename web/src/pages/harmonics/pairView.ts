@@ -4,7 +4,8 @@
  * member before, those holding a visit the neighbouring member's reading
  * does not share marked.
  */
-import { mul, transPt, type Affine, type Pt } from '../../core';
+import { mul, transPt, type Affine, type HexType, type Pt } from '../../core';
+import { outlineOf } from '../buildup/deep';
 import type { BornCircuit, CircuitShapes } from '../shapes/circuitShapes';
 import { alignReadings, cancelBacktracksAt, expandVisits, pathOf, sameCyclic, topVisits, type Reading, type VisitColumns } from './readings';
 
@@ -140,9 +141,11 @@ export function supertilesOf(
   return { count: first.size, supertiles };
 }
 
-/** A level-n supertile's outline in its frame: `CircuitShapes.outline` within the tables, its corners above them. */
+/** A level-n supertile's outline in its frame: `CircuitShapes.outline` within the tables, above them through its descendants' corners three levels down (`buildup/deep.ts`). */
 export function outlinePts(cs: CircuitShapes, n: number, type: string): Pt[] {
-  return n <= cs.maxLevel ? cs.outline(n, type) : Array.from({ length: 6 }, (_, j) => cs.corner(n, type, j));
+  if (n <= cs.maxLevel) return cs.outline(n, type);
+  const xy = outlineOf(cs, n, type as HexType, 3);
+  return Array.from({ length: xy.length / 2 - 1 }, (_, j) => ({ x: xy[2 * j], y: xy[2 * j + 1] }));
 }
 
 /** Points as x, y pairs, at most `CIRCUIT_POINTS` of them, evenly spaced. */

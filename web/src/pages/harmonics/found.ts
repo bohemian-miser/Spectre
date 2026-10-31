@@ -10,11 +10,12 @@
  * read as `rows.ts` reads a built circuit's, each level's visits from the
  * level above (`SparseRows`); a visited supertile is placed in the birth
  * supertile's frame through its slot path, and the circuit is drawn at a
- * level as the line through the middles of the supertiles it visits there.
+ * level as a built circuit is (`CircuitShapes.shape`): through the crossing
+ * each visit enters its supertile by, a crossing above the tables placed
+ * through the child crossing it is (`crossingPt`).
  */
-import { mul, transPt, type Affine, type HexType, type Pt, type TileTypeId } from '../../core';
+import { mul, transPt, type Affine, type Pt, type TileTypeId } from '../../core';
 import type { Box } from '../../lib/viewport';
-import { middleOf } from '../buildup/deep';
 import type { BornCircuit, CircuitShapes } from '../shapes/circuitShapes';
 import { MAX_ROW, CircuitRows } from './rows';
 import { cancelBacktracksAt, token, type Reading, type VisitColumns } from './readings';
@@ -104,7 +105,6 @@ export function readRows(rows: CircuitRows, stopAbove: number): { readings: Read
 /** A circuit's visits at a level with each supertile's place in the birth supertile's frame, worked out from the level above's. */
 export class Placed {
   private readonly frames = new Map<number, Affine[]>();
-  private readonly middles = new Map<string, Pt>();
 
   constructor(
     readonly cs: CircuitShapes,
@@ -128,26 +128,30 @@ export class Placed {
     return out;
   }
 
-  /** The middle of a level-n supertile of a type, in its frame. */
-  middle(n: number, type: string): Pt {
-    const key = `${n} ${type}`;
-    let m = this.middles.get(key);
-    if (!m) this.middles.set(key, (m = middleOf(this.cs, n, type as HexType)));
-    return m;
-  }
-
-  /** The line through the middles of the supertiles visited at a level, in order, x, y pairs (open). */
+  /** The circuit drawn at a level: the crossing each visit enters by, in order, x, y pairs (open). */
   line(level: number): Float64Array {
     const v = this.rows.visits(level);
     const xf = this.frame(level);
     const out = new Float64Array(2 * v.type.length);
     v.type.forEach((t, i) => {
-      const p = transPt(xf[i], this.middle(level, t));
+      const p = transPt(xf[i], crossingPt(this.cs, level, t, v.cross[i]));
       out[2 * i] = p.x;
       out[2 * i + 1] = p.y;
     });
     return out;
   }
+}
+
+/**
+ * Crossing a (an address of the routes over `cs`, `sparseRoutes.ts`) of a
+ * level-n supertile, in its frame: the table's point within the tables,
+ * above them the child crossing's point placed by its child.
+ */
+export function crossingPt(cs: CircuitShapes, n: number, type: string, a: number): Pt {
+  if (n <= cs.maxLevel) return cs.levels[n][type].pt(a);
+  const s = a % 8;
+  const ch = cs.childOf(n, type, s);
+  return transPt(ch.xform, crossingPt(cs, n - 1, ch.type, (a - s) / 8));
 }
 
 const closedLine = (xy: Float64Array): Float64Array => {
@@ -177,28 +181,26 @@ function thinned(pts: Float64Array, n: number): Float64Array {
 const rawOf = (readings: readonly Reading[]) => (s: number) => readings.find((r) => r.level === s)?.raw ?? Infinity;
 
 /**
- * A circuit's thumbnail: the line through the middles of the supertiles it
- * visits at the lowest level with at most `budget` visits (the level below
- * its birth at the highest), closed; thinned to `budget` points when that
- * level has more than twice as many.
+ * A circuit's thumbnail, as `HarmonicsEngine.thumbs` draws a built one: at
+ * two levels below its birth, or lower while the visits there stay within
+ * `budget`; closed, thinned to `budget` points when over.
  */
-export function middleThumb(placed: Placed, readings: readonly Reading[], budget: number): { stop: number; pts: Float64Array } {
+export function foundThumb(placed: Placed, readings: readonly Reading[], budget: number): { stop: number; pts: Float64Array } {
   const raw = rawOf(readings);
   const c = placed.rows.c;
-  let s = c.level - 1;
+  let s = Math.max(0, c.level - 2);
   while (s > 0 && raw(s - 1) <= budget) s--;
-  const pts = closedLine(placed.line(s));
-  return { stop: s, pts: pts.length / 2 - 1 > 2 * budget ? thinned(pts, budget) : pts };
+  return { stop: s, pts: thinned(closedLine(placed.line(s)), budget) };
 }
 
 /**
  * A circuit drawn down to a level for a view, as `HarmonicsEngine.detail`
  * draws one: as fine as `level - 2` while the visits in view stay within
- * about `budget` (and the level has at most `VISIT_CAP`), through the
- * middles of the supertiles visited. Visits out of view are drawn at their
- * supertile at `level`.
+ * about `budget` (and the level has at most `VISIT_CAP`); thinned to
+ * `budget` points at `level` itself when over. Visits out of view are drawn
+ * by the visit at `level` they lie in.
  */
-export function middleDetail(placed: Placed, readings: readonly Reading[], level: number, view: Box | null, budget: number): { stop: number; pts: Float64Array; capped: boolean } {
+export function foundDetail(placed: Placed, readings: readonly Reading[], level: number, view: Box | null, budget: number): { stop: number; pts: Float64Array; capped: boolean } {
   const { cs, rows } = placed;
   const c = rows.c;
   const raw = rawOf(readings);

@@ -10,11 +10,11 @@ import type { Box } from '../../lib/viewport';
 import { CircuitShapes, distinctCircuits, familyOf, type BornCircuit } from '../shapes/circuitShapes';
 import { Geometry } from '../buildup/viewer';
 import { chainRows, CircuitRows, type ChainRows, type Fold } from './rows';
-import { chainPicture, SUPERTILE_CAP, VISIT_CAP, type ChainPicture } from './pairView';
+import { chainPicture, CIRCUIT_POINTS, SUPERTILE_CAP, VISIT_CAP, type ChainPicture } from './pairView';
 import { chainsOf, closestInFamily, harmonicLinks, nearLinks, type Chain, type Link, type Near } from './chains';
 import { alignReadings, extraRuns, readDown, sameCyclic, type Alignment, type Reading } from './readings';
 import { scoreAll, scorePair, type Scored } from './similarity';
-import { bornOfFound, firstTileOf, foundKey, middleDetail, middleThumb, Placed, readRows, SparseRows, type Found } from './found';
+import { bornOfFound, firstTileOf, foundKey, foundDetail, foundThumb, Placed, readRows, SparseRows, type Found } from './found';
 import { SparseRoutes } from './sparseRoutes';
 import { BreakdownStore, type BreakdownSets } from './breakdownStore';
 import type { Side } from './pairView';
@@ -154,8 +154,8 @@ export class HarmonicsEngine {
    * Circuits found above the build (`found.ts`), taken in after the last
    * result's circuits (the j-th is circuit `circuits.length + j` in every
    * other request): each read from the level below its birth down, as a
-   * built circuit is, and drawn small through the middles of the
-   * supertiles it visits, `budget` points at most.
+   * built circuit is, and drawn small as a built one is, `budget` points at
+   * most.
    */
   found(list: readonly Found[], budget: number): { info: CircuitInfo; stop: number; pts: Float64Array }[] {
     if (!this.routes) {
@@ -176,7 +176,7 @@ export class HarmonicsEngine {
       this.foundBy.set(key, m);
       return m;
     });
-    return this.extra.map((m) => ({ info: m.info, ...middleThumb(m.placed, m.info.readings, budget) }));
+    return this.extra.map((m) => ({ info: m.info, ...foundThumb(m.placed, m.info.readings, budget) }));
   }
 
   /** A circuit found, by its index after the last result's circuits; null for a built one. */
@@ -197,7 +197,7 @@ export class HarmonicsEngine {
   picture(members: readonly number[], k: number, fold: Fold = 'fixpoint'): ChainPicture {
     const placing = (i: number) => {
       const m = this.extraOf(i);
-      return m ? { placed: (l: number) => ({ v: m.rows.visits(l), xform: m.placed.frame(l) }), line: (l: number) => m.placed.line(l) } : undefined;
+      return m ? { placed: (l: number) => ({ v: m.rows.visits(l), xform: m.placed.frame(l) }), line: (l: number) => thinLine(m.placed.line(l)) } : undefined;
     };
     if (fold === 'fixpoint') return chainPicture(this.cs, members.map((i) => ({ circuit: this.bornOf(i), readings: this.infoOf(i).readings, placing: placing(i) })), k);
     // the readings under another fold, at the level drawn, from the rows
@@ -257,7 +257,7 @@ export class HarmonicsEngine {
    */
   detail(ci: number, level: number, view: Box | null, budget: number): { stop: number; pts: Float64Array; capped: boolean } {
     const m = this.extraOf(ci);
-    if (m) return middleDetail(m.placed, m.info.readings, level, view, budget);
+    if (m) return foundDetail(m.placed, m.info.readings, level, view, budget);
     const c = this.bornOf(ci);
     const g = (this.geometry ??= new Geometry(this.cs));
     let share = 1;
@@ -558,6 +558,19 @@ export function createHarmonicsClient(opts: { forceSync?: boolean } = {}): Harmo
       waiting.clear();
     },
   };
+}
+
+/** An open line through at most `CIRCUIT_POINTS` of its points, evenly spaced, as `pairView.ts`'s `lineOf` draws one. */
+function thinLine(xy: Float64Array): Float64Array {
+  const m = xy.length / 2;
+  if (m <= CIRCUIT_POINTS) return xy;
+  const out = new Float64Array(2 * CIRCUIT_POINTS);
+  for (let j = 0; j < CIRCUIT_POINTS; j++) {
+    const i = Math.floor((j * m) / CIRCUIT_POINTS);
+    out[2 * j] = xy[2 * i];
+    out[2 * j + 1] = xy[2 * i + 1];
+  }
+  return out;
 }
 
 /** A closed line thinned to about `n` of its points, evenly spaced, still closed. */

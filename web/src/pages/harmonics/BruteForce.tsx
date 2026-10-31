@@ -211,7 +211,10 @@ export function useBruteForce(
     for (const row of rows) {
       const at = new Map<number, JSX.Element>();
       let from = row.length;
-      let chainText = `${nf(row.length)} L${row.lastLevel}`;
+      let chainText = row.key
+        .split(' ')
+        .map((m) => `${nf(r!.circuits[Number(m)].length)} L${r!.circuits[Number(m)].level}`)
+        .join(' → ');
       for (let level = row.lastLevel + 2; ; level += 2) {
         const key = `${row.anchor}@${level}`;
         const c = map.get(key);

@@ -2,18 +2,15 @@
  * Circuits found above the build against the full build: a harmonic found
  * by the brute force with the routes worked out above a low base, taken into
  * an engine built lower still, reads as `readDown` reads the circuit the
- * full tables close there, and its thumbnail is the line through the
- * middles of the supertiles that circuit visits (`visitsWithFrames`).
+ * full tables close there, and is drawn as the tables draw that circuit
+ * (`CircuitShapes.shape`).
  */
 import { describe, expect, it } from 'vitest';
 
-import { transPt, type HexType } from '../../../core';
-import { middleOf } from '../../buildup/deep';
 import { CircuitShapes, familyOf, type BornCircuit } from '../../shapes/circuitShapes';
 import { harmonicAbove } from '../bruteForce';
 import type { Found } from '../found';
 import { HarmonicsEngine } from '../harmonicsJob';
-import { visitsWithFrames } from '../pairView';
 import { readDown, sameCyclic } from '../readings';
 import { SparseRoutes } from '../sparseRoutes';
 
@@ -21,27 +18,32 @@ const RULE = [0, 2, 3, 4, 6, 8];
 const build = (combo: string, level: number) => new CircuitShapes('hex', RULE, [...combo].map((ch) => parseInt(ch, 36)), level, 1, true);
 const bornAt = (cs: CircuitShapes, level: number, length: number): BornCircuit => cs.born.find((c) => c.level === level && c.length === length)!;
 
-/** Whether two closed lines (x, y pairs, the first point repeated last) are the same points in the same cyclic order, either way round. */
+/**
+ * Whether two closed lines (x, y pairs, the first point repeated last) are
+ * the same points in the same cyclic order, either way round. Walked the
+ * other way, a line runs through each arc's other end, the crossing glued
+ * to the next arc's, placed through the other child: the points are
+ * compared to a millionth.
+ */
 function sameLoop(a: Float64Array, b: Float64Array): boolean {
   const n = a.length / 2 - 1;
   if (b.length / 2 - 1 !== n) return false;
-  const at = (xy: Float64Array, i: number) => `${xy[2 * i]},${xy[2 * i + 1]}`;
+  const at = (xy: Float64Array, i: number) => `${xy[2 * i].toFixed(6)},${xy[2 * i + 1].toFixed(6)}`;
   const A = Array.from({ length: n }, (_, i) => at(a, i));
   const B = Array.from({ length: n }, (_, i) => at(b, i));
   return sameCyclic(A, B);
 }
 
-/** A born circuit's visits at a level drawn through their supertiles' middles, closed. */
-function middles(cs: CircuitShapes, c: BornCircuit, level: number): Float64Array {
-  const { v, xform } = visitsWithFrames(cs, c, level);
-  const out = new Float64Array(2 * v.type.length + 2);
-  v.type.forEach((t, i) => {
-    const p = transPt(xform[i], middleOf(cs, level, t as HexType));
+/** A born circuit drawn at a level by the full tables (`CircuitShapes.shape`), closed. */
+function shape(cs: CircuitShapes, c: BornCircuit, level: number): Float64Array {
+  const pts = cs.shape(c, level);
+  const out = new Float64Array(2 * pts.length + 2);
+  pts.forEach((p, i) => {
     out[2 * i] = p.x;
     out[2 * i + 1] = p.y;
   });
-  out[2 * v.type.length] = out[0];
-  out[2 * v.type.length + 1] = out[1];
+  out[2 * pts.length] = out[0];
+  out[2 * pts.length + 1] = out[1];
   return out;
 }
 
@@ -66,14 +68,24 @@ function expectSameAsBuilt(engine: HarmonicsEngine, full: CircuitShapes, f: Foun
     expect(sameCyclic(r.tokens, w.tokens)).toBe(true);
   }
   expect(want.find((x) => x.level === got.info.readings[0].level)).toBeDefined();
-  // the thumbnail: every supertile visited at its level, through its middle
-  const at = got.info.readings.find((r) => r.level === got.stop)!;
-  expect(got.pts.length / 2 - 1).toBe(at.raw);
-  expect(sameLoop(got.pts, middles(full, built, got.stop))).toBe(true);
+  // the thumbnail at the level a built circuit's is drawn at, the tables' drawing there; finer for a view
+  const raw = (s: number) => want.find((x) => x.level === s)?.raw ?? Infinity;
+  let stop = built.level - 2;
+  while (stop > 0 && raw(stop - 1) <= 3000) stop--;
+  expect(got.stop).toBe(stop);
+  expect(got.pts.length / 2 - 1).toBe(Math.min(3000, raw(stop)));
+  const fine = engine.detail(n, stop + 2, null, Infinity);
+  expect(fine.stop).toBe(stop);
+  expect(sameLoop(fine.pts, shape(full, built, stop))).toBe(true);
   // drawn over its supertiles as a circuit of the engine, after the built ones
   const side = engine.picture([n], built.level - 1).sides[0];
   expect(side.visits).toBe(want.find((x) => x.level === built.level - 1)!.raw);
   expect(side.supertiles.length).toBeGreaterThan(0);
+  // its line there, its crossings placed through their children where the engine's tables stop below
+  const line = new Float64Array(side.circuit.length + 2);
+  line.set(side.circuit);
+  line.set(side.circuit.subarray(0, 2), side.circuit.length);
+  expect(sameLoop(line, shape(full, built, built.level - 1))).toBe(true);
 }
 
 describe('a circuit found above the build', () => {
