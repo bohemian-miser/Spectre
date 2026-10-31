@@ -89,4 +89,23 @@ describe('HarmonicsPage', () => {
     expect(lines.filter((r) => r.includes('the same'))).toHaveLength(2);
     expect(lines.filter((r) => r.includes('differs'))).toHaveLength(2);
   }, 120000);
+
+  it('brute-forces a chain’s next member past the level built, and climbs a strand', async () => {
+    history.replaceState(null, '', '?rule=023468&combo=000100000&level=6');
+    render(<HarmonicsPage forceSync />);
+    await waitFor(() => expect(screen.getByTestId('harm-summary').textContent).toMatch(/^11 distinct circuits/), { timeout: 60000 });
+    // the 441 → 8,784 chain: a ? at level 8, in the column of level 8
+    const row = screen.getAllByTestId('harm-table-row').find((r) => r.textContent!.includes('441') && r.textContent!.includes('8,784'))!;
+    const go = row.querySelector<HTMLButtonElement>('[data-testid="harm-brute"]')!;
+    const td = go.closest('td')!;
+    expect([...row.children].indexOf(td) - 1).toBe(8);
+    fireEvent.click(go);
+    await waitFor(() => expect(row.querySelector('[data-testid="harm-brute-done"]')?.textContent).toBe('✓175,221'), { timeout: 60000 });
+    expect(screen.getByTestId('harm-brute-note').textContent).toMatch(/Level 8: a 175,221-tile circuit of family 013467 closes in the Delta, reading as the 8,784 two levels down from level 1 up; word key/);
+    // the next one along, two levels further
+    const next = row.querySelector<HTMLButtonElement>('[data-testid="harm-brute"]')!;
+    expect([...row.children].indexOf(next.closest('td')!) - 1).toBe(10);
+    fireEvent.click(screen.getByTestId('harm-climb-go'));
+    await waitFor(() => expect(screen.getByTestId('harm-climb-result').textContent).toMatch(/^ L6 [\d,]+ → L7 /), { timeout: 60000 });
+  }, 120000);
 });
