@@ -81,6 +81,8 @@ export interface RegionFillGeometry {
   readonly row: Uint8Array;
   /** 0..255 RGB per piece. */
   readonly rgb: Uint8Array;
+  /** Opacity over the fills; the renderer's own when absent. */
+  readonly alpha?: number;
 }
 
 export interface MapRenderStyle {

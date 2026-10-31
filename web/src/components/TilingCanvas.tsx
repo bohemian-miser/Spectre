@@ -26,7 +26,7 @@ import {
 import { buildCentreDots, buildOverlayPaths } from '../lib/overlayPaths';
 import { edgeClassColor, tileColor } from '../lib/palette';
 import { buildTilingModel, tileConnectionPoints, tileOutline } from '../lib/tilingModel';
-import { fitToBounds, type Camera } from '../lib/viewport';
+import { cameraAffine, fitToBounds, type Camera } from '../lib/viewport';
 import { useElementSize } from '../hooks/useElementSize';
 
 export interface TilingCanvasProps {
@@ -71,6 +71,12 @@ export interface TilingCanvasProps {
    * polygons of `buildDualGraph`, in the same frame as `circuits`).
    */
   readonly regionFill?: Pick<DualGraph, 'pieceStart' | 'pieceXY' | 'pieceRegion'> | null;
+  /**
+   * Drawn over the tiles and under the strands: gets the context (its
+   * transform mapping CSS px to pixels), the CSS size, and the map from the
+   * scene's frame (after the model's view transform) to CSS px.
+   */
+  readonly underlay?: ((ctx: CanvasRenderingContext2D, width: number, height: number, toScreen: Affine) => void) | null;
   readonly className?: string;
   readonly ariaLabel?: string;
 }
@@ -125,6 +131,7 @@ export function TilingCanvas(props: TilingCanvasProps): JSX.Element {
     centreScale = 1,
     strokeWidth = 0.12,
     regionFill = null,
+    underlay = null,
     className,
     ariaLabel,
   } = props;
@@ -253,6 +260,11 @@ export function TilingCanvas(props: TilingCanvasProps): JSX.Element {
         }
       }
 
+      if (underlay) {
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        underlay(ctx, size.width, size.height, cameraAffine(effectiveCamera));
+      }
+
       if (overlay.length) {
         applyTransform(ctx, dpr, effectiveCamera, model.viewTransform);
         ctx.lineWidth = strokeWidth;
@@ -316,6 +328,7 @@ export function TilingCanvas(props: TilingCanvasProps): JSX.Element {
     highlightLengths,
     highlightCircuits,
     strokeWidth,
+    underlay,
   ]);
 
   return (

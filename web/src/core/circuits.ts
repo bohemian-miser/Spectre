@@ -83,7 +83,7 @@ export function collectSegments(input: CircuitInput): readonly Segment[] {
 function collectTaggedSegments(
   input: CircuitInput,
   withControls = false,
-): { segments: Segment[]; aux: boolean[]; controls: StrandCurve[] } {
+): { segments: Segment[]; aux: boolean[]; controls: StrandCurve[]; owner: number[] } {
   const contracts = input.contracts ?? DEFAULT_CONTRACTS;
   const cache = new Map<string, readonly Segment[]>();
   const auxOf = new Set<Segment>();
@@ -91,9 +91,10 @@ function collectTaggedSegments(
   const out: Segment[] = [];
   const aux: boolean[] = [];
   const controls: StrandCurve[] = [];
+  const owner: number[] = [];
   // Control points depend only on the leaf type and its local chord.
   const ctrlCache = new Map<Segment, StrandCurve>();
-  for (const inst of input.instances) {
+  input.instances.forEach((inst, at) => {
     let local = input.chords ? input.chords[inst.type] ?? [] : cache.get(inst.type);
     if (!local) {
       local = localChords(
@@ -108,6 +109,7 @@ function collectTaggedSegments(
     for (const seg of local) {
       out.push([transPt(inst.xform, seg[0]), transPt(inst.xform, seg[1])]);
       aux.push(auxOf.has(seg));
+      owner.push(at);
       if (withControls) {
         let c = ctrlCache.get(seg);
         if (!c) {
@@ -117,8 +119,8 @@ function collectTaggedSegments(
         controls.push({ c1: transPt(inst.xform, c.c1), c2: transPt(inst.xform, c.c2) });
       }
     }
-  }
-  return { segments: out, aux, controls };
+  });
+  return { segments: out, aux, controls, owner };
 }
 
 /**
@@ -218,6 +220,9 @@ export interface TraceResult {
   readonly tails: readonly Path[];
   /** Weld-points where three or more segment ends meet. */
   readonly junctionCount: number;
+  /** Per circuit and per tail, its segments in order: indices into the segments traced (`pathSegments` order). */
+  readonly circuitSegs: readonly Int32Array[];
+  readonly tailSegs: readonly Int32Array[];
 }
 
 interface Incidence {
@@ -234,7 +239,7 @@ export function tracePaths(segs: readonly Segment[]): TraceResult {
   const coords = new Map<string, Pt>();
   const adj = new Map<string, Incidence[]>();
 
-  const usable: { a: string; b: string }[] = [];
+  const usable: { a: string; b: string; i: number }[] = [];
   for (let i = 0; i < segs.length; i++) {
     const [p1, p2] = segs[i];
     const k1 = pointKey(p1);
@@ -243,7 +248,7 @@ export function tracePaths(segs: readonly Segment[]): TraceResult {
     coords.set(k1, p1);
     coords.set(k2, p2);
     const si = usable.length;
-    usable.push({ a: k1, b: k2 });
+    usable.push({ a: k1, b: k2, i });
     if (!adj.has(k1)) adj.set(k1, []);
     if (!adj.has(k2)) adj.set(k2, []);
     adj.get(k1)!.push({ seg: si, other: k2 });
@@ -260,14 +265,18 @@ export function tracePaths(segs: readonly Segment[]): TraceResult {
 
   const circuits: Path[] = [];
   const tails: Path[] = [];
+  const circuitSegs: Int32Array[] = [];
+  const tailSegs: Int32Array[] = [];
 
-  const walkFrom = (startKey: string, startSeg: number): Path => {
+  const walkFrom = (startKey: string, startSeg: number): { path: Path; segs: Int32Array } => {
     const keys: string[] = [startKey];
+    const along: number[] = [];
     let cur = startKey;
     let segIdx = startSeg;
     for (;;) {
       used[segIdx] = true;
       const s = usable[segIdx];
+      along.push(s.i);
       const next = s.a === cur ? s.b : s.a;
       keys.push(next);
       if (next === startKey) break; // closed loop
@@ -279,7 +288,11 @@ export function tracePaths(segs: readonly Segment[]): TraceResult {
     }
     const closed = keys.length > 2 && keys[0] === keys[keys.length - 1];
     const pts = (closed ? keys.slice(0, -1) : keys).map((k) => coords.get(k) as Pt);
-    return { points: pts, closed };
+    return { path: { points: pts, closed }, segs: Int32Array.from(along) };
+  };
+  const keep = ({ path, segs }: { path: Path; segs: Int32Array }): void => {
+    (path.closed ? circuits : tails).push(path);
+    (path.closed ? circuitSegs : tailSegs).push(segs);
   };
 
   // 1. chains anchored at endpoints and junctions
@@ -287,19 +300,17 @@ export function tracePaths(segs: readonly Segment[]): TraceResult {
     if (inc.length === 2) continue;
     for (const i of inc) {
       if (used[i.seg]) continue;
-      const path = walkFrom(key, i.seg);
-      (path.closed ? circuits : tails).push(path);
+      keep(walkFrom(key, i.seg));
     }
   }
 
   // 2. everything still unused is a pure cycle of degree-2 nodes
   for (let i = 0; i < usable.length; i++) {
     if (used[i]) continue;
-    const path = walkFrom(usable[i].a, i);
-    (path.closed ? circuits : tails).push(path);
+    keep(walkFrom(usable[i].a, i));
   }
 
-  return { circuits, tails, junctionCount };
+  return { circuits, tails, junctionCount, circuitSegs, tailSegs };
 }
 
 export interface CircuitAnalysis {
@@ -320,6 +331,12 @@ export interface CircuitAnalysis {
    * how many times it crosses an edge of each class.
    */
   readonly circuitVectors?: readonly Readonly<Record<number, number>>[];
+  /**
+   * With `pathTiles`: per circuit and per tail, the tile each counted segment
+   * lies in, in order along the path (indices into `instances`).
+   */
+  readonly circuitTiles?: readonly Int32Array[];
+  readonly tailTiles?: readonly Int32Array[];
 }
 
 export interface AnalyzeOptions {
@@ -329,6 +346,8 @@ export interface AnalyzeOptions {
   readonly curved?: boolean;
   /** Also return each circuit's count vector (`circuitVectors`). */
   readonly loopVectors?: boolean;
+  /** Also return the tiles each path runs through (`circuitTiles`, `tailTiles`). */
+  readonly pathTiles?: boolean;
 }
 
 /** Ports `analyzeAndColor` (collect -> weld -> trace -> color), p5-free. */
@@ -389,7 +408,20 @@ export function analyze(input: CircuitInput, opts: AnalyzeOptions = {}): Circuit
     segments,
     segmentControl,
     ...(opts.loopVectors && !input.chords ? { circuitVectors: loopVectors(input, circuits) } : {}),
+    ...(opts.pathTiles
+      ? {
+          circuitTiles: traced.circuitSegs.map((segs) => tilesAlong(segs, tagged.owner, tagged.aux)),
+          tailTiles: traced.tailSegs.map((segs) => tilesAlong(segs, tagged.owner, tagged.aux)),
+        }
+      : {}),
   };
+}
+
+/** The tiles a path's counted segments lie in, in order. */
+function tilesAlong(segs: Int32Array, owner: readonly number[], aux: readonly boolean[]): Int32Array {
+  const out: number[] = [];
+  for (const i of segs) if (!aux[i]) out.push(owner[i]);
+  return Int32Array.from(out);
 }
 
 /** Each closed circuit's crossings per edge class (its points are its crossings, once each). */

@@ -11,7 +11,11 @@
  */
 
 import {
+  averageLeafArea,
   buildSystem,
+  SUBSTITUTION_GROWTH,
+  leafOrder,
+  leafPts,
   instanceAffine,
   instanceTypeId,
   inv,
@@ -26,7 +30,8 @@ import {
   type UnrootedEngine,
   type ViewRect,
 } from '../../core';
-import { boundaryLoop, decimateLoop } from '../map/glyphs';
+import { boundaryLoop, decimateLoop, earClip, glyphFitForCut } from '../map/glyphs';
+import type { RegionFillGeometry, RegionMeshTable } from '../map/rendererTypes';
 
 /** One supertile: its type, its slot path from the root, the node it is, and where it sits. */
 export interface XraySupertile {
@@ -45,6 +50,15 @@ export interface XraySupertile {
 
 /** Most supertiles the X-ray lists for a rooted patch; below the level where a patch holds more, the slider stops. */
 export const XRAY_MAX_SUPERTILES = 40_000;
+
+/**
+ * Highest level whose outlines are worked out exactly (`boundaryLoop`).
+ * Above it a supertile's outline is its type's outline at this level, scaled
+ * up by the similarity the infinite view draws its supertile glyphs with
+ * (`glyphFitForCut`): the exact boundary there has hundreds of thousands of
+ * edges and only the shape shows at that size.
+ */
+export const EXACT_OUTLINE_MAX = 6;
 
 /** Vertex counts of the decimated copies kept per outline; the full loop is the last resort. */
 const LODS = [8, 24, 64, 200, 640, 2000] as const;
@@ -65,6 +79,30 @@ export function outlineOf(node: TileNode, family: TileFamilyId): Outline {
   const hit = outlines.get(node);
   if (hit) return hit;
   const full = boundaryLoop(node, family);
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const p of full) {
+    minX = Math.min(minX, p.x);
+    minY = Math.min(minY, p.y);
+    maxX = Math.max(maxX, p.x);
+    maxY = Math.max(maxY, p.y);
+  }
+  const out: Outline = { full, lods: LODS.map(() => undefined), minX, minY, maxX, maxY };
+  outlines.set(node, out);
+  return out;
+}
+
+/** The outline of a level-`level` node, scaled up from {@link EXACT_OUTLINE_MAX} when above it (computed once per node). */
+export function outlineAtLevel(node: TileNode, family: TileFamilyId, level: number): Outline {
+  if (level <= EXACT_OUTLINE_MAX || node.kind === 'leaf') return outlineOf(node, family);
+  const hit = outlines.get(node);
+  if (hit) return hit;
+  const base = outlineOf(buildSystem(family, EXACT_OUTLINE_MAX)[node.type], family);
+  const M = glyphFitForCut(level, EXACT_OUTLINE_MAX, family);
+  // A coarse copy is enough at this size.
+  const full = outlineAtSize(base, LODS[LODS.length - 1]).map((p) => transPt(M, p));
   let minX = Infinity;
   let minY = Infinity;
   let maxX = -Infinity;
@@ -151,6 +189,42 @@ export function supertilesAt(family: TileFamilyId, root: TileNode, patchLevel: n
   return out;
 }
 
+/**
+ * Level-`level` supertiles of a patch named by code: a slot path from the
+ * root (a level-`patchLevel` node) read in base 8, as `slotPathCode` writes a
+ * tile's, over 8^level. Codes naming no supertile are passed over.
+ */
+export function supertilesByCode(
+  family: TileFamilyId,
+  root: TileNode,
+  patchLevel: number,
+  level: number,
+  codes: Iterable<number>,
+  frame: Affine = [1, 0, 0, 0, 1, 0],
+): XraySupertile[] {
+  const depth = patchLevel - level;
+  const place = (code: number): XraySupertile | null => {
+    let node = root;
+    let x = frame;
+    const slots: number[] = [];
+    for (let d = depth - 1; d >= 0; d--) {
+      const slot = Math.floor(code / 8 ** d) % 8;
+      const c = node.kind === 'leaf' ? undefined : (node as MetaNode).children.find((ch) => ch.pos === slot);
+      if (!c) return null;
+      x = mul(x, c.xform);
+      node = c.node;
+      slots.push(slot);
+    }
+    return boxed(node.type, slots.join('.'), node, x, family);
+  };
+  const out: XraySupertile[] = [];
+  for (const code of codes) {
+    const s = place(code);
+    if (s) out.push(s);
+  }
+  return out;
+}
+
 /** Even-odd test of a point against a closed loop. */
 export function insideLoop(loop: readonly Pt[], p: Pt): boolean {
   let inside = false;
@@ -192,8 +266,18 @@ export interface XrayCut {
 }
 
 /** The level-`level` supertiles of the unrooted engine's plane meeting `view`, at most about `cap` of them. */
+/**
+ * About how many level-`level` supertiles meet a view: its area over a
+ * supertile's. The engine walks every node down to the level asked for even
+ * once past its budget, so a view holding far too many is not asked for.
+ */
+export function supertilesInView(family: TileFamilyId, view: ViewRect, level: number): number {
+  return (4 * view.halfW * view.halfH) / (averageLeafArea(family) * SUBSTITUTION_GROWTH ** level);
+}
+
 export function xrayFromEngine(engine: UnrootedEngine, view: ViewRect, level: number, cap: number): XrayCut {
   const family = engine.family;
+  if (supertilesInView(family, view, level) > 2 * cap) return { items: [], rootLevel: 0, rootType: engine.ancestorType(0), tooMany: true };
   let cut = engine.query(view, cap, { cutLevel: level, emitIds: true });
   // The view sits inside a smaller ancestor than the level asked for: descend from that level's ancestor instead.
   if (cut.cutLevel < level) cut = engine.query(view, cap, { cutLevel: level, ancestorLevel: level, emitIds: true });
@@ -206,6 +290,7 @@ export function xrayFromEngine(engine: UnrootedEngine, view: ViewRect, level: nu
   for (let i = 0; i < cut.count; i++) {
     const type = instanceTypeId(cut.type[i], family);
     const node = sys ? sys[type] : leafNode(family, type);
+    outlineAtLevel(node, family, level);
     const xform = instanceAffine(cut.pos[2 * i] + cut.origin.x, cut.pos[2 * i + 1] + cut.origin.y, cut.code[i]);
     const path = cut.ids ? pathFromAncestor(chain, rootLevel, cut.ids[i]) : null;
     items.push(boxed(type, path ?? '?', node, xform, family));
@@ -228,4 +313,73 @@ export function pathFromAncestor(chain: readonly { readonly slot: number }[], ro
   for (let i = rootLevel - 1; i >= d; i--) slots.push(chain[i].slot);
   if (m[2] !== '') slots.push(...m[2].split('.').map(Number));
   return slots.join('.');
+}
+
+/** Most single tiles the infinite view's X-ray colours under the strands; past it the view shows supertile glyphs and no strands. */
+export const TINT_CAP = 40_000;
+
+const leafMeshes = new Map<TileFamilyId, RegionMeshTable>();
+
+/** Every leaf type's outline triangulated, one row per type in `leafOrder` order (the byte the engine emits). */
+export function leafMesh(family: TileFamilyId): RegionMeshTable {
+  const hit = leafMeshes.get(family);
+  if (hit) return hit;
+  const polys = leafOrder(family).map((t) => leafPts(family, t));
+  const tris = polys.map((poly) => earClip(poly).flatMap((i) => [poly[i].x, poly[i].y]));
+  const verts = Math.max(3, ...tris.map((t) => t.length / 2));
+  const data = new Float32Array(polys.length * verts * 2);
+  tris.forEach((t, row) => {
+    data.set(t, row * verts * 2);
+    // Padding repeats the last vertex: degenerate triangles.
+    for (let j = t.length / 2; j < verts; j++) {
+      data[(row * verts + j) * 2] = t[t.length - 2] ?? 0;
+      data[(row * verts + j) * 2 + 1] = t[t.length - 1] ?? 0;
+    }
+  });
+  const mesh: RegionMeshTable = { rows: polys.length, verts, data, rowPolys: polys };
+  leafMeshes.set(family, mesh);
+  return mesh;
+}
+
+/**
+ * The single tiles meeting `view`, each coloured as the level-`level`
+ * supertile of `cut` that holds it, for `InfiniteCanvasApi.setTint`; null
+ * when more than {@link TINT_CAP} tiles meet the view or none is placed.
+ */
+export function tintFromEngine(
+  engine: UnrootedEngine,
+  view: ViewRect,
+  cut: XrayCut,
+  level: number,
+  rgbOf: (type: TileTypeId) => readonly [number, number, number],
+  alpha: number,
+): RegionFillGeometry | null {
+  if (cut.tooMany || supertilesInView(engine.family, view, 0) > TINT_CAP) return null;
+  const leaves = engine.query(view, TINT_CAP, { cutLevel: 0, emitIds: true });
+  if (leaves.truncated || leaves.cutLevel !== 0 || !leaves.ids) return null;
+  const typeAt = new Map(cut.items.map((s) => [s.path, s.type]));
+  const chain = engine.chain();
+  const keep: number[] = [];
+  const rgb: number[] = [];
+  for (let i = 0; i < leaves.count; i++) {
+    const path = pathFromAncestor(chain, cut.rootLevel, leaves.ids[i]);
+    if (path === null) continue;
+    const slots = path === '' ? [] : path.split('.');
+    if (slots.length < level) continue;
+    const type = typeAt.get(slots.slice(0, slots.length - level).join('.'));
+    if (!type) continue;
+    keep.push(i);
+    rgb.push(...rgbOf(type));
+  }
+  if (!keep.length) return null;
+  const pos = new Float32Array(keep.length * 2);
+  const code = new Uint8Array(keep.length);
+  const row = new Uint8Array(keep.length);
+  keep.forEach((i, q) => {
+    pos[2 * q] = leaves.pos[2 * i];
+    pos[2 * q + 1] = leaves.pos[2 * i + 1];
+    code[q] = leaves.code[i];
+    row[q] = leaves.type[i];
+  });
+  return { mesh: leafMesh(engine.family), origin: leaves.origin, count: keep.length, pos, code, row, rgb: Uint8Array.from(rgb), alpha };
 }

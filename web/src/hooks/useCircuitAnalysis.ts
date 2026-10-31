@@ -43,6 +43,7 @@ function signature(input: AnalysisInput): string {
     input.dualPieces ?? false,
     input.curved ?? false,
     input.loopVectors ?? false,
+    input.pathTiles ?? false,
   ]);
 }
 
