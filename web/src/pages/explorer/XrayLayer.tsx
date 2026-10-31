@@ -12,7 +12,9 @@
  * engine for the supertiles in view; at a cut of single tiles it hands the
  * canvas each tile's supertile colour (`InfiniteCanvasApi.setTint`), drawn
  * under the strands; zoomed out to supertile glyphs, where no strands are
- * drawn, only the outlines show.
+ * drawn, the wash goes on the X-ray's own canvas under the outlines. Zoomed
+ * out past the level asked for, it shows the lowest level that keeps the
+ * supertiles in view countable.
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -21,7 +23,7 @@ import { useElementSize } from '../../hooks/useElementSize';
 import { cameraAffine, type Camera } from '../../lib/viewport';
 import type { MapCamera } from '../map/camera';
 import type { InfiniteCanvasApi } from '../map/InfiniteCanvas';
-import { outlineAtSize, outlineOf, supertileAt, supertilesAt, tintFromEngine, xrayFromEngine, type XraySupertile } from './xray';
+import { outlineAtSize, outlineOf, supertileAt, supertilesAt, tintFromEngine, xrayFromEngine, xrayLevelForView, type XraySupertile } from './xray';
 
 /** The channels of a CSS colour written `rgb(r,g,b)` or `#rrggbb`. */
 export function cssRgb(css: string): readonly [number, number, number] {
@@ -118,8 +120,8 @@ export function washXray(
 /**
  * Outline the supertiles on a canvas whose CSS size is `width` × `height`,
  * thin and light so the strands under them still read, the hovered one
- * heavier. `toScreen` maps the supertiles' frame to
- * CSS px. Nothing is filled: the canvas lies over the strands.
+ * heavier. `toScreen` maps the supertiles' frame to CSS px. With `washOf`
+ * the supertiles are washed first: for a scene whose own wash is off.
  */
 export function drawXray(
   ctx: CanvasRenderingContext2D,
@@ -130,10 +132,12 @@ export function drawXray(
   items: readonly XraySupertile[],
   toScreen: Affine,
   hovered: XraySupertile | null,
+  washOf?: (type: TileTypeId) => string,
 ): void {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  if (washOf) washXray(ctx, width, height, family, items, toScreen, washOf);
   const lines = new Path2D();
   for (const { s, loop } of onScreen(width, height, family, items, toScreen)) tracePath(lines, mul(toScreen, s.xform), loop);
   ctx.lineJoin = 'round';
@@ -201,7 +205,7 @@ interface Hover {
  */
 function XrayCanvas(props: {
   family: TileFamilyId;
-  frame: () => { items: readonly XraySupertile[]; toScreen: Affine } | null;
+  frame: () => { items: readonly XraySupertile[]; toScreen: Affine; washOf?: (type: TileTypeId) => string } | null;
   redraw: unknown;
   /** Subscribe to per-frame redraws (the infinite plane moves without React). */
   tick?: (draw: () => void) => () => void;
@@ -233,7 +237,7 @@ function XrayCanvas(props: {
         ctx.clearRect(0, 0, w, h);
         return;
       }
-      drawXray(ctx, dpr, size.width, size.height, family, f.items, f.toScreen, hoverRef.current?.s ?? null);
+      drawXray(ctx, dpr, size.width, size.height, family, f.items, f.toScreen, hoverRef.current?.s ?? null, f.washOf);
     },
     [size, family],
   );
@@ -334,20 +338,24 @@ export function XrayInfinite(props: {
   level: number;
   apiRef: React.MutableRefObject<InfiniteCanvasApi | null>;
   colorOf: (type: TileTypeId) => string;
-  onTooMany?: (tooMany: boolean) => void;
+  /** The level drawn, when zoomed out past `level`; null at `level`. */
+  onShownLevel?: (shown: number | null) => void;
 }): JSX.Element {
-  const { family, seed, worldChain, level, apiRef, colorOf, onTooMany } = props;
+  const { family, seed, worldChain, level, apiRef, colorOf, onShownLevel } = props;
   const engine = useMemo(() => unrootedEngineFor(seed, family, worldChain), [seed, family, worldChain]);
   const state = useRef<{
     cam: MapCamera | null;
     w: number;
     h: number;
-    /** The view last listed (with margin), and what it held. */
+    /** The view last listed (with margin), the scale it was listed at, and what it held. */
     rect: { x0: number; y0: number; x1: number; y1: number } | null;
+    scale: number;
     cut: ReturnType<typeof xrayFromEngine> | null;
-  }>({ cam: null, w: 0, h: 0, rect: null, cut: null });
+    /** The tiles were not tinted: the X-ray's canvas washes the supertiles. */
+    washHere: boolean;
+  }>({ cam: null, w: 0, h: 0, rect: null, scale: 0, cut: null, washHere: false });
   const [root, setRoot] = useState<{ level: number; type: TileTypeId } | null>(null);
-  const tooManyRef = useRef<boolean | null>(null);
+  const shownRef = useRef<number | null | undefined>(undefined);
   const colorRef = useRef(colorOf);
   colorRef.current = colorOf;
   useEffect(() => {
@@ -365,22 +373,28 @@ export function XrayInfinite(props: {
       const hh = st.h / 2 / cam.scale;
       const r = st.rect;
       const inside = r && cam.cx - hw >= r.x0 && cam.cx + hw <= r.x1 && cam.cy - hh >= r.y0 && cam.cy + hh <= r.y1;
-      if (!inside) {
+      // Zoomed well in since the last listing: list again, at a finer level if that now fits.
+      if (!inside || cam.scale > 2 * st.scale) {
         st.rect = { x0: cam.cx - 2 * hw, y0: cam.cy - 2 * hh, x1: cam.cx + 2 * hw, y1: cam.cy + 2 * hh };
+        st.scale = cam.scale;
         const view = { cx: cam.cx, cy: cam.cy, halfW: 2 * hw, halfH: 2 * hh };
-        st.cut = xrayFromEngine(engine, view, level, INFINITE_CAP);
+        const shown = xrayLevelForView(family, view, level, INFINITE_CAP);
+        st.cut = xrayFromEngine(engine, view, shown, INFINITE_CAP);
         const c = st.cut;
-        apiRef.current?.setTint(tintFromEngine(engine, view, c, level, (t) => cssRgb(colorRef.current(t)), WASH_ALPHA));
+        const tint = tintFromEngine(engine, view, c, shown, (t) => cssRgb(colorRef.current(t)), WASH_ALPHA);
+        apiRef.current?.setTint(tint);
+        st.washHere = tint === null;
         setRoot((prev) => (prev?.level === c.rootLevel && prev.type === c.rootType ? prev : { level: c.rootLevel, type: c.rootType }));
-        if (tooManyRef.current !== c.tooMany) {
-          tooManyRef.current = c.tooMany;
-          onTooMany?.(c.tooMany);
+        const note = shown > level ? shown : null;
+        if (shownRef.current !== note) {
+          shownRef.current = note;
+          onShownLevel?.(note);
         }
       }
       const toScreen: Affine = [cam.scale, 0, st.w / 2 - cam.cx * cam.scale, 0, cam.scale, st.h / 2 - cam.cy * cam.scale];
-      return st.cut ? { items: st.cut.items, toScreen } : null;
+      return st.cut ? { items: st.cut.items, toScreen, washOf: st.washHere ? colorRef.current : undefined } : null;
     },
-    [engine, level, onTooMany, apiRef],
+    [engine, family, level, onShownLevel, apiRef],
   );
 
   // Follow the canvas's camera, which moves without React (panning, the follow camera).
@@ -408,7 +422,7 @@ export function XrayInfinite(props: {
     [apiRef],
   );
 
-  useEffect(() => () => onTooMany?.(false), [onTooMany]);
+  useEffect(() => () => onShownLevel?.(null), [onShownLevel]);
 
   return (
     <XrayCanvas
