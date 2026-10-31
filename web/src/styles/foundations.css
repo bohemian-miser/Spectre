@@ -135,7 +135,7 @@
 /* list and main */
 .fd-split {
   display: grid;
-  grid-template-columns: 330px minmax(0, 1fr);
+  grid-template-columns: 370px minmax(0, 1fr);
   gap: 20px;
   align-items: start;
 }
@@ -185,7 +185,7 @@
 }
 .fd-row {
   display: grid;
-  grid-template-columns: 1fr 34px 30px 40px 48px 26px 22px;
+  grid-template-columns: 1fr 30px 50px 74px 48px 26px 22px;
   gap: 4px;
   align-items: center;
   padding: 2px 8px;

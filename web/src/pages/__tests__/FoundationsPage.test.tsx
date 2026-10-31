@@ -22,7 +22,7 @@ describe('FoundationsPage', () => {
 
   it('shows a combination, its summary and a card per foundational circuit, drawn', async () => {
     render(<FoundationsPage forceSync />);
-    await waitFor(() => expect(screen.getByTestId('fd-summary').textContent).toMatch(/Floor 2.*Last foundational level 6.*5 foundational circuits: 4 chains, 1 nugget.*Tails at level 9: 56\.4%/));
+    await waitFor(() => expect(screen.getByTestId('fd-summary').textContent).toMatch(/First circuit at level 2.*Last new foundational circuit at level 6.*5 foundational circuits: 4 chains, 1 nugget.*Tails at level 9: 56\.4%/));
     expect(screen.getByTestId('fd-note').textContent).toMatch(/Nothing foundational first closes at levels 7 to 9 \(built to 9\); not proven beyond\./);
     const cards = screen.getAllByTestId('fd-card');
     expect(cards).toHaveLength(5);
@@ -59,7 +59,7 @@ describe('FoundationsPage', () => {
     const first = table.querySelector('tbody tr')!;
     expect(first.textContent).toMatch(/^031001001\s*47170,976/);
     fireEvent.click(first);
-    await waitFor(() => expect(screen.getByTestId('fd-summary').textContent).toMatch(/Floor 4/));
+    await waitFor(() => expect(screen.getByTestId('fd-summary').textContent).toMatch(/First circuit at level 4/));
     expect(location.search).toMatch(/^\?combo=031001001&circuit=\d+$/);
     expect(screen.getAllByTestId('fd-card').find((c) => c.className.includes('fd-card-on'))!.textContent).toMatch(/^170,976 tiles/);
   }, 60000);
@@ -68,7 +68,7 @@ describe('FoundationsPage', () => {
     history.replaceState(null, '', '/Spectre/foundations.html?rule=15&level=6');
     vi.stubGlobal('fetch', vi.fn(async () => new Response('', { status: 404 })));
     render(<FoundationsPage forceSync />);
-    await waitFor(() => expect(screen.getByTestId('fd-summary').textContent).toMatch(/Floor \d/), { timeout: 60000 });
+    await waitFor(() => expect(screen.getByTestId('fd-summary').textContent).toMatch(/First circuit at level \d/), { timeout: 60000 });
     expect(screen.getByTestId('fd-live').textContent).toMatch(/Rule 15: \d+ combinations · level 6, analysed here/);
     fireEvent.click(screen.getByTestId('fd-sweep'));
     await waitFor(() => expect(screen.getByTestId('fd-rows').textContent).toMatch(/\d{9}/), { timeout: 120000 });
