@@ -32,7 +32,7 @@ describe('FoundationsPage', () => {
     expect([...row303.querySelectorAll('.fd-harm')].map((h) => h.textContent)).toEqual([
       '14,679 tileslevel 6 · 1 place ✓',
       '734,256 tileslevel 8 · 1 place ✓',
-      '?36,701,253 tileslevel 10 · predicted',
+      '?36,701,253 tileslevel 10 · predictedBrute force',
     ]);
     // the 447 at level 6 is one circuit, in eight places there, and late
     const c447 = cards.find((c) => c.textContent!.startsWith('447 tiles'))!;
@@ -53,7 +53,9 @@ describe('FoundationsPage', () => {
     history.replaceState(null, '', '/Spectre/foundations.html?view=monsters');
     render(<FoundationsPage forceSync />);
     const table = await screen.findByTestId('fd-monsters');
-    expect(table.textContent).toMatch(/41 monsters in 29 combinations: 24 late .*, 19 giant/);
+    expect(table.textContent).toMatch(/41 monsters in 29 combinations: 24 late .* and 19 giant/);
+    // the late ones that start a chain are explained, the two late nuggets not
+    expect([screen.getByTestId('fd-explained').textContent, screen.getByTestId('fd-unexplained').textContent]).toEqual(['22', '2']);
     const first = table.querySelector('tbody tr')!;
     expect(first.textContent).toMatch(/^031001001\s*47170,976/);
     fireEvent.click(first);

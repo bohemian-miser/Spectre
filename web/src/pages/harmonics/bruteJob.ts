@@ -8,6 +8,7 @@
 import type { BornCircuit } from '../shapes/circuitShapes';
 import { CircuitShapes } from '../shapes/circuitShapes';
 import { climb, harmonicAbove, longestArc, type BruteResult, type ClimbResult, type Progress } from './bruteForce';
+import { bornOfFound, foundThumb, Placed, readRows, SparseRows, type Found } from './found';
 import { SparseRoutes, typeIndex, type Walked } from './sparseRoutes';
 
 /** The highest full table kept: the routes above it are worked out on demand. */
@@ -47,6 +48,13 @@ export class BruteEngine {
     return harmonicAbove(R, from.addressed ? a : R.walked(a), { floor: from.floor, beyond: 2, onProgress });
   }
 
+  /** A circuit found, drawn small as `found.ts` draws one for the Harmonics page: at most `budget` points, closed. */
+  thumb(job: BruteCombo, f: Found, budget: number): Float64Array {
+    const R = this.routes(job, BASE);
+    const rows = new SparseRows(R.cs, R, bornOfFound(R, f));
+    return foundThumb(new Placed(R.cs, rows), readRows(rows, budget).readings, budget).pts;
+  }
+
   /**
    * The longest arc of a level-`level` Delta (at most the base), climbed
    * until its strand closes, reaches `CLIMB_CAP` or needs more than
@@ -65,11 +73,20 @@ export class BruteEngine {
 
 export type BruteMessage =
   | { type: 'harmonic'; job: BruteCombo; from: BruteFrom }
-  | { type: 'climb'; job: BruteCombo; level: number };
+  | { type: 'climb'; job: BruteCombo; level: number }
+  | { type: 'thumb'; job: BruteCombo; found: Found; budget: number };
+
+/** Runs a message on an engine. */
+export function answer(engine: BruteEngine, m: BruteMessage, progress: (p: Progress) => void): BruteResult | ClimbResult | Float64Array {
+  if (m.type === 'harmonic') return engine.harmonic(m.job, m.from, progress);
+  if (m.type === 'climb') return engine.climb(m.job, m.level, progress);
+  return engine.thumb(m.job, m.found, m.budget);
+}
 
 export interface BruteClient {
   harmonic(job: BruteCombo, from: BruteFrom, onProgress: (p: Progress) => void): Promise<BruteResult>;
   climb(job: BruteCombo, level: number, onProgress: (p: Progress) => void): Promise<ClimbResult>;
+  thumb(job: BruteCombo, found: Found, budget: number): Promise<Float64Array>;
   /** Ends the run under way (its promise rejects with `STOPPED`); the routes kept so far go with it. */
   stop(): void;
   dispose(): void;
@@ -105,8 +122,7 @@ export function createBruteClient(opts: { forceSync?: boolean } = {}): BruteClie
         setTimeout(() => {
           try {
             engine ??= new BruteEngine();
-            const r = message.type === 'harmonic' ? engine.harmonic(message.job, message.from, progress) : engine.climb(message.job, message.level, progress);
-            resolve(r as T);
+            resolve(answer(engine, message, progress) as T);
           } catch (err) {
             reject(err instanceof Error ? err : new Error(String(err)));
           }
@@ -122,6 +138,7 @@ export function createBruteClient(opts: { forceSync?: boolean } = {}): BruteClie
   return {
     harmonic: (job, from, onProgress) => ask<BruteResult>({ type: 'harmonic', job, from }, onProgress),
     climb: (job, level, onProgress) => ask<ClimbResult>({ type: 'climb', job, level }, onProgress),
+    thumb: (job, found, budget) => ask<Float64Array>({ type: 'thumb', job, found, budget }, () => undefined),
     stop() {
       worker?.terminate();
       worker = null;
@@ -134,4 +151,22 @@ export function createBruteClient(opts: { forceSync?: boolean } = {}): BruteClie
       waiting.clear();
     },
   };
+}
+
+const nf = (n: number) => n.toLocaleString('en-US');
+const secs = (s: number) => (s < 1 ? 'under a second' : `${s.toFixed(s < 10 ? 1 : 0)} s`);
+
+/** What a brute force at a level found, in a sentence. */
+export function describeResult(r: BruteResult): string {
+  const fromLength = r.from.length;
+  const f = r.found;
+  const through = r.windows === 1 ? `the level-${r.floor + 2} supertile of the ${nf(fromLength)}'s first level-${r.floor} visit` : `the level-${r.floor + 2} supertiles of the ${nf(fromLength)}'s first ${r.windows} level-${r.floor} visits`;
+  const work = `${nf(r.tried)} arc${r.tried === 1 ? '' : 's'} followed through ${through}; ${nf(r.work.calls)} routes worked out above level ${BASE}, in ${secs(r.seconds)}.`;
+  if (f) {
+    const reads = f.limited && f.agreed > r.floor ? `from level ${f.agreed} up, as far down as both were read` : `from level ${f.agreed} up`;
+    return `Level ${r.level}: a ${nf(f.length)}-tile circuit of family ${f.family} closes in the ${r.type}, reading as the ${nf(fromLength)} two levels down ${reads}; ${f.key.includes('/') ? 'place' : 'word'} key ${f.key}. ${work}`;
+  }
+  const others = r.others.length ? ` Closed there instead: ${r.others.map((o) => `${nf(o.length)} (family ${o.family})`).join(', ')}.` : '';
+  const beyond = r.beyond.length ? ` The ${r.open} walks that leave it close at ${r.beyond.map((b) => `level ${b.level} (${nf(b.length)})`).join(', ')}.` : r.open ? ` ${nf(r.open)} walks leave it.` : '';
+  return `Level ${r.level}: no circuit reading as the ${nf(fromLength)} closes in the ${r.type}.${others}${beyond} ${work}`;
 }

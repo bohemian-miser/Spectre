@@ -16,6 +16,7 @@ import { ComboPicker } from './shapes/ComboPicker';
 import { ComboList } from './foundations/ComboList';
 import { ComboView } from './foundations/ComboView';
 import { MonstersTable } from './foundations/MonstersTable';
+import { useChainBrute } from './foundations/bruteChains';
 import { createDrawClient } from './foundations/drawings';
 import { loadCombo, loadIndex, nf, readAddress, RULE, writeAddress, type Address } from './foundations/data';
 import { comboCount, combosOf, createLiveClient, keep, loadKept, type LiveProgress } from './foundations/liveAnalysis';
@@ -42,6 +43,7 @@ export default function FoundationsPage(props: { forceSync?: boolean }): JSX.Ele
   // one client for the combination shown, one for sweeping the rule, so neither cancels the other
   const live = useRef(createLiveClient({ forceSync: props.forceSync }));
   const sweeper = useRef(createLiveClient({ forceSync: props.forceSync }));
+  const brute = useChainBrute({ forceSync: props.forceSync });
   useEffect(
     () => () => {
       client.current.dispose();
@@ -218,7 +220,11 @@ export default function FoundationsPage(props: { forceSync?: boolean }): JSX.Ele
       {error ? <p className="fd-muted">Could not load the data: {error}</p> : null}
       {address.view === 'monsters' ? (
         index ? (
-          <MonstersTable monsters={index.monsters} onOpen={(m) => setAddress((a) => ({ ...a, view: 'combos', combo: m.combo, circuit: m.id }))} />
+          <MonstersTable
+            monsters={index.monsters}
+            onOpen={(m) => setAddress((a) => ({ ...a, view: 'combos', combo: m.combo, circuit: m.id }))}
+            found={(m) => brute.foundOn(rule, m.combo, m.id)}
+          />
         ) : (
           <p className="fd-muted">{precomputed ? 'Loading…' : 'Sweep the rule to list its monsters.'}</p>
         )
@@ -231,7 +237,7 @@ export default function FoundationsPage(props: { forceSync?: boolean }): JSX.Ele
           )}
           <div className="fd-main">
             {shown ? (
-              <ComboView data={shown} client={client.current} circuit={address.circuit} onCircuit={(id) => setAddress((a) => ({ ...a, circuit: id }))} />
+              <ComboView data={shown} client={client.current} brute={brute} circuit={address.circuit} onCircuit={(id) => setAddress((a) => ({ ...a, circuit: id }))} />
             ) : (
               <p className="fd-muted">{precomputed ? `Loading ${combo}…` : `Analysing ${combo} to level ${level}…`}</p>
             )}

@@ -13,7 +13,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { FLOOR, type Chain } from './chains';
 import type { BruteResult, ClimbResult, Harmonic, Progress } from './bruteForce';
-import { BASE, CLIMB_CAP, CLIMB_ROUTES, createBruteClient, fromBorn, STOPPED, type BruteCombo, type BruteFrom } from './bruteJob';
+import { BASE, CLIMB_CAP, CLIMB_ROUTES, createBruteClient, describeResult, fromBorn, STOPPED, type BruteCombo, type BruteFrom } from './bruteJob';
 import { percent, scoreTitle, Thumb, type MemberInfo } from './ChainViews';
 import type { Found } from './found';
 import type { HarmonicsClient, HarmonicsResult } from './harmonicsJob';
@@ -30,21 +30,6 @@ type Cell =
 
 /** A circuit named by its level and tiles, as the address names it. */
 export const levelKey = (c: { readonly level: number; readonly length: number }): string => `${c.level}-${c.length}`;
-
-/** What a brute force at a level found, in a sentence. */
-export function describeResult(r: BruteResult): string {
-  const fromLength = r.from.length;
-  const f = r.found;
-  const through = r.windows === 1 ? `the level-${r.floor + 2} supertile of the ${nf(fromLength)}'s first level-${r.floor} visit` : `the level-${r.floor + 2} supertiles of the ${nf(fromLength)}'s first ${r.windows} level-${r.floor} visits`;
-  const work = `${nf(r.tried)} arc${r.tried === 1 ? '' : 's'} followed through ${through}; ${nf(r.work.calls)} routes worked out above level ${BASE}, in ${secs(r.seconds)}.`;
-  if (f) {
-    const reads = f.limited && f.agreed > r.floor ? `from level ${f.agreed} up, as far down as both were read` : `from level ${f.agreed} up`;
-    return `Level ${r.level}: a ${nf(f.length)}-tile circuit of family ${f.family} closes in the ${r.type}, reading as the ${nf(fromLength)} two levels down ${reads}; ${f.key.includes('/') ? 'place' : 'word'} key ${f.key}. ${work}`;
-  }
-  const others = r.others.length ? ` Closed there instead: ${r.others.map((o) => `${nf(o.length)} (family ${o.family})`).join(', ')}.` : '';
-  const beyond = r.beyond.length ? ` The ${r.open} walks that leave it close at ${r.beyond.map((b) => `level ${b.level} (${nf(b.length)})`).join(', ')}.` : r.open ? ` ${nf(r.open)} walks leave it.` : '';
-  return `Level ${r.level}: no circuit reading as the ${nf(fromLength)} closes in the ${r.type}.${others}${beyond} ${work}`;
-}
 
 /** A member found: the chain it extends (by its last built member's `levelKey`), and what the brute force found. */
 export interface FoundMember {

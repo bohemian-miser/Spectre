@@ -4,15 +4,23 @@
  * harmonic drawn in each row for each `harm` row of that chain, linked to
  * the Harmonics page at its own level, a blank square for each harmonic
  * predicted above the build, and each drawing's runs of tiles adding up to
- * the harmonic's tiles.
+ * the harmonic's tiles. The predicted members of 011001100 brute-forced
+ * from the rows: their tiles are the ones predicted, they are drawn, and the
+ * member two levels further is offered next.
  */
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { cleanup, render, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
+import { useChainBrute } from '../bruteChains';
 import { ComboView } from '../ComboView';
-import { BUDGET, createDrawClient, drawCircuits } from '../drawings';
+import { BUDGET, createDrawClient, drawCircuits, type DrawClient } from '../drawings';
 import type { PageCombo } from '../pageData';
+
+function View(props: { data: PageCombo; client: DrawClient }): JSX.Element {
+  const brute = useChainBrute({ forceSync: true });
+  return <ComboView data={props.data} client={props.client} brute={brute} circuit={null} onCircuit={() => undefined} />;
+}
 
 const file = resolve(__dirname, '../../../../public/data/foundations/hex-023468/140000001.json');
 const raw = JSON.parse(readFileSync(file, 'utf8')) as {
@@ -27,7 +35,7 @@ describe('chain rows of 140000001', () => {
   it('draw each harmonic of the data in its chain, linked at its level, and each predicted one as a blank square', async () => {
     const data = raw as unknown as PageCombo;
     const client = createDrawClient({ forceSync: true });
-    const { container } = render(<ComboView data={data} client={client} circuit={null} onCircuit={() => undefined} />);
+    const { container } = render(<View data={data} client={client} />);
     const rows = [...container.querySelectorAll<HTMLElement>('[data-testid="fd-chain"]')];
     const rootOf = (row: HTMLElement): number => Number(row.querySelector('[data-testid="fd-card"]')!.getAttribute('data-circuit'));
     // a row per foundational circuit that is not a nugget
@@ -63,4 +71,29 @@ describe('chain rows of 140000001', () => {
     expect(ds.map((d) => [d.id, d.runs.reduce((a, b) => a + b, 0)])).toEqual(raw.harm.map((h) => [h[0], h[2]]));
     for (const d of ds) expect(d.xy.length / 2).toBeLessThanOrEqual(BUDGET);
   }, 60000);
+});
+
+describe('chain rows of 011001100', () => {
+  afterEach(cleanup);
+
+  it('brute-force the members predicted above the build: the tiles predicted, drawn, then the next', async () => {
+    const data = JSON.parse(readFileSync(file.replace('140000001', '011001100'), 'utf8')) as PageCombo;
+    const client = createDrawClient({ forceSync: true });
+    const { container } = render(<View data={data} client={client} />);
+    const buttons = () => [...container.querySelectorAll<HTMLButtonElement>('[data-testid="fd-brute"]')];
+    // one per predicted member, ready once the member below it is drawn
+    await waitFor(() => expect(buttons().filter((b) => !b.disabled)).toHaveLength(2), { timeout: 60000 });
+    const want = data.pred.filter((x) => x[2] === 'forecast').map((x) => x[3]);
+    for (let i = 0; i < want.length; i++) {
+      fireEvent.click(buttons().find((b) => !b.disabled && b.closest<HTMLElement>('[data-level]')!.dataset.level === '10')!);
+      await waitFor(() => expect(container.querySelectorAll('[data-testid="fd-harm-found"]')).toHaveLength(i + 1), { timeout: 60000 });
+    }
+    const found = [...container.querySelectorAll<HTMLElement>('[data-testid="fd-harm-found"]')];
+    expect(found.map((f) => Number(f.dataset.tiles)).sort()).toEqual([...want].sort());
+    for (const f of found) expect(f.querySelector('[data-testid="fd-harm-forecast"]')!.getAttribute('data-agrees')).toBe('1');
+    await waitFor(() => expect(container.querySelectorAll('[data-testid="fd-harm-found"] svg polygon')).toHaveLength(2), { timeout: 60000 });
+    // the next members, two levels on, offered
+    expect(buttons().map((b) => b.closest<HTMLElement>('[data-level]')!.dataset.level)).toEqual(['12', '12']);
+    client.dispose();
+  }, 180000);
 });
