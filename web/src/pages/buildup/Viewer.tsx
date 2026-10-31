@@ -460,6 +460,8 @@ export function Viewer(props: {
 
   return (
     <div className={`bv-viewer${props.className ? ` ${props.className}` : ''}`}>
+      {/* on a touch screen the drawing takes every drag; this strip scrolls the page */}
+      <div className="bv-grip" aria-hidden="true" />
       <div
         ref={host}
         className={`bv-surface${pz.panning ? ' is-panning' : ''}`}
