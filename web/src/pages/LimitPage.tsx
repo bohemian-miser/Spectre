@@ -1,7 +1,8 @@
 /**
  * Limit shape: a supertile's outline, scaled down level after level, from
  * the hexagons and from the Spectres, and the shape both settle on
- * (`core/limitShape.ts`, computed in `workers/limit.worker.ts`).
+ * (`core/limitShape.ts`, computed in `workers/limit.worker.ts`), and a
+ * patch of supertiles with its seams straightened (`core/straighten.ts`).
  */
 import { useEffect, useMemo, useState } from 'react';
 import { transPt, type Pt } from '../core/geom';
@@ -10,6 +11,7 @@ import { usePrefersDark } from '../hooks/usePrefersDark';
 import { compareStarts, computeLimit, unflat, type LimitData, type StartGaps } from './limit/compute';
 import { Figure, type Mark } from './limit/Figure';
 import { Morph } from './limit/Morph';
+import { Straighten } from './limit/Straighten';
 import type { LimitReply } from '../workers/limit.worker';
 import '../styles/buildup.css';
 import '../styles/limit.css';
@@ -94,6 +96,7 @@ export default function LimitPage(): JSX.Element {
           <Levels data={data} dark={dark} />
           <KeyPoints />
           <Starts data={data} starts={starts} dark={dark} />
+          <Straighten limit={data} dark={dark} />
         </>
       )}
     </div>

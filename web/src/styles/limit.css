@@ -26,3 +26,5 @@
 .lm-page > * { min-width: 0; }
 .lm-strip figure { width: 150px; max-width: calc(50% - 4px); }
 .lm-pair figure { width: 260px; max-width: 100%; }
+.lm-canvas-tall { aspect-ratio: 720 / 560; }
+.lm-figure-wait { width: 150px; max-width: 100%; aspect-ratio: 1; border: 1px solid var(--line); border-radius: var(--radius); background: var(--canvas-bg); }
