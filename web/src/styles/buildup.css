@@ -57,6 +57,12 @@
 .bv-canvas { position: absolute; left: 0; top: 0; display: block; }
 .bv-tip { position: absolute; pointer-events: none; z-index: 2; padding: 3px 8px; font-size: 0.8rem; background: var(--text); color: var(--bg); border-radius: 4px; white-space: nowrap; }
 .bv-tools { position: absolute; top: 8px; right: 8px; display: flex; gap: 4px; z-index: 3; }
+.bv-grip { display: none; }
+@media (pointer: coarse) {
+  .bv-grip { display: block; height: 16px; touch-action: pan-x pan-y; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--line) 35%, var(--panel)); }
+  .bv-grip::after { content: ''; display: block; width: 28px; height: 4px; margin: 6px auto 0; border-radius: 2px; background: var(--muted); opacity: 0.5; }
+  .bv-tools { top: 24px; }
+}
 .bv-tools button { font: inherit; font-size: 0.85rem; min-width: 30px; padding: 2px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--text); cursor: pointer; }
 .bv-legend { position: absolute; left: 10px; bottom: 10px; display: flex; flex-wrap: wrap; max-width: calc(100% - 20px); gap: 4px 8px; align-items: center; font-size: 0.75rem; color: var(--muted); background: color-mix(in srgb, var(--panel) 85%, transparent); padding: 2px 6px; border-radius: 4px; pointer-events: none; }
 .bv-ramp { display: inline-block; width: 70px; height: 6px; border-radius: 3px; background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 18%, transparent), var(--accent)); }
