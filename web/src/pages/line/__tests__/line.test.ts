@@ -13,6 +13,7 @@ import { routeIndexOf } from '../figures';
 import { stitched } from '../stitch';
 import { pairsRound, runsUnder, tracePatch } from '../strand';
 import { chordsThrough, recipes, sameRecipes } from '../recipe';
+import { borderScene, stitchScene } from '../morph';
 
 const SUBSET = [1, 2, 8];
 const DIGITS = [0, 1, 0, 1, 0, 0, 0, 0, 0];
@@ -120,5 +121,32 @@ describe('recipes', () => {
   it('take every piece route whole: a step leaves by the mate of the crossing it enters', () => {
     const R = recipes(r7.states, 1, 2);
     for (const t of HEX_TYPES) for (const x of R[t]) for (const u of x.uses) expect(r7.states[1][u.type].mate[u.enter]).toBe(u.leave);
+  });
+});
+
+describe('what the animations morph between', () => {
+  const r7 = run(SUBSET, DIGITS, 5);
+  it('match one for one: level 3 onto level 1, and level 5 from level-3 pieces onto level 3 from level-1 pieces', () => {
+    const cs = new CircuitShapes('hex', SUBSET, DIGITS, 3, 1, true);
+    for (const t of HEX_TYPES) {
+      const a = borderScene(cs, r7.states, SUBSET, DIGITS, 3, t), b = borderScene(cs, r7.states, SUBSET, DIGITS, 1, t);
+      expect(a.outline).toHaveLength(b.outline.length);
+      expect(a.dots).toHaveLength(b.dots.length);
+      expect(a.routes).toEqual(b.routes);
+      expect(a.strands.every((s) => s.length > 0)).toBe(true);
+      const s5 = stitchScene(cs, r7.states, 3, t), s3 = stitchScene(cs, r7.states, 1, t);
+      expect(s5.pieces.map((p) => `${p.path}${p.type}`)).toEqual(s3.pieces.map((p) => `${p.path}${p.type}`));
+      expect(s5.pieces.map((p) => p.routes.length)).toEqual(s3.pieces.map((p) => p.routes.length));
+      expect(s5.walks).toHaveLength(s3.walks.length);
+    }
+  });
+
+  it('cut an outline at its corners: each edge starts at its corner', () => {
+    const cs = new CircuitShapes('hex', SUBSET, DIGITS, 3, 1, true);
+    const a = borderScene(cs, r7.states, SUBSET, DIGITS, 3, 'Delta');
+    for (let j = 0; j < 6; j++) {
+      const c = cs.corner(3, 'Delta', j), p = a.outline[j * 48];
+      expect(Math.hypot(c.x - p.x, c.y - p.y)).toBeLessThan(1e-6);
+    }
   });
 });

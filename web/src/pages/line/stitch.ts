@@ -17,7 +17,7 @@ export interface Stitched {
   readonly from: number;
   readonly to: number;
   readonly parent: Graph;
-  readonly pieces: readonly { readonly type: HexType; readonly path: readonly number[]; readonly outline: readonly Pt[]; readonly routes: readonly (readonly Pt[])[] }[];
+  readonly pieces: readonly { readonly type: HexType; readonly path: readonly number[]; readonly xform: Affine; readonly outline: readonly Pt[]; readonly routes: readonly (readonly Pt[])[] }[];
   /** Per parent route, in the order of `parent.routes`: its walk through the pieces' routes. */
   readonly walks: readonly (readonly Pt[])[];
   /** Closed walks through the pieces. */
@@ -41,6 +41,7 @@ export function stitched(cs: CircuitShapes, states: readonly State[], n: number,
     return {
       type: p.type,
       path: p.path,
+      xform: xforms[i],
       outline: g.outline.map((q) => transPt(xforms[i], q)),
       routes: g.routes.map(([a]) => curve(i, a)),
     };
