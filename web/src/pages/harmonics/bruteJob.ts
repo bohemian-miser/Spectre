@@ -7,15 +7,12 @@
  */
 import type { BornCircuit } from '../shapes/circuitShapes';
 import { CircuitShapes } from '../shapes/circuitShapes';
-import { climb, harmonicAbove, longestArc, type BruteResult, type ClimbResult, type Progress } from './bruteForce';
+import { climb, harmonicAbove, longestArc, type BruteResult, type ClimbResult, type Progress, type Report } from './bruteForce';
 import { bornOfFound, foundThumb, Placed, readRows, SparseRows, type Found } from './found';
-import { SparseRoutes, typeIndex, type Walked } from './sparseRoutes';
+import { SparseRoutes, TYPES, typeIndex, type Walked } from './sparseRoutes';
 
 /** The highest full table kept: the routes above it are worked out on demand. */
 export const BASE = 8;
-/** The highest level a strand is climbed to, and the routes a climb may keep. */
-export const CLIMB_CAP = 16;
-export const CLIMB_ROUTES = 10e6;
 
 export interface BruteCombo {
   readonly subset: readonly number[];
@@ -42,10 +39,11 @@ export class BruteEngine {
     return this.held.R;
   }
 
-  harmonic(job: BruteCombo, from: BruteFrom, onProgress?: (p: Progress) => void): BruteResult {
+  /** A's harmonic two levels up: every visit of A at the floor looked through, and when none closes the open walks climbed until they do. */
+  harmonic(job: BruteCombo, from: BruteFrom, onProgress?: Report): BruteResult {
     const a = from.circuit;
     const R = this.routes(job, from.addressed ? BASE : a.level - 1);
-    return harmonicAbove(R, from.addressed ? a : R.walked(a), { floor: from.floor, beyond: 2, onProgress });
+    return harmonicAbove(R, from.addressed ? a : R.walked(a), { floor: from.floor, beyond: Infinity, onProgress });
   }
 
   /** A circuit found, drawn small as `found.ts` draws one for the Harmonics page: at most `budget` points, closed. */
@@ -56,38 +54,51 @@ export class BruteEngine {
   }
 
   /**
-   * The longest arc of a level-`level` Delta (at most the base), climbed
-   * until its strand closes, reaches `CLIMB_CAP` or needs more than
-   * `CLIMB_ROUTES` routes; with routes of its own, let go after.
+   * The longest arc of a level-`level` supertile of `type` (within the full
+   * tables), climbed until its strand closes or ends in a tile; with routes
+   * of its own, let go after.
    */
-  climb(job: BruteCombo, level: number, onProgress?: (p: Progress) => void): ClimbResult {
-    const R = new SparseRoutes(this.routes(job, BASE).cs, BASE);
-    R.limit = CLIMB_ROUTES;
-    const n = Math.min(level, BASE);
-    const ti = typeIndex.get('Delta')!;
-    let at = n;
-    R.onWork = onProgress ? (w) => onProgress({ level: at, ...w }) : null;
-    return climb(R, n, ti, longestArc(R, n, ti), CLIMB_CAP, (l) => { at = l; });
+  climb(job: BruteCombo, level: number, type: string, onProgress?: Report): ClimbResult {
+    const cs = this.routes(job, BASE).cs;
+    const R = new SparseRoutes(cs, BASE);
+    const n = Math.max(0, Math.min(level, cs.maxLevel));
+    const ti = typeIndex.get(type);
+    if (ti === undefined) throw new Error(`no type ${type}; the types are ${TYPES.join(', ')}`);
+    return climb(R, n, ti, longestArc(R, n, ti), { onProgress });
   }
 }
 
 export type BruteMessage =
   | { type: 'harmonic'; job: BruteCombo; from: BruteFrom }
-  | { type: 'climb'; job: BruteCombo; level: number }
+  | { type: 'climb'; job: BruteCombo; level: number; tile: string }
   | { type: 'thumb'; job: BruteCombo; found: Found; budget: number };
 
+/** How often progress is posted at most, in milliseconds. */
+export const REPORT_EVERY = 250;
+
+/** A report that posts progress every `REPORT_EVERY` ms at most, the search drawn with it. */
+export function reporter(post: (p: Progress) => void, every = REPORT_EVERY): Report {
+  let last = 0;
+  return (p, draw) => {
+    const now = Date.now();
+    if (now - last < every) return;
+    last = now;
+    post({ ...p, picture: draw() });
+  };
+}
+
 /** Runs a message on an engine. */
-export function answer(engine: BruteEngine, m: BruteMessage, progress: (p: Progress) => void): BruteResult | ClimbResult | Float64Array {
+export function answer(engine: BruteEngine, m: BruteMessage, progress: Report): BruteResult | ClimbResult | Float64Array {
   if (m.type === 'harmonic') return engine.harmonic(m.job, m.from, progress);
-  if (m.type === 'climb') return engine.climb(m.job, m.level, progress);
+  if (m.type === 'climb') return engine.climb(m.job, m.level, m.tile, progress);
   return engine.thumb(m.job, m.found, m.budget);
 }
 
 export interface BruteClient {
   harmonic(job: BruteCombo, from: BruteFrom, onProgress: (p: Progress) => void): Promise<BruteResult>;
-  climb(job: BruteCombo, level: number, onProgress: (p: Progress) => void): Promise<ClimbResult>;
+  climb(job: BruteCombo, level: number, type: string, onProgress: (p: Progress) => void): Promise<ClimbResult>;
   thumb(job: BruteCombo, found: Found, budget: number): Promise<Float64Array>;
-  /** Ends the run under way (its promise rejects with `STOPPED`); the routes kept so far go with it. */
+  /** Ends every run under way or waiting (their promises reject with `STOPPED`); the routes kept so far go with them. */
   stop(): void;
   dispose(): void;
 }
@@ -114,6 +125,14 @@ export function createBruteClient(opts: { forceSync?: boolean } = {}): BruteClie
       if (e.data.result !== undefined) h.resolve(e.data.result);
       else h.reject(new Error(e.data.error ?? 'failed'));
     };
+    // an error the worker does not catch fails every run with it
+    w.onerror = (e: ErrorEvent) => {
+      const msg = e.message || 'the brute force worker stopped';
+      w.terminate();
+      if (worker === w) worker = null;
+      for (const h of waiting.values()) h.reject(new Error(msg));
+      waiting.clear();
+    };
     return (worker = w);
   };
   const ask = <T,>(message: BruteMessage, progress: (p: Progress) => void): Promise<T> => {
@@ -122,7 +141,7 @@ export function createBruteClient(opts: { forceSync?: boolean } = {}): BruteClie
         setTimeout(() => {
           try {
             engine ??= new BruteEngine();
-            resolve(answer(engine, message, progress) as T);
+            resolve(answer(engine, message, reporter(progress)) as T);
           } catch (err) {
             reject(err instanceof Error ? err : new Error(String(err)));
           }
@@ -137,7 +156,7 @@ export function createBruteClient(opts: { forceSync?: boolean } = {}): BruteClie
   };
   return {
     harmonic: (job, from, onProgress) => ask<BruteResult>({ type: 'harmonic', job, from }, onProgress),
-    climb: (job, level, onProgress) => ask<ClimbResult>({ type: 'climb', job, level }, onProgress),
+    climb: (job, level, type, onProgress) => ask<ClimbResult>({ type: 'climb', job, level, tile: type }, onProgress),
     thumb: (job, found, budget) => ask<Float64Array>({ type: 'thumb', job, found, budget }, () => undefined),
     stop() {
       worker?.terminate();
@@ -167,6 +186,6 @@ export function describeResult(r: BruteResult): string {
     return `Level ${r.level}: a ${nf(f.length)}-tile circuit of family ${f.family} closes in the ${r.type}, reading as the ${nf(fromLength)} two levels down ${reads}; ${f.key.includes('/') ? 'place' : 'word'} key ${f.key}. ${work}`;
   }
   const others = r.others.length ? ` Closed there instead: ${r.others.map((o) => `${nf(o.length)} (family ${o.family})`).join(', ')}.` : '';
-  const beyond = r.beyond.length ? ` The ${r.open} walks that leave it close at ${r.beyond.map((b) => `level ${b.level} (${nf(b.length)})`).join(', ')}.` : r.open ? ` ${nf(r.open)} walks leave it.` : '';
+  const beyond = r.beyond.length ? ` The ${nf(r.open)} walks that leave it close, climbed, at ${r.beyond.map((b) => `level ${b.level} (${nf(b.length)}, family ${b.family})`).join(', ')}.` : r.open ? ` ${nf(r.open)} walks leave it.` : '';
   return `Level ${r.level}: no circuit reading as the ${nf(fromLength)} closes in the ${r.type}.${others}${beyond} ${work}`;
 }

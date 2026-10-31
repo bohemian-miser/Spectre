@@ -15,9 +15,9 @@
  * views, the members' rows of visits level by level (`harmonics/rows.ts`),
  * hovering lighting a visit's expansion in every member, and the readings of
  * the circuit clicked lined up with its neighbour in the chain. Shift-clicking a second circuit
- * compares exactly those two. Past the level built, each chain's next member
- * can be brute-forced (`harmonics/BruteForce.tsx`); a member found joins its
- * chain like a built one. The address names the rule, combination, level
+ * compares exactly those two. Past the level built, each row's next member
+ * can be brute-forced (`harmonics/BruteForce.tsx`), the search drawn as it
+ * runs; a member found joins its chain like a built one. The address names the rule, combination, level
  * and selection (`?rule=023468&combo=140000001&level=7&c=7-103851`, with
  * `&with=…` for a pair), and the members found (`&bf=8-734256.10-36701253`).
  */
@@ -326,9 +326,12 @@ export default function HarmonicsPage(props: { forceSync?: boolean }): JSX.Eleme
               Each circuit sits in the column of the level it closes at. A <strong>family</strong> is every circuit through the same children of its birth
               supertile; a <strong>chain</strong> is a row of circuits linked as harmonics, two columns apart. A dashed ≈ cell is a circuit that reads as a
               chain&apos;s lowest member at the top levels only. Click a circuit to open its row; shift-click a second to compare the two. Past the level
-              built, a ? is a chain&apos;s next member, two levels above its last: Brute force follows the strands through that supertile, working out
-              only the routes they use, until one closes reading as the last member. The member found takes the cell, drawn as a built one, its border
-              dotted; hover it for how it was found. It opens with its chain like any circuit.
+              built, a ? is a row&apos;s next member, two levels above its last: Brute force follows the strands through that supertile, working out
+              only the routes they use, until one closes reading as the last member; it looks through every one of the member&apos;s lowest-level
+              visits, and when nothing closes it climbs the walks that leave the supertile until they do. Nothing stops it but Stop. Any number of
+              cells can be set going; they run in turn, and the search is drawn below the table as it goes: the supertile and its children, the
+              windows looked through, every arc followed. The member found takes the cell, drawn as a built one, its border dotted; hover it for how
+              it was found, or open its search. It opens with its chain like any circuit.
             </p>
             <div className="shapes-controls harm-link-controls">
               <label className="harm-threshold">
@@ -360,6 +363,7 @@ export default function HarmonicsPage(props: { forceSync?: boolean }): JSX.Eleme
               and detours is the exact rule. Each link shows its least share between the two; hover it for every level.
             </p>
             <CircuitTable r={shown!} thumbs={thumbs} selected={members} onPick={pick} linked={linked} beyond={brute.beyond} />
+            {brute.searchView}
             {brute.climbLine}
           </section>
           {focus && sel && selFocus >= 0 ? (
