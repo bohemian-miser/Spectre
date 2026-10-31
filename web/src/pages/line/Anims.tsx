@@ -6,19 +6,19 @@
  * onto the level-1 supertile of the same type, and the routes open out into
  * that supertile's strands. The numbers ride on their crossings throughout.
  *
- * `StitchAnim`: a level-5 supertile as its level-3 pieces, each outlined,
- * morphing into a level-3 supertile as its level-1 pieces: piece onto piece,
- * route onto route.
- *
- * Both step through the nine types in turn until a type is picked.
+ * `CycleAnim`: the nine level-3 supertiles reduced to the nine level-1
+ * supertiles, then put back together two levels up into the nine level-3
+ * supertiles they started as.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { HEX_TYPES, type HexType, type Pt } from '../../core';
 import { tileColor } from '../../lib/palette';
 import type { CircuitShapes } from '../shapes/circuitShapes';
 import type { State } from '../period/period';
-import { borderScene, stitchScene, type Box } from './morph';
-import { tracePatch } from './strand';
+import { borderScene, type Box } from './morph';
+import { drawFrame, durationOf, phaseAt, topRow } from '../period/draw';
+import { stepsOf } from '../period/scene';
+import { captionOf } from '../period/Animation';
 
 const W = 960;
 const H = 540;
@@ -236,93 +236,119 @@ export function LabelsAnim(props: { cs: CircuitShapes; states: readonly State[];
   );
 }
 
-const STITCH_PHASES = { holdA: 1.6, there: 2.2, holdB: 1.6, back: 2.2 };
-const STITCH_LOOP = Object.values(STITCH_PHASES).reduce((a, b) => a + b, 0);
+/** The reduction before the stitching: seconds per phase. */
+const REDUCE = { open: 1.0, hold: 1.2, pull: 1.0, shrink: 1.6 };
+const REDUCE_END = Object.values(REDUCE).reduce((a, b) => a + b, 0);
+const CW = 1080;
+const CH = 560;
 
-export function StitchAnim(props: { cs: CircuitShapes; states: readonly State[]; subset: readonly number[]; digits: readonly number[]; dark: boolean }): JSX.Element {
-  const types = useTypes();
+/**
+ * The whole cycle in one loop: the nine level-3 supertiles in a row, their
+ * strands pulled tight into routes, shrunk onto the nine level-1
+ * supertiles; then copies of those flown into the slots of the nine
+ * level-3 supertiles two levels up, the routes walked through them and
+ * pulled tight (`period/draw.ts`), which brings back the row it started
+ * from.
+ */
+export function CycleAnim(props: { cs: CircuitShapes; states: readonly State[]; subset: readonly number[]; digits: readonly number[]; dark: boolean }): JSX.Element {
   const [playing, setPlaying] = useState(true);
-  const [t, setT] = useLoop(STITCH_LOOP, playing, types.next);
+  const steps = useMemo(() => stepsOf(props.cs, props.states, 1, 2, 1), [props.cs, props.states]);
+  const total = REDUCE_END + durationOf(steps);
+  const [t, setT] = useLoop(total, playing, () => {});
   const canvas = useRef<HTMLCanvasElement | null>(null);
-  const scenes = useMemo(() => ({
-    a: stitchScene(props.cs, props.states, 3, types.type),
-    b: stitchScene(props.cs, props.states, 1, types.type),
-    tiles: tracePatch(props.subset, props.digits, 3, types.type).tiles,
-  }), [props.cs, props.states, props.subset, props.digits, types.type]);
+  const scenes = useMemo(() => HEX_TYPES.map((x) => ({
+    a: borderScene(props.cs, props.states, props.subset, props.digits, 3, x),
+    b: borderScene(props.cs, props.states, props.subset, props.digits, 1, x),
+  })), [props.cs, props.states, props.subset, props.digits]);
 
   useEffect(() => {
     const c = canvas.current;
     if (!c) return;
     const dpr = Math.min(2, window.devicePixelRatio || 1);
-    if (c.width !== Math.round(W * dpr)) { c.width = Math.round(W * dpr); c.height = Math.round(H * dpr); }
+    if (c.width !== Math.round(CW * dpr)) { c.width = Math.round(CW * dpr); c.height = Math.round(CH * dpr); }
     const ctx = c.getContext('2d');
     if (!ctx) return;
     const pal = paletteOf(c, props.dark);
-    ctx.setTransform(c.width / W, 0, 0, c.width / W, 0, 0);
+    if (t >= REDUCE_END) {
+      const u = t - REDUCE_END;
+      const at = phaseAt(steps, u);
+      drawFrame(ctx, steps, u, { ...pal, tile: (x) => tileColor(x) }, CW, CH, captionOf(steps[at.step], at.phase.key), false);
+      return;
+    }
+    ctx.setTransform(c.width / CW, 0, 0, c.width / CW, 0, 0);
     ctx.fillStyle = pal.bg;
-    ctx.fillRect(0, 0, W, H);
+    ctx.fillRect(0, 0, CW, CH);
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
-    const P = STITCH_PHASES;
-    const k = t < P.holdA ? 0 : t < P.holdA + P.there ? ease((t - P.holdA) / P.there) : t < P.holdA + P.there + P.holdB ? 1 : 1 - ease((t - P.holdA - P.there - P.holdB) / P.back);
-    const cell: Box = { x0: 0, y0: 36, x1: W, y1: H };
-    const A = scenes.a, B = scenes.b;
-    const fa = fitter(A.box, cell, 40), fb = fitter(B.box, cell, 40);
-    const at = (pa: readonly Pt[], pb: readonly Pt[]) => lerpPts(pa.map(fa), pb.map(fb), k);
-
-    A.pieces.forEach((pc, i) => {
-      const q = B.pieces[i];
-      path(ctx, at(pc.outline, q.outline), true);
-      ctx.globalAlpha = 0.28;
-      ctx.fillStyle = tileColor(pc.type);
+    const R = REDUCE;
+    const open = ease(t / R.open);
+    const pull = ease((t - R.open - R.hold) / R.pull);
+    const shrink = ease((t - R.open - R.hold - R.pull) / R.shrink);
+    const strands = open * (1 - pull);
+    const st = steps[0];
+    const top3 = topRow(st, CW, CH, 'parent'), top1 = topRow(st, CW, CH, 'lower');
+    HEX_TYPES.forEach((x, k) => {
+      const { a: A, b: B } = scenes[k];
+      const fa = top3.map(x), fb = top1.map(x);
+      const at = (pa: readonly Pt[], pb: readonly Pt[]) => lerpPts(pa.map(fa), pb.map(fb), shrink);
+      if (strands > 0.01) {
+        for (const tile of A.tiles) {
+          path(ctx, tile.outline.map(fa), true);
+          ctx.globalAlpha = 0.35 * strands;
+          ctx.fillStyle = tileColor(tile.type);
+          ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+      }
+      const outline = at(A.outline, B.outline);
+      path(ctx, outline, true);
+      ctx.globalAlpha = 0.25 * (1 - strands);
+      ctx.fillStyle = tileColor(x);
       ctx.fill();
-      ctx.globalAlpha = 0.85;
-      ctx.strokeStyle = pal.text;
-      ctx.lineWidth = 1.1;
-      ctx.stroke();
-      ctx.globalAlpha = 0.55;
+      ctx.globalAlpha = 1;
       ctx.strokeStyle = pal.muted;
       ctx.lineWidth = 0.8;
-      pc.routes.forEach((r, j) => { path(ctx, at(r, q.routes[j])); ctx.stroke(); });
-      ctx.globalAlpha = 1;
-    });
-    // the level-1 pieces' own tiles, coming in as the morph arrives at level 3
-    const tileAlpha = Math.max(0, (k - 0.6) / 0.4);
-    if (tileAlpha > 0) {
-      ctx.globalAlpha = 0.45 * tileAlpha;
-      ctx.strokeStyle = pal.muted;
-      ctx.lineWidth = 0.5;
-      for (const tile of scenes.tiles) { path(ctx, tile.outline.map(fb), true); ctx.stroke(); }
-      ctx.globalAlpha = 1;
-    }
-    A.walks.forEach((w, i) => {
-      path(ctx, at(w, B.walks[i]));
-      ctx.strokeStyle = pal.routes[i % pal.routes.length];
-      ctx.lineWidth = 2.6;
       ctx.stroke();
+      A.routes.forEach((_, i) => {
+        path(ctx, shrink > 0 ? at(A.tight[i], B.tight[i]) : lerpPts(A.tight[i].map(fa), A.strands[i].map(fa), strands));
+        ctx.strokeStyle = pal.routes[i % pal.routes.length];
+        ctx.lineWidth = 1.6;
+        ctx.stroke();
+      });
+      ctx.fillStyle = pal.text;
+      for (const d of at(A.dots, B.dots)) {
+        ctx.beginPath();
+        ctx.arc(d.x, d.y, 1.8, 0, 2 * Math.PI);
+        ctx.fill();
+      }
+      // type names where the stitching leaves them, fading as the row shrinks
+      ctx.globalAlpha = 1 - shrink;
+      ctx.font = '400 13px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'alphabetic';
+      ctx.fillText(x, (k + 0.5) * (CW / 9), top3.namesY);
+      ctx.globalAlpha = 1;
     });
-    path(ctx, at(A.outline, B.outline), true);
-    ctx.strokeStyle = pal.text;
-    ctx.lineWidth = 2.4;
-    ctx.stroke();
-    const dots = at(A.dots, B.dots);
-    const centre = { x: dots.reduce((s, p) => s + p.x, 0) / dots.length, y: dots.reduce((s, p) => s + p.y, 0) / dots.length };
-    labels(ctx, dots, centre, pal);
-
-    ctx.fillStyle = pal.text;
-    ctx.font = '600 16px system-ui, sans-serif';
+    ctx.font = '600 15px system-ui, sans-serif';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
-    const text = k === 0 ? `${types.type} at level 5, stitched from ${A.pieces.length} level-3 supertiles`
-      : k === 1 ? `${types.type} at level 3, stitched from ${B.pieces.length} level-1 supertiles`
-        : 'each level-3 piece onto the level-1 piece in its slot';
-    ctx.fillText(text, 10, 10);
-  }, [t, scenes, props.dark, types.type]);
+    ctx.fillStyle = pal.text;
+    const caption = shrink > 0 ? 'shrunk onto the nine level-1 supertiles: the same crossings, joined the same way'
+      : pull > 0 ? 'their strands pulled tight into routes'
+        : 'The nine level-3 supertiles and their strands';
+    ctx.fillText(caption, 8, 8);
+    ctx.font = '600 13px system-ui, sans-serif';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillText(shrink < 0.5 ? 'Level 3' : 'Level 1', 8, lerp(top3.titleY, top1.titleY, shrink));
+  }, [t, scenes, steps, props.dark]);
 
   return (
-    <div className="ln-anim" data-testid="ln-stitch-anim">
-      <canvas ref={canvas} className="ln-canvas" role="img" aria-label={`${types.type} at level 5 from its level-3 pieces, and at level 3 from its level-1 pieces`} />
-      <Controls type={types.type} pinned={types.pinned} playing={playing} onType={(x) => { types.pick(x); setT(0); }} onPlay={() => setPlaying((p) => !p)} t={t} duration={STITCH_LOOP} onScrub={(x) => { setPlaying(false); setT(x); }} />
+    <div className="ln-anim" data-testid="ln-cycle-anim">
+      <canvas ref={canvas} className="ln-canvas ln-canvas-wide" role="img" aria-label="The nine level-3 supertiles shrunk onto the nine level-1 supertiles, then put together two levels up into the nine level-3 supertiles again" />
+      <div className="pd-controls">
+        <button type="button" onClick={() => setPlaying((p) => !p)}>{playing ? 'Pause' : 'Play'}</button>
+        <input type="range" min={0} max={total} step={0.02} value={t} aria-label="Time" className="pd-scrub" onChange={(e) => { setPlaying(false); setT(Number(e.target.value)); }} />
+      </div>
     </div>
   );
 }

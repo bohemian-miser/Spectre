@@ -2,8 +2,8 @@
  * The infinite line: rule 128, combination 010100000 on the hexagon tiles.
  * The proof is shown more than told: every level-3 supertile has its
  * level-1 supertile's numbered crossings, joined the same way (`LabelsAnim`),
- * so a level-5 supertile is stitched from its level-3 pieces exactly as a
- * level-3 one is from its level-1 pieces (`StitchAnim`), and so on up. The
+ * and the nine level-1 supertiles put together two levels up give the nine
+ * level-3 supertiles back (`CycleAnim`), so it goes on at every level. The
  * borders come from `period/period.ts`, the strands drawn from the tiles
  * themselves (`line/strand.ts`).
  */
@@ -14,7 +14,7 @@ import { PAPER_URL } from '../lib/siteNav';
 import { CircuitShapes } from './shapes/circuitShapes';
 import { onBorder, run, sameBorder } from './period/period';
 import { lineOf } from './period/proof';
-import { LabelsAnim, StitchAnim } from './line/Anims';
+import { CycleAnim, LabelsAnim } from './line/Anims';
 import { PatchFigure, along, alongColours } from './line/figures';
 import { recipes, sameRecipes } from './line/recipe';
 import { pairsRound, runsUnder, tracePatch } from './line/strand';
@@ -125,17 +125,17 @@ export default function LinePage(): JSX.Element {
       </section>
 
       <section className="ln-section" aria-labelledby="ln-stitch">
-        <h2 id="ln-stitch">2. So the stitching repeats</h2>
+        <h2 id="ln-stitch">2. Put together, they come back</h2>
         <p>
-          A supertile is its children stitched together the same way at every level. So level 5, stitched from level-3 pieces, is level 3 stitched from level-1 pieces with bigger pieces: the same welds, and every route passes the same pieces in the same order{recipesRepeat ? '' : ' (not found here)'}. Level 5 therefore has level 3&rsquo;s labels, which are level 1&rsquo;s, and so on up every odd level; the even levels repeat level 2 the same way.
+          Shrink the nine level-3 supertiles to the nine level-1 supertiles, which have the same labels. Put copies of those together two levels up, as the substitution says, and follow each route through them: out come the nine level-3 supertiles again, with the labels they started with. So the same thing happens at every odd level, for ever{recipesRepeat ? ' (checked directly: from level 3 to 5 and 5 to 7 every route passes the same pieces in the same order as from 1 to 3)' : ''}.
         </p>
-        <StitchAnim cs={cs} states={r.states} subset={SUBSET} digits={DIGITS} dark={dark} />
+        <CycleAnim cs={cs} states={r.states} subset={SUBSET} digits={DIGITS} dark={dark} />
       </section>
 
       <section className="ln-section" aria-labelledby="ln-psi">
-        <h2 id="ln-psi">3. No circuit, and the Psi is one strand</h2>
+        <h2 id="ln-psi">3. No loops, so the Psi is one strand</h2>
         <p>
-          A circuit would close as a loop through some supertile&rsquo;s pieces, decided by the pieces&rsquo; labels, and those are the tiles&rsquo;, level 1&rsquo;s or level 2&rsquo;s. {circuits === 0 ? 'None closes at levels 1 to 3, so none ever does.' : `${circuits} close at levels 1 to 3.`} The Psi has two crossings at every level, so its tiles carry one strand from one to the other:
+          When the routes are followed through the pieces, a strand could close into a loop inside the new supertile instead of reaching its edge; the animation would draw it dashed. None appears, {circuits === 0 ? 'and since the step is the same every time, none ever does' : `but ${circuits} do`}. The Psi has two crossings, 0 and 1, at every level, so with no loops every chord inside a Psi lies on the one strand from 0 to 1:
         </p>
         <table className="bu-summary-table ln-table" data-testid="ln-psi-table">
           <thead><tr><th>Level</th><th className="num">Tiles</th><th className="num">Chords</th><th className="num">On the one strand</th></tr></thead>
