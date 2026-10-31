@@ -14,7 +14,7 @@ import type { Box } from '../../lib/viewport';
 import { Viewer, type Lines, type Mark, type ViewerApi } from '../buildup/Viewer';
 import type { PointSource } from '../buildup/viewer';
 import { linkBox, supertileAt } from './chainLink';
-import type { CircuitInfo, HarmonicsClient, HarmonicsResult } from './harmonicsJob';
+import type { HarmonicsClient, HarmonicsResult } from './harmonicsJob';
 import { SUPERTILE_CAP, VISIT_CAP, type Agreement, type ChainPicture, type Side } from './pairView';
 import { FOLDS, holds, lit, runLines, type ChainRows, type Fold, type Hovered, type Ranges, type Run, type RunAt, type RunLine, type Stop } from './rows';
 import { memberWidth, useStickyRow, useWidth } from './stickyRow';
@@ -166,7 +166,7 @@ export const percent = (s: number): string => (s >= 1 ? '100%' : `≈ ${tenths(s
 const tenths = (s: number): string => (Math.floor(s * 1000) / 10).toFixed(1);
 
 /** A link's similarity at every level compared. */
-function scoreTitle(s: Scored, circuits: readonly CircuitInfo[]): string {
+export function scoreTitle(s: Scored, circuits: readonly MemberInfo[]): string {
   const a = circuits[s.a],
     b = circuits[s.b];
   const lines = s.levels.map((l) =>
@@ -185,7 +185,11 @@ export function CircuitTable(props: {
   onPick: (i: number, shift: boolean) => void;
   /** The pairs linked, by `a-b`, with their scores. */
   linked?: ReadonlyMap<string, Scored> | null;
-  /** Columns above the level built, to `upTo`: each row's cells there (a `td` each), by its members (`members.join(' ')`) and level. */
+  /**
+   * Cells a row has besides its built members' (a `td` each), by its
+   * members (`members.join(' ')`) and level: above the level built, to
+   * `upTo`; at or below it, where the row's own cell is empty.
+   */
   beyond?: { readonly upTo: number; readonly cells: ReadonlyMap<string, ReadonlyMap<number, JSX.Element>> };
 }): JSX.Element {
   const { r, beyond } = props;
@@ -231,7 +235,8 @@ export function CircuitTable(props: {
                       {row.members.length > 1 ? 'chain' : alone ? `alone · top ${alone.top}` : 'alone'}
                     </th>
                     {levels.map((l) => {
-                      if (l > r.level) return <Fragment key={l}>{beyond?.cells.get(row.members.join(' '))?.get(l) ?? <td />}</Fragment>;
+                      const extra = beyond?.cells.get(row.members.join(' '))?.get(l);
+                      if (l > r.level) return <Fragment key={l}>{extra ?? <td />}</Fragment>;
                       const here = row.members.filter((i) => r.circuits[i].level === l);
                       if (!here.length) {
                         // the links across this column: a member a level below to one a level above
@@ -249,6 +254,7 @@ export function CircuitTable(props: {
                             </td>
                           );
                         }
+                        if (extra) return <Fragment key={l}>{extra}</Fragment>;
                         return near && r.circuits[near.a].level === l ? (
                           <td
                             key={l}

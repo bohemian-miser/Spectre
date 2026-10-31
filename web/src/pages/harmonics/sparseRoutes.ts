@@ -310,6 +310,42 @@ export class SparseRoutes {
     return this.address(n - 1, step >>> 3) * 8 + (step & 7);
   }
 
+  /**
+   * The deep address of crossing a of a level-n supertile: `childDeep * 8 +
+   * slot` at every level down to a level-0 place. It names the crossing
+   * whatever level the full tables stop at; `fromDeep` takes it back.
+   */
+  deep(n: number, a: number): number {
+    if (n === 0) return a;
+    const step = n <= this.base ? this.cs.levels[n].Delta.level.under[a] : a;
+    const s = step % 8;
+    const out = this.deep(n - 1, (step - s) / 8) * 8 + s;
+    if (!Number.isSafeInteger(out)) throw new Error(`a level-${n} crossing has no deep address counted exactly`);
+    return out;
+  }
+
+  /** The address of the level-n crossing with deep address d. */
+  fromDeep(n: number, d: number): number {
+    if (n === 0) return d;
+    const s = d % 8;
+    const step = this.fromDeep(n - 1, (d - s) / 8) * 8 + s;
+    if (n > this.base) return step;
+    const p = this.placeOf(n, step);
+    if (p < 0) throw new Error(`deep address ${d} is no crossing of a level-${n} supertile`);
+    return p;
+  }
+
+  /** A child crossing of a level-n supertile (`address * 8 + slot`) as a deep one, and back. */
+  deepStep(n: number, step: number): number {
+    const s = step % 8;
+    return this.deep(n - 1, (step - s) / 8) * 8 + s;
+  }
+
+  fromDeepStep(n: number, d: number): number {
+    const s = d % 8;
+    return this.fromDeep(n - 1, (d - s) / 8) * 8 + s;
+  }
+
   /** A circuit closed in the full tables, its child crossings as addresses. */
   walked(c: Walked): Walked {
     if (c.level - 1 <= this.base) return c;

@@ -203,6 +203,18 @@
   box-shadow: inset 0 0 0 1px var(--g1);
   background: color-mix(in srgb, var(--g1) 8%, transparent);
 }
+/* A member found by the brute force: dotted. */
+.harm-cell.is-found {
+  border-style: dotted;
+  border-width: 1.5px;
+}
+.harm-glyph-pick.is-found {
+  border: 1.5px dotted var(--line, #8884);
+  border-radius: 6px;
+}
+.harm-cell.is-found:disabled {
+  cursor: progress;
+}
 .harm-cell-near {
   color: var(--muted);
   border: 1px dashed var(--line, #8884);
@@ -539,4 +551,9 @@ button.harm-run {
 .harm-rows {
   content-visibility: auto;
   contain-intrinsic-size: auto 1500px;
+}
+/* The page's column, and each section's, takes the screen's width, not its widest row's: the table and the members' row scroll inside it. */
+.harm-page,
+.harm-page section {
+  grid-template-columns: minmax(0, 1fr);
 }

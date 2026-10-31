@@ -4,7 +4,8 @@
  * member before, those holding a visit the neighbouring member's reading
  * does not share marked.
  */
-import { mul, transPt, type Affine, type Pt } from '../../core';
+import { mul, transPt, type Affine, type HexType, type Pt } from '../../core';
+import { outlineOf } from '../buildup/deep';
 import type { BornCircuit, CircuitShapes } from '../shapes/circuitShapes';
 import { alignReadings, cancelBacktracksAt, expandVisits, pathOf, sameCyclic, topVisits, type Reading, type VisitColumns } from './readings';
 
@@ -78,14 +79,25 @@ export function visitsWithFrames(cs: CircuitShapes, c: BornCircuit, level: numbe
   return { v, xform };
 }
 
+/** A member's visits at a level with each supertile's frame, and its line there: a built circuit's from the tables, unless given. */
+export interface Placing {
+  placed(level: number): { v: VisitColumns; xform: readonly Affine[] };
+  line(level: number): Float64Array;
+}
+
+const fromTables = (cs: CircuitShapes, c: BornCircuit): Placing => ({
+  placed: (level) => visitsWithFrames(cs, c, level),
+  line: (level) => lineOf(cs.shape(c, level)),
+});
+
 /** One side of the picture: the circuit's supertiles at `level`, those holding an unshared token (by `shared`, per token of its reading) marked. */
-export function sideAt(cs: CircuitShapes, c: BornCircuit, level: number, reading: Reading | undefined, shared: readonly boolean[] | null, kept?: Int32Array): Side {
+export function sideAt(cs: CircuitShapes, c: BornCircuit, level: number, reading: Reading | undefined, shared: readonly boolean[] | null, kept?: Int32Array, placing = fromTables(cs, c)): Side {
   const visits = reading?.raw ?? Infinity;
   if (visits > VISIT_CAP) return { level, visits, count: 0, supertiles: [], circuit: new Float64Array(0) };
-  const { v, xform } = visitsWithFrames(cs, c, level);
+  const { v, xform } = placing.placed(level);
   const keep = shared ? kept ?? cancelBacktracksAt(v.id, v.tiles).keep : null;
   const { count, supertiles } = supertilesOf(cs, v, xform, c.level - level, unsharedIds(v, keep, shared));
-  return { level, visits: v.type.length, count, supertiles, circuit: lineOf(cs.shape(c, level)) };
+  return { level, visits: v.type.length, count, supertiles, circuit: placing.line(level) };
 }
 
 /** The supertiles holding a kept visit (`keep`, indices into the visits) that `shared` (per kept visit) says the other reading lacks. */
@@ -115,7 +127,7 @@ export function supertilesOf(
   const supertiles: Supertile[] = [];
   for (const [id, i] of first) {
     if (supertiles.length === SUPERTILE_CAP) break;
-    const pts = cs.outline(v.level, v.type[i]);
+    const pts = outlinePts(cs, v.level, v.type[i]);
     const outline = new Float64Array(2 * pts.length);
     pts.forEach((p, j) => {
       const q = transPt(xform[i], p);
@@ -127,6 +139,13 @@ export function supertilesOf(
     supertiles.push(matched?.has(id) || to !== undefined ? { ...s, ...(matched?.has(id) ? { matched: true } : {}), ...(to !== undefined ? { link: to } : {}) } : s);
   }
   return { count: first.size, supertiles };
+}
+
+/** A level-n supertile's outline in its frame: `CircuitShapes.outline` within the tables, above them through its descendants' corners three levels down (`buildup/deep.ts`). */
+export function outlinePts(cs: CircuitShapes, n: number, type: string): Pt[] {
+  if (n <= cs.maxLevel) return cs.outline(n, type);
+  const xy = outlineOf(cs, n, type as HexType, 3);
+  return Array.from({ length: xy.length / 2 - 1 }, (_, j) => ({ x: xy[2 * j], y: xy[2 * j + 1] }));
 }
 
 /** Points as x, y pairs, at most `CIRCUIT_POINTS` of them, evenly spaced. */
@@ -143,7 +162,11 @@ export function lineOf(all: readonly Pt[]): Float64Array {
  * a visit the member below does not share are marked (the lowest member's,
  * against the member above).
  */
-export function chainPicture(cs: CircuitShapes, members: readonly { circuit: BornCircuit; readings: readonly Reading[]; keep?: (level: number) => Int32Array }[], k: number): ChainPicture {
+export function chainPicture(
+  cs: CircuitShapes,
+  members: readonly { circuit: BornCircuit; readings: readonly Reading[]; keep?: (level: number) => Int32Array; placing?: Placing }[],
+  k: number,
+): ChainPicture {
   const base = Math.min(...members.map((m) => m.circuit.level));
   const reading = (j: number) => members[j].readings.find((r) => r.level === k + members[j].circuit.level - base);
   const steps: Agreement[] = [];
@@ -158,7 +181,7 @@ export function chainPicture(cs: CircuitShapes, members: readonly { circuit: Bor
   }
   const sides = members.map((m, j) => {
     const level = k + m.circuit.level - base;
-    return sideAt(cs, m.circuit, level, reading(j), shared[j], m.keep && reading(j) && reading(j)!.raw <= VISIT_CAP ? m.keep(level) : undefined);
+    return sideAt(cs, m.circuit, level, reading(j), shared[j], m.keep && reading(j) && reading(j)!.raw <= VISIT_CAP ? m.keep(level) : undefined, m.placing);
   });
   return { k, sides, steps };
 }

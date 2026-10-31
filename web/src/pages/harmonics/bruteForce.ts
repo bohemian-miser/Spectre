@@ -176,6 +176,8 @@ export interface Harmonic {
   /** The lowest level of A from which every level up to A's top reads the same in it, and whether the readings stopped there. */
   readonly agreed: number;
   readonly limited: boolean;
+  /** Its steps as deep addresses (`SparseRoutes.deepStep`), to read it against tables that stop at another level. */
+  readonly deep: readonly number[];
 }
 
 export interface Closure {
@@ -289,7 +291,7 @@ export function harmonicAbove(R: SparseRoutes, a: Walked, opts: BruteOptions = {
       const rb = readWalked(R, b, floor + 2, maxRaw);
       const g = agreement(ra, a.level, rb);
       if (isHarmonic(g.floor, a.level, floor) || (g.limited && g.floor <= a.level - 2)) {
-        found.push({ ...b, family: fam, key: '', agreed: g.floor, limited: g.limited });
+        found.push({ ...b, family: fam, key: '', agreed: g.floor, limited: g.limited, deep: [] });
       } else others.set(other, { level: top, type: a.type, length: w.length, family: fam, agreed: g.floor });
     }
   }
@@ -314,7 +316,7 @@ export function harmonicAbove(R: SparseRoutes, a: Walked, opts: BruteOptions = {
     floor,
     level: top,
     type: a.type,
-    found: best ? { ...best, key } : null,
+    found: best ? { ...best, key, deep: best.steps.map((s) => R.deepStep(top, s)) } : null,
     windows,
     tried,
     others: [...others.values()],

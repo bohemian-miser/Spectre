@@ -10,10 +10,12 @@ import type { Box } from '../../lib/viewport';
 import { CircuitShapes, distinctCircuits, familyOf, type BornCircuit } from '../shapes/circuitShapes';
 import { Geometry } from '../buildup/viewer';
 import { chainRows, CircuitRows, type ChainRows, type Fold } from './rows';
-import { chainPicture, SUPERTILE_CAP, VISIT_CAP, type ChainPicture } from './pairView';
+import { chainPicture, CIRCUIT_POINTS, SUPERTILE_CAP, VISIT_CAP, type ChainPicture } from './pairView';
 import { chainsOf, closestInFamily, harmonicLinks, nearLinks, type Chain, type Link, type Near } from './chains';
 import { alignReadings, extraRuns, readDown, sameCyclic, type Alignment, type Reading } from './readings';
-import { scoreAll, type Scored } from './similarity';
+import { scoreAll, scorePair, type Scored } from './similarity';
+import { bornOfFound, firstTileOf, foundKey, foundDetail, foundThumb, Placed, readRows, SparseRows, type Found } from './found';
+import { SparseRoutes } from './sparseRoutes';
 import { BreakdownStore, type BreakdownSets } from './breakdownStore';
 import type { Side } from './pairView';
 
@@ -59,6 +61,16 @@ export interface HarmonicsResult {
 const MAX_POINTS = 3000;
 /** Levels are read downwards until one has more raw visits than this; that one is the last read. */
 const LAST_VISITS = 250000;
+/** Routes a circuit found above the build may work out to be read. */
+const FOUND_ROUTES = 4e6;
+
+/** A circuit found above the build, taken into the engine (`found.ts`). */
+interface FoundMember {
+  readonly born: BornCircuit;
+  readonly rows: SparseRows;
+  readonly placed: Placed;
+  readonly info: CircuitInfo;
+}
 
 export class HarmonicsEngine {
   /** The renormalisation, built up level by level. */
@@ -83,6 +95,9 @@ export class HarmonicsEngine {
   next(): void {
     const t0 = Date.now();
     this.cs.extend(this.cs.maxLevel + 1);
+    this.routes = null;
+    this.foundBy.clear();
+    this.extra = [];
     this.seconds = (Date.now() - t0) / 1000;
   }
 
@@ -129,21 +144,72 @@ export class HarmonicsEngine {
     return this.circuits.list;
   }
 
+  /** The routes above the level built, for circuits found there. */
+  private routes: SparseRoutes | null = null;
+  private readonly foundBy = new Map<string, FoundMember>();
+  /** The circuits found, in the order last given: circuit `list().length + j` is the j-th. */
+  private extra: FoundMember[] = [];
+
+  /**
+   * Circuits found above the build (`found.ts`), taken in after the last
+   * result's circuits (the j-th is circuit `circuits.length + j` in every
+   * other request): each read from the level below its birth down, as a
+   * built circuit is, and drawn small as a built one is, `budget` points at
+   * most.
+   */
+  found(list: readonly Found[], budget: number): { info: CircuitInfo; stop: number; pts: Float64Array }[] {
+    if (!this.routes) {
+      this.routes = new SparseRoutes(this.cs, this.cs.maxLevel);
+      this.routes.limit = FOUND_ROUTES;
+    }
+    const R = this.routes;
+    this.extra = list.map((f) => {
+      const key = foundKey(f);
+      const hit = this.foundBy.get(key);
+      if (hit) return hit;
+      const born = bornOfFound(R, f);
+      const rows = new SparseRows(this.cs, R, born);
+      const { readings, readFrom } = readRows(rows, LAST_VISITS);
+      const first = firstTileOf(this.cs, R, born);
+      const info: CircuitInfo = { level: f.level, type: f.type, length: f.length, family: f.family, readings, readFrom, outlines: [], drawnFrom: f.level, first };
+      const m = { born, rows, placed: new Placed(this.cs, rows), info };
+      this.foundBy.set(key, m);
+      return m;
+    });
+    return this.extra.map((m) => ({ info: m.info, ...foundThumb(m.placed, m.info.readings, budget) }));
+  }
+
+  /** A circuit found, by its index after the last result's circuits; null for a built one. */
+  private extraOf(ci: number): FoundMember | null {
+    const n = this.list().length;
+    if (ci < n) return null;
+    const m = this.extra[ci - n];
+    if (!m) throw new Error(`no circuit ${ci}`);
+    return m;
+  }
+
+  /** A circuit of the last result, or one found after them. */
+  private infoOf(ci: number): CircuitInfo {
+    return this.extraOf(ci)?.info ?? this.list()[ci];
+  }
+
   /** Circuits of the last result (a chain's members, by level) over their supertiles, the lowest at level k. */
   picture(members: readonly number[], k: number, fold: Fold = 'fixpoint'): ChainPicture {
-    const list = this.list();
-    const born = this.circuits!.born;
-    if (fold === 'fixpoint') return chainPicture(this.cs, members.map((i) => ({ circuit: born[i], readings: list[i].readings })), k);
+    const placing = (i: number) => {
+      const m = this.extraOf(i);
+      return m ? { placed: (l: number) => ({ v: m.rows.visits(l), xform: m.placed.frame(l) }), line: (l: number) => thinLine(m.placed.line(l)) } : undefined;
+    };
+    if (fold === 'fixpoint') return chainPicture(this.cs, members.map((i) => ({ circuit: this.bornOf(i), readings: this.infoOf(i).readings, placing: placing(i) })), k);
     // the readings under another fold, at the level drawn, from the rows
-    const base = Math.min(...members.map((i) => born[i].level));
+    const base = Math.min(...members.map((i) => this.bornOf(i).level));
     return chainPicture(
       this.cs,
       members.map((i) => {
-        const level = k + born[i].level - base;
-        const raw = list[i].readings.find((r) => r.level === level)?.raw ?? Infinity;
+        const level = k + this.bornOf(i).level - base;
+        const raw = this.infoOf(i).readings.find((r) => r.level === level)?.raw ?? Infinity;
         const rows = this.circuitRows(i);
         const readings = raw <= VISIT_CAP ? [{ level, raw, tokens: rows.fold(level, fold).tokens, tiles: [] }] : [];
-        return { circuit: born[i], readings, keep: (l: number) => rows.fold(l, fold).keep };
+        return { circuit: this.bornOf(i), readings, keep: (l: number) => rows.fold(l, fold).keep, placing: placing(i) };
       }),
       k,
     );
@@ -152,13 +218,15 @@ export class HarmonicsEngine {
   private geometry: Geometry | null = null;
   private readonly rowsOf = new Map<BornCircuit, CircuitRows>();
 
-  /** The born circuit behind circuit `ci` of the last result. */
+  /** The born circuit behind circuit `ci` of the last result (or found after them). */
   bornOf(ci: number): BornCircuit {
     this.list();
-    return this.circuits!.born[ci];
+    return this.extraOf(ci)?.born ?? this.circuits!.born[ci];
   }
 
   private circuitRows(ci: number): CircuitRows {
+    const m = this.extraOf(ci);
+    if (m) return m.rows;
     const c = this.bornOf(ci);
     let r = this.rowsOf.get(c);
     if (!r) this.rowsOf.set(c, (r = new CircuitRows(this.cs, c)));
@@ -172,7 +240,7 @@ export class HarmonicsEngine {
 
   /** Raw visits of circuit `ci` at a level below its birth: read, or carried on from the two lowest levels read by their ratio. */
   private visitsAt(ci: number, level: number): number {
-    const rs = this.list()[ci].readings;
+    const rs = this.infoOf(ci).readings;
     const at = (k: number) => rs.find((r) => r.level === k)?.raw;
     const got = at(level);
     if (got !== undefined) return got;
@@ -188,6 +256,8 @@ export class HarmonicsEngine {
    * `level` itself it is thinned to `budget` points when over, and `capped`.
    */
   detail(ci: number, level: number, view: Box | null, budget: number): { stop: number; pts: Float64Array; capped: boolean } {
+    const m = this.extraOf(ci);
+    if (m) return foundDetail(m.placed, m.info.readings, level, view, budget);
     const c = this.bornOf(ci);
     const g = (this.geometry ??= new Geometry(this.cs));
     let share = 1;
@@ -274,8 +344,18 @@ export class HarmonicsEngine {
 
   /** Circuits `ai` and `bi` of the last result lined up, B's level k + offset against A's level k. */
   compare(ai: number, bi: number): Comparison {
-    const circuits = this.list();
-    return { a: ai, b: bi, ...lineUp(circuits[ai], circuits[bi]) };
+    return { a: ai, b: bi, ...lineUp(this.infoOf(ai), this.infoOf(bi)) };
+  }
+
+  /** How alike circuit `ai` and circuit `bi`, two levels above it, read under a fold (`similarity.ts`), as `similarities` scores the built pairs. */
+  score(ai: number, bi: number, fold: Fold = 'fixpoint'): Scored {
+    const tokens = (i: number, level: number): readonly string[] | null => {
+      const r = this.infoOf(i).readings.find((x) => x.level === level);
+      if (!r) return null;
+      if (fold === 'fixpoint') return r.tokens;
+      return r.raw <= VISIT_CAP ? this.circuitRows(i).fold(level, fold).tokens : null;
+    };
+    return { a: ai, b: bi, ...scorePair(this.infoOf(ai), (w, l) => tokens(w === 'a' ? ai : bi, l)) };
   }
 
   /** The circuits, their chains and extra runs up to the level built; the seconds count the level's build and its reading. */
@@ -346,7 +426,9 @@ export type WorkerMessage =
   | { type: 'similarities'; fold: Fold }
   | { type: 'breakdowns'; cs: readonly number[] }
   | { type: 'breakdownPicture'; c: number; k: number; index: number }
-  | { type: 'born'; c: number };
+  | { type: 'born'; c: number }
+  | { type: 'found'; list: readonly Found[]; budget: number }
+  | { type: 'score'; a: number; b: number; fold: Fold };
 
 export interface HarmonicsClient {
   /** Starts a combination afresh. */
@@ -372,6 +454,10 @@ export interface HarmonicsClient {
   breakdownPicture(c: number, k: number, index: number): Promise<Side>;
   /** The born circuit behind a circuit of the last result: its supertile and the child crossings it enters. */
   born(c: number): Promise<BornCircuit>;
+  /** Circuits found above the build, taken in after the last result's circuits: read, with their thumbnails. */
+  found(list: readonly Found[], budget: number): Promise<{ info: CircuitInfo; stop: number; pts: Float64Array }[]>;
+  /** How alike a circuit and one two levels above it read under a fold. */
+  score(a: number, b: number, fold: Fold): Promise<Scored>;
   dispose(): void;
 }
 
@@ -458,12 +544,33 @@ export function createHarmonicsClient(opts: { forceSync?: boolean } = {}): Harmo
       if (!worker) return sync(() => need().bornOf(c));
       return ask({ type: 'born', c });
     },
+    found(list, budget) {
+      if (!worker) return sync(() => need().found(list, budget));
+      return ask({ type: 'found', list, budget });
+    },
+    score(a, b, fold) {
+      if (!worker) return sync(() => need().score(a, b, fold));
+      return ask({ type: 'score', a, b, fold });
+    },
     dispose() {
       worker?.terminate();
       worker = null;
       waiting.clear();
     },
   };
+}
+
+/** An open line through at most `CIRCUIT_POINTS` of its points, evenly spaced, as `pairView.ts`'s `lineOf` draws one. */
+function thinLine(xy: Float64Array): Float64Array {
+  const m = xy.length / 2;
+  if (m <= CIRCUIT_POINTS) return xy;
+  const out = new Float64Array(2 * CIRCUIT_POINTS);
+  for (let j = 0; j < CIRCUIT_POINTS; j++) {
+    const i = Math.floor((j * m) / CIRCUIT_POINTS);
+    out[2 * j] = xy[2 * i];
+    out[2 * j + 1] = xy[2 * i + 1];
+  }
+  return out;
 }
 
 /** A closed line thinned to about `n` of its points, evenly spaced, still closed. */

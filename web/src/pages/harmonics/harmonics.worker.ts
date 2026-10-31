@@ -36,7 +36,11 @@ scope.onmessage = (event) => {
                         ? engine.breakdownPicture(m.c, m.k, m.index)
                         : m.type === 'born'
                           ? engine.bornOf(m.c)
-                          : engine.result();
+                          : m.type === 'found'
+                            ? engine.found(m.list, m.budget)
+                            : m.type === 'score'
+                              ? engine.score(m.a, m.b, m.fold)
+                              : engine.result();
     scope.postMessage({ id: m.id, result });
   } catch (err) {
     scope.postMessage({ id: m.id, error: err instanceof Error ? err.message : String(err) });
