@@ -23,7 +23,9 @@
  */
 import { buildSystem, mul, transPt, type Affine, type HexType, type MetaNode, type Pt } from '../../core';
 import { HarmonicsEngine, type HarmonicsResult } from '../harmonics/harmonicsJob';
-import { alignReadings, cancelBacktracksAt, expandVisits, token, type VisitColumns } from '../harmonics/readings';
+import { alignReadings, cancelBacktracksAt, cancelOpen, expandVisits, token, type VisitColumns } from '../harmonics/readings';
+
+export { cancelOpen };
 import { visitsWithFrames } from '../harmonics/pairView';
 import { middleOf, placeOfPath, topReading, type TopReading } from '../buildup/deep';
 import { bornAbove, predictHarmonic, wordKey } from '../foundations/foundations';
@@ -156,21 +158,6 @@ function placeIndex(cs: CircuitShapes, n: number, step: number): number {
   const under = Object.values(cs.levels[n])[0].level.under;
   for (let p = 0; p < under.length; p++) if (under[p] === step) return p;
   return -1;
-}
-
-/**
- * Cancels backtracks along an open sequence of visits: a visit, a visit to
- * another supertile and a return (A B A) become A, until none is left, the
- * ends kept where they are. Returns the visits kept.
- */
-export function cancelOpen(ids: ArrayLike<number>): Int32Array {
-  const keep = new Int32Array(ids.length);
-  let top = 0;
-  for (let i = 0; i < ids.length; i++) {
-    if (top >= 2 && ids[keep[top - 2]] === ids[i]) top--;
-    else keep[top++] = i;
-  }
-  return keep.slice(0, top);
 }
 
 /** An arc read at a level: its raw visits, and the visits kept once backtracks are cancelled (absent past `RAW_CAP`). */

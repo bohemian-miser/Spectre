@@ -99,6 +99,21 @@ export function cancelBacktracksAt(ids: ArrayLike<number | string>, tiles: Array
   return { keep: at.slice(head, top), tiles: sum.slice(head, top) };
 }
 
+/**
+ * Cancels backtracks along an open sequence of visits: a visit, a visit to
+ * another supertile and a return (A B A) become A, until none is left, the
+ * ends kept where they are. Returns the visits kept.
+ */
+export function cancelOpen(ids: ArrayLike<number>): Int32Array {
+  const keep = new Int32Array(ids.length);
+  let top = 0;
+  for (let i = 0; i < ids.length; i++) {
+    if (top >= 2 && ids[keep[top - 2]] === ids[i]) top--;
+    else keep[top++] = i;
+  }
+  return keep.slice(0, top);
+}
+
 /** `cancelBacktracksAt` on visits. */
 export function cancelBacktracks(visits: readonly Visit[]): Visit[] {
   const { keep, tiles } = cancelBacktracksAt(
