@@ -1827,7 +1827,7 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
       Math.hypot(hit.to.x - seed[0], hit.to.y - seed[1]);
     // Flipping only swaps which end the walk leaves from; it is the same
     // chord, so it keeps the same tile.
-    const oriented: ChordEnd = flip ? { at: hit.to, to: hit.at, leafType: hit.leafType } : hit;
+    const oriented: ChordEnd = flip ? { ...hit, at: hit.to, to: hit.at } : hit;
     const fresh = startTrail(oriented, chordsRef.current?.rows ?? TRANSITION_TYPES);
     trailRef.current = fresh;
     armColouring(fresh);

@@ -44,8 +44,11 @@ export function sharedLevel(a: TileId, b: TileId, chain: readonly ChainStep[]): 
   return 0;
 }
 
-/** Levels the colouring tells apart; deeper ones take the last colour. */
-export const LEVEL_SPAN = 24;
+/**
+ * Levels the colouring tells apart, 25 degrees of hue each; deeper ones
+ * take the last colour, and the legend says which level that is.
+ */
+export const LEVEL_SPAN = 12;
 
 /** Ink for a shared level, 0..1 RGB: the site's rainbow over the levels; grey for a tile whose level is not known. */
 export function levelRgb(level: number): [number, number, number] {
