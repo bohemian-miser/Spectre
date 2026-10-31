@@ -100,7 +100,17 @@ export interface Monster {
   readonly late: boolean;
   /** At least `GIANT` tiles. */
   readonly giant: boolean;
+  /** The members of its chain after it, by level: tiles, and how each is known (`ChainMember`); none for a nugget. */
+  readonly chain: [level: number, length: number, mark: ChainMember['mark']][];
+  /** Shares its chain is forecast to close above the top level built: its circuits closing again, and its members to come; null where not forecast. */
+  readonly again: number | null;
+  readonly toCome: number | null;
+  /** Why its members to come are not forecast, or null. */
+  readonly stop: Stop | null;
 }
+
+/** A late monster is explained when it starts a chain: its harmonics are built or predicted, and forecast on. */
+export const explained = (m: Monster): boolean => m.chain.length > 0;
 
 export interface PageIndex {
   readonly rule: string;
@@ -162,6 +172,209 @@ export function pageCombo(d: SweepFile): PageCombo {
 
 const sum = (xs: readonly number[]): number => xs.reduce((a, b) => a + b, 0);
 
+/** Forecast columns the account chart draws past the top level built, before the limit. */
+export const AHEAD = 4;
+/** Two members close again alike when their ratios, level by level from their first closing, agree to this share. */
+const ALIKE = 0.05;
+/** Shares below this are too coarse (rounded to 1e-7) to take a ratio of. */
+const FINE = 1e-5;
+
+/** Why a chain's members to come are not forecast. */
+export type Stop = 'one' | 'split' | 'gap' | 'ended' | 'loop' | 'growing' | 'again';
+
+export const STOP_TEXT: Record<Stop, string> = {
+  one: 'one member, so no ratio between members',
+  split: 'two members of one order first close at different levels, and their shares are counted together',
+  gap: 'its last two members first close more than two levels apart',
+  ended: 'a member due within the build did not close: the chain has ended',
+  loop: "its last member's harmonic is a circuit seen lower down: the chain closes into itself",
+  growing: "its members' shares do not fall",
+  again: 'its closings again do not yet fall at the top level',
+};
+
+/**
+ * A chain (or a nugget) fitted for the forecast. A member's shares, level by
+ * level from where it first closes, are its predecessor's times one ratio:
+ * the harmonic closes in as many places per supertile as its parent two
+ * levels down, its tiles grow by a factor that settles, and a supertile's
+ * chords by the growth squared. The ratio is taken age by age over the last
+ * two members; the earlier ones check it.
+ */
+export interface ChainFit {
+  readonly root: number;
+  readonly nugget: boolean;
+  /** Its members (a nugget: itself) by order: the level each first closes at and its share there. */
+  readonly members: readonly { readonly order: number; readonly level: number; readonly share: number }[];
+  /** A member's share over its predecessor's, two levels down; null when not fitted. */
+  readonly ratio: number | null;
+  /** How the closings again of the members to come fall a level, far from their first; null when not fitted. */
+  readonly again: number | null;
+  /** Why its members to come are not forecast, or null. */
+  readonly stop: Stop | null;
+  /** Shares closing above the top level built: its circuits closing again there, and its members to come with their closings again. */
+  readonly closingAgain: number;
+  readonly toCome: number;
+}
+
+/** The shares one circuit (or, past the forecast columns, a chain's members to come) closes level by level, to the last forecast column, and beyond it in all. */
+interface Line {
+  readonly root: number;
+  readonly cls: 0 | 1 | 2;
+  /** Harmonic order; Infinity for the members past the forecast columns. */
+  readonly order: number;
+  /** The level it first closes at; Infinity past the forecast columns. */
+  readonly born: number;
+  /** Per level 0 to the last forecast column: built to the top, forecast past it. */
+  readonly values: number[];
+  readonly rest: number;
+}
+
+export interface Projection {
+  /** The top level built, and the last forecast column. */
+  readonly top: number;
+  readonly ahead: number;
+  readonly lines: readonly Line[];
+  readonly fits: readonly ChainFit[];
+  /** The share of chords on circuits in the limit: closed by the top level, and forecast above it. */
+  readonly limit: number;
+}
+
+/** A ratio by age (levels since first closing): known to `known`, `far` past it (null when it cannot be fitted). */
+interface ByAge {
+  at(age: number): number | null;
+  readonly known: number;
+  readonly far: number | null;
+}
+
+/** A share carried on from `age` by its ratios: the next `steps` levels, then the rest in all; null when the ratios cannot carry it. */
+function carry(v: number, age: number, r: ByAge, steps: number): { values: number[]; rest: number } | null {
+  if (!(v > 0)) return { values: new Array<number>(steps).fill(0), rest: 0 };
+  const values: number[] = [];
+  for (let s = 0; s < steps; s++) {
+    const q = r.at(++age);
+    if (q === null) return null;
+    values.push((v *= q));
+  }
+  let rest = 0;
+  while (age < r.known) {
+    v *= r.at(++age)!;
+    rest += v;
+  }
+  if (v > 0) {
+    if (r.far === null || r.far >= 1) return null;
+    rest += (v * r.far) / (1 - r.far);
+  }
+  return { values, rest };
+}
+
+/**
+ * The forecast past the top level built. Each circuit closes again by the
+ * ratios of its own shares, level by level from where it first closed, and
+ * where it has none yet (or no more), of its predecessors' that fall alike;
+ * past every level known, by the last ratio. Each chain fitted goes on with
+ * members two levels apart, each `ratio` times its predecessor's share where
+ * it first closes and closing again as its predecessors do.
+ */
+export function project(p: PageCombo, ahead = AHEAD): Projection {
+  const T = p.tails.length - 1;
+  const H = T + ahead;
+  const byRoot = new Map<number, ShareRow[]>();
+  for (const r of p.shares) if (r[3].some((v) => v > 0)) (byRoot.get(r[0]) ?? byRoot.set(r[0], []).get(r[0])!).push(r);
+  const lines: Line[] = [];
+  const fits: ChainFit[] = [];
+  for (const [root, rows] of byRoot) {
+    rows.sort((a, b) => a[2] - b[2]);
+    const born = rows.map((r) => r[3].findIndex((v) => v > 0));
+    const v = (i: number, age: number): number => rows[i][3][born[i] + age];
+    const oldest = (i: number): number => T - born[i];
+    /** Row i's ratio at an age it has, 0 once it has stopped closing. */
+    const own = (i: number, age: number): number => (v(i, age - 1) > 0 ? v(i, age) / v(i, age - 1) : 0);
+    const alike = (k: number, i: number): boolean => {
+      for (let a = 1; a <= Math.min(oldest(k), oldest(i)); a++) {
+        if (v(k, a - 1) < FINE || v(i, a - 1) < FINE) continue;
+        const x = own(k, a), y = own(i, a);
+        if (Math.abs(x - y) > ALIKE * Math.max(x, y)) return false;
+      }
+      return true;
+    };
+    const byAge = (i: number): ByAge => {
+      const src = [i];
+      for (let k = i - 1; k >= 0 && alike(k, i); k--) src.push(k);
+      const deep = src.reduce((a, b) => (oldest(b) > oldest(a) ? b : a));
+      const known = oldest(deep);
+      const far = known >= 2 ? own(deep, known) : v(deep, known) > 0 ? null : 0;
+      return {
+        known,
+        far,
+        at: (age) => {
+          for (const k of src) if (age <= oldest(k)) return own(k, age);
+          return far;
+        },
+      };
+    };
+    let closingAgain = 0;
+    rows.forEach((r, i) => {
+      const c = carry(r[3][T], oldest(i), byAge(i), H - T) ?? { values: new Array<number>(H - T).fill(0), rest: 0 };
+      closingAgain += sum(c.values) + c.rest;
+      lines.push({ root, cls: r[1], order: r[2], born: born[i], values: [...r[3], ...c.values], rest: c.rest });
+    });
+    const nugget = rows[0][1] === 0;
+    const members = rows.map((r, i) => ({ order: r[2], level: born[i], share: r[3][born[i]] }));
+    const n = rows.length;
+    let stop: Stop | null = null;
+    let ratio: number | null = null;
+    let again: number | null = null;
+    let toCome = 0;
+    if (!nugget) {
+      const levelsOf = new Map<number, Set<number>>();
+      for (const h of p.harm) if (h[4] === root) (levelsOf.get(h[7]) ?? levelsOf.set(h[7], new Set()).get(h[7])!).add(h[1]);
+      const last = members[n - 1];
+      const lastId = last.order === 0 ? root : p.harm.find((h) => h[4] === root && h[7] === last.order && h[1] === last.level)?.[0];
+      const verdict = lastId === undefined ? undefined : p.pred.find((x) => x[0] === lastId);
+      if ([...levelsOf.values()].some((s) => s.size > 1)) stop = 'split';
+      else if (n < 2) stop = 'one';
+      else if (last.level - members[n - 2].level !== 2) stop = 'gap';
+      else if (last.level + 2 <= T || verdict?.[2] === 'none' || (verdict?.[2] === 'forecast' && !verdict[3])) stop = 'ended';
+      else if (verdict?.[2] === 'built') stop = 'loop';
+      else {
+        let logs = 0, count = 0;
+        for (let a = 0; a <= Math.min(oldest(n - 1), oldest(n - 2)); a++) {
+          if (a > 0 && (v(n - 1, a) < FINE || v(n - 2, a) < FINE)) continue;
+          logs += Math.log(v(n - 1, a) / v(n - 2, a));
+          count++;
+        }
+        ratio = Math.exp(logs / count);
+        const r = byAge(n - 1);
+        const whole = carry(1, 0, r, 0);
+        again = r.far;
+        if (ratio >= 1) stop = 'growing';
+        else if (!whole) stop = 'again';
+        else {
+          const each = 1 + whole.rest;
+          let k = 1;
+          for (; last.level + 2 * k <= H; k++) {
+            const at = last.level + 2 * k;
+            const s = last.share * ratio ** k;
+            const c = carry(s, 0, r, H - at)!;
+            const values = new Array<number>(at).fill(0);
+            values.push(s, ...c.values);
+            lines.push({ root, cls: 2, order: last.order + k, born: at, values, rest: c.rest });
+            toCome += s + sum(c.values) + c.rest;
+          }
+          const rest = ((last.share * ratio ** k) / (1 - ratio)) * each;
+          lines.push({ root, cls: 2, order: Infinity, born: Infinity, values: new Array<number>(H + 1).fill(0), rest });
+          toCome += rest;
+        }
+      }
+    } else {
+      again = byAge(0).far;
+    }
+    fits.push({ root, nugget, members, ratio: stop ? (stop === 'growing' ? ratio : null) : ratio, again, stop, closingAgain, toCome });
+  }
+  const forecast = sum(lines.map((l) => sum(l.values.slice(T + 1)) + l.rest));
+  return { top: T, ahead: H, lines, fits, limit: 1 - p.tails[T] + forecast };
+}
+
 /** How the account chart splits the closed chords. */
 export type Split = 'class' | 'order' | 'chain';
 
@@ -169,54 +382,132 @@ export interface Segment {
   /** Stable key: the colour follows it. */
   readonly key: string;
   readonly label: string;
-  /** Per level 0 to levels + 1, the share of chords on circuits of this segment closed at or below the level (tails: on tails). */
+  /** Per column (`Account.columns`), the share of chords in this segment. */
   readonly values: number[];
+  /** A part of the tails: chords that close later, or that nothing known accounts for. */
+  readonly tail?: boolean;
+}
+
+export interface Account {
+  /** The levels 0 to the top built, then `AHEAD` levels forecast, then the limit (level null). */
+  readonly columns: readonly { readonly level: number | null; readonly forecast: boolean }[];
+  readonly segments: Segment[];
+  readonly projection: Projection;
+  /** How far the forecast takes more than the tails hold (0 when it does not); the tails' parts are scaled down to fit. */
+  readonly over: number;
 }
 
 /** The largest chains shown on their own when splitting by chain; the rest are grouped. */
 export const CHAINS_SHOWN = 6;
 
 /**
- * The account chart's segments, bottom up, ending with tails: nuggets, then
- * the chains split by class (foundational, harmonics), by harmonic order, or
- * by chain (the largest `CHAINS_SHOWN`, then the others), then circuits at
- * the level above the build that no known circuit explains, then tails. At
- * every level they add up to 1, but for rounding.
+ * The account chart's segments, bottom up: nuggets, then the chains split
+ * by class (foundational, harmonics), by harmonic order, or by chain (the
+ * largest `CHAINS_SHOWN`, then the others), then circuits at the level
+ * above the build that no known circuit explains; then the tails, split by
+ * what becomes of them: chords that circuits known by the top level close
+ * later (in the build, or forecast past it), and the rest, not accounted
+ * for. Without a split the tails that close later are told apart by when
+ * their circuit first closes: a foundational circuit found later, a
+ * harmonic of a chain known by the column, or a circuit closing again. Past
+ * the top level the closings are forecast, and the last column is the
+ * limit. In every column the segments add up to 1, but for rounding.
  */
-export function segments(p: PageCombo, split: Split): Segment[] {
-  const n = p.tails.length;
-  const cum = (rows: readonly ShareRow[]): number[] => {
-    const out = new Array<number>(n).fill(0);
+export function account(p: PageCombo, split: Split): Account {
+  const pr = project(p);
+  const T = pr.top;
+  const H = pr.ahead;
+  const columns = [...Array.from({ length: H + 1 }, (_, m) => ({ level: m, forecast: m > T })), { level: null, forecast: true }];
+  const C = columns.length;
+  const total = (l: Line): number => sum(l.values) + l.rest;
+  const cum = (l: Line): number[] => {
+    const out: number[] = [];
     let acc = 0;
-    for (let m = 0; m < n; m++) {
-      acc += sum(rows.map((r) => r[3][m]));
-      out[m] = acc;
-    }
+    for (let m = 0; m <= H; m++) out.push((acc += l.values[m]));
+    out.push(total(l));
     return out;
   };
-  const nuggets = p.shares.filter((r) => r[1] === 0);
-  const chains = p.shares.filter((r) => r[1] !== 0);
-  const out: Segment[] = [{ key: 'nugget', label: 'Nuggets', values: cum(nuggets) }];
-  if (split === 'class') {
-    out.push({ key: 'found', label: 'Chains: foundational', values: cum(chains.filter((r) => r[1] === 1)) });
-    out.push({ key: 'harm', label: 'Chains: harmonics', values: cum(chains.filter((r) => r[1] === 2)) });
-  } else if (split === 'order') {
-    const top = Math.max(0, ...chains.map((r) => r[2]));
-    for (let o = 0; o <= top; o++) out.push({ key: `order${Math.min(o, ORDERS - 1)}-${o}`, label: o === 0 ? 'Foundational (order 0)' : `Harmonic order ${o}`, values: cum(chains.filter((r) => r[2] === o)) });
-  } else {
-    const roots = [...new Set(chains.map((r) => r[0]))];
-    const total = (root: number): number => sum(chains.filter((r) => r[0] === root).map((r) => sum(r[3])));
-    roots.sort((a, b) => total(b) - total(a));
-    roots.slice(0, CHAINS_SHOWN).forEach((root, i) => {
-      const f = p.found.find((x) => x[0] === root);
-      out.push({ key: `chain${i}`, label: f ? `Chain of ${f[2].toLocaleString('en-US')} at level ${f[1]}` : `Chain ${root}`, values: cum(chains.filter((r) => r[0] === root)) });
+  const sumOf = (ls: readonly Line[], f: (l: Line) => number[]): number[] => {
+    const out = new Array<number>(C).fill(0);
+    for (const l of ls) f(l).forEach((x, c) => (out[c] += x));
+    return out;
+  };
+  const closed = (ls: readonly Line[]) => sumOf(ls, cum);
+  const later = (ls: readonly Line[], keep: (l: Line, m: number) => boolean = () => true) =>
+    sumOf(ls, (l) => {
+      const c = cum(l);
+      const t = total(l);
+      return c.map((x, i) => (i < C - 1 && keep(l, i) ? t - x : 0));
     });
-    if (roots.length > CHAINS_SHOWN) out.push({ key: 'chains-other', label: 'Other chains', values: cum(chains.filter((r) => roots.indexOf(r[0]) >= CHAINS_SHOWN)) });
+  const lines = pr.lines;
+  const nuggets = lines.filter((l) => l.cls === 0);
+  const chains = lines.filter((l) => l.cls !== 0);
+  const foundAt = new Map<number, number>();
+  for (const l of lines) foundAt.set(l.root, Math.min(foundAt.get(l.root) ?? Infinity, l.born));
+  const name = (root: number): string => {
+    const f = p.found.find((x) => x[0] === root);
+    return f ? `chain of ${f[2].toLocaleString('en-US')} at level ${f[1]}` : `chain ${root}`;
+  };
+  const closedSegs: Segment[] = [{ key: 'nugget', label: 'Nuggets', values: closed(nuggets) }];
+  const tailSegs: Segment[] = [];
+  if (split === 'class') {
+    closedSegs.push({ key: 'found', label: 'Chains: foundational', values: closed(chains.filter((l) => l.cls === 1)) });
+    closedSegs.push({ key: 'harm', label: 'Chains: harmonics', values: closed(chains.filter((l) => l.cls === 2)) });
+  } else if (split === 'order') {
+    const shown = chains.filter((l) => l.born <= H);
+    const top = Math.max(0, ...shown.map((l) => l.order));
+    for (let o = 0; o <= top; o++) {
+      const ls = chains.filter((l) => l.order === o || (o === top && l.order > top));
+      const up = o === top && chains.some((l) => l.order > top);
+      closedSegs.push({ key: `order${Math.min(o, ORDERS - 1)}-${o}`, label: o === 0 ? 'Foundational (order 0)' : `Harmonic order ${o}${up ? ' and up' : ''}`, values: closed(ls) });
+    }
   }
-  out.push({ key: 'unseen', label: 'Unseen circuits', values: (() => { let a = 0; return p.unseen.map((x) => (a += x)); })() });
-  out.push({ key: 'tails', label: 'Tails', values: [...p.tails] });
-  return out;
+  if (split === 'chain') {
+    const roots = [...new Set(chains.map((l) => l.root))];
+    const built = (root: number): number => sum(p.shares.filter((r) => r[0] === root && r[1] !== 0).map((r) => sum(r[3])));
+    roots.sort((a, b) => built(b) - built(a));
+    roots.slice(0, CHAINS_SHOWN).forEach((root, i) => {
+      const ls = chains.filter((l) => l.root === root);
+      const label = name(root);
+      closedSegs.push({ key: `chain${i}`, label: label[0].toUpperCase() + label.slice(1), values: closed(ls) });
+      tailSegs.push({ key: `later-chain${i}`, label: `Tails: ${label}`, values: later(ls), tail: true });
+    });
+    const others = chains.filter((l) => roots.indexOf(l.root) >= CHAINS_SHOWN);
+    if (others.length) {
+      closedSegs.push({ key: 'chains-other', label: 'Other chains', values: closed(others) });
+      tailSegs.push({ key: 'later-chains-other', label: 'Tails: other chains', values: later(others), tail: true });
+    }
+    tailSegs.unshift({ key: 'later-nugget', label: 'Tails: nuggets', values: later(nuggets), tail: true });
+  } else {
+    tailSegs.push({ key: 'later-found', label: 'Tails: foundational circuits found later', values: later(lines, (l, m) => foundAt.get(l.root)! > m), tail: true });
+    tailSegs.push({ key: 'later-next', label: 'Tails: next harmonics of known chains', values: later(chains, (l, m) => foundAt.get(l.root)! <= m && l.born > m), tail: true });
+    tailSegs.push({ key: 'later-again', label: 'Tails: known circuits closing again', values: later(lines, (l, m) => l.born <= m), tail: true });
+  }
+  let u = 0;
+  const unseen = [...p.unseen.map((x) => (u += x)), ...new Array<number>(C - p.unseen.length).fill(u)];
+  closedSegs.push({ key: 'unseen', label: 'Unseen circuits', values: unseen });
+  // the tails' parts that close later, and the rest; past the top, the closings forecast there come out of the tails at the top
+  const unaccounted = new Array<number>(C).fill(0);
+  let over = 0;
+  for (let c = 0; c < C; c++) {
+    const past = c > T ? closedSegs.map((s) => s.values[c] - s.values[T]) : [];
+    const known = sum(tailSegs.map((s) => s.values[c])) + sum(past);
+    const left = p.tails[Math.min(c, T)] - known;
+    if (left >= 0) unaccounted[c] = left;
+    else {
+      // the forecast takes more than the tails hold: its parts scaled to fit
+      over = Math.max(over, -left);
+      const k = known > 0 ? Math.max(0, p.tails[Math.min(c, T)]) / known : 0;
+      for (const s of tailSegs) s.values[c] *= k;
+      closedSegs.forEach((s, i) => c > T && (s.values[c] = s.values[T] + past[i] * k));
+    }
+  }
+  tailSegs.push({ key: 'unaccounted', label: 'Tails: not accounted for', values: unaccounted, tail: true });
+  return { columns, segments: [...closedSegs, ...tailSegs], projection: pr, over };
 }
+
+/** The account's segments alone. */
+export const segments = (p: PageCombo, split: Split): Segment[] => account(p, split).segments;
 
 /** Harmonic orders with a colour of their own; higher orders share the last. */
 export const ORDERS = 5;
@@ -441,9 +732,28 @@ export function flagsOf(p: PageCombo): Flag[] {
 
 /** The monsters of a combination: its foundational circuits at floor + 4 or later, or giants. */
 export function monstersOf(p: PageCombo): Monster[] {
-  return p.found
-    .filter(([, level, length]) => isLate(level, p.floor) || isGiant(length))
-    .map(([id, level, length, families]) => ({ combo: p.combo, floor: p.floor, id, level, length, families, late: isLate(level, p.floor), giant: isGiant(length) }));
+  const list = p.found.filter(([, level, length]) => isLate(level, p.floor) || isGiant(length));
+  if (!list.length) return [];
+  const fits = project(p).fits;
+  return list.map(([id, level, length, families]) => {
+    const fit = fits.find((x) => x.root === id);
+    const chain = chainOf(p, id).flatMap((st) => st.members.map((m): [number, number, ChainMember['mark']] => [st.level, m.length, m.mark]));
+    const r6 = (x: number): number => Math.round(x * 1e6) / 1e6;
+    return {
+      combo: p.combo,
+      floor: p.floor,
+      id,
+      level,
+      length,
+      families,
+      late: isLate(level, p.floor),
+      giant: isGiant(length),
+      chain,
+      again: fit ? r6(fit.closingAgain) : null,
+      toCome: fit && !fit.nugget && !fit.stop ? r6(fit.toCome) : null,
+      stop: fit?.stop ?? null,
+    };
+  });
 }
 
 /** A combination's row of the index. */
@@ -481,6 +791,8 @@ export interface ChainMember {
    * other: the walk predicted is another circuit's harmonic.
    */
   readonly mark: 'built' | 'confirmed' | 'missed' | 'predicted' | 'other';
+  /** Predicted: the member two levels down it is predicted from. */
+  readonly from?: number;
 }
 
 export interface ChainStep {
@@ -521,7 +833,7 @@ export function chainOf(p: PageCombo, id: number): ChainStep[] {
       const x = predFrom.get(t);
       if (!x || !x[3] || (x[2] !== 'forecast' && x[2] !== 'other')) continue;
       const level = x[1] + 2;
-      (after.get(level) ?? after.set(level, []).get(level)!).push({ id: null, length: x[3], mark: x[2] === 'forecast' ? 'predicted' : 'other' });
+      (after.get(level) ?? after.set(level, []).get(level)!).push({ id: null, length: x[3], mark: x[2] === 'forecast' ? 'predicted' : 'other', from: t });
     }
     for (const [level, members] of [...after].sort((a, b) => a[0] - b[0])) steps.push({ level, members });
     break;

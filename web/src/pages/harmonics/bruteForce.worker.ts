@@ -1,6 +1,6 @@
-/** Brute-force worker: keeps a combination's routes and answers `harmonic` and `climb` (`bruteJob.ts`), posting progress as it goes. */
+/** Brute-force worker: keeps a combination's routes and answers `harmonic`, `climb` and `thumb` (`bruteJob.ts`), posting progress as it goes. */
 
-import { BruteEngine, type BruteMessage } from './bruteJob';
+import { answer, BruteEngine, type BruteMessage } from './bruteJob';
 import type { Progress } from './bruteForce';
 
 type Message = BruteMessage & { id: number };
@@ -22,7 +22,7 @@ scope.onmessage = (event) => {
     scope.postMessage({ id: m.id, progress: p });
   };
   try {
-    const result = m.type === 'harmonic' ? engine.harmonic(m.job, m.from, progress) : engine.climb(m.job, m.level, progress);
+    const result = answer(engine, m, progress);
     scope.postMessage({ id: m.id, result });
   } catch (err) {
     scope.postMessage({ id: m.id, error: err instanceof Error ? err.message : String(err) });

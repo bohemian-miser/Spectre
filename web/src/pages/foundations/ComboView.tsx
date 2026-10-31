@@ -9,23 +9,32 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { TileTypeId } from '../../core';
 import { explorerCircuitHref } from '../shapes/explorerLink';
 import { AccountChart } from './AccountChart';
-import { ChainRow } from './ChainRow';
+import type { ChainBrute } from './bruteChains';
+import { bruteLevels, ChainRow } from './ChainRow';
 import { Glyph } from './Glyph';
 import { TailsPanel } from './TailsPanel';
 import { buildupHref, harmonicsHref, nf, pct, slots, subsetOf } from './data';
 import type { DrawClient, Drawing } from './drawings';
-import { chainOf, isGiant, isLate, provenNote, type ChainStep, type FoundRow, type PageCombo } from './pageData';
+import { ChainLine, kindOf } from './MonstersTable';
+import { chainOf, isLate, monstersOf, provenNote, type ChainStep, type FoundRow, type Monster, type PageCombo } from './pageData';
 
-function Card(props: { data: PageCombo; f: FoundRow; chain: readonly ChainStep[]; drawing: Drawing | undefined; selected: boolean; onSelect: () => void }): JSX.Element {
-  const { data, f, drawing, chain } = props;
+function Card(props: {
+  data: PageCombo;
+  f: FoundRow;
+  chain: readonly ChainStep[];
+  drawing: Drawing | undefined;
+  selected: boolean;
+  onSelect: () => void;
+  monster: Monster | undefined;
+  brute: ChainBrute;
+}): JSX.Element {
+  const { data, f, drawing, chain, monster } = props;
   const [id, level, length, families, , copies, types, , places, nugget] = f;
   const fams = [...new Set(families.split(' '))];
   const base = import.meta.env.BASE_URL;
   // the Harmonics page read to the chain's last member built, opened on this circuit's chain
   const built = chain.filter((st) => st.members.some((m) => m.id !== null));
   const harmonicsLevel = built.length ? built[built.length - 1].level : Math.min(level + 2, data.levels);
-  const late = isLate(level, data.floor);
-  const giant = isGiant(length);
   const ref = useRef<HTMLElement>(null);
   useEffect(() => {
     if (props.selected) ref.current?.scrollIntoView?.({ block: 'nearest' });
@@ -47,7 +56,7 @@ function Card(props: { data: PageCombo; f: FoundRow; chain: readonly ChainStep[]
   return (
     <article
       ref={ref}
-      className={`fd-card${props.selected ? ' fd-card-on' : ''}${late || giant ? ' fd-card-monster' : ''}`}
+      className={`fd-card${props.selected ? ' fd-card-on' : ''}${monster ? ' fd-card-monster' : ''}`}
       onClick={props.onSelect}
       data-testid="fd-card"
       data-circuit={id}
@@ -56,9 +65,13 @@ function Card(props: { data: PageCombo; f: FoundRow; chain: readonly ChainStep[]
       <div className="fd-card-text">
         <div className="fd-card-head">
           <strong>{nf(length)} tiles</strong>
-          {late || giant ? (
-            <span className="fd-monster" title={[late ? `starts a chain at level ${level}, floor + ${level - data.floor}` : '', giant ? 'at least 100,000 tiles' : ''].filter(Boolean).join('; ')}>
-              {late && giant ? 'late, giant' : late ? 'late' : 'giant'}
+          {monster ? (
+            <span
+              className={`fd-monster${monster.late && !monster.chain.length ? ' fd-monster-open' : ''}`}
+              title={[monster.late ? `first closes at level ${level}, floor + ${level - data.floor}` : '', monster.giant ? 'at least 100,000 tiles' : ''].filter(Boolean).join('; ')}
+              data-testid="fd-card-kind"
+            >
+              {kindOf(monster)}
             </span>
           ) : null}
         </div>
@@ -77,6 +90,11 @@ function Card(props: { data: PageCombo; f: FoundRow; chain: readonly ChainStep[]
           )}
         </div>
         {chain.length ? null : <div className="fd-muted">{nugget ? 'nugget: no harmonic' : 'no harmonic built'}</div>}
+        {monster?.late ? (
+          <div className="fd-card-chain" data-testid="fd-card-chain">
+            <ChainLine m={monster} found={props.brute.foundOn(data.rule, data.combo, id)} brief />
+          </div>
+        ) : null}
         <div className="fd-links" onClick={(e) => e.stopPropagation()}>
           {explorer ? <a href={explorer}>Explorer</a> : <span className="fd-muted">Explorer</span>}
           <a href={harmonicsHref(base, data.combo, harmonicsLevel, data.rule, { level, length })}>Harmonics</a>
@@ -87,7 +105,7 @@ function Card(props: { data: PageCombo; f: FoundRow; chain: readonly ChainStep[]
   );
 }
 
-export function ComboView(props: { data: PageCombo; client: DrawClient; circuit: number | null; onCircuit: (id: number | null) => void }): JSX.Element {
+export function ComboView(props: { data: PageCombo; client: DrawClient; brute: ChainBrute; circuit: number | null; onCircuit: (id: number | null) => void }): JSX.Element {
   const { data } = props;
   const [drawings, setDrawings] = useState<{ combo: string; byId: Map<number, Drawing> } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -112,6 +130,7 @@ export function ComboView(props: { data: PageCombo; client: DrawClient; circuit:
   const chains = useMemo(() => new Map(data.found.map((f) => [f[0], chainOf(data, f[0])] as const)), [data]);
   const L = data.levels;
   const note = useMemo(() => provenNote(data), [data]);
+  const monsters = useMemo(() => new Map(monstersOf(data).map((m) => [m.id, m] as const)), [data]);
   return (
     <div className="fd-combo" data-testid="fd-combo">
       <header>
@@ -151,11 +170,23 @@ export function ComboView(props: { data: PageCombo; client: DrawClient; circuit:
         {error ? <p className="fd-muted">Could not draw: {error}</p> : null}
         {byLevel.map(([level, list]) => {
           const card = (f: FoundRow) => (
-            <Card key={f[0]} data={data} f={f} chain={chains.get(f[0])!} drawing={byId?.get(f[0])} selected={props.circuit === f[0]} onSelect={() => props.onCircuit(props.circuit === f[0] ? null : f[0])} />
+            <Card
+              key={f[0]}
+              data={data}
+              f={f}
+              chain={chains.get(f[0])!}
+              drawing={byId?.get(f[0])}
+              selected={props.circuit === f[0]}
+              onSelect={() => props.onCircuit(props.circuit === f[0] ? null : f[0])}
+              monster={monsters.get(f[0])}
+              brute={props.brute}
+            />
           );
           const rows = list.filter((f) => chains.get(f[0])!.length);
           const single = list.filter((f) => !chains.get(f[0])!.length);
-          const columns = [...new Set(rows.flatMap((f) => chains.get(f[0])!.map((st) => st.level)))].sort((a, b) => a - b);
+          const columns = [
+            ...new Set(rows.flatMap((f) => [...chains.get(f[0])!.map((st) => st.level), ...bruteLevels(data, f[0], chains.get(f[0])!, props.brute).flatMap((b) => b.levels)])),
+          ].sort((a, b) => a - b);
           return (
             <div key={level} className="fd-level">
               <h4>
@@ -164,7 +195,17 @@ export function ComboView(props: { data: PageCombo; client: DrawClient; circuit:
               {rows.length ? (
                 <div className="fd-chains" style={{ ['--fd-cols' as string]: columns.length }}>
                   {rows.map((f) => (
-                    <ChainRow key={`${data.combo}/${f[0]}`} data={data} chain={chains.get(f[0])!} columns={columns} client={props.client} card={card(f)} />
+                    <ChainRow
+                      key={`${data.combo}/${f[0]}`}
+                      data={data}
+                      root={f[0]}
+                      chain={chains.get(f[0])!}
+                      columns={columns}
+                      client={props.client}
+                      card={card(f)}
+                      brute={props.brute}
+                      rootDrawing={byId?.get(f[0])}
+                    />
                   ))}
                 </div>
               ) : null}

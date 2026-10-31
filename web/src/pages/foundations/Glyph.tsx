@@ -1,7 +1,7 @@
-/** A circuit drawn (`drawings.ts`) as a closed outline fitted to a square; a blank square while it is being drawn. */
+/** A circuit drawn (`drawings.ts`, or `harmonics/found.ts` for one found above the build) as a closed outline fitted to a square; a blank square while it is being drawn. */
 import type { Drawing } from './drawings';
 
-export function Glyph(props: { drawing: Drawing | undefined; size: number }): JSX.Element {
+export function Glyph(props: { drawing: Pick<Drawing, 'xy'> | undefined; size: number }): JSX.Element {
   const d = props.drawing;
   if (!d) return <div className="fd-glyph fd-glyph-wait" style={{ width: props.size, height: props.size }} />;
   const xy = d.xy;

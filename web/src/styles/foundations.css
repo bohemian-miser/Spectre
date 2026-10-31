@@ -426,10 +426,77 @@
   fill: var(--fd-tails);
   background: var(--fd-tails);
 }
+.fd-seg-unaccounted {
+  fill: var(--fd-tails);
+  background: var(--fd-tails);
+}
+/* tails that known circuits close later: their circuit's colour, faded */
+.fd-seg-later-found {
+  fill: color-mix(in srgb, var(--fd-c5) 30%, var(--bg));
+  background: color-mix(in srgb, var(--fd-c5) 30%, var(--bg));
+}
+.fd-seg-later-next {
+  fill: color-mix(in srgb, var(--fd-chain) 32%, var(--bg));
+  background: color-mix(in srgb, var(--fd-chain) 32%, var(--bg));
+}
+.fd-seg-later-again {
+  fill: color-mix(in srgb, var(--fd-found) 50%, var(--bg));
+  background: color-mix(in srgb, var(--fd-found) 50%, var(--bg));
+}
+.fd-seg-later-nugget {
+  fill: color-mix(in srgb, var(--fd-nugget) 30%, var(--bg));
+  background: color-mix(in srgb, var(--fd-nugget) 30%, var(--bg));
+}
+.fd-seg-later-chains-other {
+  fill: color-mix(in srgb, var(--fd-other) 30%, var(--bg));
+  background: color-mix(in srgb, var(--fd-other) 30%, var(--bg));
+}
+.fd-seg-later-chain0 {
+  fill: color-mix(in srgb, var(--fd-c0) 32%, var(--bg));
+  background: color-mix(in srgb, var(--fd-c0) 32%, var(--bg));
+}
+.fd-seg-later-chain1 {
+  fill: color-mix(in srgb, var(--fd-c1) 32%, var(--bg));
+  background: color-mix(in srgb, var(--fd-c1) 32%, var(--bg));
+}
+.fd-seg-later-chain2 {
+  fill: color-mix(in srgb, var(--fd-c2) 32%, var(--bg));
+  background: color-mix(in srgb, var(--fd-c2) 32%, var(--bg));
+}
+.fd-seg-later-chain3 {
+  fill: color-mix(in srgb, var(--fd-c3) 32%, var(--bg));
+  background: color-mix(in srgb, var(--fd-c3) 32%, var(--bg));
+}
+.fd-seg-later-chain4 {
+  fill: color-mix(in srgb, var(--fd-c4) 32%, var(--bg));
+  background: color-mix(in srgb, var(--fd-c4) 32%, var(--bg));
+}
+.fd-seg-later-chain5 {
+  fill: color-mix(in srgb, var(--fd-c5) 32%, var(--bg));
+  background: color-mix(in srgb, var(--fd-c5) 32%, var(--bg));
+}
+.fd-col-forecast rect:not(.fd-hit) {
+  opacity: 0.55;
+}
 .fd-expected {
   stroke: var(--text);
   stroke-width: 2;
   stroke-dasharray: 3 2;
+}
+.fd-limit {
+  stroke: var(--text);
+  stroke-width: 1;
+  stroke-dasharray: 6 3;
+}
+.fd-legend i.fd-key-line {
+  width: 14px;
+  height: 0;
+  border-radius: 0;
+  border-top: 2px dashed var(--text);
+  vertical-align: 3px;
+}
+.fd-legend i.fd-key-limit {
+  border-top-width: 1px;
 }
 .fd-tails {
   display: flex;
@@ -731,10 +798,33 @@ a.fd-harm:hover {
   display: grid;
   gap: 8px;
 }
+.fd-table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+}
+.fd-table-wrap .fd-table th {
+  position: static;
+}
+.fd-chain-cell {
+  min-width: 300px;
+}
+.fd-table td:nth-child(5) {
+  white-space: nowrap;
+}
+.fd-monster-open {
+  border-style: dashed;
+}
+.fd-card-chain {
+  font-size: 12px;
+  line-height: 1.4;
+}
+.fd-harm-found .fd-harm-meta + .fd-harm-meta {
+  margin-top: -1px;
+}
 .fd-table {
   border-collapse: collapse;
   width: 100%;
-  max-width: 720px;
+  max-width: 1240px;
   font-size: 12px;
   font-variant-numeric: tabular-nums;
 }

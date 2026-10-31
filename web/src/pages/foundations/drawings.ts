@@ -30,6 +30,8 @@ export interface Drawing {
   readonly type: string;
   /** The tile it enters first, for the Explorer link: slots from its supertile down, and its chord across that tile. */
   readonly first: { readonly path: readonly { type: string; pos: number }[]; readonly chord: readonly [number, number, number, number] };
+  /** The walk drawn: the child crossings it enters at its level, as `childPlace * 8 + slot`, for the brute force to start from. */
+  readonly steps: readonly number[];
 }
 
 /** Runs of tiles within this share of the circuit's radius of gyration are drawn as one point. */
@@ -73,6 +75,7 @@ export function drawCircuits(job: DrawJob): Drawing[] {
       types: Object.keys(g.copies),
       type: g.rep.type,
       first: { path: first.path.map((s) => ({ type: s.type, pos: s.pos })), chord: [first.chord[0].x, first.chord[0].y, first.chord[1].x, first.chord[1].y] },
+      steps: [...g.rep.steps],
     };
   });
 }
