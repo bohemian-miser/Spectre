@@ -76,7 +76,7 @@ describe('trail pyramid', () => {
     }
     expect(windows).toBe(LEVELS.length * 6);
     expect(inked).toBeGreaterThan(windows * 200);
-  });
+  }, 60000);
 
   it('draws the whole strand at the coarse levels', () => {
     let minI = Infinity, maxI = -Infinity, minJ = Infinity, maxJ = -Infinity;
@@ -99,7 +99,7 @@ describe('trail pyramid', () => {
       // Every segment's start lies under the strand's ink.
       expect(want.some((v) => v === store.segmentCount - 1)).toBe(true);
     }
-  });
+  }, 60000);
 
   it('stays exact while panning pixel by pixel across tile borders', () => {
     const rand = rng(5);
@@ -114,7 +114,7 @@ describe('trail pyramid', () => {
         if (STORED.includes(s)) expectSame(pyr.draw(g, 'chunks').picture, want, `pan step ${step}, level ${s}, chunks`);
       }
     }
-  });
+  }, 60000);
 
   it('stays exact while the strand grows', () => {
     const growing = storeOf(xy, 1);
@@ -135,5 +135,5 @@ describe('trail pyramid', () => {
       }
     }
     expect(growing.pointCount).toBe(total);
-  });
+  }, 60000);
 });

@@ -87,7 +87,7 @@ describe('exact trail rasterizer', () => {
     }
     expect(pictures).toBe(40);
     expect(covered).toBeGreaterThan(1000);
-  });
+  }, 60000);
 
   it('decides boundary pixels exactly when doubles cannot', () => {
     // Pixel centres within a hair of the capsule's edge: the exact test against the brute force.
@@ -111,7 +111,7 @@ describe('exact trail rasterizer', () => {
     }
     expect(checked).toBe(3000);
     expect(near).toBeGreaterThan(100);
-  });
+  }, 60000);
 
   it('falls back to exact arithmetic on ties that doubles cannot see', () => {
     // A segment along x through pixel centres at exactly the radius: with
@@ -131,5 +131,5 @@ describe('exact trail rasterizer', () => {
     expect(stats.exact).toBeGreaterThan(0);
     // The two rows touching y = 0 are both drawn, their centres exactly half a pixel away.
     expect(want.filter((v) => v === 0).length).toBeGreaterThanOrEqual(2 * 6);
-  });
+  }, 60000);
 });

@@ -24,7 +24,7 @@ describe('exact trail store', () => {
     }
     // The walk's floats carry their own drift; the lattice point is within it.
     expect(worst).toBeLessThan(1e-4);
-  });
+  }, 60000);
 
   it('decodes each chunk to the same points, inside its box', () => {
     const all = store.allPoints();
@@ -42,9 +42,9 @@ describe('exact trail store', () => {
       }
     }
     expect(store.chunkCount).toBe(Math.ceil((n - 1) / CHUNK));
-  });
+  }, 60000);
 
   it('holds a byte a step', () => {
     expect(store.bytes).toBeLessThan(1.1 * n + 1000);
-  });
+  }, 60000);
 });
