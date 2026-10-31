@@ -507,6 +507,13 @@ export interface ViewportQueryOptions {
   readonly origin?: Pt;
   /** Testing/advanced: force the DFS to descend from this chain ancestor. */
   readonly ancestorLevel?: number;
+  /**
+   * Cut at this level rather than the one the budget picks (never above the
+   * descent root): every instance is a level-`cutLevel` supertile, or a leaf
+   * at 0. With `ancestorLevel` at least this high, every such supertile
+   * meeting the view is emitted.
+   */
+  readonly cutLevel?: number;
 }
 
 /**
@@ -945,7 +952,7 @@ export function createUnrootedEngine(
       }
     }
 
-    const cutLevel = Math.min(ancestorLevel, cutEstimate);
+    const cutLevel = Math.min(ancestorLevel, opts.cutLevel ?? cutEstimate);
 
     const cap = Math.max(4096, 2 * Math.ceil(budget) + 1024);
     if (cap > scratchCap) {

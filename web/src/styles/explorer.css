@@ -337,3 +337,91 @@
   height: 10px;
   border-radius: 50%;
 }
+
+/* X-ray: supertile outlines over the tiling. The layer lets the pointer
+   through to the viewport, which it listens on for hover. */
+.xray-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.xray-layer canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.xray-tip {
+  position: absolute;
+  padding: 3px 7px;
+  border-radius: var(--radius);
+  background: rgba(8, 10, 16, 0.82);
+  color: #e7ecf6;
+  font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space: nowrap;
+}
+.xray-control {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  border-radius: var(--radius);
+  background: rgba(8, 10, 16, 0.72);
+  color: #e7ecf6;
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+/* Under the infinite view's own tools. */
+.xray-control.is-below-tools {
+  top: 42px;
+}
+.xray-control label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+.xray-control input[type='range'] {
+  width: 120px;
+}
+.xray-level {
+  min-width: 6ch;
+}
+
+/* Compare and Identify, in the infinite view's readout. */
+.map-hud .hud-action,
+.map-hud .hud-chip button {
+  pointer-events: auto;
+  font: inherit;
+  cursor: pointer;
+}
+.map-hud .hud-action {
+  align-self: flex-start;
+  padding: 1px 8px;
+  border: 1px solid rgba(244, 246, 251, 0.4);
+  border-radius: var(--radius);
+  background: transparent;
+  color: #cfeee6;
+}
+.map-hud .hud-action:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.map-hud .hud-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  align-self: flex-start;
+  padding: 0 0 0 7px;
+  border: 1px solid rgba(207, 238, 230, 0.45);
+  border-radius: 999px;
+  color: #cfeee6;
+}
+.map-hud .hud-chip button {
+  border: none;
+  background: transparent;
+  color: inherit;
+  padding: 0 7px;
+}
