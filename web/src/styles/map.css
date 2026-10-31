@@ -161,19 +161,42 @@
   height: 100%;
 }
 
-/* In-viewport tool cluster (top-right): stats toggle, record, fullscreen.
-   Lives inside the host so it is still there when the viewport IS the screen
+/* In-viewport tool row along the top: record, stats, fullscreen, follow,
+   then the page's own tools. Lives inside the host so it is still there when the viewport IS the screen
    — the page chrome (and its Record button) is not part of the fullscreen
    subtree. Absolutely positioned like .map-hud: never in the layout. */
 .viewport-tools {
   position: absolute;
   top: 8px;
+  left: 8px;
   right: 8px;
   display: flex;
   flex-wrap: wrap;
-  justify-content: flex-end;
+  align-items: center;
   gap: 6px;
-  max-width: 60%;
+  pointer-events: none;
+}
+.viewport-tools > * {
+  pointer-events: auto;
+}
+.viewport-tools button[aria-pressed='true']:not(.is-recording) {
+  border-color: rgba(159, 214, 200, 0.7);
+  color: #cfeee6;
+}
+.viewport-tools-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border: 1px solid rgba(244, 246, 251, 0.28);
+  border-radius: var(--radius);
+  background: rgba(8, 10, 16, 0.72);
+  color: #e7ecf6;
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  cursor: pointer;
+}
+.viewport-tools-check input {
+  margin: 0;
 }
 .viewport-tools button {
   padding: 4px 9px;
@@ -226,7 +249,8 @@
 
 .map-hud {
   position: absolute;
-  top: 8px;
+  /* Under the tool row. */
+  top: 44px;
   left: 8px;
   display: flex;
   flex-direction: column;

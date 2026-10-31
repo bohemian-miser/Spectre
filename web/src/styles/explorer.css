@@ -429,7 +429,7 @@
   padding: 0 7px;
 }
 
-/* Harmonic search: an item of the viewport's tool row; open, it takes the row's width. */
+/* Harmonic search: an item of the viewport's tool row; open, it takes a line of its own. */
 .harmonic-control {
   padding: 3px 9px;
   border: 1px solid rgba(244, 246, 251, 0.28);
@@ -440,10 +440,7 @@
 }
 .harmonic-control.is-open {
   flex-basis: 100%;
-}
-.viewport-tools:has(.harmonic-control.is-open) {
-  width: min(520px, calc(100% - 16px));
-  max-width: none;
+  max-width: 520px;
 }
 .harmonic-row {
   display: flex;

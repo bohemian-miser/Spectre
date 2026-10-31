@@ -86,20 +86,20 @@ describe('ExplorerPage', () => {
     expect(window.location.hash).not.toMatch(/(fw|fc|pf|hp)=/);
   });
 
-  it('stops and restarts following from the button in the field corner', () => {
+  it('stops and restarts following from the checkbox in the tool row', () => {
     window.history.replaceState(null, '', '/#/explorer?v=1&md=infinite&e=2578');
     const { container } = render(<ExplorerPage />);
-    const button = () => container.querySelector('[data-testid="tools-follow"]') as HTMLButtonElement;
+    const button = () => container.querySelector('[data-testid="tools-follow"]') as HTMLInputElement;
     const box = () => container.querySelector('[data-testid="follow-toggle"]') as HTMLInputElement;
 
-    expect(button().getAttribute('aria-pressed')).toBe('true');
+    expect(button().checked).toBe(true);
     fireEvent.click(button());
     expect(box().checked).toBe(false);
-    expect(button().getAttribute('aria-pressed')).toBe('false');
+    expect(button().checked).toBe(false);
     fireEvent.click(button());
     expect(box().checked).toBe(true);
 
-    // Without a traced strand there is nothing to follow, so no button.
+    // Without a traced strand there is nothing to follow, so no checkbox.
     fireEvent.click(container.querySelector('[data-testid="trace-toggle"]') as Element);
     expect(button()).toBeNull();
   });

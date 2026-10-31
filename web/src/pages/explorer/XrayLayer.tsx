@@ -34,7 +34,7 @@ export function cssRgb(css: string): readonly [number, number, number] {
 /** Supertiles smaller than this on screen (CSS px) are not drawn. */
 const MIN_DRAWN_PX = 2;
 /** Opacity of the wash over the tiles. */
-export const WASH_ALPHA = 0.3;
+export const WASH_ALPHA = 0.72;
 /**
  * Outline vertices per CSS px of a supertile's size. Neighbours decimate their
  * shared boundary independently, so this keeps the two copies within a pixel.
@@ -117,7 +117,8 @@ export function washXray(
 
 /**
  * Outline the supertiles on a canvas whose CSS size is `width` × `height`,
- * thin, the hovered one heavier. `toScreen` maps the supertiles' frame to
+ * thin and light so the strands under them still read, the hovered one
+ * heavier. `toScreen` maps the supertiles' frame to
  * CSS px. Nothing is filled: the canvas lies over the strands.
  */
 export function drawXray(
@@ -136,10 +137,10 @@ export function drawXray(
   const lines = new Path2D();
   for (const { s, loop } of onScreen(width, height, family, items, toScreen)) tracePath(lines, mul(toScreen, s.xform), loop);
   ctx.lineJoin = 'round';
-  ctx.strokeStyle = 'rgba(255,255,255,0.5)';
-  ctx.lineWidth = 2.25;
+  ctx.strokeStyle = 'rgba(255,255,255,0.45)';
+  ctx.lineWidth = 2;
   ctx.stroke(lines);
-  ctx.strokeStyle = 'rgba(12,14,20,0.95)';
+  ctx.strokeStyle = 'rgba(12,14,20,0.55)';
   ctx.lineWidth = 1;
   ctx.stroke(lines);
   if (hovered) {

@@ -519,14 +519,15 @@ describe('MapPage — viewport tools (stats toggle, fullscreen)', () => {
 
     expect(container.querySelector('[data-testid="map-hud"]')).not.toBeNull();
     const toggle = container.querySelector('[data-testid="tools-stats"]') as HTMLButtonElement;
-    expect(toggle.textContent).toBe('Hide stats');
+    expect(toggle.textContent).toBe('Stats');
+    expect(toggle.getAttribute('aria-pressed')).toBe('true');
 
     fireEvent.click(toggle);
     await act(async () => {
       await new Promise((r) => setTimeout(r, 500)); // the debounced URL write
     });
     expect(container.querySelector('[data-testid="map-hud"]')).toBeNull();
-    expect(toggle.textContent).toBe('Show stats');
+    expect(toggle.getAttribute('aria-pressed')).toBe('false');
     expect(window.location.hash).toContain('hd=0');
 
     fireEvent.click(toggle);
@@ -544,8 +545,8 @@ describe('MapPage — viewport tools (stats toggle, fullscreen)', () => {
     expect(container.querySelector('[data-testid="map-hud"]')).toBeNull();
     expect(hudNumber(container, 'hud-instances')).toBe(0); // truly not rendered
     expect(
-      (container.querySelector('[data-testid="tools-stats"]') as HTMLButtonElement).textContent,
-    ).toBe('Show stats');
+      (container.querySelector('[data-testid="tools-stats"]') as HTMLButtonElement).getAttribute('aria-pressed'),
+    ).toBe('false');
   });
 
   it('offers no fullscreen button where the API cannot fullscreen a div', async () => {
