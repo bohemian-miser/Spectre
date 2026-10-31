@@ -6,21 +6,16 @@
  * supertile is resampled the same way, and so is the route it is pulled
  * tight into.
  */
-import { transPt, type HexType, type Pt } from '../../core';
+import type { HexType, Pt } from '../../core';
 import type { CircuitShapes } from '../shapes/circuitShapes';
 import type { State } from '../period/period';
 import { graphOf, resample, routeCurve } from '../period/scene';
-import { stitched } from './stitch';
 import { strandPath, tracePatch } from './strand';
 
 /** Points per edge of an outline. */
 const EDGE_POINTS = 48;
-/** Points per edge of a piece's outline. */
-const PIECE_EDGE_POINTS = 12;
 /** Points along a strand or route. */
 const STRAND_POINTS = 96;
-const WALK_POINTS = 480;
-const PIECE_ROUTE_POINTS = 16;
 
 export interface Box { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number }
 
@@ -110,36 +105,6 @@ export function borderScene(cs: CircuitShapes, states: readonly State[], subset:
     strands,
     tight: g.routes.map(([p, q]) => routeCurve(g.dots[p], g.dots[q], g.centre, STRAND_POINTS)),
     tiles: patch.tiles.map((t) => ({ type: t.type, outline: t.outline })),
-    box: boxOf(outline),
-  };
-}
-
-/** A supertile as its pieces two levels down, with their routes and its own routes walked through them. */
-export interface StitchScene {
-  readonly type: HexType;
-  readonly level: number;
-  readonly outline: readonly Pt[];
-  readonly dots: readonly Pt[];
-  readonly pieces: readonly { readonly type: HexType; readonly path: string; readonly outline: readonly Pt[]; readonly routes: readonly (readonly Pt[])[] }[];
-  readonly walks: readonly (readonly Pt[])[];
-  readonly box: Box;
-}
-
-export function stitchScene(cs: CircuitShapes, states: readonly State[], n: number, type: HexType): StitchScene {
-  const s = stitched(cs, states, n, 2, type);
-  const outline = sixEdges(s.parent.outline, Array.from({ length: 6 }, (_, j) => cs.corner(n + 2, type, j)), EDGE_POINTS);
-  return {
-    type,
-    level: n + 2,
-    outline,
-    dots: s.parent.dots,
-    pieces: s.pieces.map((p) => ({
-      type: p.type,
-      path: p.path.join('.'),
-      outline: sixEdges(p.outline, Array.from({ length: 6 }, (_, j) => transPt(p.xform, cs.corner(n, p.type, j))), PIECE_EDGE_POINTS),
-      routes: p.routes.map((r) => resample(r, PIECE_ROUTE_POINTS)),
-    })),
-    walks: s.walks.map((w) => resample(w, WALK_POINTS)),
     box: boxOf(outline),
   };
 }

@@ -86,7 +86,25 @@ function flight(g: Graph, from: Place, slot: Affine, to: Place, toMid: Pt, t: nu
   };
 }
 
-export function drawFrame(ctx: CanvasRenderingContext2D, steps: readonly Step[], t: number, pal: Palette, W: number, H: number, caption: string): void {
+/**
+ * Where a step's top row draws its supertiles at rest: the level-n ones
+ * (`lower`) before the step, or the level-(n + d) ones (`parent`) once the
+ * view has panned. A map from a type's frame to the canvas (y down), the
+ * height of the row's title, and of the type names under it.
+ */
+export function topRow(st: Step, W: number, H: number, row: 'lower' | 'parent'): { map: (type: HexType) => (p: Pt) => Pt; titleY: number; namesY: number } {
+  const box = W / 9, topY = H * 0.26;
+  const gs = HEX_TYPES.map((x) => (row === 'lower' ? st.lower[x] : st.builds[x].parent));
+  const a = Math.min(...gs.map((g) => Math.min((0.8 * box) / g.width, (0.28 * H) / g.height)));
+  const half = Math.max(...gs.map((g) => g.height)) / 2;
+  return {
+    map: (type) => onCanvas(gs[HEX_TYPES.indexOf(type)], { x: (HEX_TYPES.indexOf(type) + 0.5) * box, y: topY, a }),
+    titleY: topY - a * half - 8,
+    namesY: topY + a * half + 16,
+  };
+}
+
+export function drawFrame(ctx: CanvasRenderingContext2D, steps: readonly Step[], t: number, pal: Palette, W: number, H: number, caption: string, fadeEnds = true): void {
   const k = ctx.canvas.width / W;
   ctx.setTransform(k, 0, 0, k, 0, 0);
   ctx.globalAlpha = 1;
@@ -100,7 +118,7 @@ export function drawFrame(ctx: CanvasRenderingContext2D, steps: readonly Step[],
   const pull = through('pull', u);
   const pan = through('pan', u);
   const total = durationOf(steps);
-  const fade = Math.min(1, t / FADE, (total - t) / FADE);
+  const fade = fadeEnds ? Math.min(1, t / FADE, (total - t) / FADE) : 1;
 
   const box = W / 9;
   const topY = H * 0.26, botY = H * 0.69, gap = botY - topY;
