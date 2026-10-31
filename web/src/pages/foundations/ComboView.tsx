@@ -1,11 +1,12 @@
 /**
- * One combination: its summary, what is proven and what only observed, the
- * account of chords by level, and its foundational circuits by the level
- * they first close at: each chain as a row, its foundational circuit's card
- * then its harmonics (`ChainRow.tsx`), and each nugget as a card. Every
- * circuit is drawn from a fresh build in a worker.
+ * One combination, in one panel: its key numbers and marks, a table of what
+ * is proven and what only observed, the account of chords by level, and its
+ * foundational circuits by the level they first close at: each chain as a
+ * row, its foundational circuit's card then its harmonics (`ChainRow.tsx`),
+ * and each nugget as a card. Every circuit is drawn from a fresh build in a
+ * worker.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { TileTypeId } from '../../core';
 import { explorerCircuitHref } from '../shapes/explorerLink';
 import { AccountChart } from './AccountChart';
@@ -13,10 +14,10 @@ import type { ChainBrute } from './bruteChains';
 import { bruteLevels, ChainRow } from './ChainRow';
 import { Glyph } from './Glyph';
 import { TailsPanel } from './TailsPanel';
-import { buildupHref, harmonicsHref, nf, pct, slots, subsetOf } from './data';
+import { buildupHref, harmonicsHref, limitPct, nf, pct, slots, subsetOf } from './data';
 import type { DrawClient, Drawing } from './drawings';
 import { ChainLine, kindOf } from './MonstersTable';
-import { chainOf, isLate, monstersOf, provenNote, type ChainStep, type FoundRow, type Monster, type PageCombo } from './pageData';
+import { chainOf, factsOf, indexRow, isLate, MARKS, marksOf, monstersOf, SHORT, type ChainStep, type FoundRow, type Monster, type PageCombo } from './pageData';
 
 function Card(props: {
   data: PageCombo;
@@ -77,24 +78,25 @@ function Card(props: {
         </div>
         <div className="fd-muted">
           <span title={`children ${fams.map(slots).join('; ')} at level ${level}`}>
-            closes in {nf(places)} {places === 1 ? 'place' : 'places'} from level {level}, children {fams.slice(0, 4).join(', ')}
+            {nf(places)} {places === 1 ? 'place' : 'places'} from level {level} · children {fams.slice(0, 4).join(', ')}
             {fams.length > 4 ? ', …' : ''}
           </span>{' '}
           ·{' '}
           {drawing ? (
             <span title={`${drawing.types.join(', ')}; ${nf(copies)} copies`}>
-              in {drawing.types.length === 9 ? 'every type' : drawing.types.length === 1 ? drawing.types[0] : `${drawing.types.length} types`}
+              {drawing.types.length === 9 ? 'every type' : drawing.types.length === 1 ? drawing.types[0] : `${drawing.types.length} types`}
             </span>
           ) : (
-            `in ${types} ${types === 1 ? 'type' : 'types'}`
+            `${types} ${types === 1 ? 'type' : 'types'}`
           )}
         </div>
-        {chain.length ? null : <div className="fd-muted">{nugget ? 'nugget: no harmonic' : 'no harmonic built'}</div>}
         {monster?.late ? (
           <div className="fd-card-chain" data-testid="fd-card-chain">
             <ChainLine m={monster} found={props.brute.foundOn(data.rule, data.combo, id)} brief />
           </div>
-        ) : null}
+        ) : chain.length ? null : (
+          <div className="fd-muted">{nugget ? 'nugget' : 'no harmonic built'}</div>
+        )}
         <div className="fd-links" onClick={(e) => e.stopPropagation()}>
           {explorer ? <a href={explorer}>Explorer</a> : <span className="fd-muted">Explorer</span>}
           <a href={harmonicsHref(base, data.combo, harmonicsLevel, data.rule, { level, length })}>Harmonics</a>
@@ -129,43 +131,63 @@ export function ComboView(props: { data: PageCombo; client: DrawClient; brute: C
   const withChains = useMemo(() => new Set(data.harm.map((h) => h[4])), [data]);
   const chains = useMemo(() => new Map(data.found.map((f) => [f[0], chainOf(data, f[0])] as const)), [data]);
   const L = data.levels;
-  const note = useMemo(() => provenNote(data), [data]);
+  const facts = useMemo(() => factsOf(data), [data]);
+  const row = useMemo(() => indexRow(data), [data]);
+  const marks = marksOf(row);
   const monsters = useMemo(() => new Map(monstersOf(data).map((m) => [m.id, m] as const)), [data]);
+  const chainCount = data.found.filter(([id]) => withChains.has(id)).length;
+  const keys: [string, ReactNode, string?][] = [
+    ['First', data.floor, 'level the first circuit closes at (the floor)'],
+    ['Last found', data.lastNew, 'highest level a foundational circuit first closes at'],
+    ['Foundational', data.found.length],
+    ['Chains / nuggets', `${chainCount} / ${row.nuggets}`],
+    [`Tails at ${L}`, pct(data.tails[L]), `share of chords on tails at level ${L}`],
+    ['Limit', <span data-testid="fd-limit-share">{limitPct(row.limit)}</span>, 'share of chords on known circuits in the limit'],
+    ...(row.limit < SHORT ? [['Not accounted for', <span className="fd-warn" data-testid="fd-unaccounted">{limitPct(1 - row.limit)}</span>, 'room for unknown circuits or strands that never close'] as [string, ReactNode, string]] : []),
+  ];
   return (
-    <div className="fd-combo" data-testid="fd-combo">
-      <header>
-        <h2>
+    <section className="fd-combo" data-testid="fd-combo" aria-labelledby="fd-combo-title">
+      <header className="fd-combo-head">
+        <h2 id="fd-combo-title">
           {data.combo} <span className="fd-muted">rule {data.rule}</span>
         </h2>
-        <p className="fd-summary" data-testid="fd-summary">
-          <span>
-            First circuit at level <b>{data.floor}</b>
-          </span>
-          <span>
-            Last new foundational circuit at level <b>{data.lastNew}</b>
-          </span>
-          <span>
-            <b>{data.found.length}</b> foundational circuits: <b>{data.found.filter(([id]) => withChains.has(id)).length}</b> chains,{' '}
-            <b>{data.found.filter((f) => f[9]).length}</b> {data.found.filter((f) => f[9]).length === 1 ? 'nugget' : 'nuggets'}
-          </span>
-          <span>
-            Tails at level {L}: <b>{pct(data.tails[L])}</b>
-          </span>
-        </p>
+        <dl className="fd-keys" data-testid="fd-summary">
+          {keys.map(([k, v, title]) => (
+            <div key={k} title={title}>
+              <dt>{k}</dt>
+              <dd>{v}</dd>
+            </div>
+          ))}
+          <div>
+            <dt>Marks</dt>
+            <dd data-testid="fd-combo-marks">
+              {marks.length
+                ? marks.map((m) => (
+                    <span key={m} className={`fd-mark-chip fd-chip-${m}`} title={MARKS[m].title}>
+                      <i className={`fd-dot fd-mark-${m}`} /> {MARKS[m].label}
+                    </span>
+                  ))
+                : 'none'}
+            </dd>
+          </div>
+        </dl>
       </header>
-      <ul className="fd-note" data-testid="fd-note">
-        {note.map((s) => (
-          <li key={s}>{s}</li>
-        ))}
-      </ul>
+      <table className="fd-facts" data-testid="fd-note">
+        <tbody>
+          {facts.map((f, i) => (
+            <tr key={i} title={f.title}>
+              <th scope="row">{f.label}</th>
+              <td>{f.value}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
       <AccountChart data={data} />
       <TailsPanel data={data} />
       <section className="fd-cards">
         <h3>Foundational circuits</h3>
         <p className="fd-muted fd-key">
-          Each chain is a row: its foundational circuit, then its harmonics by level, each drawn and linked to its chain on the Harmonics page.{' '}
-          <span className="fd-m-confirmed">✓</span> predicted from two levels down, then built; <span className="fd-m-missed">!</span> built, not predicted; a blank
-          square is predicted above the build. A nugget has no harmonic: it only closes again, in more places, as the same circuit.
+          <span className="fd-m-confirmed">✓</span> predicted, then built · <span className="fd-m-missed">!</span> built, not predicted · ? predicted above the build
         </p>
         {error ? <p className="fd-muted">Could not draw: {error}</p> : null}
         {byLevel.map(([level, list]) => {
@@ -214,6 +236,6 @@ export function ComboView(props: { data: PageCombo; client: DrawClient; brute: C
           );
         })}
       </section>
-    </div>
+    </section>
   );
 }

@@ -7,8 +7,8 @@
  */
 import { Fragment, useMemo, useState } from 'react';
 import type { BruteFound } from './bruteChains';
-import { compact, nf, pct, slots } from './data';
-import { explained, STOP_TEXT, type Monster } from './pageData';
+import { compact, limitPct, nf, pct, slots } from './data';
+import { explained, SHORT, STOP_TEXT, type IndexRow, type Monster } from './pageData';
 
 type Key = 'combo' | 'floor' | 'level' | 'length' | 'count' | 'kind' | 'share';
 
@@ -71,23 +71,20 @@ function placesText(families: string): string {
  */
 export function ChainLine(props: { m: Monster; found: readonly BruteFound[]; brief?: boolean }): JSX.Element {
   const { m, found } = props;
-  if (!m.chain.length) return <span className="fd-muted">no harmonic: it only closes again{m.again ? `, ${pct(m.again)} of the chords past the build` : ''}</span>;
+  if (!m.chain.length) return <span className="fd-muted">nugget{m.again ? `; closes again ${pct(m.again)} past the build` : ''}</span>;
   const forecast =
     m.toCome !== null
-      ? `forecast past the build: next harmonics ${pct(m.toCome)} of all chords, its circuits closing again ${pct(m.again ?? 0)}`
+      ? `past the build: next harmonics ${pct(m.toCome)}, closing again ${pct(m.again ?? 0)}`
       : m.stop
         ? `not forecast: ${STOP_TEXT[m.stop]}`
         : '';
-  if (props.brief) {
-    const built = m.chain.filter((c) => c[2] !== 'predicted').length;
-    const predicted = m.chain.filter((c) => c[2] === 'predicted').length;
-    const parts = [`${built} built`, predicted ? `${predicted} predicted above the build` : '', found.length ? `${found.length} brute-forced` : ''].filter(Boolean);
+  // on a card the chain's members are its row of thumbnails
+  if (props.brief)
     return (
       <span className="fd-muted" data-testid="fd-monster-chain">
-        Its chain: harmonics {parts.join(', ')}; {forecast}.
+        {forecast}
       </span>
     );
-  }
   const levels = [...new Set([...m.chain.map((c) => c[0]), ...found.map((f) => f.level)])].sort((a, b) => a - b);
   return (
     <span className="fd-chain" data-testid="fd-monster-chain">
@@ -133,7 +130,49 @@ export function ChainLine(props: { m: Monster; found: readonly BruteFound[]; bri
   );
 }
 
-export function MonstersTable(props: { monsters: readonly Monster[]; onOpen: (m: Monster) => void; found: (m: Monster) => BruteFound[] }): JSX.Element {
+/** The combinations whose limit is short: tails no known circuit accounts for, whether or not a circuit is late. */
+function ShortTable(props: { rows: readonly IndexRow[]; onOpen: (combo: string) => void }): JSX.Element {
+  const rows = [...props.rows].filter((r) => r.limit < SHORT).sort((a, b) => a.limit - b.limit);
+  return (
+    <div className="fd-short-block" data-testid="fd-short">
+      <h3>
+        <i className="fd-dot fd-mark-short" /> Short combinations: {rows.length}
+      </h3>
+      {rows.length ? (
+        <div className="fd-table-wrap">
+          <table className="fd-table">
+            <thead>
+              <tr>
+                <th>Combination</th>
+                <th>Limit</th>
+                <th>Not accounted for</th>
+                <th>Not forecast</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.combo} onClick={() => props.onOpen(r.combo)} tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && props.onOpen(r.combo)} data-testid="fd-short-row">
+                  <td className="fd-digits">{r.combo}</td>
+                  <td>{limitPct(r.limit)}</td>
+                  <td className="fd-short">{limitPct(1 - r.limit)}</td>
+                  <td className="fd-chain-cell">{r.notForecast.length ? r.notForecast.join('; ') : <span className="fd-muted">every chain forecast</span>}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+export function MonstersTable(props: {
+  monsters: readonly Monster[];
+  combos: readonly IndexRow[];
+  onOpen: (m: Monster) => void;
+  onOpenCombo: (combo: string) => void;
+  found: (m: Monster) => BruteFound[];
+}): JSX.Element {
   const [sort, setSort] = useState<{ key: Key; desc: boolean }>({ key: 'length', desc: true });
   const grouped = useMemo(() => groupMonsters(props.monsters), [props.monsters]);
   const rows = useMemo(() => {
@@ -149,12 +188,12 @@ export function MonstersTable(props: { monsters: readonly Monster[]; onOpen: (m:
   const known = late.filter(explained);
   return (
     <section className="fd-monsters" data-testid="fd-monsters">
+      <ShortTable rows={props.combos} onOpen={props.onOpenCombo} />
+      <h3>Monster circuits</h3>
       <p className="fd-muted">
-        {nf(props.monsters.length)} monsters in {combos} combinations: {nf(late.length)} late (first closing at floor + 4 or later) and{' '}
-        {nf(props.monsters.filter((m) => m.giant).length)} giant (100,000 tiles or more). Of the late ones, <b data-testid="fd-explained">{nf(known.length)}</b> start a
-        chain whose harmonics are built and predicted, so they are classified, with the share their chain is forecast to take above the build;{' '}
-        <b data-testid="fd-unexplained">{nf(late.length - known.length)}</b> have no harmonic and are unexplained. Circuits of one combination with the same level and
-        tiles share a row. Choose one to open its combination; a chain&apos;s members above the build can be brute-forced there.
+        {nf(props.monsters.length)} in {combos} combinations: {nf(late.length)} late, {nf(props.monsters.filter((m) => m.giant).length)} giant. Late with a
+        chain: <b data-testid="fd-explained">{nf(known.length)}</b>; unexplained: <b data-testid="fd-unexplained">{nf(late.length - known.length)}</b>. Choose a row
+        to open it.
       </p>
       <div className="fd-table-wrap">
         <table className="fd-table">
