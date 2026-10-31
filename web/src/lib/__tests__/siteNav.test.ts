@@ -41,6 +41,7 @@ describe('siteNav', () => {
       'foundations',
       'period',
       'limit',
+      'identify',
       'legacy',
     ]);
     expect(new Set(SITE_NAV.map((i) => i.id)).size).toBe(SITE_NAV.length);
@@ -71,6 +72,7 @@ describe('siteNav', () => {
       'foundations',
       'period',
       'limit',
+      'identify',
       'legacy',
     ]);
   });
