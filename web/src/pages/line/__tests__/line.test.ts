@@ -11,7 +11,7 @@ import { run, sameBorder } from '../../period/period';
 import { graphOf } from '../../period/scene';
 import { routeIndexOf } from '../figures';
 import { stitched } from '../stitch';
-import { runsUnder, tracePatch } from '../strand';
+import { pairsRound, runsUnder, tracePatch } from '../strand';
 
 const SUBSET = [1, 2, 8];
 const DIGITS = [0, 1, 0, 1, 0, 0, 0, 0, 0];
@@ -79,6 +79,21 @@ describe('Psi children', () => {
         expect(runs[0].start).toBeGreaterThan(0);
         expect(runs[0].end).toBeLessThan(p.chords.length);
       }
+    }
+  });
+});
+
+describe('the chords of one tile', () => {
+  it('join crossings that do not interleave, and the segments do not meet', () => {
+    const cross = (p: { x: number; y: number }, q: { x: number; y: number }, r: { x: number; y: number }) => (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x);
+    for (const t of HEX_TYPES) {
+      const p = tracePatch(SUBSET, DIGITS, 0, t);
+      expect(pairsRound(r.states[0][t].mate).interleave).toBe(false);
+      if (p.chords.length < 2) continue;
+      const [u, v] = p.chords;
+      const meet = cross(u.a, u.b, v.a) * cross(u.a, u.b, v.b) < 0 && cross(v.a, v.b, u.a) * cross(v.a, v.b, u.b) < 0;
+      expect(meet).toBe(false);
+      expect(Math.min(...[v.a, v.b].map((q) => Math.min(Math.hypot(q.x - u.a.x, q.y - u.a.y), Math.hypot(q.x - u.b.x, q.y - u.b.y))))).toBeGreaterThan(0.1);
     }
   });
 });

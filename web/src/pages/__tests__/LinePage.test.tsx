@@ -14,6 +14,7 @@ describe('LinePage', () => {
     expect(screen.getByTestId('ln-psi-table').querySelectorAll('tbody tr')).toHaveLength(6);
     expect(screen.getByTestId('ln-nest-table').querySelectorAll('tbody tr')).toHaveLength(3);
     expect(screen.getByTestId('ln-chain-table').querySelectorAll('tbody tr')).toHaveLength(2);
+    expect(screen.getByTestId('ln-pairs-table').textContent).not.toContain('yes');
     expect(screen.getByTestId('ln-stitch').querySelector('svg')).toBeTruthy();
   });
 });

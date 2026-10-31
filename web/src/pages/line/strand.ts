@@ -107,3 +107,11 @@ export function runsUnder(p: Patch, s: Strand, prefix: string): { start: number;
   });
   return runs;
 }
+
+/** A tile's chords as pairs of crossing positions round it, and whether any two pairs interleave. */
+export function pairsRound(mate: Int32Array): { pairs: [number, number][]; interleave: boolean } {
+  const pairs: [number, number][] = [];
+  mate.forEach((q, p) => { if (q > p) pairs.push([p, q]); });
+  const interleave = pairs.some(([a, b]) => pairs.some(([c, d]) => a < c && c < b && b < d));
+  return { pairs, interleave };
+}

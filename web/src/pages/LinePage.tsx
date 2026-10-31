@@ -14,7 +14,8 @@ import { lineOf } from './period/proof';
 import { graphOf } from './period/scene';
 import { StateGrid, StraightBorder } from './period/StateGrid';
 import { PatchFigure, StitchFigure, along, alongColours, routeIndexOf } from './line/figures';
-import { runsUnder, tracePatch } from './line/strand';
+import { pairsRound, runsUnder, tracePatch } from './line/strand';
+import { PAPER_URL } from '../lib/siteNav';
 import { stitched } from './line/stitch';
 import '../styles/buildup.css';
 import '../styles/period.css';
@@ -25,8 +26,6 @@ const COMBO = '010100000';
 const DIGITS = [...COMBO].map(Number);
 /** Levels of borders computed; the proof needs 0 to 3, the rest are shown as a check. */
 const TOP = 5;
-const REPO = 'https://github.com/bohemian-miser/Spectre/blob/main';
-const FASS = `${REPO}/docs/FASS_THEOREM.md`;
 const SLOT_COLOURS = ['var(--pd-r0)', 'var(--pd-r1)', 'var(--pd-r2)'];
 
 const nf = (n: number) => n.toLocaleString('en-US');
@@ -128,6 +127,9 @@ export default function LinePage(): JSX.Element {
       <section className="ln-section" aria-labelledby="ln-tiles">
         <h2 id="ln-tiles">1. Tiles and chords</h2>
         <p>
+          The tiles are the nine hexagon types of the Spectre tiling, drawn as regular hexagons, and the tiling is built by substitution as in <a href={PAPER_URL}>Smith, Myers, Kaplan and Goodman-Strauss</a>. A supertile of each type is made of supertiles one level down, and the substitution says the same three things at every level: which type sits in each of its eight slots, which pairs of child edges meet inside it, and which run of child edges makes up each of its six edges. Those tables, and the fact that the tiles do not overlap, are all the proof takes from the tiling.
+        </p>
+        <p>
           Each tile has a crossing on every edge whose seam is of class 1, 2 or 8: four on {list(fourCrossings)}, two on {list(twoCrossings)}. The combination joins them in pairs by straight chords inside the tile, and on a four-crossing tile it never joins two crossings that interleave round the tile, so its two chords do not meet. Where two tiles share an edge their crossings coincide, so the chords join up into strands.
         </p>
         <div className="ln-tile-row" data-testid="ln-tiles">
@@ -171,7 +173,7 @@ export default function LinePage(): JSX.Element {
           A level-(n + 1) supertile of type P is its children in slots 0 to 7, of the types P&rsquo;s substitution rule gives. Two more tables say how they fit: the pairs of child edges glued inside P, and, for each edge of P, the run of child edges it is made of. Gluing two child edges welds their crossings one to one in reverse order. To find a route of P, start at a crossing of P&rsquo;s border, which is a crossing of some child; follow that child&rsquo;s route to its other end; if that crossing is on P&rsquo;s border, stop; otherwise it is welded to a crossing of a sibling, so continue there. Each walk uses only the children&rsquo;s borders. A walk through children that never reaches P&rsquo;s border is a circuit, and it is the only way a circuit can close at level n + 1.
         </p>
         <p>
-          The substitution rule, the glued pairs and the runs are the same at every level; that is read off exact geometry and proved for all levels in <a href={`${FASS}#2-the-substitution-tables`}>§2–3 of the FASS theorem</a>, where the induction also shows two glued edges carry their crossings in reverse order. So the rule takes level n&rsquo;s borders to level n + 1&rsquo;s whatever n is.
+          The three tables are the substitution itself, so they are the same at every level. Two glued child edges are one curve in the tiling, run counter-clockwise by each child and so in opposite directions; the crossings on it are the same points for both, met in reverse order. So the rule takes level n&rsquo;s borders to level n + 1&rsquo;s whatever n is.
         </p>
         <details className="ln-details">
           <summary>The Psi&rsquo;s tables, and its level-2 route walked through its level-1 children</summary>
@@ -334,17 +336,32 @@ export default function LinePage(): JSX.Element {
           </tbody>
         </table>
         <p>
-          So in the union of the chain every tile edge is shared by two tiles of the union. That the union is the whole plane, with no two tiles overlapping, is the covering argument of <a href={`${FASS}#4-non-overlap-and-exhaustion-the-covering-argument`}>§4 of the FASS theorem</a>: the supertiles form an increasing union of disks, each inside a later one, mapped into the plane by a local isometry, and such a map onto the plane is one to one and onto.
+          So in the union of the chain every tile edge is shared by two tiles of the union: an edge inside a supertile of the chain is shared there, and an edge on its border is inside the supertile {chain.depth} levels up. Every tile of the union is in some supertile of the chain.
+        </p>
+        <p>
+          The union is the whole plane. At a vertex of a tile in the union, the tiles meeting there follow one another round the vertex across shared edges, and crossing an edge of a tile in the union lands in the union; so every tile at the vertex is in the union, and every point of a tile in the union has a neighbourhood inside it. The union is therefore open. It is also closed, since its tiles are congruent hexagons that do not overlap, so only finitely many of them meet any disk. The plane is connected, so the union is all of it.
         </p>
       </section>
 
       <section className="ln-section" aria-labelledby="ln-line">
         <h2 id="ln-line">9. The line</h2>
         <p>
-          Let A<sub>0</sub>, A<sub>1</sub>, A<sub>2</sub>, … be the strands of the chain&rsquo;s supertiles (Claim 5). By Claim 6 each is a stretch in the middle of the next, which adds at least one chord at each end, so together they make a curve with no end in either direction. Every tile of the plane is in some supertile of the chain (Claim 7), so each of its chords is on that supertile&rsquo;s strand and on the curve. So the curve is the only strand, and it passes every chord: a tile with two crossings once, a tile with four twice. It has no circuit to share the plane with (Claim 4).
+          Let A<sub>0</sub>, A<sub>1</sub>, A<sub>2</sub>, … be the strands of the chain&rsquo;s supertiles (Claim 5). By Claim 6 each is a stretch in the middle of the next, which adds at least one chord at each end, so together they make a curve with no end in either direction. Every tile of the plane is in some supertile of the chain (Claim 7), so each of its chords is on that supertile&rsquo;s strand and on the curve. So the curve is the only strand, and it passes every chord: a tile with two crossings once, a tile with four twice.
         </p>
         <p>
-          It never crosses itself. Each chord is a straight segment inside its tile, the hexagon tiles are convex and do not overlap, and the two chords of a four-crossing tile join crossings that do not interleave, so they do not meet. The details are <a href={FASS}>§6 of the FASS theorem</a>.
+          It never crosses itself. Each crossing is the midpoint of a tile edge, so each chord joins the midpoints of two different edges of a regular hexagon and, apart from its ends, lies inside its tile. The tiles do not overlap, so chords of different tiles can meet only at their ends, and each end is a crossing where exactly two chords meet, one after the other along the line. The two chords of a four-crossing tile join crossings that do not interleave round the tile, numbered in order round its edges:
+        </p>
+        <table className="bu-summary-table ln-table" data-testid="ln-pairs-table">
+          <thead><tr><th>Type</th><th>Chords</th><th>Interleave</th></tr></thead>
+          <tbody>
+            {fourCrossings.map((t) => {
+              const x = pairsRound(r.states[0][t].mate);
+              return <tr key={t}><td>{t}</td><td><code>{x.pairs.map(([a, b]) => `${a}–${b}`).join('  ')}</code></td><td>{x.interleave ? 'yes' : 'no'}</td></tr>;
+            })}
+          </tbody>
+        </table>
+        <p>
+          Two segments joining points round a convex polygon meet only if their ends interleave, so these chords are apart.
         </p>
       </section>
 
@@ -353,17 +370,13 @@ export default function LinePage(): JSX.Element {
         <table className="bu-summary-table ln-table ln-rests">
           <thead><tr><th>Statement</th><th>From</th></tr></thead>
           <tbody>
-            <tr><td>The substitution rule, glued pairs and runs are the same at every level; glued edges weld their crossings in reverse order</td><td><a href={`${FASS}#3-the-induction`}>FASS theorem §2–3</a>, machine-checked in <a href={`${REPO}/lean/README.md`}>Lean</a></td></tr>
-            <tr><td>Every type&rsquo;s border at the tiles and at levels 1, 2 and 3; no circuit closing at levels 1 to 3</td><td>Computed on this page; tested against strands welded from the tiles</td></tr>
+            <tr><td>The substitution: the child in each slot, the glued pairs and the runs, the same at every level; its tiles do not overlap</td><td>The tiling, <a href={PAPER_URL}>Smith, Myers, Kaplan and Goodman-Strauss</a></td></tr>
+            <tr><td>Every type&rsquo;s border at the tiles and at levels 1, 2 and 3; no circuit closing at levels 1 to 3</td><td>Computed on this page</td></tr>
             <tr><td>Psi children in slots {list(children.slots)} have both crossings welded</td><td>The glued pairs, on this page</td></tr>
             <tr><td>The chain {chain.word.join(', ')} buries each supertile {chain.depth} levels up</td><td>The runs, on this page</td></tr>
-            <tr><td>The chain fills the plane and its tiles do not overlap</td><td><a href={`${FASS}#4-non-overlap-and-exhaustion-the-covering-argument`}>FASS theorem §4</a></td></tr>
-            <tr><td>Chords of different tiles meet only at shared crossings</td><td><a href={FASS}>FASS theorem §6</a></td></tr>
+            <tr><td>No four-crossing tile joins interleaved crossings</td><td>The combination, on this page</td></tr>
           </tbody>
         </table>
-        <p className="bu-muted">
-          The same argument, written as tables, is in <a href={`${REPO}/docs/EVERY_OTHER_LEVEL.md`}>The line of rule 128 from its borders</a>. In Lean, <code>routing_all_levels</code> in <a href={`${REPO}/lean/FASS/Hex.lean`}>the hexagon configuration</a> proves Claims 3 to 5 the same way: the level-1 routing comes back after two steps, so there is no circuit and one Psi route at every level.
-        </p>
       </section>
     </article>
   );
