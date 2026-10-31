@@ -8,9 +8,10 @@
 import type { TileFamilyId } from '../../core';
 import type { Box } from '../../lib/viewport';
 import { CircuitShapes, distinctCircuits, familyOf, type BornCircuit } from '../shapes/circuitShapes';
-import { Geometry } from '../buildup/viewer';
-import { chainRows, CircuitRows, type ChainRows, type Fold } from './rows';
-import { chainPicture, CIRCUIT_POINTS, SUPERTILE_CAP, VISIT_CAP, type ChainPicture } from './pairView';
+import { Geometry, walkedLine } from '../buildup/viewer';
+import { chainRows, CircuitRows, READ_CAP, type ChainRows, type Fold } from './rows';
+import { chainPicture, SUPERTILE_CAP, type ChainPicture } from './pairView';
+import { arcsOf, circuitDescent, levelLine, visitsIn, type Descent } from './levelWalk';
 import { chainsOf, closestInFamily, harmonicLinks, nearLinks, type Chain, type Link, type Near } from './chains';
 import { alignReadings, extraRuns, readDown, sameCyclic, type Alignment, type Reading } from './readings';
 import { scoreAll, scorePair, type Scored } from './similarity';
@@ -69,6 +70,7 @@ interface FoundMember {
   readonly born: BornCircuit;
   readonly rows: SparseRows;
   readonly placed: Placed;
+  readonly descent: Descent;
   readonly info: CircuitInfo;
 }
 
@@ -172,7 +174,7 @@ export class HarmonicsEngine {
       const { readings, readFrom } = readRows(rows, LAST_VISITS);
       const first = firstTileOf(this.cs, R, born);
       const info: CircuitInfo = { level: f.level, type: f.type, length: f.length, family: f.family, readings, readFrom, outlines: [], drawnFrom: f.level, first };
-      const m = { born, rows, placed: new Placed(this.cs, rows), info };
+      const m = { born, rows, placed: new Placed(this.cs, rows), descent: circuitDescent(arcsOf(this.cs, R), born), info };
       this.foundBy.set(key, m);
       return m;
     });
@@ -195,11 +197,8 @@ export class HarmonicsEngine {
 
   /** Circuits of the last result (a chain's members, by level) over their supertiles, the lowest at level k. */
   picture(members: readonly number[], k: number, fold: Fold = 'fixpoint'): ChainPicture {
-    const placing = (i: number) => {
-      const m = this.extraOf(i);
-      return m ? { placed: (l: number) => ({ v: m.rows.visits(l), xform: m.placed.frame(l) }), line: (l: number) => thinLine(m.placed.line(l)) } : undefined;
-    };
-    if (fold === 'fixpoint') return chainPicture(this.cs, members.map((i) => ({ circuit: this.bornOf(i), readings: this.infoOf(i).readings, placing: placing(i) })), k);
+    const descent = (i: number) => this.descentOf(i);
+    if (fold === 'fixpoint') return chainPicture(this.cs, members.map((i) => ({ circuit: this.bornOf(i), readings: this.infoOf(i).readings, descent: descent(i) })), k);
     // the readings under another fold, at the level drawn, from the rows
     const base = Math.min(...members.map((i) => this.bornOf(i).level));
     return chainPicture(
@@ -208,11 +207,23 @@ export class HarmonicsEngine {
         const level = k + this.bornOf(i).level - base;
         const raw = this.infoOf(i).readings.find((r) => r.level === level)?.raw ?? Infinity;
         const rows = this.circuitRows(i);
-        const readings = raw <= VISIT_CAP ? [{ level, raw, tokens: rows.fold(level, fold).tokens, tiles: [] }] : [];
-        return { circuit: this.bornOf(i), readings, keep: (l: number) => rows.fold(l, fold).keep, placing: placing(i) };
+        const readings = raw <= READ_CAP ? [{ level, raw, tokens: rows.fold(level, fold).tokens, tiles: [] }] : [];
+        return { circuit: this.bornOf(i), readings, keep: (l: number) => rows.fold(l, fold).keep, descent: descent(i) };
       }),
       k,
     );
+  }
+
+  private readonly descents = new Map<BornCircuit, Descent>();
+
+  /** Where circuit `ci`'s visits come from: the tables, or for a circuit found the routes above them. */
+  private descentOf(ci: number): Descent {
+    const m = this.extraOf(ci);
+    if (m) return m.descent;
+    const c = this.bornOf(ci);
+    let d = this.descents.get(c);
+    if (!d) this.descents.set(c, (d = circuitDescent(arcsOf(this.cs), c)));
+    return d;
   }
 
   private geometry: Geometry | null = null;
@@ -257,8 +268,9 @@ export class HarmonicsEngine {
    */
   detail(ci: number, level: number, view: Box | null, budget: number): { stop: number; pts: Float64Array; capped: boolean } {
     const m = this.extraOf(ci);
-    if (m) return foundDetail(m.placed, m.info.readings, level, view, budget);
+    if (m) return foundDetail(m.placed, m.descent, level, view, budget);
     const c = this.bornOf(ci);
+    const d = this.descentOf(ci);
     const g = (this.geometry ??= new Geometry(this.cs));
     let share = 1;
     if (view) {
@@ -268,18 +280,20 @@ export class HarmonicsEngine {
       share = Math.min(1, (4 * w * h) / ((x1 - x0) * (y1 - y0) || 1));
     }
     for (let s = Math.max(0, level - 2); s <= level; s++) {
-      if (s < level && this.visitsAt(ci, s) * share > budget) continue;
-      const out: number[] = [];
-      for (const st of c.steps) {
-        const ch = this.cs.childOf(c.level, c.type, st);
-        g.walk(c.level - 1, ch.type, ch.k, ch.xform, s, view, out);
-      }
-      out.push(out[0], out[1]);
-      const pts = Float64Array.from(out);
-      if (s < level && pts.length > 4 * budget) continue;
-      const n = pts.length / 2;
-      if (n <= 2 * budget) return { stop: s, pts, capped: false };
-      return { stop: s, pts: thin(pts, budget), capped: true };
+      if (s < level && visitsIn(d, s) * share > budget) continue;
+      if (s === level && !view) return { stop: s, ...levelLine(d, s, budget) };
+      const got = walkedLine(
+        (out) => {
+          for (const st of c.steps) {
+            const ch = this.cs.childOf(c.level, c.type, st);
+            g.walk(c.level - 1, ch.type, ch.k, ch.xform, s, view, out);
+          }
+        },
+        null,
+        budget,
+        s === level,
+      );
+      if (got) return { stop: s, ...got };
     }
     throw new Error('no level to draw at');
   }
@@ -310,7 +324,7 @@ export class HarmonicsEngine {
    * Every pair of the last result two levels apart in one family, scored by
    * how alike they read under a fold (`similarity.ts`). Under `fixpoint` the
    * readings are the circuits' own; under another fold a level is read from
-   * the rows while it has at most `VISIT_CAP` raw visits.
+   * the rows while it has at most `READ_CAP` raw visits.
    */
   similarities(fold: Fold = 'fixpoint'): Scored[] {
     const circuits = this.list();
@@ -321,7 +335,7 @@ export class HarmonicsEngine {
       const r = circuits[i].readings.find((x) => x.level === level);
       if (!r) return null;
       if (fold === 'fixpoint') return r.tokens;
-      return r.raw <= VISIT_CAP ? this.circuitRows(i).fold(level, fold).tokens : null;
+      return r.raw <= READ_CAP ? this.circuitRows(i).fold(level, fold).tokens : null;
     };
     const out = scoreAll(circuits, tokens);
     this.scoredBy.set(key, out);
@@ -353,7 +367,7 @@ export class HarmonicsEngine {
       const r = this.infoOf(i).readings.find((x) => x.level === level);
       if (!r) return null;
       if (fold === 'fixpoint') return r.tokens;
-      return r.raw <= VISIT_CAP ? this.circuitRows(i).fold(level, fold).tokens : null;
+      return r.raw <= READ_CAP ? this.circuitRows(i).fold(level, fold).tokens : null;
     };
     return { a: ai, b: bi, ...scorePair(this.infoOf(ai), (w, l) => tokens(w === 'a' ? ai : bi, l)) };
   }
@@ -558,19 +572,6 @@ export function createHarmonicsClient(opts: { forceSync?: boolean } = {}): Harmo
       waiting.clear();
     },
   };
-}
-
-/** An open line through at most `CIRCUIT_POINTS` of its points, evenly spaced, as `pairView.ts`'s `lineOf` draws one. */
-function thinLine(xy: Float64Array): Float64Array {
-  const m = xy.length / 2;
-  if (m <= CIRCUIT_POINTS) return xy;
-  const out = new Float64Array(2 * CIRCUIT_POINTS);
-  for (let j = 0; j < CIRCUIT_POINTS; j++) {
-    const i = Math.floor((j * m) / CIRCUIT_POINTS);
-    out[2 * j] = xy[2 * i];
-    out[2 * j + 1] = xy[2 * i + 1];
-  }
-  return out;
 }
 
 /** A closed line thinned to about `n` of its points, evenly spaced, still closed. */

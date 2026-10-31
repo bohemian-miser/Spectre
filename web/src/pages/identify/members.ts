@@ -16,12 +16,13 @@
  * the supertiles of that reading placed in a supertile of its level, its
  * line through their middles.
  */
-import { mul, transPt, type Affine, type HexType, type Pt } from '../../core';
+import { transPt, type Affine, type HexType, type Pt } from '../../core';
 import type { Box } from '../../lib/viewport';
-import { Geometry } from '../buildup/viewer';
+import { Geometry, walkedLine } from '../buildup/viewer';
 import { middleOf, placeOfPath } from '../buildup/deep';
-import { CircuitRows, chainRows, type ChainRows, type Fold } from '../harmonics/rows';
-import { lineOf, sharedTokens, SUPERTILE_CAP, supertilesOf, unsharedIds, VISIT_CAP, visitsWithFrames, type Agreement, type ChainPicture, type Side } from '../harmonics/pairView';
+import { CircuitRows, chainRows, READ_CAP, type ChainRows, type Fold } from '../harmonics/rows';
+import { drawSide, lineOf, sharedTokens, SUPERTILE_CAP, supertilesOf, unsharedIds, type Agreement, type ChainPicture, type Side } from '../harmonics/pairView';
+import { arcsOf, circuitDescent, visitsIn, type Descent } from '../harmonics/levelWalk';
 import { cancelOpen, pathOf, type VisitColumns } from '../harmonics/readings';
 import type { BornCircuit, CircuitShapes } from '../shapes/circuitShapes';
 import { fitPairs, type Arc, type IdentifyEngine, type Named, type Strand } from './identify';
@@ -109,29 +110,14 @@ class PredictedRows extends CircuitRows {
   }
 }
 
-/** A member as drawn: its rows, each visit's frame at a level, its line, and its line drawn finer for a view. */
+/** A member as drawn: its rows; where its visits come from, walked at levels up to the descent's top; above that (or without one) each listed visit's frame and its line; and its line drawn finer for a view. */
 interface Source {
   readonly rows: CircuitRows;
   /** An open strand. */
   readonly open: boolean;
-  frames(level: number): readonly Affine[];
-  line(level: number): Float64Array;
+  readonly descent: Descent | null;
+  readonly listed: { frames(level: number): readonly Affine[]; line(level: number): Float64Array } | null;
   detail(level: number, view: Box | null, budget: number): { stop: number; pts: Float64Array; capped: boolean };
-}
-
-/** About `n` of a line's points, evenly spaced, its last kept. */
-function spaced(pts: Float64Array, n: number): Float64Array {
-  const m = pts.length / 2;
-  if (m <= n) return pts;
-  const out = new Float64Array(2 * n + 2);
-  for (let j = 0; j < n; j++) {
-    const i = Math.floor((j * (m - 1)) / n);
-    out[2 * j] = pts[2 * i];
-    out[2 * j + 1] = pts[2 * i + 1];
-  }
-  out[2 * n] = pts[pts.length - 2];
-  out[2 * n + 1] = pts[pts.length - 1];
-  return out;
 }
 
 const boxOf = (pts: readonly Pt[]) => {
@@ -163,23 +149,18 @@ function drawDown(
   }
   for (let s = Math.max(0, level - 2); s <= level; s++) {
     if (s < level && rawAt(s) * share > budget) continue;
-    const out: number[] = [];
-    for (const a of arcs) g.walk(a.n, a.type, a.k, a.x, s, view, out);
-    if (end) out.push(end.x, end.y);
-    else out.push(out[0], out[1]);
-    const pts = Float64Array.from(out);
-    if (s < level && pts.length > 4 * budget) continue;
-    if (pts.length / 2 <= 2 * budget) return { stop: s, pts, capped: false };
-    return { stop: s, pts: spaced(pts, budget), capped: true };
+    const got = walkedLine(
+      (out) => {
+        for (const a of arcs) g.walk(a.n, a.type, a.k, a.x, s, view, out);
+      },
+      end,
+      budget,
+      s === level,
+    );
+    if (got) return { stop: s, ...got };
   }
   throw new Error('no level to draw at');
 }
-
-/** Visits at level s, from the visits at `level` and the tiles at level 0, taken to grow by a steady factor a level. */
-const rawFrom = (rows: CircuitRows, level: number, tiles: number) => (s: number) => {
-  const v = rows.visits(level).type.length;
-  return level <= 0 ? v : v * Math.pow(Math.max(1, tiles / v), (level - s) / level);
-};
 
 /** The members of an identification: sources made once each, pictures and rows of any list of them. */
 export class Members {
@@ -219,11 +200,12 @@ export class Members {
   private circuitSource(c: BornCircuit, detail?: (level: number, view: Box | null, budget: number) => ReturnType<Source['detail']>): Source {
     const cs = this.cs;
     const rows = new CircuitRows(cs, c);
+    const descent = circuitDescent(arcsOf(cs), c);
     return {
       rows,
       open: false,
-      frames: (level) => visitsWithFrames(cs, c, level).xform,
-      line: (level) => lineOf(cs.shape(c, level)),
+      descent,
+      listed: null,
       detail:
         detail ??
         ((level, view, budget) =>
@@ -235,7 +217,7 @@ export class Members {
               return { n: c.level - 1, type: ch.type, k: ch.k, x: ch.xform };
             }),
             null,
-            rawFrom(rows, level, c.length),
+            (s) => visitsIn(descent, s),
             level,
             view,
             budget,
@@ -261,8 +243,8 @@ export class Members {
       return {
         rows,
         open: false,
-        frames: (level) => placed(level).map((p) => p.x),
-        line,
+        descent: null,
+        listed: { frames: (level) => placed(level).map((p) => p.x), line },
         detail: (level) => {
           const pts = line(level);
           const out = new Float64Array(pts.length + 2);
@@ -280,28 +262,23 @@ export class Members {
     if (!arc) throw new Error(`the strand has not climbed to level ${spec.level}`);
     const rows = new StrandRows(cs, strand, arc, spec.birth);
     const exit = cs.levels[arc.level][arc.type].pt(arc.exit);
+    const descent: Descent = { arcs: arcsOf(cs), birth: spec.birth, top: arc.level, first: [{ type: arc.type, cross: arc.entry, id: rows.ancestorId(arc.level), xform: IDENTITY }], end: exit };
     return {
       rows,
       open: true,
-      frames: (level) => {
-        let v = rows.visits(arc.level - 1);
-        let xf: Affine[] = v.slot.map((slot, i) => cs.childOf(arc.level, arc.type, v.cross[i] * 8 + slot).xform);
-        for (let l = arc.level - 2; l >= level; l--) {
-          const above = v;
-          v = rows.visits(l);
-          const prev = xf;
-          xf = v.up.map((u, i) => mul(prev[u], cs.childOf(l + 1, above.type[u], v.slot[i]).xform));
-        }
-        return level >= arc.level ? [IDENTITY] : xf;
-      },
-      line: (level) => {
-        const pts: Pt[] = [];
-        cs.arc(arc.level, arc.type, arc.entry, IDENTITY, level, pts);
-        pts.push(exit);
-        return lineOf(pts);
+      descent,
+      // above the arc's level, its one visit: the ancestor
+      listed: {
+        frames: () => [IDENTITY],
+        line: (level) => {
+          const pts: Pt[] = [];
+          cs.arc(arc.level, arc.type, arc.entry, IDENTITY, level, pts);
+          pts.push(exit);
+          return lineOf(pts);
+        },
       },
       detail: (level, view, budget) =>
-        drawDown(this.g, cs.outline(arc.level, arc.type), [{ n: arc.level, type: arc.type, k: arc.entry, x: IDENTITY }], exit, rawFrom(rows, level, arc.tiles), level, view, budget),
+        drawDown(this.g, cs.outline(arc.level, arc.type), [{ n: arc.level, type: arc.type, k: arc.entry, x: IDENTITY }], exit, (s) => visitsIn(descent, s), level, view, budget),
     };
   }
 
@@ -310,14 +287,16 @@ export class Members {
     const src = specs.map((s) => this.source(s));
     const base = Math.min(...src.map((s) => s.rows.c.level));
     const levels = src.map((s) => k + s.rows.c.level - base);
+    const walked = (j: number) => !!src[j].descent && levels[j] <= src[j].descent!.top;
     const counts = src.map((s, j) => {
+      if (walked(j)) return visitsIn(s.descent!, levels[j]);
       try {
         return s.rows.visits(levels[j]).type.length;
       } catch {
         return Infinity;
       }
     });
-    const read = (j: number) => (counts[j] <= VISIT_CAP ? src[j].rows.fold(levels[j], fold) : null);
+    const read = (j: number) => (counts[j] <= READ_CAP ? src[j].rows.fold(levels[j], fold) : null);
     const steps: Agreement[] = [];
     const shared: (readonly boolean[] | null)[] = src.map(() => null);
     const matched = src.map(() => new Set<number>());
@@ -356,11 +335,12 @@ export class Members {
     }
     const sides = src.map((s, j): Side => {
       const level = levels[j];
-      if (counts[j] > VISIT_CAP) return { level, visits: counts[j], count: 0, supertiles: [], circuit: new Float64Array(0), open: s.open };
+      const r = read(j);
+      const unshared = () => (r ? unsharedIds(s.rows.visits(level).id, r.keep, shared[j]) : new Set<number>());
+      if (walked(j)) return { ...drawSide(s.descent!, level, { unshared: unshared(), matched: matched[j], link: links[j] }), open: s.open };
       const v = s.rows.visits(level);
-      const keep = s.rows.fold(level, fold).keep;
-      const { count, supertiles } = supertilesOf(this.cs, v, s.frames(level), s.rows.c.level - level, unsharedIds(v, keep, shared[j]), matched[j], links[j]);
-      return { level, visits: v.type.length, count, supertiles, circuit: s.line(level), open: s.open };
+      const { count, supertiles } = supertilesOf(this.cs, v, s.listed!.frames(level), s.rows.c.level - level, unshared(), matched[j], links[j]);
+      return { level, visits: v.type.length, every: 1, count, supertiles, circuit: s.listed!.line(level), open: s.open };
     });
     return { k, sides, steps };
   }

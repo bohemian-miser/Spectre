@@ -2,15 +2,16 @@
  * The members of a chain shown supertile for supertile: each member over
  * the outlines of the supertiles it runs through, each two levels above the
  * member before, those holding a visit the neighbouring member's reading
- * does not share marked.
+ * does not share marked. A member is drawn at any level from a walk of its
+ * visits (`levelWalk.ts`), every one up to `SAMPLE_ABOVE` raw visits.
  */
 import { mul, transPt, type Affine, type HexType, type Pt } from '../../core';
 import { outlineOf } from '../buildup/deep';
 import type { BornCircuit, CircuitShapes } from '../shapes/circuitShapes';
+import { arcsOf, circuitDescent, walkLevel, type Descent } from './levelWalk';
 import { alignReadings, cancelBacktracksAt, expandVisits, pathOf, sameCyclic, topVisits, type Reading, type VisitColumns } from './readings';
+import { READ_CAP } from './rows';
 
-/** Supertiles are drawn for a level while the circuit has at most this many raw visits there. */
-export const VISIT_CAP = 400000;
 /** The circuit is drawn through at most this many of its crossings at the level, evenly spaced. */
 export const CIRCUIT_POINTS = 20000;
 /** At most this many supertiles are drawn per picture, the first the circuit enters. */
@@ -34,10 +35,12 @@ export interface Side {
   readonly level: number;
   /** Raw visits at this level. */
   readonly visits: number;
-  /** Supertiles the circuit runs through; 0 when the level has more than `VISIT_CAP` visits. */
+  /** Visits drawn: every one (1), or every `every`-th from the first (`levelWalk.ts`). */
+  readonly every: number;
+  /** Supertiles of the visits drawn. */
   readonly count: number;
   readonly supertiles: readonly Supertile[];
-  /** The circuit at this level (each arc a chord, through at most `CIRCUIT_POINTS` crossings), x, y pairs; empty when not drawn. */
+  /** The circuit at this level through the visits drawn (each arc a chord, through at most `CIRCUIT_POINTS` crossings), x, y pairs. */
   readonly circuit: Float64Array;
   /** An open strand: its line is not closed. */
   readonly open?: boolean;
@@ -67,7 +70,7 @@ export function sharedTokens(a: readonly string[], b: readonly string[]): { stat
   return { state: 'differs', a: [...al.matchedA], b: inB };
 }
 
-/** A born circuit's visits at a level, with each visited supertile's place in the birth supertile's frame. */
+/** A born circuit's visits at a level, with each visited supertile's place in the birth supertile's frame, listed. */
 export function visitsWithFrames(cs: CircuitShapes, c: BornCircuit, level: number): { v: VisitColumns; xform: Affine[] } {
   let v = topVisits(cs, c);
   let xform = v.slot.map((s) => cs.childOf(c.level, c.type, s).xform);
@@ -79,31 +82,59 @@ export function visitsWithFrames(cs: CircuitShapes, c: BornCircuit, level: numbe
   return { v, xform };
 }
 
-/** A member's visits at a level with each supertile's frame, and its line there: a built circuit's from the tables, unless given. */
-export interface Placing {
-  placed(level: number): { v: VisitColumns; xform: readonly Affine[] };
-  line(level: number): Float64Array;
+/** Supertiles marked by slot path (as one number): holding a visit the neighbour lacks, matched with the neighbour's, linked to another slot path. */
+export interface Marks {
+  readonly unshared?: ReadonlySet<number>;
+  readonly matched?: ReadonlySet<number>;
+  readonly link?: ReadonlyMap<number, string>;
 }
 
-const fromTables = (cs: CircuitShapes, c: BornCircuit): Placing => ({
-  placed: (level) => visitsWithFrames(cs, c, level),
-  line: (level) => lineOf(cs.shape(c, level)),
-});
+/**
+ * A member drawn at a level from its descent (`levelWalk.ts`): its
+ * supertiles and line from every visit, or from every `SAMPLE_EVERY`-th
+ * over `SAMPLE_ABOVE`; marked by `marks`, or by what `marks` makes of
+ * every visit's slot path, walked for it.
+ */
+export function drawSide(
+  d: Descent,
+  level: number,
+  marks?: Marks | ((ids: Float64Array) => Marks),
+  sample?: { above: number; every: number },
+): Side {
+  const cs = d.arcs.cs;
+  const w = walkLevel(d, level, {
+    cap: SUPERTILE_CAP,
+    points: CIRCUIT_POINTS,
+    ids: typeof marks === 'function',
+    outline: (type) => outlinePts(cs, level, type),
+    sampleAbove: sample?.above,
+    every: sample?.every,
+  });
+  const m = typeof marks === 'function' ? (w.ids ? marks(w.ids) : {}) : marks ?? {};
+  const depth = d.birth - level;
+  const supertiles = w.met.map((x): Supertile => {
+    const to = m.link?.get(x.id);
+    return {
+      path: pathOf(x.id, depth),
+      type: x.type,
+      outline: x.outline,
+      unshared: m.unshared?.has(x.id) ?? false,
+      ...(m.matched?.has(x.id) ? { matched: true } : {}),
+      ...(to !== undefined ? { link: to } : {}),
+    };
+  });
+  return { level, visits: w.visits, every: w.every, count: w.count, supertiles, circuit: w.line, ...(d.end ? { open: true } : {}) };
+}
 
 /** One side of the picture: the circuit's supertiles at `level`, those holding an unshared token (by `shared`, per token of its reading) marked. */
-export function sideAt(cs: CircuitShapes, c: BornCircuit, level: number, reading: Reading | undefined, shared: readonly boolean[] | null, kept?: Int32Array, placing = fromTables(cs, c)): Side {
-  const visits = reading?.raw ?? Infinity;
-  if (visits > VISIT_CAP) return { level, visits, count: 0, supertiles: [], circuit: new Float64Array(0) };
-  const { v, xform } = placing.placed(level);
-  const keep = shared ? kept ?? cancelBacktracksAt(v.id, v.tiles).keep : null;
-  const { count, supertiles } = supertilesOf(cs, v, xform, c.level - level, unsharedIds(v, keep, shared));
-  return { level, visits: v.type.length, count, supertiles, circuit: placing.line(level) };
+export function sideAt(cs: CircuitShapes, c: BornCircuit, level: number, shared: readonly boolean[] | null, kept?: Int32Array, descent = circuitDescent(arcsOf(cs), c)): Side {
+  return drawSide(descent, level, shared ? (ids) => ({ unshared: unsharedIds(ids, kept ?? cancelBacktracksAt(ids, new Float64Array(ids.length)).keep, shared) }) : undefined);
 }
 
-/** The supertiles holding a kept visit (`keep`, indices into the visits) that `shared` (per kept visit) says the other reading lacks. */
-export function unsharedIds(v: VisitColumns, keep: Int32Array | null, shared: readonly boolean[] | null): Set<number> {
+/** The supertiles holding a kept visit (`keep`, indices into the visits' slot paths `ids`) that `shared` (per kept visit) says the other reading lacks. */
+export function unsharedIds(ids: ArrayLike<number>, keep: Int32Array | null, shared: readonly boolean[] | null): Set<number> {
   const out = new Set<number>();
-  if (keep && shared) keep.forEach((i, q) => { if (!shared[q]) out.add(v.id[i]); });
+  if (keep && shared) keep.forEach((i, q) => { if (!shared[q]) out.add(ids[i]); });
   return out;
 }
 
@@ -164,7 +195,7 @@ export function lineOf(all: readonly Pt[]): Float64Array {
  */
 export function chainPicture(
   cs: CircuitShapes,
-  members: readonly { circuit: BornCircuit; readings: readonly Reading[]; keep?: (level: number) => Int32Array; placing?: Placing }[],
+  members: readonly { circuit: BornCircuit; readings: readonly Reading[]; keep?: (level: number) => Int32Array; descent?: Descent }[],
   k: number,
 ): ChainPicture {
   const base = Math.min(...members.map((m) => m.circuit.level));
@@ -181,7 +212,8 @@ export function chainPicture(
   }
   const sides = members.map((m, j) => {
     const level = k + m.circuit.level - base;
-    return sideAt(cs, m.circuit, level, reading(j), shared[j], m.keep && reading(j) && reading(j)!.raw <= VISIT_CAP ? m.keep(level) : undefined, m.placing);
+    const r = reading(j);
+    return sideAt(cs, m.circuit, level, shared[j], m.keep && r && r.raw <= READ_CAP ? m.keep(level) : undefined, m.descent);
   });
   return { k, sides, steps };
 }
