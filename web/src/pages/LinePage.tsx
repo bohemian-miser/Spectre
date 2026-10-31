@@ -17,6 +17,8 @@ import { PatchFigure, StitchFigure, along, alongColours, routeIndexOf } from './
 import { pairsRound, runsUnder, tracePatch } from './line/strand';
 import { PAPER_URL } from '../lib/siteNav';
 import { stitched } from './line/stitch';
+import { chordsThrough, recipes, sameRecipes } from './line/recipe';
+import { tileColor } from '../lib/palette';
 import '../styles/buildup.css';
 import '../styles/period.css';
 import '../styles/line.css';
@@ -25,7 +27,7 @@ const SUBSET = [1, 2, 8];
 const COMBO = '010100000';
 const DIGITS = [...COMBO].map(Number);
 /** Levels of borders computed; the proof needs 0 to 3, the rest are shown as a check. */
-const TOP = 5;
+const TOP = 7;
 const SLOT_COLOURS = ['var(--pd-r0)', 'var(--pd-r1)', 'var(--pd-r2)'];
 
 const nf = (n: number) => n.toLocaleString('en-US');
@@ -76,6 +78,23 @@ export default function LinePage(): JSX.Element {
   const [stitchType, setStitchType] = useState<HexType>('Delta');
   const stitch = useMemo(() => stitched(cs, r.states, 1, 2, stitchType), [cs, r, stitchType]);
 
+  const rec = useMemo(() => {
+    const at = (n: number) => recipes(r.states, n, 2);
+    const odd = [at(1), at(3), at(5)], even = [at(2), at(4)];
+    const counted = [1, 3, 5].every((n) => HEX_TYPES.every((t) => at(n)[t].every((x) => chordsThrough(r.states, n, x) === r.states[n + 2][t].chords[x.from])));
+    return { r13: odd[0], repeats: sameRecipes(odd[0], odd[1]) && sameRecipes(odd[0], odd[2]), evenRepeats: sameRecipes(even[0], even[1]), counted };
+  }, [r]);
+  const [recType, setRecType] = useState<HexType>('Psi');
+  const [recRoute, setRecRoute] = useState(0);
+  const [recUse, setRecUse] = useState<number | null>(null);
+  const recipe = rec.r13[recType][Math.min(recRoute, rec.r13[recType].length - 1)];
+  const lit = useMemo(() => new Set(recipe.uses.map((u) => u.piece)), [recipe]);
+  const stitch5 = useMemo(() => stitched(cs, r.states, 3, 2, recType), [cs, r, recType]);
+  const stitch3 = useMemo(() => stitched(cs, r.states, 1, 2, recType), [cs, r, recType]);
+  const symbols = HEX_TYPES.reduce((a, t) => a + rec.r13[t].length, 0);
+  const psiInPsi = rec.r13.Psi[0].uses.filter((u) => u.type === 'Psi');
+  const use = recUse === null ? null : recipe.uses[recUse] ?? null;
+
   const children = useMemo(() => {
     const patch = tracePatch(SUBSET, DIGITS, 3, 'Psi');
     const strand = patch.strands[0];
@@ -113,7 +132,7 @@ export default function LinePage(): JSX.Element {
           In the hexagon tiling filled by a chain of nested Psi supertiles, with rule <code>128</code> and combination <code>{COMBO}</code>, there is exactly one strand. It never closes, never crosses itself, has no end in either direction, and passes through every tile: once through each tile with two crossings and twice through each with four.
         </p>
         <p>
-          The proof rests on one comparison. A supertile seen from outside is its border: the crossings round its six edges, and which crossing a strand entering at each one leaves by. Two rounds of stitching take every type&rsquo;s level-1 border to its level-3 border, and the two are the same for all nine types. Everything else follows by induction: no circuit ever closes, and the Psi, a single line as a tile, stays a single line at every level, each one the middle of the next.
+          The proof rests on one comparison. A supertile seen from outside is its border: the crossings round its six edges, and which crossing a strand entering at each one leaves by. Two rounds of stitching take every type&rsquo;s level-1 border to its level-3 border, and the two are the same for all nine types. So each route two levels up is made of routes below by a fixed recipe, the same recipe at every odd level, and the strands of the whole tiling are that recipe applied over and over. Everything else follows by induction: no circuit ever closes, and the Psi, a single line as a tile, stays a single line at every level, each one the middle of the next.
         </p>
         <figure className="ln-figure" data-testid="ln-hero">
           <Chips name="Level" value={heroLevel} options={[1, 2, 3, 4]} label={(n) => `Level ${n}`} onPick={setHeroLevel} />
@@ -239,9 +258,73 @@ export default function LinePage(): JSX.Element {
         </p>
       </section>
 
+      <section className="ln-section" aria-labelledby="ln-recipe">
+        <h2 id="ln-recipe">5. Routes made of routes</h2>
+        <p>
+          A route of a level-3 supertile, walked through its level-1 pieces, takes one whole route of each piece it passes and then crosses a weld into the next piece. The list of those piece routes, in order, is the route&rsquo;s <em>recipe</em>: for each step, the piece&rsquo;s slot path below the supertile, its type, and the crossings of its border it is entered at and left by. The nine types have {symbols} routes between them at odd levels, so there are {symbols} recipes.
+        </p>
+        <Claim n={4} title="the recipe repeats">
+          For every odd n, each route of a level-(n + 2) supertile is walked through its level-n pieces by the same recipe as the same route at level 3 through level 1: the same pieces, the same route of each, in the same order. At even n the recipe is that of level 4 through level 2.
+        </Claim>
+        <p>
+          The walk reads nothing but the substitution tables and the borders of the pieces. At odd n the pieces have level 1&rsquo;s borders (Claim 3), so each step of the walk is the step taken at level 3; at even n they have level 2&rsquo;s. Computed directly, the recipes from level 3 to 5 and from 5 to 7 {rec.repeats ? 'are' : 'are not'} those from 1 to 3, and those from 4 to 6 {rec.evenRepeats ? 'are' : 'are not'} those from 2 to 4.
+        </p>
+        <figure className="ln-figure" data-testid="ln-recipe-fig">
+          <Chips name="Type" value={recType} options={HEX_TYPES} label={(t) => t} onPick={(t) => { setRecType(t); setRecRoute(0); setRecUse(null); }} />
+          <Chips name="Route" value={recRoute} options={rec.r13[recType].map((_, i) => i)} label={(i) => `${rec.r13[recType][i].from}–${rec.r13[recType][i].to}`} onPick={(i) => { setRecRoute(i); setRecUse(null); }} />
+          <div className="ln-twin">
+            <div><StitchFigure s={stitch3} label={`${recType} at level 3 as its level-1 pieces, route ${recipe.from}–${recipe.to}`} focus={recRoute} lit={lit} mark={use?.piece ?? null} /><span>Level 3, from level-1 pieces</span></div>
+            <div><StitchFigure s={stitch5} label={`${recType} at level 5 as its level-3 pieces, route ${recipe.from}–${recipe.to}`} focus={recRoute} lit={lit} mark={use?.piece ?? null} /><span>Level 5, from level-3 pieces</span></div>
+          </div>
+          <div className="ln-barcode" role="group" aria-label={`The recipe of ${recType} ${recipe.from}–${recipe.to}`} data-testid="ln-barcode">
+            {recipe.uses.map((u, i) => (
+              <button
+                key={i}
+                type="button"
+                title={`${i + 1}. ${u.path.join('.')}: ${u.type} ${u.enter}→${u.leave}`}
+                aria-label={`Step ${i + 1}: piece ${u.path.join('.')}, ${u.type}, ${u.enter} to ${u.leave}`}
+                className={`${u.type === recType ? 'is-same' : ''}${i === recUse ? ' is-on' : ''}`}
+                style={{ background: tileColor(u.type) }}
+                onMouseEnter={() => setRecUse(i)}
+                onFocus={() => setRecUse(i)}
+                onClick={() => setRecUse(i)}
+              />
+            ))}
+          </div>
+          <p className="ln-use" data-testid="ln-use">
+            {use
+              ? <>Step {recUse! + 1} of {recipe.uses.length}: piece <code>{use.path.join('.')}</code>, a {use.type}, entered at {use.enter} and left by {use.leave}. That route has {nf(r.states[1][use.type].chords[use.enter])} chords at level 1 and {nf(r.states[3][use.type].chords[use.enter])} at level 3.</>
+              : <>{recType} {recipe.from}–{recipe.to}: {recipe.uses.length} steps through {lit.size} of the {stitch3.pieces.length} pieces.</>}
+          </p>
+          <figcaption>
+            The recipe of {recType} {recipe.from}–{recipe.to}, one cell per step in order, coloured by the piece&rsquo;s type; cells outlined in black are pieces of the same type as the supertile. Hover over or tap a cell to mark its piece in both drawings. On the left the pieces are level-1 supertiles, on the right level-3 supertiles: the route takes the same pieces in the same order, and only the pieces have grown.
+          </figcaption>
+        </figure>
+        <p>
+          So a route at level 2k + 1 is its recipe applied k times, ending in level-1 routes, and a level-1 route is a run of tile chords: one finite table gives every route at every odd level. The Psi&rsquo;s own recipe passes {psiInPsi.length} Psi pieces and takes each one&rsquo;s route whole, entered at {psiInPsi[0]?.enter} and left by {psiInPsi[0]?.leave}; Claim 7 below is this fact, one level at a time.
+        </p>
+        <p>
+          Counting chords through the recipes gives each route&rsquo;s length two levels up from the lengths below. The borders, computed level by level from scratch, give {rec.counted ? 'the same counts' : 'different counts'} at levels 3, 5 and 7:
+        </p>
+        <div className="ln-scroll">
+          <table className="bu-summary-table ln-table" data-testid="ln-recipe-table">
+            <thead><tr><th>Route</th><th className="num">Steps</th>{[1, 3, 5, 7].map((n) => <th key={n} className="num">Chords at level {n}</th>)}</tr></thead>
+            <tbody>
+              {HEX_TYPES.flatMap((t) => rec.r13[t].map((x) => (
+                <tr key={`${t}${x.from}`}>
+                  <td>{t} {x.from}–{x.to}</td>
+                  <td className="num">{x.uses.length}</td>
+                  {[1, 3, 5, 7].map((n) => <td key={n} className="num">{nf(r.states[n][t].chords[x.from])}</td>)}
+                </tr>
+              )))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
       <section className="ln-section" aria-labelledby="ln-circuits">
-        <h2 id="ln-circuits">5. No circuit</h2>
-        <Claim n={4} title="no circuit">
+        <h2 id="ln-circuits">6. No circuit</h2>
+        <Claim n={5} title="no circuit">
           No supertile, of any type at any level, contains a circuit.
         </Claim>
         <p>
@@ -255,12 +338,12 @@ export default function LinePage(): JSX.Element {
       </section>
 
       <section className="ln-section" aria-labelledby="ln-psi">
-        <h2 id="ln-psi">6. A Psi supertile is one strand</h2>
-        <Claim n={5} title="the Psi">
+        <h2 id="ln-psi">7. A Psi supertile is one strand</h2>
+        <Claim n={6} title="the Psi">
           At every level the chords of a Psi supertile&rsquo;s tiles form a single strand, from one crossing of its border to the other.
         </Claim>
         <p>
-          The Psi has one crossing on edge 0 and one on edge 5 at every level: crossings per edge <code>{psiPerEdge[0]}</code> on the tile, <code>{psiPerEdge[1]}</code> at level 1, <code>{psiPerEdge[2]}</code> at level 2, and so at every level by Claim 3. Every chord of a tile in the supertile lies on a strand; inside the supertile that strand is finite, and it is not a circuit (Claim 4), so it runs from a border crossing to a border crossing. There are only two, so there is only one strand, and every chord is on it. The border computation counts the chords on that one route without looking at the tiles:
+          The Psi has one crossing on edge 0 and one on edge 5 at every level: crossings per edge <code>{psiPerEdge[0]}</code> on the tile, <code>{psiPerEdge[1]}</code> at level 1, <code>{psiPerEdge[2]}</code> at level 2, and so at every level by Claim 3. Every chord of a tile in the supertile lies on a strand; inside the supertile that strand is finite, and it is not a circuit (Claim 5), so it runs from a border crossing to a border crossing. There are only two, so there is only one strand, and every chord is on it. The border computation counts the chords on that one route without looking at the tiles:
         </p>
         <table className="bu-summary-table ln-table" data-testid="ln-psi-table">
           <thead><tr><th>Level</th><th className="num">Tiles</th><th className="num">Chords of the tiles</th><th className="num">Chords on the route</th></tr></thead>
@@ -273,16 +356,16 @@ export default function LinePage(): JSX.Element {
       </section>
 
       <section className="ln-section" aria-labelledby="ln-nest">
-        <h2 id="ln-nest">7. A Psi child&rsquo;s strand is the middle of its parent&rsquo;s</h2>
-        <Claim n={6} title="nesting">
+        <h2 id="ln-nest">8. A Psi child&rsquo;s strand is the middle of its parent&rsquo;s</h2>
+        <Claim n={7} title="nesting">
           A Psi has Psi children in slots {list(children.slots)}. The strand of each is one unbroken stretch of the parent&rsquo;s strand, with at least one chord of the parent&rsquo;s strand before it and after it.
         </Claim>
         <p>
-          The child&rsquo;s two crossings are on its edges 0 and 5 (Claim 5), and in each of these slots both edges are glued to siblings:{' '}
+          The child&rsquo;s two crossings are on its edges 0 and 5 (Claim 6), and in each of these slots both edges are glued to siblings:{' '}
           {children.slots.map((s, i) => (
             <span key={s}>{i ? '; ' : ''}slot {s}: <code>{welds(s).map(([a, b]) => `${a.s}.${a.e}~${b.s}.${b.e}`).join(' ')}</code></span>
           ))}
-          . So neither crossing of the child is on the parent&rsquo;s border. The parent&rsquo;s strand passes every chord of the child (Claim 5), so it enters the child; once in, it runs the child&rsquo;s whole strand and leaves by the other crossing into a sibling, where it carries on.
+          . So neither crossing of the child is on the parent&rsquo;s border. The parent&rsquo;s strand passes every chord of the child (Claim 6), so it enters the child; once in, it runs the child&rsquo;s whole strand and leaves by the other crossing into a sibling, where it carries on.
         </p>
         <figure className="ln-figure" data-testid="ln-nest-fig">
           <PatchFigure
@@ -314,8 +397,8 @@ export default function LinePage(): JSX.Element {
       </section>
 
       <section className="ln-section" aria-labelledby="ln-chain">
-        <h2 id="ln-chain">8. A chain of Psi supertiles fills the plane</h2>
-        <Claim n={7} title="the chain">
+        <h2 id="ln-chain">9. A chain of Psi supertiles fills the plane</h2>
+        <Claim n={8} title="the chain">
           Put each Psi supertile in the next at slots {chain.word.join(', ')}, {chain.word.join(', ')}, … in turn. Each supertile of the chain lies inside the one {chain.depth} levels above it, away from its border.
         </Claim>
         <p>
@@ -344,9 +427,9 @@ export default function LinePage(): JSX.Element {
       </section>
 
       <section className="ln-section" aria-labelledby="ln-line">
-        <h2 id="ln-line">9. The line</h2>
+        <h2 id="ln-line">10. The line</h2>
         <p>
-          Let A<sub>0</sub>, A<sub>1</sub>, A<sub>2</sub>, … be the strands of the chain&rsquo;s supertiles (Claim 5). By Claim 6 each is a stretch in the middle of the next, which adds at least one chord at each end, so together they make a curve with no end in either direction. Every tile of the plane is in some supertile of the chain (Claim 7), so each of its chords is on that supertile&rsquo;s strand and on the curve. So the curve is the only strand, and it passes every chord: a tile with two crossings once, a tile with four twice.
+          Let A<sub>0</sub>, A<sub>1</sub>, A<sub>2</sub>, … be the strands of the chain&rsquo;s supertiles (Claim 6). By Claim 7 each is a stretch in the middle of the next, which adds at least one chord at each end, so together they make a curve with no end in either direction. Every tile of the plane is in some supertile of the chain (Claim 8), so each of its chords is on that supertile&rsquo;s strand and on the curve. So the curve is the only strand, and it passes every chord: a tile with two crossings once, a tile with four twice.
         </p>
         <p>
           It never crosses itself. Each crossing is the midpoint of a tile edge, so each chord joins the midpoints of two different edges of a regular hexagon and, apart from its ends, lies inside its tile. The tiles do not overlap, so chords of different tiles can meet only at their ends, and each end is a crossing where exactly two chords meet, one after the other along the line. The two chords of a four-crossing tile join crossings that do not interleave round the tile, numbered in order round its edges:

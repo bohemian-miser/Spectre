@@ -12,6 +12,7 @@ import { graphOf } from '../../period/scene';
 import { routeIndexOf } from '../figures';
 import { stitched } from '../stitch';
 import { pairsRound, runsUnder, tracePatch } from '../strand';
+import { chordsThrough, recipes, sameRecipes } from '../recipe';
 
 const SUBSET = [1, 2, 8];
 const DIGITS = [0, 1, 0, 1, 0, 0, 0, 0, 0];
@@ -95,5 +96,29 @@ describe('the chords of one tile', () => {
       expect(meet).toBe(false);
       expect(Math.min(...[v.a, v.b].map((q) => Math.min(Math.hypot(q.x - u.a.x, q.y - u.a.y), Math.hypot(q.x - u.b.x, q.y - u.b.y))))).toBeGreaterThan(0.1);
     }
+  });
+});
+
+describe('recipes', () => {
+  const r7 = run(SUBSET, DIGITS, 7);
+  it('are the same from level 1 to 3, 3 to 5 and 5 to 7, and from 2 to 4 and 4 to 6', () => {
+    expect(sameRecipes(recipes(r7.states, 1, 2), recipes(r7.states, 3, 2))).toBe(true);
+    expect(sameRecipes(recipes(r7.states, 1, 2), recipes(r7.states, 5, 2))).toBe(true);
+    expect(sameRecipes(recipes(r7.states, 2, 2), recipes(r7.states, 4, 2))).toBe(true);
+  });
+
+  it('count every route\'s chords two levels up, as the strands welded from the tiles do', () => {
+    const R = recipes(r7.states, 1, 2);
+    for (const t of HEX_TYPES) {
+      const p = tracePatch(SUBSET, DIGITS, 3, t);
+      const lengths = p.strands.map((s) => s.chords.length).sort((a, b) => a - b);
+      const through = R[t].map((x) => chordsThrough(r7.states, 1, x)).sort((a, b) => a - b);
+      expect(through).toEqual(lengths);
+    }
+  });
+
+  it('take every piece route whole: a step leaves by the mate of the crossing it enters', () => {
+    const R = recipes(r7.states, 1, 2);
+    for (const t of HEX_TYPES) for (const x of R[t]) for (const u of x.uses) expect(r7.states[1][u.type].mate[u.enter]).toBe(u.leave);
   });
 });

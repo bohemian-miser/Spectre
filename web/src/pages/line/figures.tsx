@@ -111,19 +111,28 @@ export function routeIndexOf(patch: Patch, dots: readonly Pt[], routes: readonly
   return out;
 }
 
-/** A supertile as its pieces from a lower level: their outlines and routes faint, the parent's routes walked through them in colour. */
-export function StitchFigure(props: { s: Stitched; label: string }): JSX.Element {
-  const { s } = props;
+/**
+ * A supertile as its pieces from a lower level: their outlines and routes
+ * faint, the parent's routes walked through them in colour. With `focus`,
+ * that route is drawn alone in full and the pieces it passes (`lit`) are
+ * tinted; `mark` outlines one piece.
+ */
+export function StitchFigure(props: { s: Stitched; label: string; focus?: number; lit?: ReadonlySet<number>; mark?: number | null }): JSX.Element {
+  const { s, focus, lit, mark } = props;
+  const dim = (i: number) => focus !== undefined && i !== focus;
   return (
     <Svg box={frame(s.parent.outline)} label={props.label}>
       {s.pieces.map((p, i) => (
-        <g key={i}>
+        <g key={i} opacity={lit && !lit.has(i) ? 0.35 : 1}>
           <path d={d(p.outline, true)} fill={tileColor(p.type)} className="ln-piece" vectorEffect="non-scaling-stroke" />
           {p.routes.map((r, j) => <path key={j} d={d(r)} className="ln-piece-route" vectorEffect="non-scaling-stroke" />)}
         </g>
       ))}
       <path d={d(s.parent.outline, true)} className="ln-parent" vectorEffect="non-scaling-stroke" />
-      {s.walks.map((w, i) => <path key={i} d={d(w)} className={`pd-r pd-r${i < 8 ? i : 'x'} ln-walk`} vectorEffect="non-scaling-stroke" />)}
+      {s.walks.map((w, i) => (
+        <path key={i} d={d(w)} className={`pd-r pd-r${i < 8 ? i : 'x'} ln-walk${dim(i) ? ' is-dim' : ''}`} vectorEffect="non-scaling-stroke" />
+      ))}
+      {mark != null && s.pieces[mark] && <path d={d(s.pieces[mark].outline, true)} className="ln-mark" vectorEffect="non-scaling-stroke" />}
       {s.parent.dots.map((p, i) => <circle key={i} cx={p.x} cy={-p.y} r={0.012 * Math.max(s.parent.width, s.parent.height)} className="ln-dot" />)}
     </Svg>
   );
