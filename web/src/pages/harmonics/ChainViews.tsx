@@ -22,7 +22,20 @@ import type { Scored } from './similarity';
 import '../../styles/buildup.css';
 
 const nf = (n: number) => n.toLocaleString('en-US');
-export const short = (c: CircuitInfo) => `${nf(c.length)} L${c.level}`;
+export const short = (c: { readonly length: number; readonly level: number }) => `${nf(c.length)} L${c.level}`;
+
+/** A member of the views: where it is born (the members line up by it) and its tiles, with a name when not `short`'s. */
+export interface MemberInfo {
+  readonly level: number;
+  readonly length: number;
+  readonly label?: string;
+}
+const nameOf = (c: MemberInfo): string => c.label ?? short(c);
+/** The slot path a supertile is linked and hovered by. */
+const linkOf = (s: { path: string; link?: string }): string => s.link ?? s.path;
+
+/** What the views ask of the engine: the members over their supertiles, their rows, and one drawn finer for a view. */
+export type ChainSource = Pick<HarmonicsClient, 'picture' | 'rows' | 'detail'>;
 /** Points a thumbnail is drawn through, at most. */
 export const THUMB_POINTS = 3000;
 /** Crossings in view a member is drawn through before the drawing stops at a coarser level. */
@@ -309,7 +322,7 @@ interface Detail {
 
 /** One member over its supertiles in a pan and zoom view. */
 function MemberView(props: {
-  c: CircuitInfo;
+  c: MemberInfo;
   side: Side;
   step: Agreement | null;
   detail: Detail | null;
@@ -326,7 +339,7 @@ function MemberView(props: {
     for (const s of side.supertiles) all.push(...s.outline);
     return grow(boxOf(all.length ? all : side.circuit), 0.02);
   }, [side]);
-  const pts = detail?.pts ?? closed(side.circuit);
+  const pts = detail?.pts ?? (side.open ? side.circuit : closed(side.circuit));
   const lines: Lines = useMemo(
     () => ({
       key: `${props.fitKey} ${detail?.key ?? 'base'}`,
@@ -346,6 +359,7 @@ function MemberView(props: {
       fill: rgba(tileColorHex(s.type), 0.32),
     }));
     for (const s of side.supertiles) if (s.unshared) out.push({ pts: closed(s.outline), color: '#eb6834', width: 2.6 });
+    for (const s of side.supertiles) if (s.matched) out.push({ pts: closed(s.outline), color: '#6250d6', width: 2.6 });
     return () => out;
   }, [side]);
   const live = useMemo(
@@ -362,6 +376,7 @@ function MemberView(props: {
   );
   const h = props.lit.size === 1 ? side.supertiles[[...props.lit][0]] : null;
   const unshared = side.supertiles.filter((s) => s.unshared).length;
+  const matched = side.supertiles.filter((s) => s.matched).length;
   return (
     <figure className="harm-member" data-testid="harm-side">
       <figcaption>
@@ -370,10 +385,11 @@ function MemberView(props: {
             {STEP[props.step].mark}
           </span>
         ) : null}
-        <strong>{short(c)}</strong> at level {side.level}: {nf(side.visits)} visits
+        <strong>{nameOf(c)}</strong> at level {side.level}: {nf(side.visits)} visit{side.visits === 1 ? '' : 's'}
         {side.supertiles.length ? ` through ${nf(side.count)} supertiles` : ''}
         {side.supertiles.length && side.count > side.supertiles.length ? ` (the first ${nf(SUPERTILE_CAP)} drawn)` : ''}
-        {unshared ? `; ${nf(unshared)} hold visits its neighbour lacks` : ''}.
+        {unshared ? `; ${nf(unshared)} hold visits its neighbour lacks` : ''}
+        {matched ? `; ${nf(matched)} matched with its neighbour's` : ''}.
         {detail ? (
           <span className="harm-detail-note">
             {' '}
@@ -393,8 +409,11 @@ function MemberView(props: {
           apiRef={props.apiRef}
           keepOnResize
           onView={props.onView}
-          onPoint={(p: Pt | null) => props.onHover(p ? (supertileAt(side, p)?.path ?? null) : null)}
-          label={`The ${nf(c.length)} over its supertiles at level ${side.level}`}
+          onPoint={(p: Pt | null) => {
+            const s = p ? supertileAt(side, p) : null;
+            props.onHover(s ? linkOf(s) : null);
+          }}
+          label={`${nameOf(c)} over its supertiles at level ${side.level}`}
           className="harm-member-view"
         >
           <div className="bv-legend">
@@ -422,10 +441,10 @@ function MemberView(props: {
  * while "link views" is on; the circuit is drawn finer as a view closes in.
  */
 export function ChainCanvas(props: {
-  client: HarmonicsClient;
+  client: ChainSource;
   level: number;
   members: readonly number[];
-  circuits: readonly CircuitInfo[];
+  circuits: readonly MemberInfo[];
   /** The lowest member's level drawn, and the highest it can be. */
   k: number;
   hi: number;
@@ -436,6 +455,8 @@ export function ChainCanvas(props: {
   onPicture: (p: ChainPicture) => void;
   /** What the readings fold, for the =/≠ marks and the outlined supertiles. */
   fold: Fold;
+  /** Leave out the notes. */
+  brief?: boolean;
 }): JSX.Element {
   const { client, members, circuits, hi } = props;
   const [picture, setPicture] = useState<ChainPicture | null>(null);
@@ -565,21 +586,23 @@ export function ChainCanvas(props: {
                       })
                     }
                   />{' '}
-                  {nf(circuits[m].length)}
+                  {circuits[m].label ?? nf(circuits[m].length)}
                 </label>
               ))}
             </span>
           ) : null}
         </div>
-        <p className="shapes-note">
-          Each member two levels above the one before, its supertiles in their type&apos;s colour; outlined in orange, the supertiles holding visits the
-          neighbouring member&apos;s reading lacks. Hovering a supertile lights the one with the same slot path in every member, and its visits in the rows
-          below; zooming in draws the circuit up to two levels finer.
-        </p>
+        {props.brief ? null : (
+          <p className="shapes-note">
+            Each member two levels above the one before, its supertiles in their type&apos;s colour; outlined in orange, the supertiles holding visits the
+            neighbouring member&apos;s reading lacks. Hovering a supertile lights the one with the same slot path in every member, and its visits in the rows
+            below; zooming in draws the circuit up to two levels finer.
+          </p>
+        )}
         {error ? <p className="shapes-note">Could not draw: {error}</p> : null}
         {skipped.length ? (
           <p className="shapes-note" data-testid="harm-skipped">
-            Not drawn at these levels, over {nf(VISIT_CAP)} visits: {skipped.map((m) => short(circuits[m])).join(', ')}.
+            Not drawn at these levels, over {nf(VISIT_CAP)} visits: {skipped.map((m) => nameOf(circuits[m])).join(', ')}.
           </p>
         ) : null}
       </div>
@@ -671,7 +694,7 @@ function RunSummary(props: {
   rows: ChainRows;
   lines: readonly RunLine[];
   members: readonly number[];
-  circuits: readonly CircuitInfo[];
+  circuits: readonly MemberInfo[];
   onOpen: (at: RunAt) => void;
 }): JSX.Element {
   const { lines, members, circuits, rows } = props;
@@ -692,7 +715,7 @@ function RunSummary(props: {
             <tr>
               <th>row</th>
               {members.map((m) => (
-                <th key={m}>{nf(circuits[m].length)}</th>
+                <th key={m}>{circuits[m].label ?? nf(circuits[m].length)}</th>
               ))}
             </tr>
           </thead>
@@ -733,7 +756,7 @@ function RunSummary(props: {
               <th>level</th>
               <th>between</th>
               {members.map((m) => (
-                <th key={m}>{nf(circuits[m].length)}</th>
+                <th key={m}>{circuits[m].label ?? nf(circuits[m].length)}</th>
               ))}
               <th>ratios</th>
             </tr>
@@ -781,9 +804,11 @@ function RunSummary(props: {
 function ReadingRows(props: {
   rows: ChainRows;
   members: readonly number[];
-  circuits: readonly CircuitInfo[];
+  circuits: readonly MemberInfo[];
   ranges: readonly (readonly (Ranges | undefined)[])[] | null;
   onHover: (h: Hovered | null) => void;
+  /** Leave out the runs summary. */
+  brief?: boolean;
 }): JSX.Element {
   const { rows, members, circuits } = props;
   const depth = rows.members[0].levels.length;
@@ -822,7 +847,7 @@ function ReadingRows(props: {
         <div className="harm-cols" style={cols}>
           {members.map((m) => (
             <div key={m} className="harm-col-head">
-              {short(circuits[m])}
+              {nameOf(circuits[m])}
             </div>
           ))}
           {Array.from({ length: depth }, (_, d) =>
@@ -832,7 +857,7 @@ function ReadingRows(props: {
               return (
                 <div key={`${j} ${d}`} className={`harm-row${d === depth - 1 ? ' is-drawn' : ''}`} data-testid="harm-row" data-level={lv.level}>
                   <div className="harm-xhead">
-                    level {lv.level} · {nf(lv.raw)} visits
+                    level {lv.level} · {nf(lv.raw)} visit{lv.raw === 1 ? '' : 's'}
                     {lv.raw > lv.keep.length ? `, ${nf(lv.raw - lv.keep.length)} back and forth` : ''}
                     {d === depth - 1 ? ' · drawn above' : ''}
                   </div>
@@ -902,13 +927,15 @@ function ReadingRows(props: {
           )}
         </div>
       </div>
-      <RunSummary
-        rows={rows}
-        lines={lines}
-        members={members}
-        circuits={circuits}
-        onOpen={(at) => toggle(lineOf.get(`${at.j} ${at.d} ${at.after} ${at.fold} ${at.nth}`))}
-      />
+      {props.brief ? null : (
+        <RunSummary
+          rows={rows}
+          lines={lines}
+          members={members}
+          circuits={circuits}
+          onOpen={(at) => toggle(lineOf.get(`${at.j} ${at.d} ${at.after} ${at.fold} ${at.nth}`))}
+        />
+      )}
     </>
   );
 }
@@ -921,15 +948,19 @@ function ReadingRows(props: {
  * lights its visits and the visits above them.
  */
 export function ChainWorkspace(props: {
-  client: HarmonicsClient;
+  client: ChainSource;
   level: number;
   members: readonly number[];
-  circuits: readonly CircuitInfo[];
+  circuits: readonly MemberInfo[];
   fold?: Fold;
   onFold?: (f: Fold) => void;
+  /** The highest level the lowest-born member is drawn at; by default the level below its birth. */
+  top?: number;
+  /** Leave out the notes and the runs summary. */
+  brief?: boolean;
 }): JSX.Element {
   const { client, members, circuits } = props;
-  const hi = circuits[members[0]].level - 1;
+  const hi = props.top ?? Math.min(...members.map((m) => circuits[m].level)) - 1;
   const key = `${props.level}: ${members.join(' ')}`;
   const [k, setK] = useState(hi);
   const [rows, setRows] = useState<{ key: string; rows: ChainRows } | null>(null);
@@ -957,7 +988,7 @@ export function ChainWorkspace(props: {
   }, [client, key, at, fold]);
   const current = rows && rows.key === key && rows.rows.k === at && rows.rows.fold === fold ? rows.rows : null;
   const paths = useMemo(
-    () => (picture && picture.k === at && picture.sides.length === members.length ? picture.sides.map((s) => s.supertiles.map((t) => t.path)) : null),
+    () => (picture && picture.k === at && picture.sides.length === members.length ? picture.sides.map((s) => s.supertiles.map(linkOf)) : null),
     [picture, at, members.length],
   );
   const lighting = useMemo(() => (current && paths && hover ? lit(current, hover, paths) : null), [current, paths, hover]);
@@ -975,6 +1006,7 @@ export function ChainWorkspace(props: {
         onHover={(p) => setHover(p ? { kind: 'tile', path: p } : null)}
         onPicture={setPicture}
         fold={fold}
+        brief={props.brief}
       />
       <h3>Rows of visits</h3>
       <div className="harm-canvas-controls">
@@ -997,17 +1029,19 @@ export function ChainWorkspace(props: {
           ))}
         </span>
       </div>
-      <p className="shapes-note">
-        Each member read level by level, from the children of its birth supertile down to the level drawn above: every visit to a supertile in order, as type
-        and slot, with what the fold removes gathered into chips: ↔ for weaving back and forth across a seam, a dotted ⤳ for a detour that leaves and comes back
-        the same way. Folding weaving only keeps the detours as visits, dotted, and outlines in dashed red those the neighbouring member has no visit to match.
-        Hovering a visit lights the visits it expands into below and the supertiles it reaches in the drawing, in every member through the readings. Clicking a
-        chip opens the run and the runs matched with it in the other members, between the same two kept visits; a dashed red chip has no match in the
-        neighbouring member.
-      </p>
+      {props.brief ? null : (
+        <p className="shapes-note">
+          Each member read level by level, from the children of its birth supertile down to the level drawn above: every visit to a supertile in order, as type
+          and slot, with what the fold removes gathered into chips: ↔ for weaving back and forth across a seam, a dotted ⤳ for a detour that leaves and comes
+          back the same way. Folding weaving only keeps the detours as visits, dotted, and outlines in dashed red those the neighbouring member has no visit to
+          match. Hovering a visit lights the visits it expands into below and the supertiles it reaches in the drawing, in every member through the readings.
+          Clicking a chip opens the run and the runs matched with it in the other members, between the same two kept visits; a dashed red chip has no match in
+          the neighbouring member.
+        </p>
+      )}
       {error ? <p className="shapes-note">Could not read the rows: {error}</p> : null}
       {current ? (
-        <ReadingRows rows={current} members={members} circuits={circuits} ranges={lighting?.ranges ?? null} onHover={setHover} />
+        <ReadingRows rows={current} members={members} circuits={circuits} ranges={lighting?.ranges ?? null} onHover={setHover} brief={props.brief} />
       ) : error ? null : (
         <p className="shapes-note">Reading…</p>
       )}

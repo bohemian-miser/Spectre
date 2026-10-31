@@ -3,7 +3,7 @@
  * pairing per tile type, then the level to run the renormalisation to.
  */
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { comboDigitChar, comboOptionCounts, leafOrder, validEdgeSubsets } from '../../core';
 
 export interface ComboChoice {
@@ -14,7 +14,19 @@ export interface ComboChoice {
 
 const LEVELS = [6, 7, 8, 9];
 
-export function ComboPicker(props: { busy: boolean; onAdd: (c: ComboChoice) => void; levels?: readonly number[] | 'any'; verb?: string; initialLevel?: number; initialCombo?: string; initialRule?: string }): JSX.Element {
+export function ComboPicker(props: {
+  busy: boolean;
+  onAdd: (c: ComboChoice) => void;
+  levels?: readonly number[] | 'any';
+  verb?: string;
+  initialLevel?: number;
+  initialCombo?: string;
+  initialRule?: string;
+  /** More inputs, placed after the level. */
+  children?: ReactNode;
+  /** Whether to say how many combinations the rule has; on by default. */
+  count?: boolean;
+}): JSX.Element {
   const levels = props.levels ?? LEVELS;
   const rules = useMemo(() => validEdgeSubsets('hex').filter((r) => r.edges.length > 0), []);
   const [rule, setRule] = useState(props.initialRule ?? '023468');
@@ -93,13 +105,18 @@ export function ComboPicker(props: { busy: boolean; onAdd: (c: ComboChoice) => v
           </select>
         )}
       </label>
+      {props.children}
       <button type="button" onClick={() => setDigits(counts.map((c) => Math.floor(Math.random() * Math.max(1, c))))}>
         Random
       </button>
       <button type="button" disabled={props.busy} onClick={() => props.onAdd({ subset, combo, level })} data-testid="shapes-combo-add">
         {props.busy ? 'Computing…' : `${props.verb ?? 'Add'} ${rule} · ${combo}`}
       </button>
-      <span className="shapes-note">{total.toLocaleString('en-US')} combinations of this rule. Nothing changes below until you press {props.verb ?? 'Add'}.</span>
+      {props.count === false ? null : (
+        <span className="shapes-note">
+          {total.toLocaleString('en-US')} combinations of this rule. Nothing changes below until you press {props.verb ?? 'Add'}.
+        </span>
+      )}
     </div>
   );
 }

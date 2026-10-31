@@ -135,7 +135,7 @@ export class HarmonicsEngine {
     const born = this.circuits!.born;
     if (fold === 'fixpoint') return chainPicture(this.cs, members.map((i) => ({ circuit: born[i], readings: list[i].readings })), k);
     // the readings under another fold, at the level drawn, from the rows
-    const base = born[members[0]].level;
+    const base = Math.min(...members.map((i) => born[i].level));
     return chainPicture(
       this.cs,
       members.map((i) => {
