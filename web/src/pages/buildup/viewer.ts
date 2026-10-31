@@ -172,7 +172,7 @@ export class Geometry {
 
   private go(n: number, ti: number, k: number, a: number, b: number, c: number, d: number, e: number, f: number, stop: number, v: number[] | null, out: number[], edgeStop: number, mask: number): void {
     if (n <= (mask ? edgeStop : stop)) {
-      const p = this.cs.levels[n][this.types[ti]].pts[k];
+      const p = this.cs.levels[n][this.types[ti]].pt(k);
       out.push(a * p.x + b * p.y + c, d * p.x + e * p.y + f);
       return;
     }
@@ -185,7 +185,7 @@ export class Geometry {
       const cm = this.maskOf(ti, mask, st[i]);
       const deeper = n - 1 > (cm ? edgeStop : stop);
       if (!deeper) {
-        const p = this.cs.levels[n - 1][this.types[ct]].pts[ck];
+        const p = this.cs.levels[n - 1][this.types[ct]].pt(ck);
         out.push(A * p.x + B * p.y + C, D * p.x + E * p.y + F);
         continue;
       }
@@ -194,7 +194,7 @@ export class Geometry {
         const mx = A * h[0] + B * h[1] + C, my = D * h[0] + E * h[1] + F;
         const hx = Math.abs(A) * h[2] + Math.abs(B) * h[3], hy = Math.abs(D) * h[2] + Math.abs(E) * h[3];
         if (mx + hx < v[0] || mx - hx > v[2] || my + hy < v[1] || my - hy > v[3]) {
-          const p = this.cs.levels[n - 1][this.types[ct]].pts[ck];
+          const p = this.cs.levels[n - 1][this.types[ct]].pt(ck);
           out.push(A * p.x + B * p.y + C, D * p.x + E * p.y + F);
           continue;
         }
@@ -211,7 +211,7 @@ export class Geometry {
   source(n: number, type: string, k: number, x: Affine, stop: number, view: Box | null, edgeStop = stop): PointSource {
     const v = view ? [view.min.x, view.min.y, view.max.x, view.max.y] : null;
     const T = this.cs.levels[n][type];
-    const endP = transPt(x, T.pts[T.mate(k)]);
+    const endP = transPt(x, T.pt(T.mate(k)));
     const D = n + 1;
     const lv = new Int32Array(D), tis = new Int32Array(D), idx = new Int32Array(D), ms = new Int32Array(D);
     const sts: Int32Array[] = [];
@@ -227,7 +227,7 @@ export class Geometry {
         if (!started) {
           started = true;
           if (n <= stop) {
-            const p = transPt(x, T.pts[k]);
+            const p = transPt(x, T.pt(k));
             out.push(p.x, p.y, endP.x, endP.y);
             finished = true;
             return Float64Array.from(out);
@@ -258,7 +258,7 @@ export class Geometry {
             leaf = mx + hx < v[0] || mx - hx > v[2] || my + hy < v[1] || my - hy > v[3];
           }
           if (leaf) {
-            const p = this.cs.levels[m - 1][this.types[ct]].pts[ck];
+            const p = this.cs.levels[m - 1][this.types[ct]].pt(ck);
             out.push(A * p.x + B * p.y + C, Dd * p.x + E * p.y + F);
             continue;
           }
@@ -280,7 +280,7 @@ export class Geometry {
     const out: number[] = [];
     this.walk(n, type, k, x, stop, view, out, edgeStop);
     const T = this.cs.levels[n][type];
-    const q = transPt(x, T.pts[T.mate(k)]);
+    const q = transPt(x, T.pt(T.mate(k)));
     out.push(q.x, q.y);
     return Float64Array.from(out);
   }
@@ -304,14 +304,18 @@ export interface RouteSet {
   readonly type: string;
   readonly from: Int32Array;
   readonly tiles: Float64Array;
+  /** Routes of the table, of which `from` holds the longest. */
+  readonly total: number;
 }
 
-export function routeSet(cs: CircuitShapes, n: number, type: string): RouteSet {
+/** A type's routes at a level, at most the `most` longest of them. */
+export function routeSet(cs: CircuitShapes, n: number, type: string, most = Infinity): RouteSet {
   const T = cs.levels[n][type];
-  const rs: [number, number][] = [];
-  for (const k of T.crossings()) if (T.mate(k) > k) rs.push([k, T.len(k)]);
-  rs.sort((a, b) => a[1] - b[1] || a[0] - b[0]);
-  return { level: n, type, from: Int32Array.from(rs, (r) => r[0]), tiles: Float64Array.from(rs, (r) => r[1]) };
+  const ks = T.crossings().filter((k) => T.mate(k) > k);
+  const len = Float64Array.from(ks, (k) => T.len(k));
+  const order = Int32Array.from(ks, (_, i) => i).sort((a, b) => len[a] - len[b] || ks[a] - ks[b]);
+  const kept = order.subarray(Math.max(0, order.length - most));
+  return { level: n, type, from: Int32Array.from(kept, (i) => ks[i]), tiles: Float64Array.from(kept, (i) => len[i]), total: ks.length };
 }
 
 /**
@@ -371,7 +375,7 @@ export interface Pass {
 
 const passOf = (cs: CircuitShapes, level: number, type: string, k: number, x: Affine, path: readonly number[]): Pass => {
   const T = cs.levels[level][type];
-  return { level, type, k, x, path, a: transPt(x, T.pts[k]), b: transPt(x, T.pts[T.mate(k)]), tiles: T.len(k) };
+  return { level, type, k, x, path, a: transPt(x, T.pt(k)), b: transPt(x, T.pt(T.mate(k))), tiles: T.len(k) };
 };
 
 /**
@@ -441,7 +445,7 @@ function keepsInside(g: Geometry, n: number, type: string, k: number): boolean {
   let hit = m.get(key);
   if (hit === undefined) {
     const T = g.cs.levels[n][type];
-    const a = T.pts[k], b = T.pts[T.mate(k)];
+    const a = T.pt(k), b = T.pt(T.mate(k));
     const ring = ringOf(g, n, type);
     hit = n === 0 || ring.holds(a.x, a.y, b.x, b.y, 1e4 * ring.eps);
     m.set(key, hit);
