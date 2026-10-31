@@ -15,13 +15,16 @@ import { Viewer, type Lines, type Mark, type ViewerApi } from '../buildup/Viewer
 import type { PointSource } from '../buildup/viewer';
 import { linkBox, supertileAt } from './chainLink';
 import type { HarmonicsClient, HarmonicsResult } from './harmonicsJob';
-import { SUPERTILE_CAP, VISIT_CAP, type Agreement, type ChainPicture, type Side } from './pairView';
+import { SUPERTILE_CAP, type Agreement, type ChainPicture, type Side } from './pairView';
+import { DRAW_WARN } from './levelWalk';
 import { FOLDS, holds, lit, runLines, type ChainRows, type Fold, type Hovered, type Ranges, type Run, type RunAt, type RunLine, type Stop } from './rows';
 import { memberWidth, useStickyRow, useWidth } from './stickyRow';
 import type { Scored } from './similarity';
 import '../../styles/buildup.css';
 
 const nf = (n: number) => n.toLocaleString('en-US');
+/** Millions, to a tenth below ten million. */
+const millions = (n: number) => `${n < 1e7 ? (n / 1e6).toFixed(1) : Math.round(n / 1e6)}M`;
 export const short = (c: { readonly length: number; readonly level: number }) => `${nf(c.length)} L${c.level}`;
 
 /** A member of the views: where it is born (the members line up by it) and its tiles, with a name when not `short`'s. */
@@ -391,7 +394,14 @@ function MemberView(props: {
             {STEP[props.step].mark}
           </span>
         ) : null}
-        <strong>{nameOf(c)}</strong> at level {side.level}: {nf(side.visits)} visit{side.visits === 1 ? '' : 's'}
+        <strong>{nameOf(c)}</strong> at level {side.level}:{' '}
+        {side.every > 1 ? (
+          <span data-testid="harm-sampled">
+            every {nf(side.every)}th of {millions(side.visits)} visits,
+          </span>
+        ) : (
+          `${nf(side.visits)} visit${side.visits === 1 ? '' : 's'}`
+        )}
         {side.supertiles.length ? ` through ${nf(side.count)} supertiles` : ''}
         {side.supertiles.length && side.count > side.supertiles.length ? ` (the first ${nf(SUPERTILE_CAP)} drawn)` : ''}
         {unshared ? `; ${nf(unshared)} hold visits its neighbour lacks` : ''}
@@ -405,37 +415,36 @@ function MemberView(props: {
         ) : null}
         {h ? <span className="harm-hover-note"> {`${h.type} ${h.path}`}</span> : null}
       </figcaption>
-      {side.supertiles.length ? (
-        <Viewer
-          frame={frame}
-          fitKey={props.fitKey}
-          lines={lines}
-          marks={marks}
-          live={live}
-          apiRef={props.apiRef}
-          keepOnResize
-          onView={props.onView}
-          onPoint={(p: Pt | null) => {
-            const s = p ? supertileAt(side, p) : null;
-            props.onHover(s ? linkOf(s) : null);
-          }}
-          label={`${nameOf(c)} over its supertiles at level ${side.level}`}
-          className="harm-member-view"
-        >
-          <div className="bv-legend">
-            {[...new Set(side.supertiles.map((s) => s.type))].sort().map((t) => (
-              <span key={t} className="bu-key">
-                <i style={{ background: tileColorHex(t) }} />
-                {t}
-              </span>
-            ))}
-          </div>
-        </Viewer>
-      ) : (
-        <div className="harm-side-empty">
-          {nf(side.visits)} visits at level {side.level}: more than {nf(VISIT_CAP)}, not drawn.
+      <Viewer
+        frame={frame}
+        fitKey={props.fitKey}
+        lines={lines}
+        marks={marks}
+        live={live}
+        apiRef={props.apiRef}
+        keepOnResize
+        onView={props.onView}
+        onPoint={(p: Pt | null) => {
+          const s = p ? supertileAt(side, p) : null;
+          props.onHover(s ? linkOf(s) : null);
+        }}
+        label={`${nameOf(c)} over its supertiles at level ${side.level}`}
+        className="harm-member-view"
+      >
+        <div className="bv-legend">
+          {[...new Set(side.supertiles.map((s) => s.type))].sort().map((t) => (
+            <span key={t} className="bu-key">
+              <i style={{ background: tileColorHex(t) }} />
+              {t}
+            </span>
+          ))}
         </div>
-      )}
+        {side.every === 1 && side.visits > DRAW_WARN ? (
+          <div className="harm-draw-warn" data-testid="harm-draw-warn">
+            {millions(side.visits)} visits at level {side.level}: drawing may be slow
+          </div>
+        ) : null}
+      </Viewer>
     </figure>
   );
 }
@@ -549,7 +558,6 @@ export function ChainCanvas(props: {
     });
   };
   if (hi < 0) return <></>;
-  const skipped = current ? members.filter((_, j) => !current.sides[j].supertiles.length) : [];
   const shown = members.length - hidden.size;
   const { width } = memberWidth(rowWidth || 1200, Math.max(1, shown));
   return (
@@ -606,11 +614,6 @@ export function ChainCanvas(props: {
           </p>
         )}
         {error ? <p className="shapes-note">Could not draw: {error}</p> : null}
-        {skipped.length ? (
-          <p className="shapes-note" data-testid="harm-skipped">
-            Not drawn at these levels, over {nf(VISIT_CAP)} visits: {skipped.map((m) => nameOf(circuits[m])).join(', ')}.
-          </p>
-        ) : null}
       </div>
       <div ref={marker} aria-hidden="true" />
       <div ref={row} className="harm-members" style={{ gridTemplateColumns: `repeat(${shown}, ${width}px)` }} data-testid="harm-members">

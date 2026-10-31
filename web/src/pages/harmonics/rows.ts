@@ -30,6 +30,8 @@ import { alignReadings, cancelBacktracksAt, expandVisits, token, topVisits, type
 
 /** Rows of more visits than this are not worked out. */
 export const MAX_ROW = 3000000;
+/** Readings under a fold, and the supertiles they mark, are worked out for a level while it has at most this many raw visits. */
+export const READ_CAP = 1000000;
 /** Items (kept visits and runs) sent per row. */
 export const ROW_ITEMS = 400;
 
