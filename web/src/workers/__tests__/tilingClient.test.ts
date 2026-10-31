@@ -5,7 +5,7 @@
  * (Node has no `Worker`, so `createTilingClient()` always falls back here;
  * the worker file itself is a thin shell over the same `runUnrootedQuery`.)
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createTilingClient, queryTilingSync } from '../tilingClient';
 import { runUnrootedQuery, type UnrootedQueryRequest } from '../../core';
 
@@ -89,5 +89,35 @@ describe('tiling client — families', () => {
     expect(hex.cut.count).not.toBe(0);
     expect([...hex.cut.pos]).not.toEqual([...before.cut.pos]);
     client.dispose();
+  });
+});
+
+describe('tiling client — worker path', () => {
+  /** A worker that answers each posted request with the engine's reply, a task later, in the order posted. */
+  class EngineWorker {
+    onmessage: ((e: { data: unknown }) => void) | null = null;
+    onerror: ((e: { message?: string }) => void) | null = null;
+    postMessage(req: UnrootedQueryRequest): void {
+      setTimeout(() => this.onmessage?.({ data: { ok: true, response: runUnrootedQuery(req) } }), 0);
+    }
+    terminate(): void {}
+  }
+
+  it('settles two queries in flight with the same caller id, each with its own reply', async () => {
+    vi.stubGlobal('Worker', EngineWorker);
+    try {
+      const client = createTilingClient();
+      expect(client.usesWorker).toBe(true);
+      const small = { ...REQ, id: 8, view: { cx: 0, cy: 0, halfW: 5, halfH: 5 } };
+      const large = { ...REQ, id: 8, view: { cx: 0, cy: 0, halfW: 30, halfH: 30 } };
+      const [a, b] = await Promise.all([client.query(small), client.query(large)]);
+      expect(a.id).toBe(8);
+      expect(b.id).toBe(8);
+      expect(a.cut.count).toBe(runUnrootedQuery(small).cut.count);
+      expect(b.cut.count).toBe(runUnrootedQuery(large).cut.count);
+      client.dispose();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

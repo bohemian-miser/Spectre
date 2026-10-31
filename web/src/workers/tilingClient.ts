@@ -4,7 +4,9 @@
  * environment without `Worker`, `query()` resolves on the calling thread with
  * an identical result, which is what keeps the engine testable end-to-end.
  * Newest-request-wins cancellation is handled by the `id` echoed through
- * `UnrootedQueryRequest`/`UnrootedQueryResponse`.
+ * `UnrootedQueryRequest`/`UnrootedQueryResponse`. Several schedulers share
+ * one client, each counting its own ids, so the worker is sent the client's
+ * own sequence number and every reply goes back with its caller's id.
  */
 
 import { runUnrootedQuery, type UnrootedQueryRequest, type UnrootedQueryResponse } from '../core';
@@ -60,14 +62,16 @@ export function createTilingClient(opts: TilingClientOptions = {}): TilingClient
     return createSyncClient();
   }
 
-  const pending = new Map<number, { resolve(r: UnrootedQueryResponse): void; reject(e: Error): void }>();
+  const pending = new Map<number, { id: number; resolve(r: UnrootedQueryResponse): void; reject(e: Error): void }>();
+  let seq = 0;
 
   worker.onmessage = (event: MessageEvent<WorkerReply>) => {
     const msg = event.data;
     if (!msg) return;
     if (msg.ok) {
-      pending.get(msg.response.id)?.resolve(msg.response);
+      const p = pending.get(msg.response.id);
       pending.delete(msg.response.id);
+      p?.resolve({ ...msg.response, id: p.id });
     } else {
       pending.get(msg.id)?.reject(new Error(msg.error));
       pending.delete(msg.id);
@@ -83,8 +87,9 @@ export function createTilingClient(opts: TilingClientOptions = {}): TilingClient
     usesWorker: true,
     query: (req) =>
       new Promise<UnrootedQueryResponse>((resolve, reject) => {
-        pending.set(req.id, { resolve, reject });
-        worker.postMessage(req);
+        const key = ++seq;
+        pending.set(key, { id: req.id, resolve, reject });
+        worker.postMessage({ ...req, id: key });
       }),
     dispose: () => {
       pending.clear();
