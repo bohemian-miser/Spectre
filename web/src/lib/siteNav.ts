@@ -211,6 +211,14 @@ export const SITE_NAV: readonly NavItem[] = Object.freeze([
     blurb: 'Borders compared level by level: where they repeat every second level, and the infinite line that follows.',
   },
   {
+    id: 'line',
+    label: 'The infinite line',
+    short: 'Line',
+    entry: 'line.html',
+    status: 'ready',
+    blurb: 'A proof, step by step, that rule 128 with combination 010100000 makes one strand through the whole tiling.',
+  },
+  {
     id: 'limit',
     label: 'Limit shape',
     short: 'Limit',
