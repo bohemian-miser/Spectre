@@ -1,0 +1,140 @@
+/* Identify page: on top of the Shapes page's tokens. */
+
+.identify-controls {
+  display: grid;
+  gap: 10px;
+}
+.identify-verdict {
+  margin: 0;
+  display: grid;
+  gap: 4px;
+  font-size: 15px;
+}
+.identify-verdict p {
+  margin: 0;
+}
+.identify-error {
+  margin: 0;
+  color: var(--g8);
+}
+.identify-links {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  font-size: 13px;
+}
+.identify-pair {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+}
+.identify-pair figure {
+  margin: 0;
+  display: grid;
+  gap: 4px;
+  max-width: 360px;
+}
+.identify-pair figcaption {
+  font-size: 12px;
+  color: var(--muted);
+}
+.identify-svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--canvas-bg);
+}
+.identify-empty {
+  display: grid;
+  place-items: center;
+  max-width: 100%;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+  color: var(--muted);
+  font-size: 12px;
+}
+.identify-frame {
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 1.2;
+}
+.identify-st {
+  fill: none;
+  stroke: var(--muted);
+  stroke-opacity: 0.45;
+  stroke-width: 0.6;
+}
+.identify-st.is-matched {
+  fill: var(--g1);
+  fill-opacity: 0.16;
+}
+.identify-line {
+  fill: none;
+  stroke: var(--text);
+  stroke-width: 1;
+  stroke-linejoin: round;
+}
+.identify-chord {
+  stroke: var(--g2);
+  stroke-width: 3;
+}
+.identify-start {
+  fill: var(--g2);
+}
+.identify-compare {
+  display: grid;
+  gap: 12px;
+}
+.identify-readings {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.identify-reading {
+  display: grid;
+  grid-template-columns: 60px minmax(0, 1fr);
+  gap: 8px;
+  align-items: baseline;
+}
+.identify-reading-label {
+  font-size: 12px;
+  color: var(--muted);
+}
+.identify-tokens {
+  font: 11px var(--mono);
+  line-height: 1.7;
+  word-break: break-all;
+}
+.identify-tok {
+  padding: 0 2px;
+  margin-right: 2px;
+  border-radius: 3px;
+  color: var(--muted);
+}
+.identify-tok.is-matched {
+  color: var(--text);
+  background: color-mix(in srgb, var(--g1) 18%, transparent);
+}
+.identify-more {
+  color: var(--muted);
+}
+.identify-page {
+  padding: 16px 20px 48px;
+}
+.identify-table {
+  width: auto;
+  min-width: min(640px, 100%);
+}
+.identify-table td:first-child {
+  display: table-cell;
+}
+.identify-table tbody tr {
+  cursor: default;
+}
+.identify-table td.identify-best {
+  font-family: inherit;
+  text-align: left;
+}

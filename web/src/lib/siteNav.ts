@@ -227,6 +227,14 @@ export const SITE_NAV: readonly NavItem[] = Object.freeze([
     blurb: 'Supertile outlines scaled down level after level, from hexagons and from Spectres, and the shape both settle on.',
   },
   {
+    id: 'identify',
+    label: 'Identify a strand',
+    short: 'Identify',
+    entry: 'identify.html',
+    status: 'ready',
+    blurb: 'A strand named by one of its tiles, followed up level by level: the circuit it closes into, or the chain it most likely belongs to.',
+  },
+  {
     id: 'legacy',
     label: 'Legacy p5 app',
     short: 'Legacy',

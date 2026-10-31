@@ -135,6 +135,10 @@ import { ViewportTools } from './map/ViewportTools';
 import { TraceTicker } from './map/TraceTicker';
 import { TransitionGraph } from './map/TransitionGraph';
 import { shapesCircuitHref } from './shapes/explorerLink';
+import { XrayInfinite, XrayRooted } from './explorer/XrayLayer';
+import { lowestXrayLevel } from './explorer/xray';
+import { XrayControl, XRAY_INFINITE_MAX } from './explorer/XrayControl';
+import { TraceActions } from './explorer/TraceActions';
 import type { GraphSelection } from './map/transitions';
 import { DEFAULT_LINE_COLOR, LIGHT_LINE_COLOR } from './map/webglRenderer';
 import '../styles/map.css';
@@ -302,14 +306,19 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
    * Mystic's strands are matched to the hexagon's by seam, one per seam.
    */
   const multiOnSpectres = asSpectres && hasMultiStrands(state.contracts);
-  // A closed trace on the hexagons opens on the Shapes page, which computes
-  // every hexagon combination's circuits.
-  const shapesHref = useMemo(() => {
+  // The hexagon rule and combination being drawn, when there is one: a closed
+  // trace opens on the Shapes page (which computes every hexagon
+  // combination's circuits) and goes to Compare; an open one to Identify.
+  const hexRule = useMemo(() => {
     if (family !== 'hex' || asSpectres || !state.subset.length) return null;
     const subset = [...state.subset].sort((a, b) => a - b);
     const combo = matchingIndicesToCombo('hex', subset, normalizeMatching('hex', subset, state.matching, state.contracts), state.contracts);
-    return combo === null ? null : (tiles: number) => shapesCircuitHref(import.meta.env.BASE_URL, subset.join(''), combo, tiles);
+    return combo === null ? null : { subset, combo };
   }, [family, asSpectres, state.subset, state.matching, state.contracts]);
+  const shapesHref = useMemo(
+    () => (hexRule ? (tiles: number) => shapesCircuitHref(import.meta.env.BASE_URL, hexRule.subset.join(''), hexRule.combo, tiles) : null),
+    [hexRule],
+  );
   const linesOn = hasFlag(state, FLAG.LINES) && !multiOnSpectres;
   const centresOn = hasFlag(state, FLAG.CENTRES) && !multiOnSpectres;
   /** Strands are traced for either: centres still show with circuit lines off. */
@@ -387,6 +396,11 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
   const [, setExampleIndex] = useState(0);
   const [tool, setTool] = useState<OverlayTool>('cursor');
   const [exportStatus, setExportStatus] = useState<string | null>(null);
+  /** The X-ray: off, or the supertile level it shows (clamped to what the view offers). */
+  const [xrayOn, setXrayOn] = useState(false);
+  const [xrayWanted, setXrayWanted] = useState(1);
+  const [xrayBusy, setXrayBusy] = useState(false);
+  const [xrayTooMany, setXrayTooMany] = useState(false);
 
   const highlightMajors = useMemo(() => {
     const major = hoverEdge?.major ?? hoverMajor;
@@ -889,6 +903,13 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
 
   const tileCount = model.tileCount;
   const heavy = !infinite && state.level > SVG_MAX_LEVEL;
+  const xrayLowest = useMemo(() => (infinite ? 0 : lowestXrayLevel(model.root, renderLevel)), [infinite, model.root, renderLevel]);
+  const xrayHighest = infinite ? XRAY_INFINITE_MAX : renderLevel;
+  const xrayLevel = Math.min(xrayHighest, Math.max(xrayLowest, xrayWanted));
+  const xrayColour = useCallback(
+    (type: TileTypeId) => tileColor(type, state.colorScheme, state.customColors),
+    [state.colorScheme, state.customColors],
+  );
   const dualOn = hasFlag(state, FLAG.DUAL);
   const regionsOn = hasFlag(state, FLAG.REGIONS);
   /** Tiles a level-L patch holds — the count the infinite view targets. */
@@ -1694,6 +1715,17 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
             apiRef={infiniteApiRef}
             onStatusChange={onInfiniteStatus}
           >
+            {xrayOn ? (
+              <XrayInfinite
+                family={drawFamily}
+                seed={INFINITE_SEED}
+                worldChain={state.worldChain}
+                level={xrayLevel}
+                apiRef={infiniteApiRef}
+                colorOf={xrayColour}
+                onTooMany={setXrayTooMany}
+              />
+            ) : null}
             {hasFlag(state, FLAG.HIDE_STATS) ? null : (
             <InfiniteHud
               subscribeRef={infiniteHudSubRef}
@@ -1705,6 +1737,15 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
               leafCss={leafCss}
               tileArea={averageLeafArea(drawFamily)}
               shapesHref={shapesHref}
+              actions={(trace) => (
+                <TraceActions
+                  trace={trace}
+                  rule={hexRule}
+                  seed={INFINITE_SEED}
+                  worldChain={state.worldChain}
+                  traceSeed={state.traceSeed ?? null}
+                />
+              )}
               tickerOn={tickerOn}
               transitionsOn={transitionsOn}
               hlScreen={hlScreen}
@@ -1740,6 +1781,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
             ariaLabel="Tiling viewport"
           >
             {(api) => (
+              <>
               <TilingView
                 family={drawFamily}
                 rootTile={state.rootTile}
@@ -1822,6 +1864,19 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
                   </g>
                 ) : null}
               </TilingView>
+              {xrayOn ? (
+                <XrayRooted
+                  family={drawFamily}
+                  root={model.root}
+                  patchLevel={renderLevel}
+                  level={xrayLevel}
+                  viewTransform={model.viewTransform}
+                  camera={api.camera}
+                  colorOf={xrayColour}
+                  onBusy={setXrayBusy}
+                />
+              ) : null}
+              </>
             )}
           </PanZoom>
         ) : (
@@ -1834,6 +1889,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
             ariaLabel="Tiling viewport"
           >
             {(api) => (
+              <>
               <TilingCanvas
                 family={drawFamily}
                 rootTile={state.rootTile}
@@ -1860,9 +1916,38 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
                 strokeWidth={BASE_CIRCUIT_STROKE * lineWidth}
                 regionFill={linesOn && regionsOn ? analysis.result?.dual : undefined}
               />
+              {xrayOn ? (
+                <XrayRooted
+                  family={drawFamily}
+                  root={model.root}
+                  patchLevel={renderLevel}
+                  level={xrayLevel}
+                  viewTransform={model.viewTransform}
+                  camera={api.camera}
+                  colorOf={xrayColour}
+                  onBusy={setXrayBusy}
+                />
+              ) : null}
+              </>
             )}
           </PanZoom>
         )}
+
+        <XrayControl
+          on={xrayOn}
+          level={xrayLevel}
+          lowest={xrayLowest}
+          highest={xrayHighest}
+          busy={xrayOn && xrayBusy}
+          note={xrayOn && infinite && xrayTooMany ? 'zoom in' : null}
+          belowTools={infinite}
+          onToggle={(on) => {
+            // Open two levels below the patch (or the zoom), where a few dozen supertiles show.
+            if (on) setXrayWanted(Math.max(0, state.level - 2));
+            setXrayOn(on);
+          }}
+          onLevel={setXrayWanted}
+        />
 
         {morph ? (
           <MorphCanvas
@@ -1942,6 +2027,8 @@ function InfiniteHud(props: {
   readonly tileArea: number;
   /** The Shapes page on a closed circuit of this many tiles, when the rule is one it takes. */
   readonly shapesHref: ((tiles: number) => string) | null;
+  /** What can be done with the traced strand (Compare, Identify), given its state. */
+  readonly actions?: (trace: InfiniteCanvasStatus['trace'] | null) => React.ReactNode;
   readonly tickerOn: boolean;
   readonly transitionsOn: boolean;
   readonly hlScreen: boolean;
@@ -2022,6 +2109,7 @@ function InfiniteHud(props: {
             {trace.steps.toLocaleString('en-US')} tiles: open on the Shapes page
           </a>
         ) : null}
+        {props.actions?.(trace)}
         {trace && trace.circuits > 0 ? (
           <span data-testid="inf-circuits">
             {trace.circuits} kept

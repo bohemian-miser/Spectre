@@ -160,6 +160,20 @@ describe('ExplorerPage', () => {
     expect(svg.title).toContain('no SVG scene');
   });
 
+  it('X-ray: a switch over the field opens a level slider from the tiles to the patch', () => {
+    window.history.replaceState(null, '', '/#/explorer?v=1&f=hex&lv=4');
+    const { container, getByTestId, queryByTestId } = render(<ExplorerPage />);
+    expect(queryByTestId('xray-level')).toBeNull();
+    fireEvent.click(getByTestId('xray-toggle'));
+    const slider = getByTestId('xray-level') as HTMLInputElement;
+    expect([slider.min, slider.max, slider.value]).toEqual(['0', '4', '2']);
+    fireEvent.change(slider, { target: { value: '3' } });
+    expect(getByTestId('xray-level-label').textContent).toContain('level 3');
+    expect(container.querySelector('.xray-layer canvas')).not.toBeNull();
+    fireEvent.click(getByTestId('xray-toggle'));
+    expect(container.querySelector('.xray-layer')).toBeNull();
+  });
+
   it('steps the supertile level and re-renders the patch', () => {
     const { container } = render(<ExplorerPage />);
     fireEvent.click(container.querySelector('button[aria-label="More supertiles"]') as Element);

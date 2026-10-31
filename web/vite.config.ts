@@ -47,6 +47,7 @@ export default defineConfig({
         period: resolve(__dirname, 'period.html'),
         line: resolve(__dirname, 'line.html'),
         limit: resolve(__dirname, 'limit.html'),
+        identify: resolve(__dirname, 'identify.html'),
         legacy: resolve(__dirname, 'legacy.html'),
         widgets: resolve(__dirname, 'widgets.html'),
       },
