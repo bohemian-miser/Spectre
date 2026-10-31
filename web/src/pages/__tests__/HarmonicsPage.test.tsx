@@ -127,7 +127,8 @@ describe('HarmonicsPage', () => {
     render(<HarmonicsPage forceSync />);
     await waitFor(() => expect(screen.getByTestId('harm-detail').querySelector('h2')!.textContent).toBe('A chain of family 013467: 441 L4 → 8,784 L6 → 175,221 L8'), { timeout: 60000 });
     expect(screen.getAllByTestId('harm-brute-done').map((c) => c.textContent)).toEqual(['175,221']);
-    expect(screen.getAllByTestId('harm-brute-done')[0].classList.contains('is-selected')).toBe(true);
+    // The found member's cell is selected once its index is known, which comes a tick after the chain is shown.
+    await waitFor(() => expect(screen.getAllByTestId('harm-brute-done')[0].classList.contains('is-selected')).toBe(true), { timeout: 30000 });
     expect(location.search).toBe(address);
   }, 180000);
 });
