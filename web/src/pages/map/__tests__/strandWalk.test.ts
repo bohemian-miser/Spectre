@@ -35,6 +35,7 @@ import {
   type ViewRect,
   type ViewportCut,
 } from '../../../core';
+import { levelOfFrom, levelRgb } from '../ancestry';
 import { buildLeafChordTable, type LeafChordTable } from '../chords';
 import {
   ADVANCE_MAX_STEPS,
@@ -879,5 +880,59 @@ describe('curved strands', () => {
     expect(chordControlAt(index, hit.at, hit.to)).toEqual(hit.ctrl);
     expect(chordControlAt(index, hit.to, hit.at)).toEqual(hit.ctrl);
     expect(chordControlAt(buildChordIndex(cut, tableFor(LOOP_SUBSET, LOOP_COMBO))!, hit.at, hit.to)).toBeNull();
+  });
+});
+
+describe('colouring by the supertile shared with the start', () => {
+  const table = tableFor(OPEN_SUBSET, OPEN_COMBO);
+  const engine = createUnrootedEngine(SEED);
+  const view = rect(60);
+  const cut = engine.query(view, 200_000, { emitIds: true });
+  const index = buildChordIndex(cut, table)!;
+  const hit = hitTestChord(index, { x: 0, y: 0 }, 5)!;
+
+  it('names the tapped chord\'s tile, and each step\'s tile, by its id', () => {
+    expect(hit.tileId).toMatch(/^\d+:/);
+    const step = continuationAt(index, hit.at, hit.to);
+    expect(step.kind).toBe('step');
+    if (step.kind === 'step') expect(cut.ids![step.instance]).toMatch(/^\d+:/);
+  });
+
+  it('records every chord\'s shared level, the first at 0, and counts them for the whole chase', () => {
+    const trail = startTrail(hit);
+    const levelOf = levelOfFrom(engine, hit.tileId!);
+    advanceWalk(trail, index, { covered: view, levelOf });
+    expect(trail.count).toBeGreaterThan(20);
+    const chords = trail.count - 1;
+    expect(trail.levels[0]).toBe(0);
+    for (let k = 0; k < chords; k++) expect(trail.levels[k]).toBeGreaterThanOrEqual(0);
+    expect(Math.max(...trail.levels.subarray(0, chords))).toBeGreaterThan(0);
+    let counted = 0;
+    for (const c of trail.levelCounts) counted += c;
+    expect(counted).toBe(trail.steps);
+    expect(trail.levelCounts[0]).toBe(0);
+    // The levels follow the chords through a trim, like the types do.
+    const before = Array.from(trail.levels.subarray(0, chords));
+    trimTrail(trail, 10);
+    expect(trail.count).toBeLessThan(chords);
+    expect(Array.from(trail.levels.subarray(0, trail.count - 1))).toEqual(before.slice(chords - (trail.count - 1)));
+  });
+
+  it('is unknown without ids or without the function, and inks the geometry chord by chord when asked', () => {
+    const blind = startTrail(hitTestChord(buildChordIndex(cutFor(view), table)!, { x: 0, y: 0 }, 5)!);
+    advanceWalk(blind, index, { covered: view });
+    expect(blind.levels[0]).toBe(-1);
+    expect(blind.levelCounts[0]).toBe(blind.steps);
+    expect(trailGeometry(blind)!.rgba).toBeUndefined();
+
+    const trail = startTrail(hit);
+    advanceWalk(trail, index, { covered: view, levelOf: levelOfFrom(engine, hit.tileId!) });
+    trail.colourBy = 'ancestor';
+    const geom = trailGeometry(trail)!;
+    expect(geom.rgba!.length).toBe(4 * (geom.pointCount - 1));
+    for (let k = 0; k < trail.count - 1; k++) {
+      const want = levelRgb(trail.levels[k]);
+      expect(Array.from(geom.rgba!.subarray(4 * k, 4 * k + 4))).toEqual(Array.from(new Float32Array([want[0], want[1], want[2], 1])));
+    }
   });
 });

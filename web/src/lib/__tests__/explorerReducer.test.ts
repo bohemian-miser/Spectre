@@ -28,6 +28,7 @@ import {
   explorerFindCircuits,
   explorerPersistFound,
   explorerFollow,
+  explorerTraceColour,
   explorerKeepTails,
   explorerPace,
   explorerKeepCircuits,
@@ -498,5 +499,17 @@ describe('strands per class', () => {
     expect(n).toBe(12);
     const last = matchingCount(n) - 1;
     expect(run(three, { type: 'setMatching', tileType: 'Pi', index: last }).matching[pi]).toBe(last);
+  });
+});
+
+describe('trace colouring', () => {
+  it('is the rainbow by default, opts into ancestry, and drops the key on the way back', () => {
+    expect(explorerTraceColour(base)).toBe('rainbow');
+    const on = run(base, { type: 'setTraceColour', traceColour: 'ancestor' });
+    expect(explorerTraceColour(on)).toBe('ancestor');
+    expect(run(on, { type: 'setTraceColour', traceColour: 'ancestor' })).toBe(on);
+    const off = run(on, { type: 'setTraceColour', traceColour: 'rainbow' });
+    expect('traceColour' in off).toBe(false);
+    expect(run(base, { type: 'setTraceColour', traceColour: 'rainbow' })).toBe(base);
   });
 });
