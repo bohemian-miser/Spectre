@@ -200,6 +200,5 @@ function Picture(props: { side: Side; fitKey: string; label: string }): JSX.Elem
     for (const s of side.supertiles) if (s.unshared) out.push({ pts: closed(s.outline), color: '#eb6834', width: 2.6 });
     return () => out;
   }, [side]);
-  if (!side.supertiles.length) return <p className="shapes-note">{nf(side.visits)} visits at this level: too many to draw.</p>;
   return <Viewer frame={frame} fitKey={props.fitKey} lines={lines} marks={marks} label={props.label} className="bd-view" />;
 }

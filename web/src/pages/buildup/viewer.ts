@@ -41,6 +41,46 @@ export function mapBox(x: Affine, b: Box): Box {
 }
 
 
+/** Where a walk puts its crossings, as x, y pairs: an array, or anything else taking them. */
+export interface Sink {
+  push(x: number, y: number): void;
+}
+
+/**
+ * A walked line and its last point (`last`, or the line's first to close
+ * it): every point while there are at most `2 * budget` with the last,
+ * otherwise `budget` of them evenly spaced and the last, `capped`; null
+ * when over and `thinned` is false. The points are held only up to that
+ * many: a longer line is walked again for the ones kept.
+ */
+export function walkedLine(walk: (out: Sink) => void, last: Pt | null, budget: number, thinned = true): { pts: Float64Array; capped: boolean } | null {
+  const xs: number[] = [];
+  const room = 2 * budget - 1;
+  let n = 0;
+  walk({
+    push(x, y) {
+      if (n++ < room) xs.push(x, y);
+    },
+  });
+  const end = (out: number[]) => (last ? out.push(last.x, last.y) : out.push(out[0], out[1]));
+  if (n <= room) {
+    end(xs);
+    return { pts: Float64Array.from(xs), capped: false };
+  }
+  if (!thinned) return null;
+  const out: number[] = [];
+  let i = 0, j = 0, pick = 0;
+  walk({
+    push(x, y) {
+      if (i++ !== pick) return;
+      out.push(x, y);
+      pick = ++j < budget ? Math.floor((j * n) / budget) : -1;
+    },
+  });
+  end(out);
+  return { pts: Float64Array.from(out), capped: true };
+}
+
 /** One child arc as the walk meets it: the child's slot, type and the crossing it enters by. */
 interface Step {
   readonly slot: number;
@@ -165,12 +205,12 @@ export class Geometry {
    * entered further, down to `edgeStop`, so the drawing keeps to the
    * outline; children whose box misses `view` are not entered.
    */
-  walk(n: number, type: string, k: number, x: Affine, stop: number, view: Box | null, out: number[], edgeStop = stop): void {
+  walk(n: number, type: string, k: number, x: Affine, stop: number, view: Box | null, out: Sink, edgeStop = stop): void {
     const v = view ? [view.min.x, view.min.y, view.max.x, view.max.y] : null;
     this.go(n, this.typeAt.get(type)!, k, x[0], x[1], x[2], x[3], x[4], x[5], stop, v, out, edgeStop, 63);
   }
 
-  private go(n: number, ti: number, k: number, a: number, b: number, c: number, d: number, e: number, f: number, stop: number, v: number[] | null, out: number[], edgeStop: number, mask: number): void {
+  private go(n: number, ti: number, k: number, a: number, b: number, c: number, d: number, e: number, f: number, stop: number, v: number[] | null, out: Sink, edgeStop: number, mask: number): void {
     if (n <= (mask ? edgeStop : stop)) {
       const p = this.cs.levels[n][this.types[ti]].pt(k);
       out.push(a * p.x + b * p.y + c, d * p.x + e * p.y + f);

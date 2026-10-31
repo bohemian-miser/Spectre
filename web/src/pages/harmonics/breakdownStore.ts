@@ -62,6 +62,6 @@ export class BreakdownStore {
     const mine = reading(index);
     const common = index === 0 ? mine : reading(0);
     const shared = mine && common ? sharedTokens(common.tokens, mine.tokens).b : null;
-    return sideAt(cs, b.placements[at[index].placements[0]], k, mine, shared);
+    return sideAt(cs, b.placements[at[index].placements[0]], k, shared);
   }
 }

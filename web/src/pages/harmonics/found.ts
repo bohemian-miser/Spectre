@@ -17,10 +17,10 @@
 import { mul, transPt, type Affine, type Pt, type TileTypeId } from '../../core';
 import type { Box } from '../../lib/viewport';
 import type { BornCircuit, CircuitShapes } from '../shapes/circuitShapes';
-import { MAX_ROW, CircuitRows } from './rows';
+import { MAX_ROW, CircuitRows, READ_CAP } from './rows';
 import { cancelBacktracksAt, token, type Reading, type VisitColumns } from './readings';
 import { RouteLimit, TYPES, typeIndex, type SparseRoutes } from './sparseRoutes';
-import { VISIT_CAP } from './pairView';
+import { levelLine, visitsIn, type Descent } from './levelWalk';
 
 /** A circuit found above the build, as the brute force hands it over. */
 export interface Found {
@@ -196,14 +196,15 @@ export function foundThumb(placed: Placed, readings: readonly Reading[], budget:
 /**
  * A circuit drawn down to a level for a view, as `HarmonicsEngine.detail`
  * draws one: as fine as `level - 2` while the visits in view stay within
- * about `budget` (and the level has at most `VISIT_CAP`); thinned to
- * `budget` points at `level` itself when over. Visits out of view are drawn
- * by the visit at `level` they lie in.
+ * about `budget` (and the level has at most `READ_CAP`, its rows listed);
+ * at `level` itself walked (`levelWalk.ts`), thinned to `budget` points
+ * when over. Visits out of view are drawn by the visit at `level` they lie
+ * in.
  */
-export function foundDetail(placed: Placed, readings: readonly Reading[], level: number, view: Box | null, budget: number): { stop: number; pts: Float64Array; capped: boolean } {
+export function foundDetail(placed: Placed, d: Descent, level: number, view: Box | null, budget: number): { stop: number; pts: Float64Array; capped: boolean } {
   const { cs, rows } = placed;
   const c = rows.c;
-  const raw = rawOf(readings);
+  const raw = (s: number) => visitsIn(d, s);
   let share = 1;
   let inView = (_x: number, _y: number) => true;
   if (view) {
@@ -215,9 +216,10 @@ export function foundDetail(placed: Placed, readings: readonly Reading[], level:
     inView = (x, y) => x >= view.min.x - mx && x <= view.max.x + mx && y >= view.min.y - my && y <= view.max.y + my;
   }
   for (let s = Math.max(0, level - 2); s <= level; s++) {
-    if (s < level && (raw(s) * share > budget || raw(s) > VISIT_CAP)) continue;
+    if (s === level) return { stop: s, ...levelLine(d, s, budget) };
+    if (raw(s) * share > budget || raw(s) > READ_CAP) continue;
     const fine = placed.line(s);
-    if (s === level || raw(s) <= budget) {
+    if (raw(s) <= budget) {
       const pts = closedLine(fine);
       return pts.length / 2 <= 2 * budget ? { stop: s, pts, capped: false } : { stop: s, pts: thinned(pts, budget), capped: true };
     }
