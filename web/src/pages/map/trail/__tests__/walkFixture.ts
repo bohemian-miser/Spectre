@@ -37,7 +37,7 @@ export function walkPoints(spec: WalkSpec, points: number, half = 60): Float64Ar
   const hit = hitTestChord(first.index!, { x: sx, y: sy }, 1.5);
   if (!hit) throw new Error('the seed is not on a chord');
   const flip = Math.hypot(hit.at.x - sx, hit.at.y - sy) > Math.hypot(hit.to.x - sx, hit.to.y - sy);
-  const start: ChordEnd = flip ? { at: hit.to, to: hit.at, leafType: hit.leafType } : hit;
+  const start: ChordEnd = flip ? { ...hit, at: hit.to, to: hit.at } : hit;
   const trail = startTrail(start, chords.rows);
   while (trail.count < points) {
     const r = query(trail.head.x, trail.head.y);

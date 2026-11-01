@@ -87,6 +87,7 @@ export type ExplorerAction =
   | { readonly type: 'setPersistFound'; readonly persistFound: boolean }
   | { readonly type: 'setShowTicker'; readonly showTicker: boolean }
   | { readonly type: 'setShowTransitions'; readonly showTransitions: boolean }
+  | { readonly type: 'setTraceColour'; readonly traceColour: 'rainbow' | 'ancestor' }
   | { readonly type: 'setFindCeiling'; readonly findCeiling: number }
   | { readonly type: 'setFoundHold'; readonly foundHold: number }
   | { readonly type: 'setHighlightOnScreen'; readonly on: boolean }
@@ -312,6 +313,16 @@ export function explorerReducer(state: ExplorerState, action: ExplorerAction): E
         return rest as ExplorerState;
       }
       return { ...state, showTransitions: true };
+    }
+
+    // Default rainbow: colouring by ancestry is opt-in.
+    case 'setTraceColour': {
+      if (action.traceColour === explorerTraceColour(state)) return state;
+      if (action.traceColour === 'rainbow') {
+        const { traceColour: _c, ...rest } = state;
+        return rest as ExplorerState;
+      }
+      return { ...state, traceColour: 'ancestor' };
     }
 
     case 'setFindCeiling': {
@@ -637,6 +648,11 @@ export function explorerHighlightInPath(state: ExplorerState): boolean {
 /** Tile-type transition graph — OFF unless `tg=1` asks for it. */
 export function explorerShowTransitions(state: ExplorerState): boolean {
   return state.showTransitions === true;
+}
+
+/** How the traced strand is inked: the rainbow unless `tcl=a` asks for the shared-supertile colouring. */
+export function explorerTraceColour(state: ExplorerState): 'rainbow' | 'ancestor' {
+  return state.traceColour === 'ancestor' ? 'ancestor' : 'rainbow';
 }
 
 /** Chase pace in tiles/second, or null for full speed (the default). */

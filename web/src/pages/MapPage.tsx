@@ -184,6 +184,7 @@ export function MapPage(props: MapPageProps): JSX.Element {
       transitions: [],
       chains: [],
       chainLength: 0,
+      levels: [],
       steps: 0,
     },
     highlight: { onScreen: 0, inPath: 0 },

@@ -99,6 +99,7 @@ import {
   explorerHighlightOnScreen,
   explorerShowTicker,
   explorerShowTransitions,
+  explorerTraceColour,
   explorerTrace,
   explorerTrailHold,
   hasFlag,
@@ -129,6 +130,7 @@ import {
   type InfiniteCanvasApi,
   type InfiniteCanvasStatus,
 } from './map/InfiniteCanvas';
+import { levelCss } from './map/ancestry';
 import type { MapRenderStyle } from './map/rendererTypes';
 import { MAP_BUDGETS, formatBudget } from './map/mapUrl';
 import { recordingLabel, useCanvasRecording } from './map/useRecording';
@@ -361,6 +363,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
   const [chainLength, setChainLength] = useState<number | null>(null);
   const tickerOn = explorerShowTicker(state);
   const transitionsOn = explorerShowTransitions(state);
+  const traceColour = explorerTraceColour(state);
   const findCeiling = explorerFindCeiling(state);
   const foundHold = explorerFoundHold(state);
   const hlScreen = explorerHighlightOnScreen(state);
@@ -1741,6 +1744,17 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
           />
           <span>Graph which type follows which</span>
         </label>
+        <label className="control-row">
+          <input
+            type="checkbox"
+            aria-label="Colour the traced strand by the lowest supertile each tile shares with the start tile"
+            data-testid="trace-ancestry"
+            checked={traceColour === 'ancestor'}
+            disabled={!infinite || !traceOn}
+            onChange={(e) => dispatch({ type: 'setTraceColour', traceColour: e.target.checked ? 'ancestor' : 'rainbow' })}
+          />
+          <span>Colour by the supertile shared with the start</span>
+        </label>
         {infinite ? (
           <>
             <div className="control-row">
@@ -1937,6 +1951,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
             followPace={pace}
             followDamping={damping}
             traceSeed={state.traceSeed ?? null}
+            trailColour={traceColour}
             onTraceSeed={onTraceSeed}
             style={infiniteStyle}
             initialCamera={initialInfiniteCamera}
@@ -1976,6 +1991,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
               )}
               tickerOn={tickerOn}
               transitionsOn={transitionsOn}
+              ancestryOn={traceColour === 'ancestor'}
               hlScreen={hlScreen}
               hlPath={hlPath}
               onToggleHlScreen={() =>
@@ -2237,6 +2253,8 @@ function InfiniteHud(props: {
   readonly actions?: (trace: InfiniteCanvasStatus['trace'] | null) => React.ReactNode;
   readonly tickerOn: boolean;
   readonly transitionsOn: boolean;
+  /** The chase is inked by shared supertile level: show the legend of levels. */
+  readonly ancestryOn: boolean;
   readonly hlScreen: boolean;
   readonly hlPath: boolean;
   onToggleHlScreen(): void;
@@ -2245,7 +2263,7 @@ function InfiniteHud(props: {
   onChainLength(length: number | null): void;
 }): JSX.Element {
   const { subscribeRef, linesOn, traceOn, followOn, fillsOn, leafNames, leafCss, tileArea, shapesHref } = props;
-  const { tickerOn, transitionsOn, hlScreen, hlPath } = props;
+  const { tickerOn, transitionsOn, ancestryOn, hlScreen, hlPath } = props;
   const { onToggleHlScreen, onToggleHlPath, onSelect, onChainLength } = props;
   const [status, setStatus] = useState<InfiniteCanvasStatus | null>(null);
   const latest = useRef<InfiniteCanvasStatus | null>(null);
@@ -2309,6 +2327,15 @@ function InfiniteHud(props: {
               ? 'traced: tap a strand'
               : 'traced: off'}
         </span>
+        {ancestryOn && trace?.active && trace.levels.length ? (
+          <span data-testid="inf-levels" title="Tiles of the chase by the level of the lowest supertile they share with the start tile; ? for tiles walked before the colouring was on">
+            {trace.levels.map(({ level, count }) => (
+              <span key={level} className="hud-chip" style={{ borderLeft: `0.6em solid ${levelCss(level)}` }}>
+                {level < 0 ? '?' : `level ${level}`} ×{count.toLocaleString('en-US')}
+              </span>
+            ))}
+          </span>
+        ) : null}
         {trace?.active && trace.status === 'closed' && shapesHref ? (
           // A press here is the link's, not a pan or a tap on the tiling (the host captures the pointer).
           <a href={shapesHref(trace.steps)} onPointerDown={(e) => e.stopPropagation()} data-testid="inf-shapes">

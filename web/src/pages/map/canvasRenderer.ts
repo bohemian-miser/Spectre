@@ -443,11 +443,25 @@ function strokeTrail(
   const solid = trail.color
     ? `rgb(${Math.round(trail.color[0] * 255)}, ${Math.round(trail.color[1] * 255)}, ${Math.round(trail.color[2] * 255)})`
     : null;
-  const bands = solid ? 1 : Math.min(TRAIL_BANDS, n - 1);
+  // Per-segment ink: one band per run of segments in the same colour.
+  const inked = trail.rgba ?? null;
+  const inkAt = (seg: number): string => `rgb(${Math.round(inked![4 * seg] * 255)}, ${Math.round(inked![4 * seg + 1] * 255)}, ${Math.round(inked![4 * seg + 2] * 255)})`;
+  const runs: [number, number][] = [];
+  if (inked) {
+    let from = 0;
+    for (let seg = 1; seg < n - 1; seg++) {
+      if (inkAt(seg) !== inkAt(from)) {
+        runs.push([from, seg]);
+        from = seg;
+      }
+    }
+    runs.push([from, n - 1]);
+  }
+  const bands = inked ? runs.length : solid ? 1 : Math.min(TRAIL_BANDS, n - 1);
   for (let b = 0; b < bands; b++) {
-    const from = Math.floor((b * (n - 1)) / bands);
-    const to = Math.floor(((b + 1) * (n - 1)) / bands); // inclusive: bands share a point
-    C.strokeStyle = solid ?? rainbow(trail.arc[Math.floor((from + to) / 2)] / total);
+    const from = inked ? runs[b][0] : Math.floor((b * (n - 1)) / bands);
+    const to = inked ? runs[b][1] : Math.floor(((b + 1) * (n - 1)) / bands); // inclusive: bands share a point
+    C.strokeStyle = inked ? inkAt(from) : (solid ?? rainbow(trail.arc[Math.floor((from + to) / 2)] / total));
     C.beginPath();
     let penDown = false;
     let px = 0;
