@@ -10,7 +10,25 @@ import { describe, expect, it } from 'vitest';
 import { buildShapes, foundations, substitutionMatrix } from '../foundations';
 import { drawCircuits } from '../drawings';
 import { comboCount, combosOf, runLive } from '../liveAnalysis';
-import { backTest, chainOf, forecastChecks, pageCombo, pageIndex, segments, tailFates, type PageCombo, type PageIndex, type SweepFile } from '../pageData';
+import { filterRows, markCounts, NO_FILTERS, sortRows } from '../ComboList';
+import {
+  backTest,
+  chainOf,
+  forecastChecks,
+  MARKS,
+  marksOf,
+  monstersOf,
+  pageCombo,
+  pageIndex,
+  project,
+  segments,
+  SHORT,
+  tailFates,
+  type Mark,
+  type PageCombo,
+  type PageIndex,
+  type SweepFile,
+} from '../pageData';
 
 const web = resolve(__dirname, '../../../..');
 const sweepDir = resolve(web, 'circuit-classes/data/foundations/hex-023468');
@@ -54,6 +72,69 @@ describe('the page data', () => {
     // every foundational circuit at floor + 4 or later is listed as a monster
     const late = full.combos.flatMap((f) => f.foundational.filter(([level]) => level >= f.floor + 4).map(([level, length]) => `${f.combo}/${level}/${length}`));
     expect(index.monsters.filter((m) => m.late).map((m) => `${m.combo}/${m.level}/${m.length}`).sort()).toEqual(late.sort());
+  });
+
+  it('marks every combination by its definitions, against the sweep index where it has them', () => {
+    const index = read<PageIndex>(resolve(pageDir, 'index.json'));
+    const full = read<{ combos: { combo: string; floor: number; foundational: [number, number, string, number, number][]; verdicts: Record<string, number> }[] }>(resolve(sweepDir, 'index.json'));
+    const counts: Record<Mark, number> = { short: 0, notForecast: 0, unexplained: 0, missed: 0 };
+    const bands = [0, 0, 0, 0];
+    for (const d of sweep) {
+      const p = pageCombo(d);
+      const pr = project(p);
+      const r = index.combos.find((x) => x.combo === d.combo)!;
+      const f = full.combos.find((x) => x.combo === d.combo)!;
+      expect(r.limit).toBeCloseTo(pr.limit, 6);
+      const want: Mark[] = [];
+      if (pr.limit < 0.995) want.push('short');
+      if (pr.fits.some((x) => x.stop !== null && x.stop !== 'ended')) want.push('notForecast');
+      expect(r.notForecast).toHaveLength(pr.fits.filter((x) => x.stop !== null && x.stop !== 'ended').length);
+      // a late nugget, from the sweep's own list of foundational circuits
+      if (f.foundational.some(([level, , , , nugget]) => level >= f.floor + 4 && nugget)) want.push('unexplained');
+      // a prediction that missed a harmonic, or found another circuit's, by the sweep's verdicts
+      if ((f.verdicts.missed ?? 0) + (f.verdicts.other ?? 0) + (f.verdicts['not built'] ?? 0) > 0) want.push('missed');
+      expect(marksOf(r)).toEqual(want);
+      // a short combination is itself a monster
+      expect(r.monsters).toBe(monstersOf(p).length + (want.includes('short') ? 1 : 0));
+      for (const m of want) counts[m]++;
+      bands[pr.limit < 0.98 ? 0 : pr.limit < 0.995 ? 1 : pr.limit <= 1.005 ? 2 : 3]++;
+    }
+    // the band table of docs/FOUNDATIONS.md, "Every combination in the limit"
+    expect(bands).toEqual([2, 2, 315, 1]);
+    expect(counts).toEqual({ short: 4, notForecast: 3, unexplained: 2, missed: 6 });
+    // the two whose 60 at level 5 has a chain growing its share: short, and the chain named
+    for (const combo of ['110000001', '111000001']) {
+      const r = index.combos.find((x) => x.combo === combo)!;
+      expect(marksOf(r)[0]).toBe('short');
+      expect(r.limit).toBeLessThan(0.66);
+      expect(r.notForecast).toEqual([expect.stringMatching(/^chain of 60 at level 5: its members' shares do not fall \(ratio 1\.\d\d\)$/)]);
+    }
+  });
+});
+
+describe('the list of combinations', () => {
+  const index = read<PageIndex>(resolve(pageDir, 'index.json'));
+
+  it('sorts by limit, the short ones first', () => {
+    const rows = sortRows(index.combos, { key: 'limit', desc: false });
+    for (let i = 1; i < rows.length; i++) expect(rows[i].limit).toBeGreaterThanOrEqual(rows[i - 1].limit);
+    const short = rows.filter((r) => r.limit < SHORT);
+    expect(rows.slice(0, short.length)).toEqual(short);
+    expect(sortRows(index.combos, { key: 'limit', desc: true })[0].combo).toBe(rows[rows.length - 1].combo);
+  });
+
+  it("counts each mark as the rows that choosing it alone shows, under any other filter", () => {
+    for (const base of [NO_FILTERS, { ...NO_FILTERS, floor: 1 }, { ...NO_FILTERS, lastNew: 5 }, { ...NO_FILTERS, search: '1' }]) {
+      const counts = markCounts(index.combos, base);
+      for (const m of Object.keys(MARKS) as Mark[]) {
+        const shown = filterRows(index.combos, { ...base, marks: [m] });
+        expect(shown).toHaveLength(counts[m]);
+        expect(shown.every((r) => marksOf(r).includes(m))).toBe(true);
+      }
+    }
+    // several marks show the rows with any of them
+    const two = filterRows(index.combos, { ...NO_FILTERS, marks: ['short', 'unexplained'] });
+    expect(two.map((r) => r.combo)).toEqual(index.combos.filter((r) => r.limit < SHORT || r.unexplained > 0).map((r) => r.combo));
   });
 });
 

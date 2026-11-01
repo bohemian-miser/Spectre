@@ -10,17 +10,17 @@
  * The address holds the rule, combination, level and circuit shown.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { REPO_URL } from '../lib/siteNav';
 import { ComboPicker } from './shapes/ComboPicker';
-import { ComboList } from './foundations/ComboList';
+import { ComboList, MARK_KEYS } from './foundations/ComboList';
 import { ComboView } from './foundations/ComboView';
 import { MonstersTable } from './foundations/MonstersTable';
 import { useChainBrute } from './foundations/bruteChains';
 import { createDrawClient } from './foundations/drawings';
 import { loadCombo, loadIndex, nf, readAddress, RULE, writeAddress, type Address } from './foundations/data';
 import { comboCount, combosOf, createLiveClient, keep, loadKept, type LiveProgress } from './foundations/liveAnalysis';
-import { pageIndex, type PageCombo, type PageIndex } from './foundations/pageData';
+import { MARKS, pageIndex, SHORT, type PageCombo, type PageIndex } from './foundations/pageData';
 import '../styles/shapes.css';
 import '../styles/foundations.css';
 
@@ -153,6 +153,7 @@ export default function FoundationsPage(props: { forceSync?: boolean }): JSX.Ele
     return done.length ? pageIndex(rule, done) : null;
   }, [precomputed, preIndex, results, rule]);
 
+  const shortCount = index ? index.combos.filter((r) => r.limit < SHORT).length : 0;
   const select = useCallback((c: string) => setAddress((a) => (a.combo === c ? a : { ...a, combo: c, circuit: null })), []);
   const shown = data && data.combo === combo && data.rule === rule && data.levels === level ? data : null;
   const total = comboCount(rule);
@@ -163,13 +164,36 @@ export default function FoundationsPage(props: { forceSync?: boolean }): JSX.Ele
       <header className="fd-intro">
         <h1>Foundations</h1>
         <p>
-          A circuit is its word: wherever and at whatever level it closes, it is the same circuit. Where it first closes it is a <b>harmonic</b> (a circuit
-          from two levels down with each tile grown into a level-2 supertile, read the same from the <b>floor</b> up) or a <b>foundational</b> circuit. A
-          foundational circuit with harmonics starts a <b>chain</b>; one without is a <b>nugget</b>, which only closes again, in more places. A{' '}
-          <b>monster</b> is a foundational circuit at floor + 4 or later, after harmonics have begun, or one of at least 100,000 tiles. All 320 combinations
-          of rule 023468 are precomputed, sorted to level 9 and built to level 10; any other rule or level is analysed here.{' '}
-          <a href={`${REPO_URL}/blob/main/docs/FOUNDATIONS.md`}>Write-up</a>
+          Each combination&apos;s circuits, sorted into chains and nuggets, with the share of chords they take level by level and forecast to the limit. Choose a
+          combination from the list. <a href={`${REPO_URL}/blob/main/docs/FOUNDATIONS.md`}>Write-up</a>
         </p>
+        <details className="fd-how">
+          <summary>How to read this</summary>
+          <dl>
+            <dt>Circuit</dt>
+            <dd>its word: wherever and at whatever level it closes, it is the same circuit</dd>
+            <dt>Harmonic</dt>
+            <dd>a circuit from two levels down with each tile grown into a level-2 supertile, read the same from the floor (the level the first circuit closes at) up</dd>
+            <dt>Foundational</dt>
+            <dd>a circuit that is not a harmonic where it first closes</dd>
+            <dt>Chain</dt>
+            <dd>a foundational circuit and its harmonics</dd>
+            <dt>Nugget</dt>
+            <dd>a foundational circuit with no harmonic: it only closes again, in more places</dd>
+            <dt>Monster</dt>
+            <dd>a combination whose tails are not all accounted for (short), or a foundational circuit first closing at floor + 4 or later (late) or of at least 100,000 tiles (giant)</dd>
+            <dt>Limit</dt>
+            <dd>the share of chords on known circuits once the chains are forecast past the build</dd>
+            {MARK_KEYS.map((m) => (
+              <Fragment key={m}>
+                <dt>
+                  <i className={`fd-dot fd-mark-${m}`} /> {MARKS[m].label}
+                </dt>
+                <dd>{MARKS[m].title[0].toLowerCase() + MARKS[m].title.slice(1)}</dd>
+              </Fragment>
+            ))}
+          </dl>
+        </details>
         <ComboPicker
           key={`${rule}/${combo}/${level}`}
           busy={sweeping}
@@ -213,7 +237,8 @@ export default function FoundationsPage(props: { forceSync?: boolean }): JSX.Ele
             Combinations
           </button>
           <button type="button" role="tab" aria-selected={address.view === 'monsters'} onClick={() => setAddress((a) => ({ ...a, view: 'monsters' }))} data-testid="fd-tab-monsters">
-            Monsters{index ? ` (${index.monsters.length})` : ''}
+            Monsters{index ? ` (${index.monsters.length + shortCount})` : ''}
+            {shortCount ? <span className="fd-tab-short"> · short {shortCount}</span> : null}
           </button>
         </div>
       </header>
@@ -222,7 +247,9 @@ export default function FoundationsPage(props: { forceSync?: boolean }): JSX.Ele
         index ? (
           <MonstersTable
             monsters={index.monsters}
+            combos={index.combos}
             onOpen={(m) => setAddress((a) => ({ ...a, view: 'combos', combo: m.combo, circuit: m.id }))}
+            onOpenCombo={(c) => setAddress((a) => ({ ...a, view: 'combos', combo: c, circuit: null }))}
             found={(m) => brute.foundOn(rule, m.combo, m.id)}
           />
         ) : (

@@ -147,6 +147,10 @@ import type { Hit } from './explorer/harmonicSearch';
 import { circuitRefOf } from './compare/fromTrace';
 import { formatRef } from './compare/refs';
 import { identifyHref } from './identify/href';
+import { harmonicsHref } from './foundations/data';
+import { fateText, tailClasses, TailsControl, TailsLayer } from './explorer/Tails';
+import { slotPath, type TailJob } from './explorer/tailClasses';
+import { useTailClasses } from './explorer/tailClassesClient';
 import type { GraphSelection } from './map/transitions';
 import { DEFAULT_LINE_COLOR, LIGHT_LINE_COLOR } from './map/webglRenderer';
 import '../styles/map.css';
@@ -410,6 +414,10 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
   /** The harmonic search: on or off, and its settings. */
   const [harmonicOn, setHarmonicOn] = useState(false);
   const [harmonicSettings, setHarmonicSettings] = useState<HarmonicSettings>(DEFAULT_HARMONIC_SETTINGS);
+  /** Tail classes: on or off, the class picked out in the legend, and the tail last hovered. */
+  const [tailsOn, setTailsOn] = useState(false);
+  const [tailsPicked, setTailsPicked] = useState<string | null>(null);
+  const [tailsHover, setTailsHover] = useState<number | null>(null);
   const [tool, setTool] = useState<OverlayTool>('cursor');
   const [exportStatus, setExportStatus] = useState<string | null>(null);
   /** The X-ray: off, or the supertile level it shows (clamped to what the view offers). */
@@ -477,12 +485,13 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
             curved: curvedStrands,
             // Count vectors are only meaningful for a rule's own chords.
             loopVectors: !asSpectres,
-            // The harmonic search reads strands from their tiles' slot paths.
-            pathTiles: harmonicOn,
+            // The harmonic search and the tail classes read strands from their tiles' slot paths.
+            pathTiles: harmonicOn || tailsOn,
           }
         : null,
     [
       harmonicOn,
+      tailsOn,
       infinite,
       strandsOn,
       drawFamily,
@@ -516,6 +525,60 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
   }, [harmonicOn, harmonicLevel, analysis.result, drawFamily, state.rootTile]);
   const harmonicSettingsIn = useMemo(() => clampSettings(harmonicSettings, harmonicLevel ?? 3), [harmonicSettings, harmonicLevel]);
   const harmonics = useHarmonicSearch(harmonicPatch, selectedCircuit, harmonicSettingsIn);
+
+  // --- tail classes ----------------------------------------------------------
+
+  /** The patch level the tail classes run at: a rooted hexagon patch drawn with its rule's strands. */
+  const tailsLevel = !infinite && hexRule && linesOn && state.level >= 1 && state.level <= ROOTED_MATERIALIZE_MAX ? state.level : null;
+  /** Each open strand as its first tile, the edge it enters by and its tiles. */
+  const tailsInput = useMemo<{ key: string; job: TailJob } | null>(() => {
+    const r = analysis.result;
+    if (!tailsOn || tailsLevel === null || !hexRule || !r?.tailTiles) return null;
+    const root = buildSystem('hex', tailsLevel)[state.rootTile];
+    const tails = r.tails.map((p, i) => {
+      const tiles = r.tailTiles![i];
+      const at = tiles.length ? openStrandStart('hex', root, tailsLevel, tiles[0], p.points[0]) : null;
+      return { code: tiles[0] ?? 0, edge: at?.edge ?? -1, tiles: tiles.length };
+    });
+    return {
+      key: `${hexRule.subset.join('')}|${hexRule.combo}|${state.rootTile}|${tailsLevel}|${patchKeyOf(r)}`,
+      job: { subset: hexRule.subset, combo: hexRule.combo, root: state.rootTile as TailJob['root'], level: tailsLevel, tails },
+    };
+  }, [tailsOn, tailsLevel, hexRule, analysis.result, state.rootTile]);
+  const tails = useTailClasses(tailsInput);
+  useEffect(() => {
+    setTailsPicked(null);
+    setTailsHover(null);
+  }, [tailsInput?.key]);
+  const tailsView = useMemo(() => {
+    if (!tails || !tailsInput || tails.key !== tailsInput.key) return null;
+    return tailClasses(tails, tailsInput.job.tails.map((t) => t.tiles));
+  }, [tails, tailsInput]);
+  const tailText = useCallback(
+    (i: number): string => {
+      const f = tails?.fates[i];
+      if (!tails || !f) return 'following…';
+      return fateText(f, f.state === 'closed' ? tails.closings[f.closing] : null, f.state === 'open' ? tails.candidates.get(f.strand) : undefined);
+    },
+    [tails],
+  );
+  const tailLinks = (i: number): React.ReactNode => {
+    if (!hexRule || !tailsInput || tailsLevel === null) return null;
+    const t = tailsInput.job.tails[i];
+    const f = tails?.fates[i];
+    const n = f?.state === 'closed' ? tails!.closings[f.closing].named : null;
+    const base = import.meta.env.BASE_URL;
+    // the Harmonics page builds to level 9: a circuit above it is shown by its chain's first member
+    const circuit = n ? (n.level <= 9 ? n : n.root) : null;
+    return (
+      <>
+        {state.rootTile === 'Delta' && t.edge >= 0 ? (
+          <a href={identifyHref(base, { subset: hexRule.subset, combo: hexRule.combo, tile: slotPath(t.code, tailsLevel), edge: t.edge, level: tailsLevel })}>Identify</a>
+        ) : null}{' '}
+        {circuit ? <a href={harmonicsHref(base, hexRule.combo, Math.max(3, circuit.level), hexRule.subset.join(''), circuit)}>Harmonics</a> : null}
+      </>
+    );
+  };
   const comparePick = useComparePick();
 
   /**
@@ -1034,6 +1097,32 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
         threshold={harmonicSettingsIn.threshold}
         pathOf={strandPath}
         circuit={selectedCircuit!}
+      />
+    ) : null;
+
+  const tailsControl =
+    tailsLevel !== null ? (
+      <TailsControl
+        on={tailsOn}
+        onToggle={setTailsOn}
+        state={tails}
+        classes={tailsView?.classes ?? []}
+        picked={tailsPicked}
+        onPick={setTailsPicked}
+        detail={tailsHover !== null && tailsView?.keys[tailsHover] ? { text: tailText(tailsHover), links: tailLinks(tailsHover) } : null}
+      />
+    ) : null;
+  const tailsLayer = (camera: Camera): React.ReactNode =>
+    tailsControl && tailsOn && tailsView && analysis.result ? (
+      <TailsLayer
+        tails={analysis.result.tails}
+        keys={tailsView.keys}
+        classes={tailsView.classes}
+        picked={tailsPicked}
+        viewTransform={model.viewTransform}
+        camera={camera}
+        label={tailText}
+        onHover={setTailsHover}
       />
     ) : null;
 
@@ -2008,6 +2097,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
               </TilingView>
               {xrayOn ? <XrayRooted family={drawFamily} items={xrayItems} camera={api.camera} /> : null}
               {harmonicLayer(api.camera)}
+              {tailsLayer(api.camera)}
               </>
             )}
           </PanZoom>
@@ -2051,6 +2141,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
               />
               {xrayOn ? <XrayRooted family={drawFamily} items={xrayItems} camera={api.camera} /> : null}
               {harmonicLayer(api.camera)}
+              {tailsLayer(api.camera)}
               </>
             )}
           </PanZoom>
@@ -2059,6 +2150,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
         {infinite ? null : (
           <div className="viewport-tools explorer-tools" data-testid="explorer-tools" data-panzoom-ignore="">
             {xrayControl}
+            {tailsControl}
             {harmonicControl}
           </div>
         )}

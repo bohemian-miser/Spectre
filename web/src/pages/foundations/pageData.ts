@@ -3,7 +3,7 @@
  * by the sweep or the page's worker) by `pageCombo`: per combination its
  * circuits (chains and nuggets), how each prediction fared, and the shares
  * of chords by chain, class and harmonic order level by level; and an index
- * of every combination with its monsters and flags. The page derives the
+ * of every combination with its monsters, limit and marks. The page derives the
  * account, the tail attribution, the back-test and the forecast from these,
  * with the functions here.
  */
@@ -80,12 +80,18 @@ export interface IndexRow {
   readonly nuggets: number;
   /** Tiles of the largest foundational circuit. */
   readonly largest: number;
+  /** Monster circuits, and one more for the combination itself when it is short. */
   readonly monsters: number;
   /** Predictions that missed a harmonic the build has, or found another circuit's. */
   readonly misses: number;
   /** Share of chords on tails at the top level classified. */
   readonly tails: number;
-  readonly flags: Flag[];
+  /** The share of chords on circuits in the limit (`project`). */
+  readonly limit: number;
+  /** The chains not carried on past the build (`notCarried`), each named with why (`stopText`). */
+  readonly notForecast: string[];
+  /** Late monsters with no chain. */
+  readonly unexplained: number;
 }
 
 export interface Monster {
@@ -444,22 +450,18 @@ export function account(p: PageCombo, split: Split): Account {
   const chains = lines.filter((l) => l.cls !== 0);
   const foundAt = new Map<number, number>();
   for (const l of lines) foundAt.set(l.root, Math.min(foundAt.get(l.root) ?? Infinity, l.born));
-  const name = (root: number): string => {
-    const f = p.found.find((x) => x[0] === root);
-    return f ? `chain of ${f[2].toLocaleString('en-US')} at level ${f[1]}` : `chain ${root}`;
-  };
   const closedSegs: Segment[] = [{ key: 'nugget', label: 'Nuggets', values: closed(nuggets) }];
   const tailSegs: Segment[] = [];
   if (split === 'class') {
-    closedSegs.push({ key: 'found', label: 'Chains: foundational', values: closed(chains.filter((l) => l.cls === 1)) });
-    closedSegs.push({ key: 'harm', label: 'Chains: harmonics', values: closed(chains.filter((l) => l.cls === 2)) });
+    closedSegs.push({ key: 'found', label: 'Foundational', values: closed(chains.filter((l) => l.cls === 1)) });
+    closedSegs.push({ key: 'harm', label: 'Harmonics', values: closed(chains.filter((l) => l.cls === 2)) });
   } else if (split === 'order') {
     const shown = chains.filter((l) => l.born <= H);
     const top = Math.max(0, ...shown.map((l) => l.order));
     for (let o = 0; o <= top; o++) {
       const ls = chains.filter((l) => l.order === o || (o === top && l.order > top));
       const up = o === top && chains.some((l) => l.order > top);
-      closedSegs.push({ key: `order${Math.min(o, ORDERS - 1)}-${o}`, label: o === 0 ? 'Foundational (order 0)' : `Harmonic order ${o}${up ? ' and up' : ''}`, values: closed(ls) });
+      closedSegs.push({ key: `order${Math.min(o, ORDERS - 1)}-${o}`, label: o === 0 ? 'Foundational' : `Order ${o}${up ? ' and up' : ''}`, values: closed(ls) });
     }
   }
   if (split === 'chain') {
@@ -468,20 +470,21 @@ export function account(p: PageCombo, split: Split): Account {
     roots.sort((a, b) => built(b) - built(a));
     roots.slice(0, CHAINS_SHOWN).forEach((root, i) => {
       const ls = chains.filter((l) => l.root === root);
-      const label = name(root);
-      closedSegs.push({ key: `chain${i}`, label: label[0].toUpperCase() + label.slice(1), values: closed(ls) });
-      tailSegs.push({ key: `later-chain${i}`, label: `Tails: ${label}`, values: later(ls), tail: true });
+      const name = chainName(p, root);
+      const label = name[0].toUpperCase() + name.slice(1);
+      closedSegs.push({ key: `chain${i}`, label, values: closed(ls) });
+      tailSegs.push({ key: `later-chain${i}`, label, values: later(ls), tail: true });
     });
     const others = chains.filter((l) => roots.indexOf(l.root) >= CHAINS_SHOWN);
     if (others.length) {
       closedSegs.push({ key: 'chains-other', label: 'Other chains', values: closed(others) });
-      tailSegs.push({ key: 'later-chains-other', label: 'Tails: other chains', values: later(others), tail: true });
+      tailSegs.push({ key: 'later-chains-other', label: 'Other chains', values: later(others), tail: true });
     }
-    tailSegs.unshift({ key: 'later-nugget', label: 'Tails: nuggets', values: later(nuggets), tail: true });
+    tailSegs.unshift({ key: 'later-nugget', label: 'Nuggets', values: later(nuggets), tail: true });
   } else {
-    tailSegs.push({ key: 'later-found', label: 'Tails: foundational circuits found later', values: later(lines, (l, m) => foundAt.get(l.root)! > m), tail: true });
-    tailSegs.push({ key: 'later-next', label: 'Tails: next harmonics of known chains', values: later(chains, (l, m) => foundAt.get(l.root)! <= m && l.born > m), tail: true });
-    tailSegs.push({ key: 'later-again', label: 'Tails: known circuits closing again', values: later(lines, (l, m) => l.born <= m), tail: true });
+    tailSegs.push({ key: 'later-found', label: 'Foundational found later', values: later(lines, (l, m) => foundAt.get(l.root)! > m), tail: true });
+    tailSegs.push({ key: 'later-next', label: 'Next harmonics', values: later(chains, (l, m) => foundAt.get(l.root)! <= m && l.born > m), tail: true });
+    tailSegs.push({ key: 'later-again', label: 'Closing again', values: later(lines, (l, m) => l.born <= m), tail: true });
   }
   let u = 0;
   const unseen = [...p.unseen.map((x) => (u += x)), ...new Array<number>(C - p.unseen.length).fill(u)];
@@ -502,7 +505,7 @@ export function account(p: PageCombo, split: Split): Account {
       closedSegs.forEach((s, i) => c > T && (s.values[c] = s.values[T] + past[i] * k));
     }
   }
-  tailSegs.push({ key: 'unaccounted', label: 'Tails: not accounted for', values: unaccounted, tail: true });
+  tailSegs.push({ key: 'unaccounted', label: 'Not accounted for', values: unaccounted, tail: true });
   return { columns, segments: [...closedSegs, ...tailSegs], projection: pr, over };
 }
 
@@ -704,31 +707,23 @@ export function expectedTails(p: PageCombo): { expected: number; actual: number;
   return { expected: sum(chains.map((c) => c[1])), actual: p.tails[top], chains: chains.sort((a, b) => b[1] - a[1]) };
 }
 
-export type Flag = 'unseen' | 'open' | 'nuggets' | 'gap' | 'forecast' | 'assumption';
+/** A combination whose limit (`project`) is under this share is short: the rest is room for unknown circuits or strands that never close. */
+export const SHORT = 0.995;
 
-export const FLAG_TEXT: Record<Flag, string> = {
-  unseen: 'tails close into a circuit seen nowhere below',
-  open: 'the tails not closed do not shrink',
-  nuggets: 'only nuggets, and the tails stay large',
-  gap: 'circuits found at the top levels close tails no known chain explains',
-  forecast: "a chain's forecast from some level takes more than the build shows: the chain closes into itself one level later",
-  assumption: "a harmonic closes in a different number of places than its parent",
+/** What a reader acts on in a combination: each mark is one condition on its index row. */
+export type Mark = 'short' | 'notForecast' | 'unexplained' | 'missed';
+
+export const MARKS: Record<Mark, { readonly label: string; readonly title: string; readonly has: (r: IndexRow) => boolean }> = {
+  short: { label: 'short', title: 'Limit under 99.5%: the rest is room for unknown circuits or strands that never close', has: (r) => r.limit < SHORT },
+  notForecast: { label: 'not forecast', title: 'A chain could not be carried on past the build', has: (r) => r.notForecast.length > 0 },
+  unexplained: { label: 'unexplained monster', title: 'A late monster with no chain', has: (r) => r.unexplained > 0 },
+  missed: { label: 'missed', title: 'A prediction checked against the build missed', has: (r) => r.misses > 0 },
 };
 
-/** A combination's flags, from its data. */
-export function flagsOf(p: PageCombo): Flag[] {
-  const out: Flag[] = [];
-  const top = p.tails.length - 1;
-  if (p.above.unseen.length) out.push('unseen');
-  if (p.tails[top] >= 0.97 * p.tails[top - 1] && p.tails[top] > 0) out.push('open');
-  if (!p.found.some((f) => !f[9]) && p.tails[p.levels] > 0.2) out.push('nuggets');
-  const bt = backTest(p).filter((b) => b.level >= p.levels - 1);
-  if (bt.some((b) => b.unexplained > 1e-9)) out.push('gap');
-  const e = expectedTails(p);
-  if (e.expected > e.actual || forecastChecks(p).some((c) => c.forecast > 1.25 * c.actual + 1e-6)) out.push('forecast');
-  if (p.assumption.exceptions) out.push('assumption');
-  return out;
-}
+export const marksOf = (r: IndexRow): Mark[] => (Object.keys(MARKS) as Mark[]).filter((m) => MARKS[m].has(r));
+
+/** Whether a chain's members to come are left out of the limit: every stop but a chain that has ended, which has none to come. */
+export const notCarried = (f: ChainFit): boolean => f.stop !== null && f.stop !== 'ended';
 
 /** The monsters of a combination: its foundational circuits at floor + 4 or later, or giants. */
 export function monstersOf(p: PageCombo): Monster[] {
@@ -758,6 +753,8 @@ export function monstersOf(p: PageCombo): Monster[] {
 
 /** A combination's row of the index. */
 export function indexRow(p: PageCombo): IndexRow {
+  const pr = project(p);
+  const monsters = monstersOf(p);
   return {
     combo: p.combo,
     levels: p.levels,
@@ -767,10 +764,12 @@ export function indexRow(p: PageCombo): IndexRow {
     found: p.found.length,
     nuggets: p.found.filter((f) => f[9]).length,
     largest: Math.max(0, ...p.found.map((f) => f[2])),
-    monsters: monstersOf(p).length,
+    monsters: monsters.length + (pr.limit < SHORT ? 1 : 0),
     misses: p.pred.filter((x) => x[2] === 'missed' || x[2] === 'other').length,
     tails: p.tails[p.levels],
-    flags: flagsOf(p),
+    limit: round(pr.limit),
+    notForecast: pr.fits.filter(notCarried).map((f) => stopText(p, f)),
+    unexplained: monsters.filter((m) => m.late && !explained(m)).length,
   };
 }
 
@@ -842,37 +841,64 @@ export function chainOf(p: PageCombo, id: number): ChainStep[] {
 }
 
 const pct = (x: number): string => `${(100 * x).toFixed(x < 0.01 ? 2 : 1)}%`;
-const span = (a: number, b: number): string => (a === b ? `level ${a}` : `levels ${a} to ${b}`);
+const span = (a: number, b: number): string => (a === b ? `level ${a}` : `levels ${a}–${b}`);
 
-/** What the data shows for a combination, and what of it is proven: sentences generated from the data. */
-export function provenNote(p: PageCombo): string[] {
+/** One fact about a combination: what it is about, its value, and what it means in full. */
+export interface Fact {
+  readonly label: string;
+  readonly value: string;
+  readonly title?: string;
+}
+
+/** A chain named by its foundational circuit's tiles and level. */
+export function chainName(p: PageCombo, root: number): string {
+  const f = p.found.find((x) => x[0] === root);
+  return f ? `chain of ${f[2].toLocaleString('en-US')} at level ${f[1]}` : `chain ${root}`;
+}
+
+/** A chain not carried on, named, with why. */
+export const stopText = (p: PageCombo, f: ChainFit): string =>
+  `${chainName(p, f.root)}: ${STOP_TEXT[f.stop!]}${f.stop === 'growing' && f.ratio !== null ? ` (ratio ${f.ratio.toFixed(2)})` : ''}`;
+
+/** What the data shows for a combination, and what of it is proven: one row per fact. */
+export function factsOf(p: PageCombo): Fact[] {
   const L = p.levels;
   const top = p.tails.length - 1;
-  const out: string[] = [];
-  if (p.settled) out.push(`Nothing foundational first closes at ${span(p.lastNew + 1, L)} (built to ${L}); not proven beyond.`);
-  else out.push(`A foundational circuit first closes at level ${p.lastNew} of the ${L} built, at every floor tried, so the floor is not settled.`);
-  out.push(`Any circuit closing above level ${top} is made of chords on tails at level ${top}: at most ${pct(p.tails[top])} of them (proven).`);
-  const unseen = p.above.unseen.length;
+  const out: Fact[] = [];
   out.push(
-    unseen
-      ? `At level ${top}, ${unseen} circuit${unseen > 1 ? 's' : ''} close${unseen > 1 ? '' : 's'} that ${unseen > 1 ? 'are' : 'is'} no known circuit and no predicted harmonic.`
-      : `Every circuit closing at level ${top} (one above the classified levels) is a known circuit (${p.above.known} places) or a predicted harmonic (${p.above.predicted} places).`,
+    p.settled
+      ? { label: 'New foundational', value: `none at ${span(p.lastNew + 1, L)}; not proven beyond`, title: `built to level ${L}` }
+      : { label: 'New foundational', value: `at level ${p.lastNew} of ${L}, at every floor tried: not settled` },
   );
+  out.push({
+    label: `Above level ${top}`,
+    value: `at most ${pct(p.tails[top])} of chords (proven)`,
+    title: `any circuit closing above level ${top} is made of chords on tails at level ${top}`,
+  });
+  const unseen = p.above.unseen.length;
+  out.push({
+    label: `At level ${top}`,
+    value: unseen ? `${unseen} unseen ${unseen > 1 ? 'circuits' : 'circuit'}` : `known circuits ${p.above.known} places, predicted harmonics ${p.above.predicted}`,
+    title: `level ${top}, one above the levels classified: what closes there is a known circuit, a predicted harmonic or unseen`,
+  });
   const n = (v: Verdict): number => p.pred.filter((x) => x[2] === v).length;
   const checked = p.pred.length - n('forecast');
   if (checked) {
     const parts = [
-      n('confirmed') && `${n('confirmed')} closed as the harmonic predicted`,
-      n('built') && `${n('built')} closed as a circuit seen lower down`,
-      n('none') && `${n('none')} predicted nothing and nothing closed`,
-      n('missed') && `${n('missed')} predicted nothing where a harmonic closed`,
-      n('other') && `${n('other')} found another circuit's harmonic`,
+      n('confirmed') && `${n('confirmed')} as predicted`,
+      n('built') && `${n('built')} a circuit seen lower down`,
+      n('none') && `${n('none')} nothing, as predicted`,
+      n('missed') && `${n('missed')} missed`,
+      n('other') && `${n('other')} another circuit's harmonic`,
     ].filter(Boolean);
-    out.push(`Of ${checked} predictions checked against the build, ${parts.join(', ')}.`);
+    out.push({ label: 'Predictions', value: `${checked} checked: ${parts.join(', ')}` });
   }
   if (p.assumption.checked)
-    out.push(
-      `The forecast's one assumption, that a harmonic closes in as many places per supertile of each type as its parent two levels down, held in ${p.assumption.checked - p.assumption.exceptions} of ${p.assumption.checked} checks.`,
-    );
+    out.push({
+      label: 'Forecast assumption',
+      value: `held in ${p.assumption.checked - p.assumption.exceptions} of ${p.assumption.checked} checks`,
+      title: 'a harmonic closes in as many places per supertile of each type as its parent two levels down',
+    });
+  for (const f of project(p).fits.filter(notCarried)) out.push({ label: 'Not forecast', value: stopText(p, f) });
   return out;
 }

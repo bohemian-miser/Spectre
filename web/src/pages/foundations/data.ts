@@ -34,8 +34,9 @@ async function load<T>(url: string, signal: AbortSignal | undefined, fresh: (x: 
 /** A combination file of the current shape: every foundational row has its ten fields (the nugget flag last), every harmonic row its nine (the place drawn last). */
 export const freshCombo = (p: PageCombo): boolean =>
   Array.isArray(p.found) && p.found.every((f) => f.length >= 10) && Array.isArray(p.harm) && p.harm.every((h) => h.length >= 9) && Array.isArray(p.tails);
-/** An index of the current shape: every row has its flags. */
-export const freshIndex = (i: PageIndex): boolean => Array.isArray(i.combos) && i.combos.every((r) => Array.isArray(r.flags));
+/** An index of the current shape: every row has its limit and the counts its marks read. */
+export const freshIndex = (i: PageIndex): boolean =>
+  Array.isArray(i.combos) && i.combos.every((r) => typeof r.limit === 'number' && Array.isArray(r.notForecast) && typeof r.unexplained === 'number');
 
 /** A rule's precomputed index, or null when the rule has none. */
 export async function loadIndex(base: string, rule = RULE, signal?: AbortSignal): Promise<PageIndex | null> {
@@ -112,6 +113,9 @@ export function compact(n: number): string {
 }
 
 export const pct = (x: number): string => `${(100 * x).toFixed(1)}%`;
+
+/** A limit share to two decimals, so one just under the 99.5% that marks it short does not read as 99.5%. */
+export const limitPct = (x: number): string => `${(100 * x).toFixed(2)}%`;
 
 /** Child slots written with spaces: 147 → 1 4 7. */
 export const slots = (family: string): string => [...family].join(' ');
