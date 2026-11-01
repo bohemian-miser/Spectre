@@ -100,12 +100,19 @@ describe('HarmonicsPage', () => {
     const td = go.closest('td')!;
     expect([...row.children].indexOf(td) - 1).toBe(8);
     fireEvent.click(go);
+    // the search is drawn under the table while it runs and when it has ended
+    await waitFor(() => expect(screen.getByTestId('harm-search-panel')).toBeTruthy(), { timeout: 10000 });
     // the member found takes the cell like a built one: drawn, with its tiles; how it was found on hover
     await waitFor(() => expect(row.querySelector('[data-testid="harm-brute-done"]')?.textContent).toBe('175,221'), { timeout: 60000 });
     const done = row.querySelector<HTMLButtonElement>('[data-testid="harm-brute-done"]')!;
     expect(done.querySelector('canvas')).toBeTruthy();
     expect(done.title).toMatch(/Level 8: a 175,221-tile circuit of family 013467 closes in the Delta, reading as the 8,784 two levels down from level 1 up; word key/);
     expect([...row.children].indexOf(done.closest('td')!) - 1).toBe(8);
+    const search = screen.getByTestId('harm-search');
+    expect(search.querySelector('canvas')).toBeTruthy();
+    expect(search.querySelector('figcaption')!.textContent).toMatch(/^The 8,784 L6's row at level 8\. Level 8 Delta: one level-3 window looked through; \d+ arcs followed: .*1 close as the harmonic\./);
+    expect(search.querySelector('canvas')!.getAttribute('aria-label')).toMatch(/^Level 8 Delta: one level-3 window/);
+    expect(screen.getByTestId('harm-search-panel').textContent).toContain('Level 8: a 175,221-tile circuit');
     // the next one along, two levels further
     const next = row.querySelector<HTMLButtonElement>('[data-testid="harm-brute"]')!;
     expect([...row.children].indexOf(next.closest('td')!) - 1).toBe(10);
@@ -120,8 +127,13 @@ describe('HarmonicsPage', () => {
     // the address names it, and a page opened there finds it again
     expect(location.search).toMatch(/&c=8-175221&bf=6-8784\.8-175221$/);
     const address = location.search;
+    // the climb from the level-6 Delta's longest arc closes at level 8, each level climbed into drawn
+    expect((screen.getByTestId('harm-climb-level') as HTMLSelectElement).value).toBe('6');
+    expect((screen.getByTestId('harm-climb-type') as HTMLSelectElement).value).toBe('Delta');
     fireEvent.click(screen.getByTestId('harm-climb-go'));
     await waitFor(() => expect(screen.getByTestId('harm-climb-result').textContent).toMatch(/^ L6 [\d,]+ → L7 /), { timeout: 60000 });
+    expect(screen.getByTestId('harm-climb-result').textContent).toMatch(/→ closes at level 8 in a Delta: 25,356 tiles, family 13/);
+    expect(screen.getAllByTestId('harm-climb-picture').map((p) => p.querySelector('figcaption')!.firstChild!.textContent)).toEqual(['L7 Delta', 'L8 Delta']);
     cleanup();
     history.replaceState(null, '', address);
     render(<HarmonicsPage forceSync />);

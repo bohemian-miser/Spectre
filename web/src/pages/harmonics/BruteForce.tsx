@@ -1,9 +1,11 @@
 /**
  * Brute force on the harmonics table (`bruteJob.ts`): past the level built,
- * each chain's next member two levels above its last as a ? cell, found by
+ * each row's next member two levels above its last as a ? cell, found by
  * following strands with routes worked out on demand; a member found takes
  * its place in the row, drawn small like the built ones, and opens the cell
- * two levels further. And one strand climbed until it closes.
+ * two levels further. Any number of cells can be set going; they run one
+ * after another, and the search under way is drawn as it goes
+ * (`SearchView.tsx`). And one strand climbed until it closes.
  *
  * The members found are named in the address as `bf=8-734256.10-36701253`:
  * per chain, its last built member (`level-tiles`) and the members found
@@ -13,11 +15,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { FLOOR, type Chain } from './chains';
 import type { BruteResult, ClimbResult, Harmonic, Progress } from './bruteForce';
-import { BASE, CLIMB_CAP, CLIMB_ROUTES, createBruteClient, describeResult, fromBorn, STOPPED, type BruteCombo, type BruteFrom } from './bruteJob';
+import { BASE, createBruteClient, describeResult, fromBorn, STOPPED, type BruteCombo, type BruteFrom } from './bruteJob';
 import { percent, scoreTitle, Thumb, type MemberInfo } from './ChainViews';
 import type { Found } from './found';
 import type { HarmonicsClient, HarmonicsResult } from './harmonicsJob';
+import { ClimbStrip, describePicture, SearchView } from './SearchView';
 import type { Scored } from './similarity';
+import { TYPES } from './sparseRoutes';
 
 const nf = (n: number) => n.toLocaleString('en-US');
 const compact = (n: number) => (n < 1e4 ? nf(n) : n < 1e6 ? `${(n / 1e3).toFixed(0)}k` : `${(n / 1e6).toFixed(1)}M`);
@@ -70,7 +74,7 @@ export interface FoundLook {
   readonly onPick: (i: number, shift: boolean) => void;
 }
 
-/** The ? cells of the chains past the level built, their brute forces and the members found; and a strand climbed. */
+/** The ? cells of the rows past the level built, their brute forces and the members found; and a strand climbed. */
 export function useBruteForce(
   harmonics: HarmonicsClient,
   job: BruteCombo,
@@ -87,7 +91,12 @@ export function useBruteForce(
   /** The members the address names, still to find, for the combination it names. */
   const [pending, setPending] = useState<{ job: string; list: { anchor: string; members: string[] }[] }>(() => ({ job: jobKey, list: parseFound(opts.asked ?? null) }));
   const [climbed, setClimbed] = useState<{ job: string; c: ClimbResult | null; running: Progress | null; error?: string } | null>(null);
+  const [climbFrom, setClimbFrom] = useState<{ type: string; level: number | null }>({ type: 'Delta', level: null });
   const running = [...map.values()].some((c) => c.state === 'running') || (climbed?.job === jobKey && climbed.c === null && !climbed.error);
+  /** The cell whose search is drawn: the last set going, or the one picked. */
+  const [shown, setShown] = useState<{ job: string; key: string } | null>(null);
+  /** The running cell whose turn it is: the first set going; the others wait for it. */
+  const active = [...map].find(([, c]) => c.state === 'running')?.[0] ?? null;
   const put = (key: string, c: Cell | null) =>
     setCells((s) => {
       const m = new Map(s.job === jobKey ? s.map : []);
@@ -98,19 +107,23 @@ export function useBruteForce(
       return { job: jobKey, map: m, order: o };
     });
 
-  /** Each chain past the build: the levels of its next members, two apart, each found one opening the next. */
+  /**
+   * Each row whose last member is within two levels of the top built, a
+   * chain's or a circuit alone: the levels of its next members, two apart,
+   * each found one opening the next. The harmonic must read as the member
+   * from the floor its chain's last link reads from, or from `FLOOR` for a
+   * circuit alone (lower when it closes below `FLOOR` + 2).
+   */
   const rows = useMemo(() => {
     if (!r) return [];
-    return chains
-      .filter((ch) => ch.members.length > 1)
-      .flatMap((ch) => {
-        const top = ch.members[ch.members.length - 1];
-        const lastLevel = r.circuits[top].level;
-        if (lastLevel + 2 <= r.level) return [];
-        const link = r.links.find((l) => l.b === top && l.a === ch.members[ch.members.length - 2]);
-        const floor = Math.max(1, link ? link.from : FLOOR);
-        return [{ key: ch.members.join(' '), anchor: levelKey(r.circuits[top]), top, length: r.circuits[top].length, lastLevel, floor }];
-      });
+    return chains.flatMap((ch) => {
+      const top = ch.members[ch.members.length - 1];
+      const lastLevel = r.circuits[top].level;
+      if (lastLevel < 2 || lastLevel + 2 <= r.level) return [];
+      const link = ch.members.length > 1 ? r.links.find((l) => l.b === top && l.a === ch.members[ch.members.length - 2]) : undefined;
+      const floor = link ? Math.max(1, link.from) : Math.max(0, Math.min(FLOOR, lastLevel - 2));
+      return [{ key: ch.members.join(' '), anchor: levelKey(r.circuits[top]), top, length: r.circuits[top].length, lastLevel, floor }];
+    });
   }, [r, chains]);
   type Row = (typeof rows)[number];
 
@@ -139,6 +152,7 @@ export function useBruteForce(
   const go = (row: Row, level: number): void => {
     const key = `${row.anchor}@${level}`;
     put(key, { state: 'running', progress: null });
+    setShown({ job: jobKey, key });
     const prev = level === row.lastLevel + 2 ? null : map.get(`${row.anchor}@${level - 2}`);
     const from: Promise<BruteFrom> =
       prev && prev.state === 'done' && prev.result.found
@@ -177,11 +191,12 @@ export function useBruteForce(
     client.current.stop();
   };
 
+  const climbStart = r ? Math.min(climbFrom.level ?? r.level, BASE, r.level) : 0;
   const climb = (): void => {
     if (!r) return;
     setClimbed({ job: jobKey, c: null, running: null });
     client.current
-      .climb(job, r.level, (p) => setClimbed({ job: jobKey, c: null, running: p }))
+      .climb(job, climbStart, climbFrom.type, (p) => setClimbed({ job: jobKey, c: null, running: p }))
       .then((c) => setClimbed({ job: jobKey, c, running: null }))
       .catch((e: unknown) => {
         const msg = e instanceof Error ? e.message : String(e);
@@ -204,12 +219,13 @@ export function useBruteForce(
         const key = `${row.anchor}@${level}`;
         const c = map.get(key);
         upTo = Math.max(upTo, level);
+        const isShown = shown?.job === jobKey && shown.key === key;
         if (!c) {
           at.set(
             level,
-            <td key={level} className="harm-cell-brute" title={`The harmonic of the ${nf(from)} predicted here, two levels up in the same supertile`}>
+            <td key={level} className="harm-cell-brute" title={`The harmonic of the ${nf(from)} predicted here, two levels up in the same supertile${running ? '; set going now, it runs after the ones under way' : ''}`}>
               <span className="harm-brute-q">?</span>
-              <button type="button" disabled={running} onClick={() => go(row, level)} data-testid="harm-brute">
+              <button type="button" onClick={() => go(row, level)} data-testid="harm-brute">
                 Brute force
               </button>
             </td>,
@@ -220,9 +236,9 @@ export function useBruteForce(
           const p = c.progress;
           at.set(
             level,
-            <td key={level} className="harm-cell-brute is-running" data-testid="harm-brute-running">
-              <span>{p ? `L${p.level} · ${compact(p.calls)} routes` : 'starting'}</span>
-              <button type="button" onClick={stop}>
+            <td key={level} className={`harm-cell-brute is-running${isShown ? ' is-shown' : ''}`} data-testid="harm-brute-running" onClick={() => setShown({ job: jobKey, key })}>
+              <span>{active !== key ? 'waiting' : p ? `L${p.level} · ${compact(p.calls)} routes` : 'starting'}</span>
+              <button type="button" onClick={stop} title="Stops every brute force under way or waiting">
                 Stop
               </button>
             </td>,
@@ -232,11 +248,16 @@ export function useBruteForce(
         const f = c.state === 'done' ? c.result.found : null;
         if (c.state === 'failed' || !f) {
           const text = c.state === 'failed' ? c.error : describeResult(c.result);
-          const shown = c.state === 'failed' ? `✗ ${c.error}` : c.result.beyond.length ? `✗ closes at L${c.result.beyond[0].level}` : '✗ none';
+          const label = c.state === 'failed' ? `✗ ${c.error}` : c.result.beyond.length ? `✗ closes at L${c.result.beyond[0].level}` : '✗ none';
           at.set(
             level,
-            <td key={level} className="harm-cell-brute is-failed" title={text} data-testid="harm-brute-none">
-              {shown}
+            <td key={level} className={`harm-cell-brute is-failed${isShown ? ' is-shown' : ''}`} title={`${text}${c.state === 'done' ? ' Click to see the search.' : ''}`} data-testid="harm-brute-none">
+              {label}
+              {c.state === 'done' ? (
+                <button type="button" onClick={() => setShown({ job: jobKey, key })} data-testid="harm-brute-show">
+                  Show
+                </button>
+              ) : null}
             </td>,
           );
           break;
@@ -270,6 +291,9 @@ export function useBruteForce(
               <Thumb pts={look.thumbs.get(name)} size={44} label={`${nf(f.length)} tiles, brute-forced`} />
               <span>{nf(f.length)}</span>
             </button>
+            <button type="button" className="harm-brute-show" onClick={() => setShown({ job: jobKey, key })} title="Show how it was found" data-testid="harm-brute-show">
+              search
+            </button>
           </td>,
         );
         from = f.length;
@@ -278,42 +302,105 @@ export function useBruteForce(
     }
     return rows.length ? { upTo, cells: out } : undefined;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, map, running, look]);
+  }, [rows, map, running, look, shown, active]);
+
+  /** The search drawn: the cell shown while it runs, or as it ended. */
+  const shownCell = shown?.job === jobKey ? map.get(shown.key) : undefined;
+  const shownRow = shown ? rows.find((x) => x.anchor === shown.key.split('@')[0]) : undefined;
+  const searchView = (() => {
+    if (!shownCell || !shown) return null;
+    const level = Number(shown.key.split('@')[1]);
+    const head = shownRow ? `The ${nf(shownRow.length)} L${shownRow.lastLevel}'s row at level ${level}` : `Level ${level}`;
+    if (shownCell.state === 'running') {
+      const p = shownCell.progress;
+      if (!p?.picture) {
+        return (
+          <div className="harm-search-panel" data-testid="harm-search-panel">
+            <p className="shapes-note">{head}: {active === shown.key ? 'starting' : 'waiting for the brute force under way'}.</p>
+          </div>
+        );
+      }
+      return (
+        <div className="harm-search-panel" data-testid="harm-search-panel">
+          <SearchView picture={p.picture} size={320} caption={`${head}, under way. ${describePicture(p.picture)} ${nf(p.calls)} routes worked out above level ${BASE}.`} />
+        </div>
+      );
+    }
+    if (shownCell.state === 'failed') {
+      return (
+        <div className="harm-search-panel" data-testid="harm-search-panel">
+          <p className="shapes-note">{head}: could not brute-force: {shownCell.error}</p>
+        </div>
+      );
+    }
+    const res = shownCell.result;
+    return (
+      <div className="harm-search-panel" data-testid="harm-search-panel">
+        <SearchView picture={res.picture} size={320} caption={`${head}. ${describePicture(res.picture)}`} />
+        <p className="shapes-note">
+          {describeResult(res)}
+          {res.climbed.length ? ' The open walks climbed, a level a picture:' : ''}
+        </p>
+        {res.climbed.length ? <ClimbStrip pictures={res.climbed} size={120} /> : null}
+      </div>
+    );
+  })();
 
   const c = climbed?.job === jobKey ? climbed : null;
-  const start = r ? Math.min(r.level, BASE) : 0;
+  const climbLevels = r ? Array.from({ length: Math.min(r.level, BASE) }, (_, i) => i + 1) : [];
   const climbLine = r ? (
-    <p className="shapes-note harm-climb" data-testid="harm-climb">
-      {c && !c.c && !c.error ? (
-        <>
-          Climbing: level {c.running?.level ?? start}, {nf(c.running?.calls ?? 0)} routes worked out.{' '}
-          <button type="button" onClick={stop}>
-            Stop
-          </button>
-        </>
-      ) : (
-        <>
-          <button type="button" disabled={running} onClick={climb} data-testid="harm-climb-go">
-            Climb
-          </button>{' '}
-          the longest arc of a level-{start} Delta a level at a time, each supertile a child of its own type, until its strand closes (at most level {CLIMB_CAP} or{' '}
-          {nf(CLIMB_ROUTES / 1e6)} million routes).
-          {c?.c ? (
-            <span data-testid="harm-climb-result">
-              {' '}
-              {c.c.levels.map((l) => `L${l.level} ${nf(l.length)}`).join(' → ')}
-              {c.c.closed
-                ? ` → closes at level ${c.c.closed.level} in a ${c.c.closed.type}: ${nf(c.c.closed.length)} tiles, family ${c.c.closed.family}`
-                : c.c.limitedAt
-                  ? `, still open; level ${c.c.limitedAt} needs more routes`
-                  : ', still open'}
-              ; {nf(c.c.work.calls)} routes in {secs(c.c.seconds)}.
-            </span>
-          ) : null}
-          {c?.error ? ` Could not climb: ${c.error}` : null}
-        </>
-      )}
-    </p>
+    <div className="harm-climb" data-testid="harm-climb">
+      <p className="shapes-note">
+        {c && !c.c && !c.error ? (
+          <>
+            Climbing: level {c.running?.level ?? climbStart}, {nf(c.running?.calls ?? 0)} routes worked out.{' '}
+            <button type="button" onClick={stop}>
+              Stop
+            </button>
+          </>
+        ) : (
+          <>
+            <button type="button" onClick={climb} data-testid="harm-climb-go">
+              Climb
+            </button>{' '}
+            the longest arc of a level-
+            <select value={climbStart} onChange={(e) => setClimbFrom({ ...climbFrom, level: Number(e.target.value) })} aria-label="Level to climb from" data-testid="harm-climb-level">
+              {climbLevels.map((l) => (
+                <option key={l} value={l}>
+                  {l}
+                </option>
+              ))}
+            </select>{' '}
+            <select value={climbFrom.type} onChange={(e) => setClimbFrom({ ...climbFrom, type: e.target.value })} aria-label="Type to climb from" data-testid="harm-climb-type">
+              {TYPES.map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+            </select>{' '}
+            a level at a time, each supertile a child of its own type, until its strand closes; there is no limit, Stop ends it. Each level climbed is drawn: the arc
+            through the supertile above, its two halves from the seam it enters by.
+            {c?.c ? (
+              <span data-testid="harm-climb-result">
+                {' '}
+                {c.c.levels.map((l) => `L${l.level} ${nf(l.length)}`).join(' → ')}
+                {c.c.closed
+                  ? ` → closes at level ${c.c.closed.level} in a ${c.c.closed.type}: ${nf(c.c.closed.length)} tiles, family ${c.c.closed.family}`
+                  : c.c.limitedAt
+                    ? `, still open; level ${c.c.limitedAt} needs more routes`
+                    : ', still open'}
+                ; {nf(c.c.work.calls)} routes in {secs(c.c.seconds)}.
+              </span>
+            ) : null}
+            {c?.error ? ` Could not climb: ${c.error}` : null}
+          </>
+        )}
+      </p>
+      {c && !c.c && !c.error && c.running?.picture ? (
+        <SearchView picture={c.running.picture} size={200} caption={`Level ${c.running.picture.level} ${c.running.picture.type}, being climbed into`} testId="harm-climb-live" />
+      ) : null}
+      {c?.c ? <ClimbStrip pictures={c.c.pictures} size={120} /> : null}
+    </div>
   ) : null;
 
   /** The members found on each chain (by its rows' key) in level order. */
@@ -323,5 +410,5 @@ export function useBruteForce(
     return m;
   }, [rows, found]);
 
-  return { beyond, climbLine, found, byRow, param: foundParam(found), restoring: todo.length > 0 };
+  return { beyond, climbLine, searchView, found, byRow, param: foundParam(found), restoring: todo.length > 0 };
 }
