@@ -8,8 +8,10 @@
  * closes at shows just the routes it uses there, in the supertiles it runs
  * through, thicker for routes it passes more often (`buildup/circuitRoutes.ts`
  * counts them); beside it, the circuit of the same children two levels up or
- * down. Tables and circuits come from the renormalisation
- * (`shapes/circuitShapes.ts`).
+ * down. The routes it uses at a level can be kept and the levels above built
+ * from them alone (`buildup/kept.ts`): each level then shows the routes
+ * that survive and the circuits closing from them. Tables and circuits come
+ * from the renormalisation (`shapes/circuitShapes.ts`).
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -21,10 +23,11 @@ import { ComboPicker, type ComboChoice } from './shapes/ComboPicker';
 import { closingsByLevel, groupsAt, type Closing } from './buildup/buildup';
 import { circuitUse, closedUse, joinedRoutes, type LevelUse } from './buildup/circuitRoutes';
 import { DeepPane } from './buildup/DeepPane';
+import { closesFromKept, keptLevels, type KeptLevel } from './buildup/kept';
 import { GroupStrip } from './buildup/GroupStrip';
 import { PassesPane, type Frame } from './buildup/PassesPane';
 import { Viewer, type Lines, type Mark, type ViewerApi } from './buildup/Viewer';
-import { Geometry, IDENTITY, ringOf, chooseStop, circuitPasses, linesPerStop, mapBox, routePasses, routeSet, signature, subPasses, type Pass } from './buildup/viewer';
+import { Geometry, IDENTITY, ringOf, chooseStop, circuitPasses, linesPerStop, mapBox, routePasses, routeSet, signature, subPasses, type Pass, type RouteSet } from './buildup/viewer';
 import '../styles/shapes.css';
 import '../styles/buildup.css';
 
@@ -38,6 +41,10 @@ const SHADES = 6;
 const MAX_PASSES = 250000;
 /** Most routes of a table drawn: the longest. */
 const MAX_ROUTES = 30000;
+/** Most dropped routes drawn faint behind the kept ones. */
+const MAX_DROPPED = 60000;
+/** Most points a followed circuit is drawn with over the kept routes. */
+const MAX_SHAPE = 20000;
 
 const boxOf = (xs: Iterable<{ x: number; y: number }>): Box => {
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
@@ -59,15 +66,22 @@ const grow = (b: Box, f: number): Box => {
   return { min: { x: b.min.x - m, y: b.min.y - m }, max: { x: b.max.x + m, y: b.max.y + m } };
 };
 
-/** The combination, level and circuit asked for in the address. */
-function fromAddress(): { choice: ComboChoice; level: number | null; circuit: number | null } {
+/** The combination, level and circuit asked for in the address, and the level whose routes of that circuit are kept. */
+function fromAddress(): { choice: ComboChoice; level: number | null; circuit: number | null; keep: number | null } {
   const q = new URLSearchParams(typeof location === 'undefined' ? '' : location.search);
   const rule = q.get('rule'), combo = q.get('combo');
   const level = Number(q.get('level')) || null, circuit = Number(q.get('circuit')) || null;
+  const keep = q.has('keep') && /^\d+$/.test(q.get('keep')!) ? Number(q.get('keep')) : null;
   const choice = rule && combo && /^\d+$/.test(rule) && /^[0-9a-z]{9}$/.test(combo)
     ? { subset: [...rule].map(Number), combo, level: Math.max(level ?? 0, DEFAULT.level) }
     : { ...DEFAULT, level: Math.max(level ?? 0, DEFAULT.level) };
-  return { choice, level, circuit };
+  return { choice, level, circuit, keep };
+}
+
+/** A circuit whose routes at one level are kept, the levels above built from them alone. */
+interface Kept {
+  readonly circuit: Closing;
+  readonly from: number;
 }
 
 /** Routes of every type at a level, once per pair. */
@@ -84,6 +98,7 @@ export default function BuildUpPage(): JSX.Element {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [circ, setCirc] = useState<Closing | null>(null);
+  const [kept, setKept] = useState<Kept | null>(null);
   const [routeSel, setRouteSel] = useState<number | null>(null);
   const [hover, setHover] = useState<number | null>(null);
   const [mode, setMode] = useState<'children' | 'paths'>('children');
@@ -124,6 +139,7 @@ export default function BuildUpPage(): JSX.Element {
           cs.current = new CircuitShapes('hex', fresh.subset, [...fresh.combo].map((ch) => parseInt(ch, 36)), 1, 1, true);
           setChoice(fresh);
           setCirc(null);
+          setKept(null);
           setRouteSel(null);
           setBuilt(1);
           setLevel(1);
@@ -160,7 +176,7 @@ export default function BuildUpPage(): JSX.Element {
     return counts.slice(0, built + 1);
   }, [now, built]);
 
-  // the circuit asked for in the address, once its level is built
+  // the circuit asked for in the address, once its level is built, and the level its routes are kept at
   useEffect(() => {
     const want = asked.current.circuit;
     if (!want || busy || circ) return;
@@ -169,6 +185,9 @@ export default function BuildUpPage(): JSX.Element {
       if (c) {
         asked.current.circuit = null;
         setCirc(c);
+        const keep = asked.current.keep;
+        asked.current.keep = null;
+        if (keep !== null && keep < c.circuit.level) setKept({ circuit: c, from: keep });
         return;
       }
     }
@@ -177,13 +196,54 @@ export default function BuildUpPage(): JSX.Element {
   useEffect(() => {
     if (!now) return;
     const q = new URLSearchParams({ rule: choice.subset.join(''), combo: choice.combo, level: String(level) });
-    if (circ) q.set('circuit', String(circ.length));
+    if (kept) {
+      q.set('circuit', String(kept.circuit.length));
+      q.set('keep', String(kept.from));
+    } else if (circ) q.set('circuit', String(circ.length));
     history.replaceState(null, '', `${location.pathname}?${q}`);
-  }, [now, choice, level, circ]);
+  }, [now, choice, level, circ, kept]);
 
   const shownType: HexType = type;
   const T = ready ? now!.levels[level][shownType] : null;
-  const rs = useMemo(() => (ready ? routeSet(now!, level, shownType, MAX_ROUTES) : null), [ready, now, level, shownType]);
+  const uses = useRef(new Map<Closing, LevelUse[]>());
+  const passCache = useRef(new Map<Closing, (Pass[] | undefined)[]>());
+  useEffect(() => { uses.current.clear(); passCache.current.clear(); }, [now]);
+  const useOf = (c: Closing): LevelUse[] => {
+    let u = uses.current.get(c);
+    if (!u) uses.current.set(c, (u = circuitUse(now!, c.circuit)));
+    return u;
+  };
+
+  // ---- the routes kept at a level, and the levels built from them alone ----
+  // a built level never changes, so each level's kept routes are worked out once per kept circuit
+  const keptCache = useRef<{ kept: Kept | null; levels: KeptLevel[] }>({ kept: null, levels: [] });
+  const keptAt = useMemo((): KeptLevel[] => {
+    if (!kept || !now) return [];
+    if (keptCache.current.kept !== kept) keptCache.current = { kept, levels: [] };
+    keptCache.current.levels = keptLevels(now, useOf(kept.circuit)[kept.from], built, keptCache.current.levels);
+    return keptCache.current.levels;
+  }, [kept, now, built]); // eslint-disable-line react-hooks/exhaustive-deps
+  const keptView = kept !== null && ready && level >= kept.from && keptAt[level] !== undefined;
+  /** Per level above the kept one, the circuits closing there from the kept routes alone. */
+  const keptClosings = useMemo((): (Closing[] | undefined)[] => {
+    if (!kept || !now) return [];
+    return closings.map((cl, k) => (k > kept.from && keptAt[k - 1] ? cl.filter((c) => closesFromKept(now, c.circuit, keptAt[k - 1])) : undefined));
+  }, [kept, now, closings, keptAt]);
+  const fromKept = keptView && level > kept!.from ? keptClosings[level] ?? null : null;
+
+  /** The routes drawn: every kept route (the longest `MAX_ROUTES`) over the dropped ones, faint, when the kept routes are shown; else the longest routes of the table. */
+  const rs = useMemo((): (RouteSet & { cls: Uint8Array | null; keptTotal: number }) | null => {
+    if (!ready) return null;
+    const all = routeSet(now!, level, shownType, keptView ? Infinity : MAX_ROUTES);
+    if (!keptView) return { ...all, cls: null, keptTotal: 0 };
+    const K = keptAt[level].byType.get(shownType);
+    const own = circ && level < circ.circuit.level ? useOf(circ)[level].byType.get(shownType) : undefined;
+    const keptI: number[] = [], dropI: number[] = [];
+    all.from.forEach((k, i) => (K?.has(k) ? keptI : dropI).push(i));
+    const order = [...dropI.slice(Math.max(0, dropI.length - (rest ? MAX_DROPPED : 0))), ...keptI.slice(Math.max(0, keptI.length - MAX_ROUTES))];
+    const cls = Uint8Array.from(order, (i) => (K?.has(all.from[i]) ? (own?.has(all.from[i]) ? 2 : 0) : 1));
+    return { level, type: shownType, from: Int32Array.from(order, (i) => all.from[i]), tiles: Float64Array.from(order, (i) => all.tiles[i]), total: all.total, cls, keptTotal: keptI.length };
+  }, [ready, now, level, shownType, keptView, keptAt, circ, rest]); // eslint-disable-line react-hooks/exhaustive-deps
   const perStop = useMemo(() => (g && rs ? linesPerStop(g, rs) : []), [g, rs]);
   const frame = useMemo(() => (ready && g ? ringBox(ringOf(g, level, shownType).pts) : null), [ready, g, level, shownType]);
   const span = useMemo(() => {
@@ -209,21 +269,39 @@ export default function BuildUpPage(): JSX.Element {
         while (s + 1 < span.length && span[s + 1] * scale < 2) s++;
         return s;
       },
-      style: (i) => shadeOf(rs.tiles[i]),
-      styles: Array.from({ length: SHADES }, (_, s) => ({
-        color: '--accent',
-        width: 0.7 + (0.9 * s) / (SHADES - 1),
-        alpha: 0.32 + (0.68 * s) / (SHADES - 1),
-      })),
+      // the shades by tiles, then a dropped route, faint, and a route on the followed circuit
+      style: (i) => (rs.cls && rs.cls[i] ? SHADES - 1 + rs.cls[i] : shadeOf(rs.tiles[i])),
+      styles: [
+        ...Array.from({ length: SHADES }, (_, s) => ({
+          color: '--accent',
+          width: 0.7 + (0.9 * s) / (SHADES - 1),
+          alpha: 0.32 + (0.68 * s) / (SHADES - 1),
+        })),
+        { color: '--muted', width: 0.7, alpha: 0.18 },
+        { color: '--danger', width: 1.8, alpha: 1 },
+      ],
       stop: (scale, inView) => chooseStop(perStop, Math.min(1, 3 * inView), BUDGET, (s) => scale * span[s]),
     };
   }, [g, rs, perStop, span, choice.combo, level, shownType]); // eslint-disable-line react-hooks/exhaustive-deps
+  // the followed circuit where it closes, over the kept routes, drawn down to the lowest level with few enough passes
+  const circuitMark = useMemo((): Mark | null => {
+    if (!keptView || !circ || level !== circ.circuit.level || shownType !== circ.circuit.type) return null;
+    const u = useOf(circ);
+    let stop = level - 1;
+    while (stop > 0 && u[stop - 1].passes <= MAX_SHAPE) stop--;
+    const pts = now!.shape(circ.circuit, stop);
+    const out = new Float64Array(2 * pts.length + 2);
+    pts.forEach((p, i) => { out[2 * i] = p.x; out[2 * i + 1] = p.y; });
+    out[2 * pts.length] = pts[0].x;
+    out[2 * pts.length + 1] = pts[0].y;
+    return { pts: out, color: '--danger', width: 2 };
+  }, [keptView, circ, level, shownType, now]); // eslint-disable-line react-hooks/exhaustive-deps
   const routeMarks = useMemo(() => {
     if (!now || !ready) return () => [];
     // the outline through every crossing on the border, as fine as the routes beside it are drawn
     const outline: Mark = { pts: ringOf(g!, level, shownType).pts, color: '--muted', width: 1 };
-    return (): Mark[] => [outline];
-  }, [now, g, ready, level, shownType]);
+    return (): Mark[] => (circuitMark ? [outline, circuitMark] : [outline]);
+  }, [now, g, ready, level, shownType, circuitMark]);
   const selRoute = routeSel !== null && rs ? rs.from.indexOf(routeSel) : -1;
   const highlight = useMemo(() => {
     const out: { i: number; color: string; width: number }[] = [];
@@ -232,7 +310,9 @@ export default function BuildUpPage(): JSX.Element {
     return out;
   }, [selRoute, hover]);
   // at the deep levels only the longest routes are drawn
-  const routesLine = rs ? (rs.total > rs.from.length ? `${nf(rs.total)} routes, the longest ${nf(rs.from.length)} drawn` : `${nf(rs.total)} routes`) : '';
+  const routesLine = !rs ? ''
+    : keptView ? `${nf(rs.keptTotal)} of ${nf(rs.total)} routes kept${rs.keptTotal > MAX_ROUTES ? `, the longest ${nf(MAX_ROUTES)} drawn` : ''}`
+    : rs.total > rs.from.length ? `${nf(rs.total)} routes, the longest ${nf(rs.from.length)} drawn` : `${nf(rs.total)} routes`;
   const routeInfo = useMemo(() => {
     if (!g || !T || routeSel === null || level === 0) return null;
     const steps = g.enters(level, shownType, routeSel);
@@ -248,9 +328,9 @@ export default function BuildUpPage(): JSX.Element {
 
   // every route of the supertile as its children's routes
   const allPasses = useMemo(() => {
-    if (!g || !now || !ready || level === 0 || mode !== 'children') return null;
+    if (!g || !now || !ready || level === 0 || mode !== 'children' || keptView) return null;
     return Array.from(rs!.from).flatMap((k) => routePasses(g, level, shownType, k));
-  }, [g, now, ready, level, shownType, mode, rs]);
+  }, [g, now, ready, level, shownType, mode, rs, keptView]);
 
   // ---- a selected circuit, level by level ----
   const twin = useMemo(() => {
@@ -261,14 +341,6 @@ export default function BuildUpPage(): JSX.Element {
     }
     return null;
   }, [circ, closings]);
-  const uses = useRef(new Map<Closing, LevelUse[]>());
-  const passCache = useRef(new Map<Closing, (Pass[] | undefined)[]>());
-  useEffect(() => { uses.current.clear(); passCache.current.clear(); }, [now]);
-  const useOf = (c: Closing): LevelUse[] => {
-    let u = uses.current.get(c);
-    if (!u) uses.current.set(c, (u = circuitUse(now!, c.circuit)));
-    return u;
-  };
   /** The circuit's passes at level k (its joins at its own level), or null when too many to draw. */
   const passesOf = (c: Closing, k: number): Pass[] | null => {
     const N = c.circuit.level;
@@ -297,7 +369,7 @@ export default function BuildUpPage(): JSX.Element {
       : `The ${nf(c.length)}-tile circuit at level ${k}: ${nf(u.routes)} of ${nf(routesAt(now!, k))} routes, ${nf(u.passes)} passes`;
     return { c, k, passes, frame, counts, line };
   };
-  const circuitView = circ && ready && level <= circ.circuit.level;
+  const circuitView = circ && ready && level <= circ.circuit.level && !keptView;
   // routes on circuits closing above the level shown, once per level and build
   const closed = useMemo(() => (ready && level > 0 ? closedUse(now!, level) : null), [ready, now, level, built]); // eslint-disable-line react-hooks/exhaustive-deps
   const joins = useMemo(() => (circ && ready && level === circ.circuit.level ? { types: [circ.circuit.type as HexType], ...joinedRoutes(now!, circ.circuit) } : null), [circ, ready, now, level]);
@@ -319,11 +391,18 @@ export default function BuildUpPage(): JSX.Element {
     setHoverR(null);
   };
   const pickCircuit = (c: Closing) => {
-    setCirc(circ && circ.key === c.key && circ.circuit.level === c.circuit.level ? null : c);
+    const same = circ !== null && circ.key === c.key && circ.circuit.level === c.circuit.level;
+    setCirc(same ? null : c);
+    // over the kept routes a circuit is drawn in the supertile it closes in
+    if (!same && kept) {
+      setType(c.circuit.type as HexType);
+      setRouteSel(null);
+      setHover(null);
+    }
     setHoverL(null);
   };
   const group = groups.find((gr) => gr.includes(shownType)) ?? [shownType];
-  const showing = level === 0 ? 'paths' : mode;
+  const showing = level === 0 || keptView ? 'paths' : mode;
 
   const sidePane = (s: NonNullable<typeof left>, hovered: number | null, onHover: (i: number | null) => void, api: typeof leftApi, m: readonly boolean[] | null, testId: string) => (
     <div className="bu-side-by">
@@ -357,7 +436,7 @@ export default function BuildUpPage(): JSX.Element {
             {busy ? `Building level ${built + 1}…` : `Build level ${built + 1}`}
           </button>
         </div>
-        {!circuitView && (
+        {!circuitView && !keptView && (
           <>
             <div className="bu-toggle" role="group" aria-label="Drawing">
               <button type="button" aria-pressed={showing === 'children'} className={showing === 'children' ? 'is-active' : ''} disabled={level === 0} onClick={() => setMode('children')} data-testid="bu-mode-children">Built from children</button>
@@ -375,13 +454,26 @@ export default function BuildUpPage(): JSX.Element {
               <input type="checkbox" checked={compare} onChange={(e) => setCompare(e.target.checked)} disabled={!twin} data-testid="bu-compare" />
               Beside {twin ? `the ${nf(twin.length)}-tile circuit of the same children` : 'a circuit of the same children (none built)'}
             </label>
+            {level < circ!.circuit.level && (
+              <button type="button" className="bu-keep" onClick={() => setKept({ circuit: circ!, from: level })} data-testid="bu-keep"
+                title="Drop every other route of this level and build the levels above from these alone">
+                Keep these routes, build up from them
+              </button>
+            )}
           </>
+        )}
+        {keptView && (
+          <label className="bu-check">
+            <input type="checkbox" checked={rest} onChange={(e) => setRest(e.target.checked)} data-testid="bu-rest" />
+            Show the dropped routes, faint
+          </label>
         )}
       </div>
       {error && <p className="bu-error">{error}</p>}
       {ready && g && level > 0 && (
         <GroupStrip g={g} level={level} groups={groups} type={shownType} onPick={(t) => { setType(t); setRouteSel(null); setHover(null); }}
-          use={circ && level < circ.circuit.level ? useOf(circ)[level] : null} closed={closed} joins={joins} built={built} />
+          use={circ && level < circ.circuit.level && !keptView ? useOf(circ)[level] : null} closed={closed} joins={joins} built={built}
+          kept={keptView ? { at: keptAt[level], from: kept!.from } : null} />
       )}
 
       <section className="bu-strip" data-testid="bu-circuits">
@@ -391,13 +483,25 @@ export default function BuildUpPage(): JSX.Element {
             <button type="button" onClick={() => setCirc(null)} aria-label="Stop following this circuit">✕</button>
           </span>
         )}
-        <span className="bu-strip-head">Circuits closing at {level === 0 ? 'the tiles' : `level ${level}`}</span>
-        {here.length === 0 ? <span className="bu-muted">none</span> : here.map((c) => (
-          <button key={c.key} type="button" className={circ?.key === c.key && circ.circuit.level === level ? 'is-active' : ''} onClick={() => pickCircuit(c)}
-            title={`Through children ${[...c.family].join(', ')}${c.first < level ? `; also closes at level ${c.first}` : ''}`} data-testid="bu-circuit">
-            {nf(c.length)} tiles{c.first < level ? '' : ' · new'}
-          </button>
-        ))}
+        {kept && (
+          <span className="bu-picked is-kept" data-testid="bu-kept">
+            Keeping the routes the {nf(kept.circuit.length)}-tile circuit uses at level {kept.from}
+            <button type="button" onClick={() => setKept(null)} aria-label="Stop keeping these routes">✕</button>
+          </span>
+        )}
+        <span className="bu-strip-head">
+          Circuits closing at {level === 0 ? 'the tiles' : `level ${level}`}{fromKept && here.length > 0 ? ` · ${nf(fromKept.length)} of ${nf(here.length)} from the kept routes` : ''}
+        </span>
+        {here.length === 0 ? <span className="bu-muted">none</span> : here.map((c) => {
+          const made = fromKept ? fromKept.includes(c) : null;
+          return (
+            <button key={c.key} type="button" className={`${circ?.key === c.key && circ.circuit.level === level ? 'is-active' : ''}${made === false ? ' is-dropped' : ''}`} onClick={() => pickCircuit(c)}
+              title={`Through children ${[...c.family].join(', ')}${c.first < level ? `; also closes at level ${c.first}` : ''}${made === null ? '' : made ? '; made of the kept routes' : '; not made of the kept routes'}`}
+              data-testid="bu-circuit" data-kept={made === null ? undefined : String(made)}>
+              {nf(c.length)} tiles{c.first < level ? '' : ' · new'}
+            </button>
+          );
+        })}
       </section>
 
       {ready && (
@@ -424,7 +528,7 @@ export default function BuildUpPage(): JSX.Element {
                 onHover={setHover}
                 onPick={(i) => setRouteSel(i === null ? null : rs!.from[i])}
                 highlight={highlight}
-                tooltip={(i) => `Route from crossing ${rs!.from[i]} to ${T!.mate(rs!.from[i])}: ${nf(rs!.tiles[i])} tiles`}
+                tooltip={(i) => `Route from crossing ${rs!.from[i]} to ${T!.mate(rs!.from[i])}: ${nf(rs!.tiles[i])} tiles${rs!.cls ? [' · kept', ' · dropped', ' · kept, on the followed circuit'][rs!.cls[i]] : ''}`}
                 apiRef={viewer}
                 label={`A level-${level} ${shownType} and its routes`}
               >
@@ -438,7 +542,22 @@ export default function BuildUpPage(): JSX.Element {
           )}
 
           <aside className="bu-side" data-testid="bu-side">
-            {circuitView ? (
+            {keptView ? (
+              <>
+                <h2>Built from the kept routes</h2>
+                <p className="bu-muted">
+                  The {nf(kept!.circuit.length)}-tile circuit uses {keptAt[kept!.from].routes === keptAt[kept!.from].of ? `every one of the ${nf(keptAt[kept!.from].of)}` : `${nf(keptAt[kept!.from].routes)} of the ${nf(keptAt[kept!.from].of)}`} routes at level {kept!.from}{keptAt[kept!.from].routes === keptAt[kept!.from].of ? '.' : '; the rest are dropped.'}
+                  {level === kept!.from
+                    ? ' These are the kept routes. Step up with ▶ to build the levels above from them alone.'
+                    : ` Built from them alone, level ${level} keeps ${nf(keptAt[level].routes)} of its ${nf(keptAt[level].of)} routes, and ${fromKept && fromKept.length ? `${nf(fromKept.length)} of the ${nf(here.length)}` : 'none of the'} circuits closing here ${fromKept && fromKept.length === 1 ? 'is' : 'are'} made of them.`}
+                  {circ && level < circ.circuit.level ? (useOf(circ)[level].byType.has(shownType)
+                    ? ` Routes the ${nf(circ.length)}-tile circuit takes are in red.`
+                    : ` A level-${level} ${shownType} has no route the ${nf(circ.length)}-tile circuit takes; at this level it runs through ${[...useOf(circ)[level].byType.keys()].join(', ')}.`) : ''}
+                  {circ && level === circ.circuit.level ? (shownType === circ.circuit.type ? ` The ${nf(circ.length)}-tile circuit is drawn in red where it closes.` : ` The ${nf(circ.length)}-tile circuit closes in a ${circ.circuit.type}.`) : ''}
+                  {' '}Pick a circuit to draw it where it closes; point at a route to read it.
+                </p>
+              </>
+            ) : circuitView ? (
               <>
                 <h2>{nf(circ!.length)}-tile circuit</h2>
                 <p className="bu-muted">
@@ -487,13 +606,21 @@ export default function BuildUpPage(): JSX.Element {
       <details className="bu-levels-so-far">
         <summary>Levels so far</summary>
         <table className="bu-summary-table" data-testid="bu-every-level">
-          <thead><tr><th>Level</th><th className="num">Different route tables</th><th>Circuits closing (tiles)</th></tr></thead>
+          <thead>
+            <tr>
+              <th>Level</th><th className="num">Different route tables</th><th>Circuits closing (tiles)</th>
+              {kept && <th className="num">Routes kept</th>}
+              {kept && <th>From the kept routes</th>}
+            </tr>
+          </thead>
           <tbody>
             {closings.map((cl, k) => (
               <tr key={k} className={k === level ? 'is-active' : ''} onClick={() => goLevel(k)}>
                 <td>{k === 0 ? 'tiles' : k}</td>
                 <td className="num">{groupCounts[k] ?? ''}</td>
                 <td>{cl.map((c) => nf(c.length)).join(', ')}</td>
+                {kept && <td className="num">{keptAt[k] ? `${nf(keptAt[k].routes)} of ${nf(keptAt[k].of)}` : ''}</td>}
+                {kept && <td>{keptClosings[k] ? keptClosings[k]!.map((c) => nf(c.length)).join(', ') || 'none' : k === kept.from ? 'the kept level' : ''}</td>}
               </tr>
             ))}
           </tbody>

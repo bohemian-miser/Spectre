@@ -9,12 +9,15 @@
  * type but Gamma has identically (`routes.ts`), then each group's routes
  * beyond it, and Gamma's whole table, Gamma being outside the core. With a
  * circuit followed, the routes it uses at this level are drawn over the
- * rest, and groups it does not use are dimmed.
+ * rest, and groups it does not use are dimmed; with routes kept
+ * (`kept.ts`), the kept routes are drawn that way and groups keeping none
+ * are dimmed.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { HexType } from '../../core';
 import { tileColor } from '../../lib/palette';
 import type { LevelUse } from './circuitRoutes';
+import type { KeptLevel } from './kept';
 import { CORE_TYPES, coreRoutes, extraRoutes } from './routes';
 import { IDENTITY, ringOf, routeSet, type Geometry } from './viewer';
 
@@ -31,8 +34,8 @@ interface Drawing {
   readonly strong: ReadonlySet<number> | null;
   /** Routes drawn at all; null for all of them. */
   readonly only?: ReadonlySet<number>;
-  readonly use: LevelUse | null;
-  readonly types: readonly HexType[];
+  /** Routes drawn over the rest, in the danger colour: a followed circuit's, or the kept ones. */
+  readonly hot: ReadonlySet<number> | null;
 }
 
 function draw(c: HTMLCanvasElement, px: number, g: Geometry, level: number, d: Drawing): void {
@@ -69,8 +72,6 @@ function draw(c: HTMLCanvasElement, px: number, g: Geometry, level: number, d: D
   const stop = level >= 7 ? level - 1 : Math.max(0, level - 2);
   const rs = routeSet(g.cs, level, d.type, MAX_ROUTES);
   const most = Math.log(rs.tiles[rs.tiles.length - 1] || 1) || 1;
-  const used = new Set<number>();
-  if (d.use) for (const t of d.types) for (const k of d.use.byType.get(t)?.keys() ?? []) used.add(k);
   const shades = [new Path2D(), new Path2D(), new Path2D()];
   const faint = new Path2D();
   const hot = new Path2D();
@@ -89,7 +90,7 @@ function draw(c: HTMLCanvasElement, px: number, g: Geometry, level: number, d: D
         marks.arc(X, Y, 9, 0, 2 * Math.PI);
       }
     };
-    if (d.use && used.has(k)) pts(hot);
+    if (d.hot?.has(k)) pts(hot);
     else if (d.strong && !d.strong.has(k)) {
       // the core, behind what the group adds: left out at the deep levels, where it would cost the most and show the least
       if (level < 7) pts(faint);
@@ -102,14 +103,14 @@ function draw(c: HTMLCanvasElement, px: number, g: Geometry, level: number, d: D
   ctx.strokeStyle = color(d.strong ? '--danger' : '--accent');
   ctx.lineWidth = d.strong ? 1.8 : 0.9;
   shades.forEach((p, b) => {
-    ctx.globalAlpha = (d.use ? 0.35 : 1) * (d.strong ? 1 : [0.35, 0.65, 1][b]);
+    ctx.globalAlpha = (d.hot ? 0.35 : 1) * (d.strong ? 1 : [0.35, 0.65, 1][b]);
     ctx.stroke(p);
   });
   ctx.globalAlpha = 0.85;
   ctx.lineWidth = 1.5;
   ctx.stroke(marks);
   ctx.globalAlpha = 1;
-  if (d.use) {
+  if (d.hot) {
     ctx.strokeStyle = color('--danger');
     ctx.lineWidth = 1.6;
     ctx.stroke(hot);
@@ -148,15 +149,22 @@ export function GroupStrip(props: {
   joins: { types: readonly HexType[]; joined: number; of: number } | null;
   /** The top level built. */
   built: number;
+  /** The routes kept at this level, built from a circuit's routes at level `from` (`kept.ts`). */
+  kept: { at: KeptLevel; from: number } | null;
 }): JSX.Element {
-  const { g, level, groups, use, closed, joins, built } = props;
+  const { g, level, groups, use, closed, joins, built, kept } = props;
   const [adds, setAdds] = useState(false);
   const px = typeof window !== 'undefined' && window.innerWidth < 640 ? 200 : 260;
   const items = useMemo((): Item[] => {
     const routesOf = (t: HexType) => g.cs.levels[level][t].routes();
-    const dimOf = (gr: readonly HexType[]) => use !== null && !gr.some((t) => use.byType.has(t));
-    // the group's types share one table, so a route counts as used when the circuit takes it in any of them
-    const usedOf = (gr: readonly HexType[]) => new Set(gr.flatMap((t) => [...(use?.byType.get(t)?.keys() ?? [])])).size;
+    // the group's types share one table, so a route counts as used (or kept) when the circuit takes it in any of them
+    const hotOf = (gr: readonly HexType[]): ReadonlySet<number> | null => {
+      if (use) return new Set(gr.flatMap((t) => [...(use.byType.get(t)?.keys() ?? [])]));
+      if (kept) return new Set(gr.flatMap((t) => [...(kept.at.byType.get(t) ?? [])]));
+      return null;
+    };
+    const dimOf = (gr: readonly HexType[]) => (use !== null || kept !== null) && hotOf(gr)!.size === 0;
+    const usedOf = (gr: readonly HexType[]) => hotOf(gr)?.size ?? 0;
     // two figures below 10%, so a small share does not read as none
     const pct = (x: number, of: number) => {
       const p = of ? (100 * x) / of : 0;
@@ -168,12 +176,17 @@ export function GroupStrip(props: {
         const used = usedOf(gr);
         return `uses ${nf(used)} of ${plural(all, 'route')} (${pct(used, all)})`;
       }
+      if (kept) {
+        const used = usedOf(gr);
+        return `${nf(used)} of ${plural(all, 'route')} kept (${pct(used, all)})`;
+      }
       if (joins && gr.some((t) => joins.types.includes(t))) return `joins ${nf(joins.joined)} of ${nf(joins.of)} child routes (${pct(joins.joined, joins.of)})`;
       const used = new Set(gr.flatMap((t) => [...(closed?.get(t) ?? [])])).size;
       return `${plural(all, 'route')} · ${nf(used)} used (${pct(used, all)})`;
     };
     const titleOf = (gr: readonly HexType[]) => {
       if (use) return `Routes of the table the followed circuit passes through at level ${level}`;
+      if (kept) return level === kept.from ? `Routes of the table the circuit uses at level ${level}, kept` : `Routes of the table glued from the routes kept at level ${kept.from} alone`;
       if (joins && gr.some((t) => joins.types.includes(t))) return `Routes of the children's tables at level ${level - 1} the followed circuit runs through where it closes`;
       return level >= built
         ? `Used: routes on a circuit closing above level ${level}. None is built above it yet.`
@@ -182,32 +195,32 @@ export function GroupStrip(props: {
     if (!adds) {
       return groups.map((gr) => {
         return {
-          key: gr.join(), drawing: { type: gr[0], strong: null, use, types: gr }, names: gr, label: `Routes of ${gr.join(', ')}`,
+          key: gr.join(), drawing: { type: gr[0], strong: null, hot: hotOf(gr) }, names: gr, label: `Routes of ${gr.join(', ')}`,
           count: countOf(gr), countTitle: titleOf(gr), pick: gr[0], dim: dimOf(gr),
         };
       });
     }
     const core = coreRoutes(g.cs, level);
     const out: Item[] = [{
-      key: 'core', drawing: { type: 'Delta', strong: null, only: new Set(core.map((r) => r[0])), use, types: CORE_TYPES as unknown as HexType[] }, names: null,
+      key: 'core', drawing: { type: 'Delta', strong: null, only: new Set(core.map((r) => r[0])), hot: hotOf(CORE_TYPES as unknown as HexType[]) }, names: null,
       label: 'Routes every type but Gamma shares', count: `Shared by every type but Gamma: ${plural(core.length, 'route')}`, pick: null, dim: false,
     }];
     for (const gr of groups) {
       if (!(CORE_TYPES as readonly string[]).includes(gr[0])) {
         out.push({
-          key: gr.join(), drawing: { type: gr[0], strong: null, use, types: gr }, names: gr, label: `Routes of ${gr.join(', ')}`,
+          key: gr.join(), drawing: { type: gr[0], strong: null, hot: hotOf(gr) }, names: gr, label: `Routes of ${gr.join(', ')}`,
           count: `not in the shared routes: ${countOf(gr)}`, countTitle: titleOf(gr), pick: gr[0], dim: dimOf(gr),
         });
         continue;
       }
       const extras = extraRoutes(g.cs, level, gr[0], core);
       out.push({
-        key: gr.join(), drawing: { type: gr[0], strong: new Set(extras.map((r) => r[0])), use, types: gr }, names: gr,
+        key: gr.join(), drawing: { type: gr[0], strong: new Set(extras.map((r) => r[0])), hot: hotOf(gr) }, names: gr,
         label: `What ${gr.join(', ')} adds to the shared routes`, count: extras.length ? `+${plural(extras.length, 'route')}, ringed` : 'nothing beyond the shared routes', pick: gr[0], dim: dimOf(gr),
       });
     }
     return out;
-  }, [g, level, groups, use, closed, joins, built, adds]);
+  }, [g, level, groups, use, closed, joins, built, kept, adds]);
   const refs = useRef<(HTMLCanvasElement | null)[]>([]);
   // one drawing per task, so the page stays responsive while a deep level is drawn
   useEffect(() => {
