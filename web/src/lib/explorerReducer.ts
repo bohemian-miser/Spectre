@@ -14,7 +14,6 @@ import {
   DEFAULT_INSTANCE_BUDGET,
   DEFAULT_LINE_SCALE,
   DEFAULT_TRAIL_HOLD,
-  MAX_LEVEL,
   clampFindCeiling,
   clampFoundHold,
   maxMatchingIndex,
@@ -30,6 +29,7 @@ import {
   DEFAULT_FOLLOW_DAMPING,
   clampTrailHold,
   leafOrder,
+  maxLevelFor,
   subsetToEdges,
   supportsInfiniteMode,
   type Camera,
@@ -367,12 +367,12 @@ export function explorerReducer(state: ExplorerState, action: ExplorerAction): E
       return state.rootTile === action.rootTile ? state : { ...state, rootTile: action.rootTile };
 
     case 'setLevel': {
-      const level = clampInt(action.level, 0, MAX_LEVEL);
+      const level = clampInt(action.level, 0, maxLevelFor(explorerMode(state)));
       return level === state.level ? state : { ...state, level };
     }
 
     case 'stepLevel': {
-      const level = clampInt(state.level + action.delta, 0, MAX_LEVEL);
+      const level = clampInt(state.level + action.delta, 0, maxLevelFor(explorerMode(state)));
       return level === state.level ? state : { ...state, level };
     }
 
@@ -562,10 +562,12 @@ function stripContracts(state: ExplorerState): ExplorerState {
 }
 
 /** Remove the optional `mode` key entirely (canonical "rooted"). */
+/** Back to the rooted patch, its level brought within the rooted limit as a rooted link's would be. */
 function stripMode(state: ExplorerState): ExplorerState {
   if (state.mode === undefined) return state;
   const { mode: _m, ...rest } = state;
-  return rest as ExplorerState;
+  const level = Math.min(rest.level, maxLevelFor(undefined));
+  return (level === rest.level ? rest : { ...rest, level }) as ExplorerState;
 }
 
 /** Effective mode, honouring the engine's family restriction. */

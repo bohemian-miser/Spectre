@@ -404,6 +404,16 @@ export const DEFAULT_LINK_STATE: ExplorerState = Object.freeze({
  * route to arbitrary depth without materializing anything.
  */
 export const MAX_LEVEL = 9;
+
+/**
+ * The highest level a mode takes: the rooted patch materializes its tiles, so
+ * it stops at {@link MAX_LEVEL}; the infinite view only sets its zoom by the
+ * level and takes any the un-rooted engine's ancestor chain can reach. The
+ * link codec, the reducer and the level stepper all read this one rule.
+ */
+export function maxLevelFor(mode: ExplorerMode | undefined): number {
+  return mode === 'infinite' ? UNROOTED_MAX_LEVEL : MAX_LEVEL;
+}
 /** Above this the rooted patch is heavy enough to be worth warning about. */
 export const HEAVY_LEVEL = 6;
 
@@ -663,7 +673,7 @@ export function decodeExplorerState(q: URLSearchParams): ExplorerState {
   // The rooted explorer materializes the patch, so its level is capped; the
   // infinite view only sets its zoom by the level and takes any the un-rooted
   // engine's ancestor chain can reach (a circuit's link names its birth level).
-  const level = Number.isFinite(lvNum) ? clampInt(lvNum, 0, mode === 'infinite' ? UNROOTED_MAX_LEVEL : MAX_LEVEL) : d.level;
+  const level = Number.isFinite(lvNum) ? clampInt(lvNum, 0, maxLevelFor(mode)) : d.level;
 
   // Only meaningful alongside `md=infinite`; a stray `bg=` on a rooted link is
   // dropped the same way a stray `md=` on a hex link is.
