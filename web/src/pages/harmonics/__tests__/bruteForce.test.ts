@@ -136,6 +136,18 @@ describe('the harmonic of 023468 · 000100000’s 441', () => {
     expect(all.found?.length).toBe(one.found?.length ?? 8784);
   });
 
+  it('four levels up at once: the 175,221 at level 8 from the 441, reading as it with every tile grown into a level-4 supertile', () => {
+    const cs = build('000100000', 8);
+    const R = new SparseRoutes(cs, 8);
+    const r = harmonicAbove(R, R.walked(bornAt(cs, 4, 441)), { floor: 1, gap: 4 });
+    expect(r.gap).toBe(4);
+    expect(r.found).toMatchObject({ level: 8, length: 175221, family: '013467', agreed: 1 });
+    expect(r.found!.key).toBe(wordKey(cs, bornAt(cs, 8, 175221)));
+    // the windows are the 441's level-1 visits' places four levels up
+    expect(r.picture.windows.every((w) => w.level === 5)).toBe(true);
+    expect(() => harmonicAbove(R, R.walked(bornAt(cs, 4, 441)), { floor: 1, gap: 3 })).toThrow(/even/);
+  });
+
   it('then the 175,221 at level 8, every level of it in the full tables', () => {
     const cs = build('000100000', 8);
     const R = new SparseRoutes(cs, 8);

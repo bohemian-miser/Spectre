@@ -183,11 +183,11 @@ export function readCircuit(cs: CircuitShapes, c: BornCircuit, lowest = 0, maxRa
   return { levels, raw, lowest: read };
 }
 
-/** How far down B (two levels up) reads as A: the lowest level of A from which every level up to A's top agrees, A's level when the top differs, and whether the agreement reaches the lowest level both were read at. */
-export function agreement(a: TopReadings, aLevel: number, b: TopReadings): { floor: number; limited: boolean } {
+/** How far down B (`gap` levels up, two by default) reads as A: the lowest level of A from which every level up to A's top agrees, A's level when the top differs, and whether the agreement reaches the lowest level both were read at. */
+export function agreement(a: TopReadings, aLevel: number, b: TopReadings, gap = 2): { floor: number; limited: boolean } {
   let k = aLevel - 1;
   for (; k >= 0; k--) {
-    const x = a.levels[k], y = b.levels[k + 2];
+    const x = a.levels[k], y = b.levels[k + gap];
     if (!x || !y) return { floor: k + 1, limited: true };
     if (!sameArray(x, y)) return { floor: k + 1, limited: false };
   }
