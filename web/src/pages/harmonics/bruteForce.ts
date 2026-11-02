@@ -292,8 +292,8 @@ export function harmonicAbove(R: SparseRoutes, a: Walked, opts: BruteOptions = {
   /** The circuits known, born below `top`, by their tiles; A among them, its word key worked out when a walk of its length closes, through whichever children. */
   const knownBy = new Map<number, { key: string | null; level: number }[]>();
   for (const k of opts.known ?? []) if (k.level < top) (knownBy.get(k.length) ?? knownBy.set(k.length, []).get(k.length)!).push({ key: k.key, level: k.level });
-  const self = { key: null as string | null, level: a.level };
-  (knownBy.get(a.length) ?? knownBy.set(a.length, []).get(a.length)!).push(self);
+  const own = { key: null as string | null, level: a.level };
+  (knownBy.get(a.length) ?? knownBy.set(a.length, []).get(a.length)!).push(own);
   /** The circuit a closed walk is a copy of, or null: past the word cap a walk of a known circuit's length is taken for its copy. */
   const copyOf = (b: Walked): { length: number; level: number } | null => {
     const same = knownBy.get(b.length);
@@ -301,7 +301,7 @@ export function harmonicAbove(R: SparseRoutes, a: Walked, opts: BruteOptions = {
     if (b.length > wordCap) return { length: b.length, level: same[0].level };
     const key = wordKeyOf(walkedWordCodes(R, b));
     for (const k of same) {
-      if (k === self) self.key ??= wordKeyOf(walkedWordCodes(R, a));
+      if (k === own) own.key ??= wordKeyOf(walkedWordCodes(R, a));
       if (k.key === key) return { length: b.length, level: k.level };
     }
     return null;

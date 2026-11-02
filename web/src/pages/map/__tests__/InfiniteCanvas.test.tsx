@@ -21,7 +21,8 @@ import { createCamera, worldToScreen, viewRectFor, type MapCamera } from '../cam
 import { buildLeafChordTable, type LeafChordTable } from '../chords';
 import { InfiniteCanvas, type InfiniteCanvasApi, type InfiniteCanvasStatus } from '../InfiniteCanvas';
 import type { MapRenderStats, MapRenderStyle, MapRenderer, RegionFillGeometry, TrailGeometry } from '../rendererTypes';
-import { buildChordIndex, hitTestChord } from '../strandWalk';
+import {
+  ADVANCE_MAX_STEPS, buildChordIndex, hitTestChord } from '../strandWalk';
 import type { GraphSelection } from '../transitions';
 import { FindPassState, type FindPassResult } from '../findPass';
 import type { FindClient } from '../../../workers/findClient';
@@ -683,6 +684,25 @@ describe('InfiniteCanvas — the chase feeds itself at any zoom', () => {
     const after = m.status().trace;
     expect(after.active).toBe(true);
     expect(after.length).toBeGreaterThan(before);
+  });
+
+  it('keeps walking past a capped slice while the display sits at aggregate LOD', async () => {
+    // A slice that stops with more to do (here by the pace limit; a feed cut
+    // of more than ADVANCE_MAX_STEPS steps does the same) leaves the walk
+    // 'walking'. With the display at glyph LOD only the feeder can go on, and
+    // it must be asked: the chase froze here before, for as long as the view
+    // stayed wide.
+    const m = await mount({ follow: true, followPace: 4000 });
+    const target = chordTargetOn(createCamera(0, 0, 36));
+    tap(m.host, target.x, target.y);
+    await settle();
+    act(() => m.api.current?.setCamera({ scale: 0.05 }));
+    await settleUntil(() => (m.status().cut?.cutLevel ?? 0) > 0, 'an aggregate cut');
+    const before = m.status().trace.steps;
+    await settleUntil(() => m.status().trace.steps > before + 6000, 'the paced walk to keep going');
+    expect(m.status().trace.steps).toBeGreaterThan(before + 6000);
+    expect(m.status().cut?.cutLevel ?? 0).toBeGreaterThan(0);
+    void ADVANCE_MAX_STEPS;
   });
 });
 
