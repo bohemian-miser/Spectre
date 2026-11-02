@@ -113,7 +113,7 @@ describe('choosing precomputed or live', () => {
 
   it('writes and reads back an index line with every mark and an unsettled last level', () => {
     const r = lineRow('140000001 3 7* 9 4 171000 2 0.0123 0.97 sfum', 9);
-    expect(indexLine(r)).toBe('140000001 3 7* 9 4 171000 2 0.0123 0.97 sfum 0,0,0,0,0,0,0,0.03');
+    expect(indexLine(r)).toBe('140000001 3 7* 9 4 171000 2 0.0123 0.97 sfum 0,0,0,0,0,0,0,0,0.03');
     expect(marksOf(r)).toEqual(['short', 'notForecast', 'unexplained', 'missed']);
     expect(r.settled).toBe(false);
   });
