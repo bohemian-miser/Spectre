@@ -25,7 +25,7 @@ combination,
 
 The Foundations page (`foundations.html`) shows every combination's
 foundational circuits, chains and account of chords, from a cut of the
-sweep's output in `web/public/data/foundations/hex-023468/`
+sweep's output in `web/public/data/foundations/hex-<rule>/`
 ([`foundations-page.ts`](../web/circuit-classes/foundations-page.ts),
 [`pageData.ts`](../web/src/pages/foundations/pageData.ts)). It marks as
 monsters the foundational circuits that start a chain at floor + 4 or later
@@ -41,24 +41,47 @@ Each combination carries marks a reader can filter by: short; not forecast
 unexplained monster (a late monster with no chain); missed (a prediction
 checked against the build that missed).
 
-| mark | combinations of 023468 |
-|---|---|
-| short | 4 |
-| not forecast | 3 |
-| unexplained monster | 2 |
-| missed | 6 |
+| mark | 023468 (320) | 258 (64) | 128 (32) | 03456 (16) | 01346 (8) | 15 (4) |
+|---|---|---|---|---|---|---|
+| short | 4 | 6 | 6 | 3 | 0 | 0 |
+| not forecast | 3 | 0 | 0 | 0 | 0 | 0 |
+| unexplained monster | 2 | 2 | 0 | 3 | 0 | 0 |
+| missed | 6 | 0 | 0 | 7 | 0 | 0 |
 
-The page reads the precomputed data of 023468 and analyses any other rule,
-or any other level, live: the rule and combination chosen with the shared
-picker (and kept in the address, `?rule=…&combo=…&level=…`), the same
-`analyseCombo` run in a worker with its progress shown, to level 8 by
+(023468 at level 9, the others at level 8.)
+
+The page reads a rule's precomputed data, at its level, whenever
+`web/public/data/foundations/hex-<rule>/index.json` exists, and analyses any
+other rule, or any other level, live: the rule and combination chosen with
+the shared picker (and kept in the address, `?rule=…&combo=…&level=…`), the
+same `analyseCombo` run in a worker with its progress shown, to level 8 by
 default and one level further on request. Sweeping a rule runs every
 combination in the worker and fills the combination list and the Monsters
 tab as results arrive, keeping them in the browser (IndexedDB) for the next
 visit; the number of combinations is shown first, since some rules have far
-more than 320. The CLI sweep takes the rule as its first argument, so any
-rule can be precomputed and committed the same way. A test runs the live
-analysis of two combinations of 023468 afresh and finds the precomputed
+more than 320.
+
+| rule | combinations | precomputed |
+|---|---|---|
+| 01234568 | 1,953,125 | index lines only, from the workflow (below) |
+| 023468 | 320 | level 9 |
+| 258 | 64 | level 8 |
+| 128 | 32 | level 8 |
+| 03456 | 16 | level 8 |
+| 01346 | 8 | level 8 |
+| 15 | 4 | level 8 |
+
+A rule of more than 10,000 combinations is written as **index lines**
+instead of a file per combination: one line per combination with its
+First, Last found, foundational circuits, nuggets, largest, monsters,
+tails, limit and marks
+([`indexLine`](../web/src/pages/foundations/pageData.ts)), in a file per
+first digit (`0.txt` to `4.txt` for 01234568, 390,625 lines each) and an
+`index.json` naming the level and the count per digit. The page lists the
+lines of the first digit of the combination shown, draws the first 2,000
+rows the filters keep, and analyses the combination chosen live at the
+listed level. Tests run the live analysis of two combinations of 023468,
+and the first and last of each small rule, afresh and find the precomputed
 files.
 
 ## 1. Harmonics above a floor
@@ -545,7 +568,6 @@ cd web
 node --max-old-space-size=3500 node_modules/.bin/vite-node circuit-classes/foundations-sweep.ts -- 023468 9 0 1   # rule, level, shard 0 of 1
 node node_modules/.bin/vite-node circuit-classes/foundations-index.ts -- 023468
 node node_modules/.bin/vite-node circuit-classes/foundations-page.ts -- 023468
-node node_modules/.bin/vite-node circuit-classes/foundations-page.ts -- 023468
 node --max-old-space-size=9000 node_modules/.bin/vite-node circuit-classes/foundations-predict.ts -- 023468 140000001 11
 node --max-old-space-size=12000 node_modules/.bin/vite-node circuit-classes/foundations-recurrence.ts -- 023468 140000001 11 147,07
 npx vitest run src/pages/foundations
@@ -553,3 +575,38 @@ npx vitest run src/pages/foundations
 
 The sweep takes 15 to 40 s a combination at level 9 (building level 10
 too); the prediction run to level 11 about 20 minutes.
+
+### On GitHub Actions
+
+The workflow [Foundations sweep](../.github/workflows/foundations-sweep.yml)
+runs the same three scripts for one rule and level: the sweep in `shards`
+shards, `processes` at a time on each runner, then the index and the cut
+for the page, pushed to the branch `foundations-data/<rule>-<level>` for a
+pull request. From the Actions tab, or:
+
+```bash
+gh workflow run foundations-sweep.yml -f rule=258 -f level=10 -f shards=64
+```
+
+A shard stops after 340 minutes, so the shards must be enough for each to
+finish inside that. Times per combination measured here:
+
+| rule | level | seconds per combination |
+|---|---|---|
+| 258 | 8 | about 13 |
+| 023468 | 8 | about 3 (140000001) |
+| 01234568 | 4 | about 0.1 |
+| 01234568 | 6 | about 0.9 |
+
+For 01234568 at level 4, 1,953,125 combinations at about 0.1 s are 54
+CPU-hours: 64 shards, 4 to a runner, are 16 runners of about 50 minutes.
+Its output, five files of index lines of about 20 MB each (about 50 bytes a line), is inspected
+before it is committed: run with `commit` off, read the tables in the run
+summary and the `foundations-page` artifact, then run again with
+`reuse_run` set to that run's id and `commit` on, which pushes the branch
+without sweeping again.
+
+```bash
+gh workflow run foundations-sweep.yml -f rule=01234568 -f level=4 -f shards=64 -f commit=false
+gh workflow run foundations-sweep.yml -f rule=01234568 -f level=4 -f reuse_run=<run id> -f commit=true
+```

@@ -7,14 +7,42 @@
  * above, the forecast's assumption check and how the predictions fared.
  * Prints the summary tables of `docs/FOUNDATIONS.md`.
  *
+ * A rule swept as index lines (`lines-<shard>.txt`) has its index in those
+ * lines already; for it this prints the tables the lines can give and
+ * writes nothing.
+ *
  *   node node_modules/.bin/vite-node circuit-classes/foundations-index.ts -- 023468
  */
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { ComboAnalysis } from '../src/pages/foundations/comboAnalysis';
+import { lineRow, MARKS, marksOf, type IndexRow, type Mark } from '../src/pages/foundations/pageData';
 
 const rule = process.argv.slice(2).filter((a) => a !== '--')[0];
 const dir = resolve(__dirname, `data/foundations/hex-${rule}`);
+
+const count = (title: string, rows: readonly IndexRow[], key: (r: IndexRow) => string): void => {
+  const m = new Map<string, number>();
+  for (const r of rows) m.set(key(r), (m.get(key(r)) ?? 0) + 1);
+  console.log(`\n| ${title} | combinations |\n|---|---|`);
+  for (const [k, v] of [...m].sort()) console.log(`| ${k} | ${v.toLocaleString('en-US')} |`);
+};
+
+const lineFiles = readdirSync(dir).filter((f) => /^lines-\d+\.txt$/.test(f));
+if (lineFiles.length) {
+  const rows = lineFiles.flatMap((f) =>
+    readFileSync(resolve(dir, f), 'utf8')
+      .split('\n')
+      .filter((l) => l.trim())
+      .map((l) => lineRow(l, 0)),
+  );
+  console.log(`${rows.length.toLocaleString('en-US')} combinations`);
+  count('floor, last level a foundational circuit first closes at', rows, (r) => `${r.floor}, ${r.lastNew}${r.settled ? '' : ' (unsettled)'}`);
+  count('foundational circuits (chains + nuggets)', rows, (r) => `${String(r.found).padStart(2)} (${r.found - r.nuggets} + ${r.nuggets})`);
+  console.log(`\n| mark | combinations |\n|---|---|`);
+  for (const m of Object.keys(MARKS) as Mark[]) console.log(`| ${MARKS[m].label} | ${rows.filter((r) => marksOf(r).includes(m)).length.toLocaleString('en-US')} |`);
+  process.exit(0);
+}
 
 const rows = readdirSync(dir)
   .filter((f) => /^[0-9a-z]+\.json$/.test(f) && f !== 'index.json')

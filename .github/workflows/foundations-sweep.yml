@@ -1,0 +1,212 @@
+name: Foundations sweep
+
+# Run by hand: every combination of one hexagon rule analysed to one level
+# (web/circuit-classes/foundations-sweep.ts), in shards spread over matrix
+# jobs, then gathered (foundations-index.ts) and cut for the Foundations page
+# (foundations-page.ts) into web/public/data/foundations/hex-<rule>/, and
+# committed to a branch `foundations-data/<rule>-<level>` for a pull request.
+# The page reads a rule's data from there whenever its index.json exists.
+#
+# Each job runs `processes` shards at once, so `shards / processes` jobs.
+# A shard stops after 340 minutes, under the job's 350; size the shards so
+# each finishes well inside that (seconds per combination x combinations /
+# shards).
+#
+# Rule 01234568 (1,953,125 combinations) is written as index lines, a file
+# per first digit, each combination analysed on the page when chosen.
+# At level 4 it takes about 0.1 s a combination, 54 CPU-hours in all:
+#
+#   rule 01234568, level 4, shards 64, processes 4, commit false
+#
+# gives 16 jobs of about 50 minutes each. With commit false the gather job
+# uploads the cut data as the artifact `foundations-page` and prints its
+# tables and sizes in the run summary instead of pushing; inspect them, then
+# run again with reuse_run set to that run's id and commit true to push the
+# branch without sweeping again.
+
+on:
+  workflow_dispatch:
+    inputs:
+      rule:
+        description: Hexagon rule (its classes)
+        default: '258'
+        type: choice
+        options: ['01234568', '023468', '258', '128', '03456', '01346', '15']
+      level:
+        description: Supertile level
+        default: '10'
+        type: string
+      shards:
+        description: Shards in all
+        default: '64'
+        type: string
+      processes:
+        description: Shards each job runs at once (lower it when a level needs more than 16 GB between them)
+        default: '4'
+        type: string
+      commit:
+        description: Push the data to a branch (off, upload it for inspection)
+        default: true
+        type: boolean
+      reuse_run:
+        description: Gather the shards of an earlier run (its run id) instead of sweeping again
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    name: Plan the jobs
+    if: inputs.reuse_run == ''
+    runs-on: ubuntu-latest
+    outputs:
+      jobs: ${{ steps.plan.outputs.jobs }}
+    steps:
+      - id: plan
+        env:
+          SHARDS: ${{ inputs.shards }}
+          PROCESSES: ${{ inputs.processes }}
+        run: |
+          set -e
+          jobs=$(( (SHARDS + PROCESSES - 1) / PROCESSES ))
+          echo "jobs=[$(seq -s, 0 $(( jobs - 1 )))]" >> "$GITHUB_OUTPUT"
+
+  sweep:
+    name: Sweep ${{ matrix.job }}
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    strategy:
+      fail-fast: true
+      matrix:
+        job: ${{ fromJSON(needs.plan.outputs.jobs) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: web
+
+      - name: Sweep the job's shards
+        working-directory: web
+        env:
+          RULE: ${{ inputs.rule }}
+          LEVEL: ${{ inputs.level }}
+          SHARDS: ${{ inputs.shards }}
+          PROCESSES: ${{ inputs.processes }}
+          JOB: ${{ matrix.job }}
+        run: |
+          set -e
+          # the runner's 16 GB shared between the processes
+          mem=$(( 14000 / PROCESSES ))
+          # the artifact holds this job's shards only, not the rule's committed files
+          rm -rf "circuit-classes/data/foundations/hex-$RULE"
+          mkdir -p logs
+          pids=""
+          for p in $(seq 0 $(( PROCESSES - 1 ))); do
+            s=$(( JOB * PROCESSES + p ))
+            [ "$s" -lt "$SHARDS" ] || continue
+            timeout 340m node --max-old-space-size=$mem node_modules/.bin/vite-node circuit-classes/foundations-sweep.ts -- "$RULE" "$LEVEL" "$s" "$SHARDS" > "logs/shard-$s.log" 2>&1 &
+            pids="$pids $!"
+          done
+          status=0
+          for pid in $pids; do wait "$pid" || status=1; done
+          tail -n 3 logs/*.log
+          exit $status
+
+      # kept even when a shard fails or runs out of time, to see how far it got
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: foundations-shards-${{ matrix.job }}
+          path: |
+            web/circuit-classes/data/foundations/hex-${{ inputs.rule }}
+            web/logs
+          retention-days: 7
+
+  gather:
+    name: Gather and commit
+    needs: sweep
+    # Runs after a sweep, or alone on an earlier run's shards.
+    if: always() && (needs.sweep.result == 'success' || (needs.sweep.result == 'skipped' && inputs.reuse_run != ''))
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: web
+
+      # the shards replace whatever the rule had
+      - name: Clear the rule's sweep output
+        env:
+          RULE: ${{ inputs.rule }}
+        run: rm -rf "web/circuit-classes/data/foundations/hex-$RULE"
+
+      # each shard artifact holds circuit-classes/data/foundations/hex-<rule>/ and logs/, relative to web/
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: foundations-shards-*
+          path: web
+          merge-multiple: true
+          run-id: ${{ inputs.reuse_run || github.run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Gather and cut for the page
+        working-directory: web
+        env:
+          RULE: ${{ inputs.rule }}
+          LEVEL: ${{ inputs.level }}
+        run: |
+          set -eo pipefail
+          {
+            echo "## Rule $RULE, level $LEVEL"
+            echo '```'
+            node node_modules/.bin/vite-node circuit-classes/foundations-index.ts -- "$RULE"
+            node node_modules/.bin/vite-node circuit-classes/foundations-page.ts -- "$RULE" "$LEVEL"
+            du -sh "public/data/foundations/hex-$RULE"
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ !inputs.commit }}
+        with:
+          name: foundations-page
+          path: web/public/data/foundations/hex-${{ inputs.rule }}
+          retention-days: 7
+
+      - name: Commit to a branch
+        if: inputs.commit
+        env:
+          RULE: ${{ inputs.rule }}
+          LEVEL: ${{ inputs.level }}
+        run: |
+          set -e
+          branch="foundations-data/$RULE-$LEVEL"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+          git add -A "web/public/data/foundations/hex-$RULE"
+          # the sweep's own files are ignored (circuit-classes/.gitignore) but for a rule that has them committed: those are updated
+          git add -u "web/circuit-classes/data/foundations/hex-$RULE"
+          git commit -m "Foundations data: rule $RULE, level $LEVEL (from the Foundations sweep workflow)"
+          git push --force origin "$branch"
+          echo "Pushed $branch" >> "$GITHUB_STEP_SUMMARY"

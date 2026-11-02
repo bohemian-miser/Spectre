@@ -12,7 +12,9 @@ import { drawCircuits } from '../drawings';
 import { comboCount, combosOf, runLive } from '../liveAnalysis';
 import { filterRows, markCounts, NO_FILTERS, sortRows } from '../ComboList';
 import {
+  account,
   backTest,
+  LIMIT_PARTS,
   chainOf,
   forecastChecks,
   MARKS,
@@ -28,6 +30,7 @@ import {
   type PageCombo,
   type PageIndex,
   type SweepFile,
+  unaccountedOf,
 } from '../pageData';
 
 const web = resolve(__dirname, '../../../..');
@@ -114,6 +117,26 @@ describe('the page data', () => {
 
 describe('the list of combinations', () => {
   const index = read<PageIndex>(resolve(pageDir, 'index.json'));
+
+  it("splits each limit as the account chart's limit column, from each combination's own file, adding up to 1", () => {
+    expect(index.combos).toHaveLength(320);
+    for (const r of index.combos) {
+      const acc = account(read<PageCombo>(resolve(pageDir, `${r.combo}.json`)), 'class');
+      const limit = acc.columns.length - 1;
+      expect(acc.columns[limit].level).toBeNull();
+      // every segment of the chart is a part, in the chart's order
+      expect(LIMIT_PARTS.map((x) => [x.key, x.label])).toEqual(acc.segments.map((x) => [x.key, x.label]));
+      r.parts.forEach((v, i) => expect(Math.abs(v - acc.segments[i].values[limit])).toBeLessThan(1e-7));
+      expect(Math.abs(r.parts.reduce((a, b) => a + b, 0) - 1)).toBeLessThan(1e-6);
+      if (!(acc.over > 0)) expect(Math.abs(unaccountedOf(r) - (1 - r.limit))).toBeLessThan(1e-6);
+    }
+  });
+
+  it('sorts by the share not accounted for, the largest first', () => {
+    const rows = sortRows(index.combos, { key: 'unaccounted', desc: true });
+    for (let i = 1; i < rows.length; i++) expect(unaccountedOf(rows[i])).toBeLessThanOrEqual(unaccountedOf(rows[i - 1]));
+    expect(rows.slice(0, 4).map((r) => r.combo).sort()).toEqual(index.combos.filter((r) => r.limit < SHORT).map((r) => r.combo).sort());
+  });
 
   it('sorts by limit, the short ones first', () => {
     const rows = sortRows(index.combos, { key: 'limit', desc: false });

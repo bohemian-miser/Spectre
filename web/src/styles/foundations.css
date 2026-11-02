@@ -163,7 +163,7 @@
 /* list and main */
 .fd-split {
   display: grid;
-  grid-template-columns: 420px minmax(0, 1fr);
+  grid-template-columns: 510px minmax(0, 1fr);
   gap: 20px;
   align-items: start;
 }
@@ -213,7 +213,7 @@
 }
 .fd-row {
   display: grid;
-  grid-template-columns: minmax(72px, 1fr) 28px 50px 72px 44px 22px 50px 34px;
+  grid-template-columns: minmax(72px, 1fr) 28px 50px 72px 44px 22px 76px 50px 34px;
   gap: 3px;
   align-items: center;
   padding: 2px 8px;
@@ -293,6 +293,20 @@
   border-radius: 50%;
   flex: none;
 }
+/* the limit's parts, in the account chart's colours */
+.fd-bar {
+  display: flex;
+  height: 8px;
+  margin-right: 4px;
+  border-radius: 2px;
+  overflow: hidden;
+  background: var(--panel-2);
+}
+.fd-bar i {
+  display: block;
+  flex: none;
+  height: 100%;
+}
 .fd-row-marks {
   display: inline-flex;
   gap: 2px;
@@ -363,6 +377,15 @@
   gap: 8px;
   padding-bottom: 10px;
   border-bottom: 1px solid var(--line);
+}
+.fd-combo-title {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  align-items: baseline;
+}
+.fd-combo-links a {
+  font-size: 13px;
 }
 .fd-keys {
   display: flex;
@@ -981,9 +1004,11 @@ a.fd-harm:hover {
   .fd-rows {
     max-height: 34vh;
   }
-  /* the tiles of the largest circuit give way to the limit */
+  /* the tiles of the largest circuit give way to the limit's parts */
   .fd-row {
-    grid-template-columns: minmax(70px, 1fr) 26px 48px 64px 22px 50px 30px;
+    grid-template-columns: minmax(66px, 1fr) 22px 38px 58px 18px 48px 50px 28px;
+    gap: 2px;
+    padding: 2px 6px;
   }
   .fd-row > :nth-child(5) {
     display: none;
@@ -991,6 +1016,7 @@ a.fd-harm:hover {
   .fd-head button {
     white-space: normal;
     line-height: 1.15;
+    font-size: 10px;
   }
   .fd-grid-cards {
     grid-template-columns: minmax(0, 1fr);
