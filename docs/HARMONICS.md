@@ -332,18 +332,40 @@ of the base combination at every level.
 
 ### Brute force past the build
 
-Above the level built, every row of the table ends in a ? cell two levels
-above its last member, a chain's or a circuit's alone. Brute force
-(`harmonics/bruteForce.ts`) looks for the harmonic where the forecast puts
-it: the strands entering the member's level-2 supertiles are lifted into the
-supertile two levels above the member's birth and followed through its
-children, with the routes above the tables worked out on demand and kept
-(`harmonics/sparseRoutes.ts`), until a closed walk through the same children
-reads as the member from level 2 up. Every level-2 visit of the member is a
-window looked through in turn; when no walk closes, the walks that leave the
-supertile are climbed a level at a time until they close. Nothing bounds
-the search but the Stop button; any number of cells can be set going, and
-they run one after another in the brute-force worker.
+Every row of the table, a chain's or a circuit's alone, ends in ? cells,
+one at each even level above its last member, within the build and past
+it. Brute force (`harmonics/bruteForce.ts`) looks for the harmonic where
+the forecast puts it: the strands entering the member's level-2 supertiles
+are lifted into the supertile two levels above the member's birth and
+followed through its children, with the routes above the tables worked out
+on demand and kept (`harmonics/sparseRoutes.ts`), until a closed walk
+through the same children reads as the member from level 2 up. Every
+level-2 visit of the member is a window looked through in turn; when no
+walk closes, the walks that leave the supertile are climbed a level at a
+time until they close. Nothing bounds the search but the Stop button; any
+number of cells can be set going, and they run one after another in the
+brute-force worker.
+
+A cell further up searches the same way with a larger gap: at `gap` levels
+above a member it looks, in the supertile `gap` levels above the member's
+birth, through the level-(2 + gap) supertiles at the member's level-2
+visits, for a closed walk reading at k + gap as the member reads at k, the
+member with every tile grown into a level-`gap` supertile. A cell searches
+from the highest member found below it in its row, so a chain can be
+extended two levels at a time or a circuit alone tried four or six levels
+up at once. From the 9 at level 2 of 000100000 a gap of 6 finds the 65,016
+at level 8 that the chain reaches through the 162 and the 3,258; from the
+3 and the 18 at level 2 no gap finds anything, and the cells say where the
+walks that leave the supertile close instead. A circuit found within the
+build is one the table already holds, so its cell opens that circuit's own
+row.
+
+A closed walk with the member's own word is the member closing again in a
+bigger supertile, across a seam of its children: another placement of one
+circuit, which the build never counts twice. The search counts these as
+copies and reads on; without that, 110000001's 126 at level 4 would be its
+own harmonic at every level, since it reads at the top two levels of any
+placement as it reads at its own.
 
 The search is drawn as it runs (`harmonics/searchPicture.ts`,
 `harmonics/SearchView.tsx`): the supertile and its children outlined, the

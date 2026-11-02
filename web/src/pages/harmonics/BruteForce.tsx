@@ -1,9 +1,10 @@
 /**
- * Brute force on the harmonics table (`bruteJob.ts`): past the level built,
- * each row's next member two levels above its last as a ? cell, found by
- * following strands with routes worked out on demand; a member found takes
- * its place in the row, drawn small like the built ones, and opens the cell
- * two levels further. Any number of cells can be set going; they run one
+ * Brute force on the harmonics table (`bruteJob.ts`): every row ends in ?
+ * cells, one at each even level above its last member, within the build
+ * and past it, each found by following strands with routes worked out on
+ * demand from the highest member found below it, with the gap between
+ * them; a member found takes its place in the row, drawn small like the
+ * built ones, and any cell done opens one two levels further. Any number of cells can be set going; they run one
  * after another, and the search under way is drawn as it goes
  * (`SearchView.tsx`). And one strand climbed until it closes.
  *
@@ -66,6 +67,8 @@ export function foundParam(found: readonly FoundMember[]): string {
 /** How the cells of members found are shown: their thumbnails and circuit indices (by `levelKey`), the circuits, the scores of their links, and what is selected. */
 export interface FoundLook {
   readonly thumbs: ReadonlyMap<string, Float64Array>;
+  /** The built circuits' thumbnails by index, for a member found within the build. */
+  readonly builtThumbs: ReadonlyMap<number, Float64Array>;
   readonly index: ReadonlyMap<string, number>;
   readonly circuits: readonly MemberInfo[];
   /** The link into each member found from the member before, by the found one's index. */
@@ -108,18 +111,22 @@ export function useBruteForce(
     });
 
   /**
-   * Each row whose last member is within two levels of the top built, a
-   * chain's or a circuit alone: the levels of its next members, two apart,
-   * each found one opening the next. The harmonic must read as the member
-   * from the floor its chain's last link reads from, or from `FLOOR` for a
-   * circuit alone (lower when it closes below `FLOOR` + 2).
+   * Each row, a chain's or a circuit's alone, from its last built member
+   * up: a ? cell at every even level above it, within the build and past
+   * it, to two above the level built or two above the row's highest cell.
+   * A cell searches from the highest member found below it, else the built
+   * one, with the gap between them: a harmonic at two, or a circuit reading
+   * as the member with every tile grown into a supertile of `gap` levels.
+   * The circuit found must read as the member from the floor its chain's
+   * last link reads from, or from `FLOOR` for a circuit alone (lower when
+   * it closes below `FLOOR` + 2).
    */
   const rows = useMemo(() => {
     if (!r) return [];
     return chains.flatMap((ch) => {
       const top = ch.members[ch.members.length - 1];
       const lastLevel = r.circuits[top].level;
-      if (lastLevel < 2 || lastLevel + 2 <= r.level) return [];
+      if (lastLevel < 2) return [];
       const link = ch.members.length > 1 ? r.links.find((l) => l.b === top && l.a === ch.members[ch.members.length - 2]) : undefined;
       const floor = link ? Math.max(1, link.from) : Math.max(0, Math.min(FLOOR, lastLevel - 2));
       return [{ key: ch.members.join(' '), anchor: levelKey(r.circuits[top]), top, length: r.circuits[top].length, lastLevel, floor }];
@@ -127,7 +134,26 @@ export function useBruteForce(
   }, [r, chains]);
   type Row = (typeof rows)[number];
 
-  /** The members found, in the order found, on the chains past the build; the same array while they are the same. */
+  /** A cell's level and the member found in it, when one was. */
+  const foundIn = (row: Row, level: number): Harmonic | null => {
+    const c = map.get(`${row.anchor}@${level}`);
+    return c?.state === 'done' ? c.result.found : null;
+  };
+  /** The highest level below `level` with a member found in the row, else the built member's level. */
+  const fromLevel = (row: Row, level: number): number => {
+    for (let l = level - 2; l > row.lastLevel; l -= 2) if (foundIn(row, l)) return l;
+    return row.lastLevel;
+  };
+  /** The highest level the row has a cell at, else its last member's. */
+  const topCell = (row: Row): number => {
+    let top = row.lastLevel;
+    for (const key of map.keys()) if (key.startsWith(`${row.anchor}@`)) top = Math.max(top, Number(key.split('@')[1]));
+    return top;
+  };
+  /** A circuit of the build with this key: a member found within the build is one the table already holds. */
+  const builtIndex = (name: string): number => (r ? r.circuits.findIndex((c) => levelKey(c) === name) : -1);
+
+  /** The members found above the build, in the order found; the same array while they are the same. */
   const kept = useRef<FoundMember[]>([]);
   const found = useMemo(() => {
     const out: FoundMember[] = [];
@@ -135,29 +161,25 @@ export function useBruteForce(
       const [anchor, at] = key.split('@');
       const c = map.get(key);
       const row = rows.find((x) => x.anchor === anchor);
-      if (!row || c?.state !== 'done' || !c.result.found) continue;
-      // only a member whose members below it in the row are found too
-      let ok = true;
-      for (let l = row.lastLevel + 2; l < Number(at); l += 2) {
-        const b = map.get(`${anchor}@${l}`);
-        if (b?.state !== 'done' || !b.result.found) ok = false;
-      }
-      if (ok) out.push({ anchor, level: Number(at), found: c.result.found, result: c.result });
+      if (!row || c?.state !== 'done' || !c.result.found || builtIndex(levelKey(c.result.found)) >= 0) continue;
+      out.push({ anchor, level: Number(at), found: c.result.found, result: c.result });
     }
     const was = kept.current;
     if (out.length === was.length && out.every((m, j) => m.result === was[j].result)) return was;
     return (kept.current = out);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [order, map, rows]);
 
   const go = (row: Row, level: number): void => {
     const key = `${row.anchor}@${level}`;
     put(key, { state: 'running', progress: null });
     setShown({ job: jobKey, key });
-    const prev = level === row.lastLevel + 2 ? null : map.get(`${row.anchor}@${level - 2}`);
-    const from: Promise<BruteFrom> =
-      prev && prev.state === 'done' && prev.result.found
-        ? Promise.resolve({ circuit: prev.result.found, addressed: true, floor: row.floor })
-        : harmonics.born(row.top).then((c) => fromBorn(c, row.floor));
+    const below = fromLevel(row, level);
+    const gap = level - below;
+    const prev = below > row.lastLevel ? foundIn(row, below) : null;
+    const from: Promise<BruteFrom> = prev
+      ? Promise.resolve({ circuit: prev, addressed: true, floor: row.floor, gap })
+      : harmonics.born(row.top).then((c) => fromBorn(c, row.floor, gap));
     from
       .then((f) => client.current.harmonic(job, f, (p) => put(key, { state: 'running', progress: p })))
       .then((res) => put(key, { state: 'done', result: res }))
@@ -167,7 +189,7 @@ export function useBruteForce(
       });
   };
 
-  // the members the address names, found again one at a time
+  // the members the address names, found again one at a time, each from the highest found below it
   const todo = pending.job === jobKey ? pending.list : [];
   useEffect(() => {
     if (!r || running || !todo.length) return;
@@ -175,12 +197,12 @@ export function useBruteForce(
     const row = rows.find((x) => x.anchor === entry.anchor);
     const drop = () => setPending({ job: jobKey, list: rest });
     if (!row) return drop();
-    for (const [q, want] of entry.members.entries()) {
-      const level = row.lastLevel + 2 + 2 * q;
-      if (Number(want.split('-')[0]) !== level) return drop();
+    for (const want of entry.members) {
+      const [level, length] = want.split('-').map(Number);
+      if (level <= row.lastLevel || level % 2 !== row.lastLevel % 2) return drop();
       const c = map.get(`${row.anchor}@${level}`);
       if (!c) return go(row, level);
-      if (c.state !== 'done' || !c.result.found) return drop();
+      if (c.state !== 'done' || c.result.found?.length !== length) return drop();
     }
     drop();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -210,27 +232,34 @@ export function useBruteForce(
     let upTo = 0;
     for (const row of rows) {
       const at = new Map<number, JSX.Element>();
-      let from = row.length;
       let chainText = row.key
         .split(' ')
         .map((m) => `${nf(r!.circuits[Number(m)].length)} L${r!.circuits[Number(m)].level}`)
         .join(' → ');
-      for (let level = row.lastLevel + 2; ; level += 2) {
+      const last = Math.max(r!.level, topCell(row)) + 2;
+      for (let level = row.lastLevel + 2; level <= last; level += 2) {
         const key = `${row.anchor}@${level}`;
         const c = map.get(key);
         upTo = Math.max(upTo, level);
         const isShown = shown?.job === jobKey && shown.key === key;
         if (!c) {
+          const below = fromLevel(row, level);
+          const from = below > row.lastLevel ? foundIn(row, below)!.length : row.length;
+          const gap = level - below;
           at.set(
             level,
-            <td key={level} className="harm-cell-brute" title={`The harmonic of the ${nf(from)} predicted here, two levels up in the same supertile${running ? '; set going now, it runs after the ones under way' : ''}`}>
+            <td
+              key={level}
+              className="harm-cell-brute"
+              title={`${gap === 2 ? `The harmonic of the ${nf(from)} predicted here, two levels up in the same supertile` : `A circuit reading as the ${nf(from)} with every tile grown into a level-${gap} supertile, ${gap} levels up in the same supertile`}${running ? '; set going now, it runs after the ones under way' : ''}`}
+            >
               <span className="harm-brute-q">?</span>
-              <button type="button" onClick={() => go(row, level)} data-testid="harm-brute">
+              <button type="button" onClick={() => go(row, level)} data-testid="harm-brute" data-gap={gap}>
                 Brute force
               </button>
             </td>,
           );
-          break;
+          continue;
         }
         if (c.state === 'running') {
           const p = c.progress;
@@ -243,7 +272,7 @@ export function useBruteForce(
               </button>
             </td>,
           );
-          break;
+          continue;
         }
         const f = c.state === 'done' ? c.result.found : null;
         if (c.state === 'failed' || !f) {
@@ -260,12 +289,13 @@ export function useBruteForce(
               ) : null}
             </td>,
           );
-          break;
+          continue;
         }
         const name = levelKey(f);
-        const i = look.index.get(name);
+        const built = builtIndex(name);
+        const i = built >= 0 ? built : look.index.get(name);
         chainText += ` → ${nf(f.length)} L${f.level}`;
-        const score = i === undefined ? undefined : look.scores.get(i);
+        const score = i === undefined || built >= 0 ? undefined : look.scores.get(i);
         if (score)
           at.set(
             level - 1,
@@ -286,9 +316,9 @@ export function useBruteForce(
               data-level={level}
               disabled={i === undefined}
               onClick={(e) => i !== undefined && look.onPick(i, e.shiftKey)}
-              title={`${nf(f.length)} tiles, closing at level ${f.level} in a ${f.type}; family ${f.family}; chain ${chainText}. Brute-forced: ${describeResult(c.result)} Shift-click to compare with the circuit chosen.`}
+              title={`${nf(f.length)} tiles, closing at level ${f.level} in a ${f.type}; family ${f.family}; chain ${chainText}. Brute-forced: ${describeResult(c.result)}${built >= 0 ? ' A circuit of the build: it opens with its own row.' : ''} Shift-click to compare with the circuit chosen.`}
             >
-              <Thumb pts={look.thumbs.get(name)} size={44} label={`${nf(f.length)} tiles, brute-forced`} />
+              <Thumb pts={built >= 0 ? look.builtThumbs.get(built) : look.thumbs.get(name)} size={44} label={`${nf(f.length)} tiles, brute-forced`} />
               <span>{nf(f.length)}</span>
             </button>
             <button type="button" className="harm-brute-show" onClick={() => setShown({ job: jobKey, key })} title="Show how it was found" data-testid="harm-brute-show">
@@ -296,7 +326,6 @@ export function useBruteForce(
             </button>
           </td>,
         );
-        from = f.length;
       }
       out.set(row.key, at);
     }

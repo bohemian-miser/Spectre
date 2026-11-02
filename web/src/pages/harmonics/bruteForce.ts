@@ -7,7 +7,8 @@
  * for it: A read at level `floor` runs first through the level-`floor`
  * supertile at slot path P from its birth supertile, and its harmonic runs
  * through the level-(floor + 2) supertile at the same path in a supertile of
- * A's type two levels up. Every strand entering that supertile is lifted
+ * A's type two levels up. With a larger even gap it looks the same way that
+ * many levels up, for a circuit reading at k + gap as A reads at k. Every strand entering that supertile is lifted
  * through its ancestors to the child at P's first slot, and the arc of the
  * child it is on is followed through the children of the supertile two
  * levels up. A closed walk through the same children as A that reads as A
@@ -205,6 +206,8 @@ export interface BruteResult {
   readonly from: { readonly level: number; readonly length: number };
   /** The level from which up the harmonic must read as A. */
   readonly floor: number;
+  /** Levels between A and the harmonic looked for. */
+  readonly gap: number;
   readonly level: number;
   readonly type: string;
   readonly found: Harmonic | null;
@@ -214,6 +217,8 @@ export interface BruteResult {
   readonly tried: number;
   /** Closed walks there that are not the harmonic: another family, or not reading as A. */
   readonly others: readonly (Closure & { readonly agreed: number | null })[];
+  /** Closed walks there with A's own word: A closing again in a bigger supertile, not a circuit of its own. */
+  readonly copies: number;
   /** Walks that left the supertile. */
   readonly open: number;
   /** Without a harmonic: where the walks that left the supertile close, climbing on (`climb`). */
@@ -228,6 +233,8 @@ export interface BruteResult {
 
 export interface BruteOptions {
   readonly floor?: number;
+  /** Levels above A to look at: two by default (its harmonic), or any larger even number (every tile of A grown into a level-`gap` supertile). */
+  readonly gap?: number;
   readonly maxRaw?: number;
   /** Walks longer than this get a place key instead of a word key. */
   readonly wordCap?: number;
@@ -238,13 +245,15 @@ export interface BruteOptions {
   readonly onProgress?: Report;
 }
 
-/** The harmonic of A (closed at `a.level`, its steps as addresses) two levels up. */
+/** The harmonic of A (closed at `a.level`, its steps as addresses) `gap` levels up, two by default. */
 export function harmonicAbove(R: SparseRoutes, a: Walked, opts: BruteOptions = {}): BruteResult {
   const t0 = Date.now();
   const floor = opts.floor ?? 2;
+  const gap = opts.gap ?? 2;
+  if (gap < 2 || gap % 2 !== 0) throw new Error(`the gap must be an even number of levels, at least two, not ${gap}`);
   const maxRaw = opts.maxRaw ?? 3e6;
   const wordCap = opts.wordCap ?? 6e7;
-  const top = a.level + 2;
+  const top = a.level + gap;
   const sketch = new Sketch(R.cs, R, top, a.type);
   let at = a.level;
   const report = opts.onProgress;
@@ -261,6 +270,15 @@ export function harmonicAbove(R: SparseRoutes, a: Walked, opts: BruteOptions = {
   const open: number[] = [];
   let tried = 0;
   let windows = 0;
+  let copies = 0;
+  /** A's word key, worked out when a walk of its length closes, through whichever children; past the word cap a walk of its length is taken for a copy. */
+  let aKey: string | null = null;
+  const isCopy = (b: Walked): boolean => {
+    if (b.length !== a.length) return false;
+    if (a.length > wordCap) return true;
+    aKey ??= wordKeyOf(walkedWordCodes(R, a));
+    return wordKeyOf(walkedWordCodes(R, b)) === aKey;
+  };
   // each window: A's visit at level `floor`, as its slots from the birth down, the first visit first
   for (const path of visitPaths(R, a, floor)) {
     if (found.length || windows === (opts.windows ?? Infinity)) break;
@@ -310,6 +328,11 @@ export function harmonicAbove(R: SparseRoutes, a: Walked, opts: BruteOptions = {
       const b: Walked = { level: top, type: a.type, length: w.length, steps };
       const fam = familyOfSteps(steps);
       const other = `${w.length}/${fam}`;
+      if (isCopy(b)) {
+        copies++;
+        sketch.relabel('other');
+        continue;
+      }
       if (fam !== family) {
         sketch.relabel('other');
         if (!others.has(other)) others.set(other, { level: top, type: a.type, length: w.length, family: fam, agreed: null });
@@ -320,8 +343,8 @@ export function harmonicAbove(R: SparseRoutes, a: Walked, opts: BruteOptions = {
         sketch.relabel('differs');
         continue;
       }
-      const rb = readWalked(R, b, floor + 2, maxRaw);
-      const g = agreement(ra, a.level, rb);
+      const rb = readWalked(R, b, floor + gap, maxRaw);
+      const g = agreement(ra, a.level, rb, gap);
       if (isHarmonic(g.floor, a.level, floor) || (g.limited && g.floor <= a.level - 2)) {
         sketch.relabel('harmonic');
         found.push({ ...b, family: fam, key: '', agreed: g.floor, limited: g.limited, deep: [] });
@@ -353,12 +376,14 @@ export function harmonicAbove(R: SparseRoutes, a: Walked, opts: BruteOptions = {
   return {
     from: { level: a.level, length: a.length },
     floor,
+    gap,
     level: top,
     type: a.type,
     found: best ? { ...best, key, deep: best.steps.map((s) => R.deepStep(top, s)) } : null,
     windows,
     tried,
     others: [...others.values()],
+    copies,
     open: open.length,
     beyond,
     climbed,
