@@ -94,11 +94,24 @@ describe('HarmonicsPage', () => {
     history.replaceState(null, '', '?rule=023468&combo=000100000&level=6');
     render(<HarmonicsPage forceSync />);
     await waitFor(() => expect(screen.getByTestId('harm-summary').textContent).toMatch(/^11 distinct circuits/), { timeout: 60000 });
-    // the 441 → 8,784 chain: a ? at level 8, in the column of level 8
+    const r6 = new HarmonicsEngine({ family: 'hex', subset: [0, 2, 3, 4, 6, 8], combo: '000100000', level: 6 }).result();
+    // the 441 → 8,784 chain: a ? at level 8, in the column of level 8, two levels above the 8,784
     const row = screen.getAllByTestId('harm-table-row').find((r) => r.textContent!.includes('441') && r.textContent!.includes('8,784'))!;
     const go = row.querySelector<HTMLButtonElement>('[data-testid="harm-brute"]')!;
     const td = go.closest('td')!;
     expect([...row.children].indexOf(td) - 1).toBe(8);
+    expect(go.dataset.gap).toBe('2');
+    // a circuit alone at level 2 gets cells at 4, 6 and 8 too, searched from it with the gap; nothing reads as the 3 at any of them
+    const alone = screen.getAllByTestId('harm-table-row').find((r) => r.dataset.members === String(r6.circuits.findIndex((c) => c.level === 2 && c.length === 3)))!;
+    const cells = [...alone.querySelectorAll<HTMLButtonElement>('[data-testid="harm-brute"]')];
+    expect(cells.map((b) => [...alone.children].indexOf(b.closest('td')!) - 1)).toEqual([4, 6, 8]);
+    expect(cells.map((b) => b.dataset.gap)).toEqual(['2', '4', '6']);
+    fireEvent.click(cells[1]);
+    await waitFor(() => expect(alone.querySelector('[data-testid="harm-brute-none"]')?.textContent).toMatch(/^✗ closes at L\d+Show$/), { timeout: 60000 });
+    expect([...alone.children].indexOf(alone.querySelector('[data-testid="harm-brute-none"]')!) - 1).toBe(6);
+    expect(alone.querySelector('[data-testid="harm-brute-none"]')!.getAttribute('title')).toMatch(/^Level 6: no circuit reading as the 3 closes in the/);
+    // the row still reaches two levels above its highest cell: cells at 4 and 8 remain
+    expect([...alone.querySelectorAll<HTMLButtonElement>('[data-testid="harm-brute"]')].map((b) => [...alone.children].indexOf(b.closest('td')!) - 1)).toEqual([4, 8]);
     fireEvent.click(go);
     // the search is drawn under the table while it runs and when it has ended
     await waitFor(() => expect(screen.getByTestId('harm-search-panel')).toBeTruthy(), { timeout: 10000 });

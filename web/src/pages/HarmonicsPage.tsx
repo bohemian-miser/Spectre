@@ -174,14 +174,14 @@ export default function HarmonicsPage(props: { forceSync?: boolean }): JSX.Eleme
   }, [result]);
   /** Every circuit the views can take: the result's, then the members found once the engine has read them. */
   const n = result?.circuits.length ?? 0;
-  const [look, setLook] = useState<Omit<FoundLook, 'onPick'>>({ thumbs: new Map(), index: new Map(), circuits: [], scores: new Map(), selected: new Set() });
+  const [look, setLook] = useState<Omit<FoundLook, 'onPick' | 'builtThumbs'>>({ thumbs: new Map(), index: new Map(), circuits: [], scores: new Map(), selected: new Set() });
   const pick = (i: number, shift: boolean) => {
     const all = look.circuits;
     if (!all[i]) return;
     const key = circuitKey(all[i]);
     setSel((s) => (shift && s && s.focus !== key ? { focus: s.focus, with: key } : { focus: key, with: null }));
   };
-  const brute = useBruteForce(client.current, choice, result, chains, { forceSync: props.forceSync, asked: askedFound.current, look: { ...look, onPick: pick } });
+  const brute = useBruteForce(client.current, choice, result, chains, { forceSync: props.forceSync, asked: askedFound.current, look: { ...look, builtThumbs: thumbs, onPick: pick } });
   // the members found, read by the engine after the result's circuits
   useEffect(() => {
     if (!result) return;
@@ -326,12 +326,14 @@ export default function HarmonicsPage(props: { forceSync?: boolean }): JSX.Eleme
               Each circuit sits in the column of the level it closes at. A <strong>family</strong> is every circuit through the same children of its birth
               supertile; a <strong>chain</strong> is a row of circuits linked as harmonics, two columns apart. A dashed ≈ cell is a circuit that reads as a
               chain&apos;s lowest member at the top levels only. Click a circuit to open its row; shift-click a second to compare the two. Past the level
-              built, a ? is a row&apos;s next member, two levels above its last: Brute force follows the strands through that supertile, working out
-              only the routes they use, until one closes reading as the last member; it looks through every one of the member&apos;s lowest-level
-              visits, and when nothing closes it climbs the walks that leave the supertile until they do. Nothing stops it but Stop. Any number of
-              cells can be set going; they run in turn, and the search is drawn below the table as it goes: the supertile and its children, the
-              windows looked through, every arc followed. The member found takes the cell, drawn as a built one, its border dotted; hover it for how
-              it was found, or open its search. It opens with its chain like any circuit.
+              built and within it, every row ends in ? cells, one at each even level above its last member: Brute force follows the strands through
+              the supertile that many levels up, working out only the routes they use, until one closes reading as the member with every tile grown
+              into a supertile of that many levels (its harmonic, at two); it looks through every one of the member&apos;s lowest-level visits, and
+              when nothing closes it climbs the walks that leave the supertile until they do. Nothing stops it but Stop. A cell searches from the
+              highest member found below it in its row. Any number of cells can be set going; they run in turn, and the search is drawn below the
+              table as it goes: the supertile and its children, the windows looked through, every arc followed. The member found takes the cell,
+              drawn as a built one, its border dotted; hover it for how it was found, or open its search. It opens with its chain like any circuit;
+              one found within the build is a circuit the table already holds, and opens with its own row.
             </p>
             <div className="shapes-controls harm-link-controls">
               <label className="harm-threshold">
