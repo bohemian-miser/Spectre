@@ -14,7 +14,7 @@ import { FAMILIES, leafOrder, TILE_NAMES, type TileFamilyId, type TileTypeId } f
 import { comboToMatchingIndices, matchingIndicesToCombo } from './matchings';
 import { matchingCount } from './matchings';
 import { connectionCount } from './edges';
-import { DEFAULT_INSTANCE_BUDGET, clampInstanceBudget, decodeWorldChain } from './unrooted';
+import { DEFAULT_INSTANCE_BUDGET, UNROOTED_MAX_LEVEL, clampInstanceBudget, decodeWorldChain } from './unrooted';
 
 export const CODEC_VERSION = 1;
 
@@ -605,7 +605,6 @@ export function decodeExplorerState(q: URLSearchParams): ExplorerState {
     : d.rootTile;
 
   const lvNum = Number.parseInt(q.get('lv') ?? '', 10);
-  const level = Number.isFinite(lvNum) ? clampInt(lvNum, 0, MAX_LEVEL) : d.level;
 
   const eRaw = q.get('e') ?? '';
   const subset = [
@@ -660,6 +659,11 @@ export function decodeExplorerState(q: URLSearchParams): ExplorerState {
   const mdRaw = q.get('md');
   const mode: ExplorerMode | undefined =
     mdRaw === 'infinite' && supportsInfiniteMode(family) ? 'infinite' : undefined;
+
+  // The rooted explorer materializes the patch, so its level is capped; the
+  // infinite view only sets its zoom by the level and takes any the un-rooted
+  // engine's ancestor chain can reach (a circuit's link names its birth level).
+  const level = Number.isFinite(lvNum) ? clampInt(lvNum, 0, mode === 'infinite' ? UNROOTED_MAX_LEVEL : MAX_LEVEL) : d.level;
 
   // Only meaningful alongside `md=infinite`; a stray `bg=` on a rooted link is
   // dropped the same way a stray `md=` on a hex link is.

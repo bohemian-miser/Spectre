@@ -120,6 +120,13 @@ describe('HarmonicsPage', () => {
     await waitFor(() => expect(done.disabled).toBe(false), { timeout: 30000 });
     fireEvent.click(done);
     await waitFor(() => expect(screen.getByTestId('harm-detail').querySelector('h2')!.textContent).toBe('A chain of family 013467: 441 L4 → 8,784 L6 → 175,221 L8'), { timeout: 30000 });
+    // the member found opens in the Explorer like a built one: at its birth level, on its first tile
+    const links = [...screen.getByTestId('harm-detail').querySelectorAll('.harm-chain-glyphs figcaption a')].map((a) => a.getAttribute('href')!);
+    expect(links).toHaveLength(3);
+    expect(links[2]).toMatch(/lv=8&/);
+    expect(links[2]).toMatch(/md=infinite/);
+    expect(links[2]).toMatch(/&wc=/);
+    expect(screen.getByTestId('harm-detail').querySelectorAll('.harm-chain-glyphs figcaption')[2].textContent).toMatch(/Brute-forced\. Explorer$/);
     await waitFor(() => expect(screen.getAllByTestId('harm-side')).toHaveLength(3), { timeout: 30000 });
     expect(screen.getAllByTestId('harm-side')[2].textContent).toMatch(/^=?175,221 L8 at level 7: [\d,]+ visits through/);
     expect(screen.getAllByTestId('harm-step')[1].textContent).toBe('=');

@@ -397,7 +397,7 @@ export default function HarmonicsPage(props: { forceSync?: boolean }): JSX.Eleme
                         <Thumb pts={isFound(m) ? read?.thumbs[m - n] : thumbs.get(m)} size={120} label={describe(c)} />
                       </button>
                       <figcaption>
-                        {describe(c)}. {isFound(m) ? 'Brute-forced.' : <a href={explorerHref(base, choice, c)}>Explorer</a>}
+                        {describe(c)}. {isFound(m) ? 'Brute-forced. ' : ''}<a href={explorerHref(base, choice, c)}>Explorer</a>
                       </figcaption>
                     </figure>
                   );

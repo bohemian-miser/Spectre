@@ -15,7 +15,7 @@ import { arcsOf, circuitDescent, levelLine, visitsIn, type Descent } from './lev
 import { chainsOf, closestInFamily, harmonicLinks, nearLinks, type Chain, type Link, type Near } from './chains';
 import { alignReadings, extraRuns, readDown, sameCyclic, type Alignment, type Reading } from './readings';
 import { scoreAll, scorePair, type Scored } from './similarity';
-import { bornOfFound, firstTileOf, foundKey, foundDetail, foundThumb, Placed, readRows, SparseRows, type Found } from './found';
+import { bornOfFound, firstTileOf, foundKey, foundDetail, foundThumb, Placed, readRows, SparseRows, thumbLevel, thumbLine, type Found } from './found';
 import { SparseRoutes } from './sparseRoutes';
 import { BreakdownStore, type BreakdownSets } from './breakdownStore';
 import type { Side } from './pairView';
@@ -299,22 +299,21 @@ export class HarmonicsEngine {
   }
 
   /**
-   * Thumbnails of circuits: each drawn at the lowest level at most two below
-   * its birth whose crossings stay within `budget`, or two below its birth
-   * thinned to `budget` points when even that has more; closed, in the birth
-   * frame.
+   * Thumbnails of circuits: each drawn at the lowest level with at most
+   * `THUMB_VISITS` visits (`found.ts`'s `thumbLevel`), its line simplified
+   * to the pixel and thinned to `budget` points while still over
+   * (`thumbLine`); closed, in the birth frame.
    */
   thumbs(cis: readonly number[], budget: number): { stop: number; pts: Float64Array }[] {
     return cis.map((ci) => {
       const c = this.bornOf(ci);
-      let s = Math.max(0, c.level - 2);
-      while (s > 0 && this.visitsAt(ci, s - 1) <= budget) s--;
+      const s = thumbLevel(c.level, (k) => this.visitsAt(ci, k));
       const all = this.cs.shape(c, s);
       const pts = new Float64Array(2 * all.length + 2);
       all.forEach((p, j) => { pts[2 * j] = p.x; pts[2 * j + 1] = p.y; });
       pts[2 * all.length] = all[0].x;
       pts[2 * all.length + 1] = all[0].y;
-      return { stop: s, pts: all.length > budget ? thin(pts, budget) : pts };
+      return { stop: s, pts: thumbLine(pts, budget) };
     });
   }
 

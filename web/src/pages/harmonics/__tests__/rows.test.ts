@@ -10,6 +10,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { HarmonicsEngine } from '../harmonicsJob';
+import { THUMB_VISITS } from '../found';
 import { THUMB_POINTS } from '../ChainViews';
 import { alignReadings, sameCyclic, visitsAt, type Visit } from '../readings';
 import { below, lit, pairReadings, runLines, RUN_ENDS, weaveKeep } from '../rows';
@@ -214,13 +215,20 @@ describe.each(['000100000', '140000001'])('rows of 023468 / %s', (combo) => {
     expect(paired).toBeGreaterThan(0);
   });
 
-  it('draws each thumbnail at least two levels below its circuit (or at the tiles) within the budget', () => {
+  it('draws each thumbnail at the lowest level with at most THUMB_VISITS visits, within the budget', () => {
     const t = engine.thumbs(r.circuits.map((_, i) => i), THUMB_POINTS);
     t.forEach((x, i) => {
-      expect(x.stop).toBeLessThanOrEqual(Math.max(0, r.circuits[i].level - 2));
+      const c = r.circuits[i];
+      const raw = (s: number) => c.readings.find((q) => q.level === s)?.raw ?? Infinity;
+      let stop = c.level - 1;
+      while (stop > 0 && raw(stop - 1) <= THUMB_VISITS) stop--;
+      expect(x.stop).toBe(stop);
+      expect(x.stop).toBeLessThanOrEqual(Math.max(0, c.level - 2));
       expect(x.pts.length / 2).toBeLessThanOrEqual(THUMB_POINTS + 1);
+      // closed, and never more points than the line it is drawn from
+      expect([x.pts[0], x.pts[1]]).toEqual([x.pts[x.pts.length - 2], x.pts[x.pts.length - 1]]);
+      expect(x.pts.length / 2 - 1).toBeLessThanOrEqual(raw(stop));
     });
-    expect(t.some((x) => x.stop > 0)).toBe(true);
   });
 });
 

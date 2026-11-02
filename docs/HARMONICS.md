@@ -362,6 +362,29 @@ search for the 441's harmonic is the 8,784 drawn through its level-5 visits,
 and the two halves of a climbed arc enter as many child crossings as the
 tables' arc.
 
+A member found opens in the Explorer like a built one, on its first tile
+with its birth supertile as the world's top; the infinite view takes any
+level its ancestor chain reaches, where the rooted view stops at 9.
+
+### Thumbnails
+
+A circuit's thumbnail is its line through the crossings of its visits at
+one level, closed. Drawn two levels below its birth, a circuit looks like a
+polygon through the seams of its grandchildren, however many tiles it has;
+drawn at the tiles it shows every turn. So every thumbnail is drawn at the
+lowest level with at most 400,000 visits, which puts the members of a chain
+at about the same depth below their birth and makes them look alike, as
+harmonics should. The line is then simplified (`lib/simplify.ts`, the
+farthest-point rule) to a six-hundredth of its span, below a device pixel
+at the sizes shown, and thinned to 3,000 points only while still over.
+
+| chain of 000100000 | tiles | drawn at | points |
+|---|---|---|---|
+| level 6 | 1,272 | level 0 | 272 |
+| level 8 | 25,356 | level 0 | 3,001 |
+| level 10 | 505,830 | level 1 | 3,001 |
+| level 12 | 10,091,226 | level 5 | 3,001 |
+
 ## Reproducing
 
 ```bash

@@ -21,6 +21,7 @@ import {
   clampLineScale,
   type ExplorerState,
 } from '../serialize';
+import { UNROOTED_MAX_LEVEL } from '../unrooted';
 import {
   DEFAULT_INSTANCE_BUDGET,
   INSTANCE_BUDGETS,
@@ -109,6 +110,10 @@ describe('explorer state codec', () => {
     expect(decoded.family).toBe('spectre');
     expect(decoded.rootTile).toBe('Delta');
     expect(decoded.level).toBe(MAX_LEVEL); // clamped, not crashed
+    // the infinite view takes any level its ancestor chain can reach: a circuit's link names its birth level
+    expect(decodeExplorerState(q('lv=12&md=infinite')).level).toBe(12);
+    expect(decodeExplorerState(q('lv=99&md=infinite')).level).toBe(UNROOTED_MAX_LEVEL);
+    expect(decodeExplorerState(q('lv=12')).level).toBe(MAX_LEVEL);
     expect(decoded.subset).toEqual([]);
     expect(decoded.flags).toBe(DEFAULT_FLAGS);
     expect(decoded.colorScheme).toBe('bright');
