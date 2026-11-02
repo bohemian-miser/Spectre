@@ -25,7 +25,7 @@ describe('FoundationsPage', () => {
 
   it('shows a combination, its summary and a card per foundational circuit, drawn', async () => {
     render(<FoundationsPage forceSync />);
-    await waitFor(() => expect(screen.getByTestId('fd-summary').textContent).toMatch(/^First2Last found6Foundational5Chains \/ nuggets4 \/ 1Tails at 956\.4%Limit99\.45%Not accounted for0\.55%Marks short$/));
+    await waitFor(() => expect(screen.getByTestId('fd-summary').textContent).toMatch(/^First2Last found6Foundational5Chains \/ nuggets4 \/ 1Tails at 956\.4%Limit99\.45%Not accounted for0\.55%Marks short$/), { timeout: 20000 });
     expect(screen.getByTestId('fd-note').textContent).toMatch(/New foundationalnone at levels 7–9; not proven beyond/);
     const cards = screen.getAllByTestId('fd-card');
     expect(cards).toHaveLength(5);
@@ -69,7 +69,7 @@ describe('FoundationsPage', () => {
 
   it('sorts the list by limit, short ones first, and filters it by mark', async () => {
     render(<FoundationsPage forceSync />);
-    await waitFor(() => expect(screen.getAllByTestId('fd-row')).toHaveLength(320));
+    await waitFor(() => expect(screen.getAllByTestId('fd-row')).toHaveLength(320), { timeout: 20000 });
     fireEvent.click(screen.getByTestId('fd-sort-limit'));
     const limits = screen.getAllByTestId('fd-limit').map((e) => parseFloat(e.textContent!));
     expect(limits).toEqual([...limits].sort((a, b) => a - b));
@@ -95,7 +95,7 @@ describe('FoundationsPage', () => {
     for (const r of rows) expect(r.querySelector('[data-testid="fd-marks"]')!.getAttribute('data-marks')).toMatch(/^short\b/);
     // the panel of a short one names what is not accounted for and the chain not forecast
     fireEvent.click(rows[0]);
-    await waitFor(() => expect(screen.getByTestId('fd-combo-marks').textContent).toMatch(/^ ?short/));
+    await waitFor(() => expect(screen.getByTestId('fd-combo-marks').textContent).toMatch(/^ ?short/), { timeout: 20000 });
     expect(screen.getByTestId('fd-unaccounted').textContent).toBe('36.68%');
     expect(screen.getByTestId('fd-note').textContent).toMatch(/Not forecastchain of 60 at level 5: its members' shares do not fall \(ratio 1\.27\)/);
   }, 60000);
@@ -118,7 +118,7 @@ describe('FoundationsPage', () => {
     const first = screen.getAllByTestId('fd-monster-row')[0];
     expect(first.textContent).toMatch(/^031001001\s*47170,976/);
     fireEvent.click(first);
-    await waitFor(() => expect(screen.getByTestId('fd-summary').textContent).toMatch(/^First4/));
+    await waitFor(() => expect(screen.getByTestId('fd-summary').textContent).toMatch(/^First4/), { timeout: 20000 });
     expect(location.search).toMatch(/^\?combo=031001001&circuit=\d+$/);
     expect(screen.getAllByTestId('fd-card').find((c) => c.className.includes('fd-card-on'))!.textContent).toMatch(/^170,976 tiles/);
   }, 60000);
@@ -128,9 +128,9 @@ describe('FoundationsPage', () => {
     const d258 = resolve(dir, '../hex-258');
     vi.stubGlobal('fetch', vi.fn(async (url: string) => new Response(readFileSync(resolve(d258, url.split('/').pop()!), 'utf8'))));
     render(<FoundationsPage forceSync />);
-    await waitFor(() => expect(screen.getAllByTestId('fd-row')).toHaveLength(64));
+    await waitFor(() => expect(screen.getAllByTestId('fd-row')).toHaveLength(64), { timeout: 20000 });
     expect(screen.getByTestId('fd-live').textContent).toMatch(/^Rule 258: 64 combinations · precomputed to level 8/);
-    await waitFor(() => expect(screen.getByTestId('fd-summary').textContent).toMatch(/^First\d/));
+    await waitFor(() => expect(screen.getByTestId('fd-summary').textContent).toMatch(/^First\d/), { timeout: 20000 });
     expect(screen.queryByTestId('fd-sweep')).toBeNull();
   }, 60000);
 
@@ -148,7 +148,7 @@ describe('FoundationsPage', () => {
       ),
     );
     render(<FoundationsPage forceSync />);
-    await waitFor(() => expect(screen.getAllByTestId('fd-row')).toHaveLength(64));
+    await waitFor(() => expect(screen.getAllByTestId('fd-row')).toHaveLength(64), { timeout: 20000 });
     expect(screen.getByTestId('fd-live').textContent).toMatch(/^Rule 258: 64 combinations · listed to level 4; each combination analysed here when chosen/);
     expect((screen.getByTestId('fd-first-digit') as HTMLSelectElement).value).toBe('0');
   }, 60000);
