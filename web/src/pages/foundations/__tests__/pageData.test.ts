@@ -124,9 +124,11 @@ describe('the list of combinations', () => {
       const acc = account(read<PageCombo>(resolve(pageDir, `${r.combo}.json`)), 'class');
       const limit = acc.columns.length - 1;
       expect(acc.columns[limit].level).toBeNull();
-      // every segment of the chart is a part, in the chart's order
-      expect(LIMIT_PARTS.map((x) => [x.key, x.label])).toEqual(acc.segments.map((x) => [x.key, x.label]));
-      r.parts.forEach((v, i) => expect(Math.abs(v - acc.segments[i].values[limit])).toBeLessThan(1e-7));
+      // every segment of the chart is a part, in the chart's order; a part the chart leaves out (no infinite lines) is 0
+      const keys = LIMIT_PARTS.map((x) => x.key);
+      expect(acc.segments.map((x) => keys.indexOf(x.key))).toEqual([...acc.segments.map((x) => keys.indexOf(x.key))].sort((a, b) => a - b));
+      for (const s of acc.segments) expect(LIMIT_PARTS[keys.indexOf(s.key)].label).toBe(s.label);
+      r.parts.forEach((v, i) => expect(Math.abs(v - (acc.segments.find((s) => s.key === keys[i])?.values[limit] ?? 0))).toBeLessThan(1e-7));
       expect(Math.abs(r.parts.reduce((a, b) => a + b, 0) - 1)).toBeLessThan(1e-6);
       if (!(acc.over > 0)) expect(Math.abs(unaccountedOf(r) - (1 - r.limit))).toBeLessThan(1e-6);
     }

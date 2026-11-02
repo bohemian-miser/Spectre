@@ -532,6 +532,7 @@ export const LIMIT_PARTS: readonly { readonly key: string; readonly label: strin
   { key: 'later-found', label: 'Foundational found later' },
   { key: 'later-next', label: 'Next harmonics' },
   { key: 'later-again', label: 'Closing again' },
+  { key: 'lines', label: 'Infinite lines' },
   { key: 'unaccounted', label: 'Not accounted for' },
 ];
 
@@ -539,7 +540,7 @@ export const LIMIT_PARTS: readonly { readonly key: string; readonly label: strin
 export function limitParts(p: PageCombo): number[] {
   const acc = account(p, 'class');
   const c = acc.columns.length - 1;
-  return LIMIT_PARTS.map(({ key }) => round(acc.segments.find((s) => s.key === key)!.values[c]));
+  return LIMIT_PARTS.map(({ key }) => round(acc.segments.find((s) => s.key === key)?.values[c] ?? 0));
 }
 
 /** The share of a limit not accounted for, from its parts. */
