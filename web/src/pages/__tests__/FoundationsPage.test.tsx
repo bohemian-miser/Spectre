@@ -142,13 +142,14 @@ describe('FoundationsPage', () => {
       'fetch',
       vi.fn(async (url: string) =>
         url.endsWith('index.json')
-          ? new Response(JSON.stringify({ rule: '258', format: 'lines', levels: 8, shards: { 0: rows.length } }))
+          ? // level 4, so the combination analysed live on opening is quick
+            new Response(JSON.stringify({ rule: '258', format: 'lines', levels: 4, shards: { 0: rows.length } }))
           : new Response(rows.map(indexLine).join('\n')),
       ),
     );
     render(<FoundationsPage forceSync />);
     await waitFor(() => expect(screen.getAllByTestId('fd-row')).toHaveLength(64));
-    expect(screen.getByTestId('fd-live').textContent).toMatch(/^Rule 258: 64 combinations · listed to level 8; each combination analysed here when chosen/);
+    expect(screen.getByTestId('fd-live').textContent).toMatch(/^Rule 258: 64 combinations · listed to level 4; each combination analysed here when chosen/);
     expect((screen.getByTestId('fd-first-digit') as HTMLSelectElement).value).toBe('0');
   }, 60000);
 
