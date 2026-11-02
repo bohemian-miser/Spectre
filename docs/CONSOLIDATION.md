@@ -295,8 +295,8 @@ Proposed; nothing here is removed without a yes.
 ## Work list
 
 1. **Pin the answers.**
-   - [ ] Fixtures: code to matching vector for every rule of both families,
-     from today's `comboToMatchingIndices`.
+   - [x] Fixtures: code to matching vector for every tail-free rule of every
+     family (`core/__tests__/fixtures/combo-codes.json`).
    - [ ] Fixtures: circuit lengths per level, borders and lineages for a fixed
      set of combinations, from today's tracers, `period/` and `harmonics/`.
    - [ ] The hexagon codes as a fixture in aperiodic-circuits.
@@ -306,17 +306,20 @@ Proposed; nothing here is removed without a yes.
    - [ ] `core/combination.ts` with the operations above; tests against
      `enumerateMatchings` and the fixtures.
    - [ ] `lib/ruleParams.ts`: read every legacy form, write `#f=…&c=…`.
-   - [ ] The paste parser, with a test per legacy form.
+   - [x] The paste parser, `lib/comboCode.ts`, with a test per legacy form.
    - [ ] Replace the eight option-count and odometer copies with the module.
 3. **The combination bar**, from the prototype.
-   - [ ] `components/controls/ComboBar.tsx` with the tile row and the tile
+   - [x] `components/controls/ComboBar.tsx` with the tile row and the tile
      view; tests for tap, drag from an edge that is off, odometer, paste and
      clear.
-   - [ ] Explorer: the bar replaces the sidebar matching section and the
-     bottom bar's tile strip.
-4. **Every page on the bar and the address**, one page per change,
-   Harmonics, Build-up, Foundations and Shapes last. Hexagon-only pages show
-   the family as fixed rather than rejecting ten-digit codes.
+   - [x] Explorer: the bar replaces the sidebar matching section and the
+     bottom bar; the bottom bar's basis groups moved to the edge rule.
+4. **Every page on the bar and the address.**
+   - [x] On the bar: Explorer, Supertiles, Top-down, Walker, Transducer, and
+     through `ComboPicker` Shapes, Harmonics, Build-up, Foundations, Identify
+     and Period. Machine is left as it is; Map goes; Classifications,
+     Circuits and Corners choose from shipped data.
+   - [ ] On the address: every page reads and writes `#f=…&c=…`.
 5. **Move the page-folder libraries** into `core/`, as moves only, and add
    the cross-page import rule to the layering test.
 6. **The pages**, per the table, each from a prototype: the Explorer's seed
