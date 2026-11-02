@@ -15,7 +15,9 @@ import {
   MAX_LEVEL,
   MIN_INSTANCE_BUDGET,
   MIN_LINE_SCALE,
+  UNROOTED_MAX_LEVEL,
   connectionCount,
+  decodeExplorerState,
   edgesToSubset,
   leafOrder,
   matchingCount,
@@ -173,6 +175,25 @@ describe('level, flags, colours', () => {
     expect(run(base, { type: 'setLevel', level: 99 }).level).toBe(MAX_LEVEL);
     expect(run(base, { type: 'setLevel', level: -3 }).level).toBe(0);
     expect(run(base, { type: 'stepLevel', delta: -10 }).level).toBe(0);
+  });
+
+  it('steps the level of an infinite view opened past the rooted limit, rather than dropping it to that limit', () => {
+    // A circuit's link from Harmonics names its birth level, which can be past 9.
+    const opened = decodeExplorerState(new URLSearchParams('v=1&f=hex&md=infinite&lv=11&e=023468&c=140000001'));
+    expect(explorerMode(opened)).toBe('infinite');
+    expect(opened.level).toBe(11);
+    expect(run(opened, { type: 'stepLevel', delta: -1 }).level).toBe(10);
+    expect(run(opened, { type: 'stepLevel', delta: 1 }).level).toBe(12);
+    expect(run(opened, { type: 'setLevel', level: 99 }).level).toBe(UNROOTED_MAX_LEVEL);
+  });
+
+  it('brings the level within the rooted limit on the way back to a rooted patch, as a rooted link would be', () => {
+    const deep = run(base, { type: 'setMode', mode: 'infinite' }, { type: 'setLevel', level: 11 });
+    expect(deep.level).toBe(11);
+    const rooted = run(deep, { type: 'setMode', mode: 'rooted' });
+    expect(explorerMode(rooted)).toBe('rooted');
+    expect(rooted.level).toBe(MAX_LEVEL);
+    expect(run(rooted, { type: 'stepLevel', delta: 1 }).level).toBe(MAX_LEVEL);
   });
 
   it('toggles flag bits', () => {

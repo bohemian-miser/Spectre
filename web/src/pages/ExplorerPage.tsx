@@ -28,7 +28,7 @@ import {
   MIN_FOLLOW_DAMPING,
   MIN_LINE_SCALE,
   MIN_TRACE_PACE,
-  MAX_LEVEL,
+  maxLevelFor,
   clampFollowDamping,
   SUBSTITUTION_GROWTH,
   TILE_NAMES,
@@ -1315,7 +1315,7 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
               <button
                 type="button"
                 aria-label="More supertiles"
-                disabled={state.level >= MAX_LEVEL}
+                disabled={state.level >= maxLevelFor(mode)}
                 onClick={() => dispatch({ type: 'stepLevel', delta: 1 })}
               >
                 +
