@@ -370,6 +370,14 @@ the 219, the 2,244 and the 130,434 as harmonics at levels 6, 8 and 10:
 copies of circuits born at 5, 7 and 9, which read at the top two levels of
 that placement as the 87 reads at its own.
 
+The search knows only what the build and the members found hold. A circuit
+born above the level built and below the level searched is unknown to it,
+and a copy of one can pass for a find: from the 87 with the build at level
+7, a gap of 6 returns the 130,434, born at level 9. Building to level 9, or
+finding the 60's chain up to it first, removes it. The lower the member,
+the fewer levels a candidate must agree at, so the risk is greatest for
+the small circuits searched far above the build.
+
 The search is drawn as it runs (`harmonics/searchPicture.ts`,
 `harmonics/SearchView.tsx`): the supertile and its children outlined, the
 windows looked through shaded, and every arc followed as a line through the
