@@ -4,16 +4,24 @@
  *
  * Tap or press a connection point and a line follows you, latching on to each
  * point you pass; letting go (or tapping again) pairs it with the last one,
- * keeping as much of the old pairing as still fits. Tapping an edge away from
- * its points turns its class on or off. ‹ › step through the pairings, and
- * the arrows at the sides move to the neighbouring tile types. On the
- * keyboard, ← → change the tile type and ↑ ↓ step through its pairings.
+ * keeping as much of the old pairing as still fits. Every seam has a point,
+ * hollow while its class is off: pressing one turns the class on and starts
+ * the line there, and landing on one turns it on too, so a line can be drawn
+ * from any edge. Tapping an edge away from its points turns its class on or
+ * off. ‹ › step through the pairings, and the arrows at the sides move to the
+ * neighbouring tile types. On the keyboard, ← → change the tile type and ↑ ↓
+ * step through its pairings.
+ *
+ * The page owns which classes are on, so a point switched on here appears on
+ * the next render; the line's ends are kept as positions, and a pairing that
+ * waits on a class being switched on is made once its point is there.
  */
 
 import { useEffect, useMemo, useRef, useState, type PointerEvent } from 'react';
 import {
   MAX_STRANDS,
   edgeLabels,
+  familyMajors,
   strandCount,
   leafPts,
   matchingAt,
@@ -40,6 +48,8 @@ export interface TileEditorProps {
   /** Offer only non-crossing pairings (as the sliders do). */
   readonly nonCrossingOnly?: boolean;
   readonly curvedStrands?: boolean;
+  /** Spell every edge out (`2.0A`) instead of its bare class number. */
+  readonly fullLabels?: boolean;
   onSetIndex(index: number): void;
   /** Tapping an edge turns its class on or off. */
   onToggleClass(major: number): void;
@@ -66,14 +76,20 @@ function segmentDist(p: Pt, a: Pt, b: Pt): number {
 const has = (m: Matching, i: number, j: number): boolean => m.some(([x, y]) => (x === i && y === j) || (x === j && y === i));
 
 export function TileEditor(props: TileEditorProps): JSX.Element {
-  const { family, type, selected, contracts, index, nonCrossingOnly = false, curvedStrands = false } = props;
+  const { family, type, selected, contracts, index, nonCrossingOnly = false, curvedStrands = false, fullLabels = false } = props;
   const { onSetIndex, onToggleClass, onStepTile, onClose, onStrands } = props;
   const [gallery, setGallery] = useState(false);
 
   const outline = leafPts(family, type);
-  const classes = useMemo(() => edgeLabels(family, type).map((l) => parseEdgeLabel(l).major), [family, type]);
+  const labels = useMemo(() => edgeLabels(family, type), [family, type]);
+  const classes = useMemo(() => labels.map((l) => parseEdgeLabel(l).major), [labels]);
   const info = useMemo(() => tileMatchingInfo(family, type, selected, contracts), [family, type, selected, contracts]);
   const points = info.points.map((c) => c.pt);
+  /** Every seam's points as they sit when its class is on: where a press can start or land. */
+  const spots = useMemo(
+    () => tileMatchingInfo(family, type, new Set(familyMajors(family)), contracts).points.map((c) => ({ pt: c.pt, major: c.edge.major })),
+    [family, type, contracts],
+  );
   const options = useMemo(() => (info.odd ? [] : matchingOptions(info, nonCrossingOnly)), [info, nonCrossingOnly]);
   const position = Math.max(0, options.indexOf(index));
   const current = matchingAt(points.length, options.includes(index) ? index : (options[0] ?? 0)) ?? [];
@@ -91,13 +107,19 @@ export function TileEditor(props: TileEditorProps): JSX.Element {
   const sw = span / 60;
 
   const svg = useRef<SVGSVGElement>(null);
-  const [from, setFrom] = useState<number | null>(null);
+  /** Where the line starts: a seam's point, kept as a position so it survives its class being switched on. */
+  const [from, setFrom] = useState<Pt | null>(null);
   const [cursor, setCursor] = useState<Pt | null>(null);
   const [dragging, setDragging] = useState(false);
   // The point the line last passed over: it stays latched until another one
   // takes over, or the line goes back to where it started.
-  const [latched, setLatched] = useState<number | null>(null);
+  const [latched, setLatched] = useState<Pt | null>(null);
+  /** A pairing waiting for the page to switch on the classes its ends need. */
+  const [pending, setPending] = useState<{ a: Pt; b: Pt } | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const same = (p: Pt, q: Pt): boolean => dist(p, q) < span * 1e-6;
+  /** The index of a position among the points switched on, or -1. */
+  const indexOf = (p: Pt): number => points.findIndex((q) => same(p, q));
 
   const toSvg = (e: PointerEvent): Pt | null => {
     const m = svg.current?.getScreenCTM();
@@ -105,13 +127,14 @@ export function TileEditor(props: TileEditorProps): JSX.Element {
     const p = new DOMPoint(e.clientX, e.clientY).matrixTransform(m.inverse());
     return { x: p.x, y: p.y };
   };
-  const nearest = (p: Pt, within: number, except: number | null): number | null => {
-    let best: number | null = null;
+  /** The seam point nearest p within reach, switched on or not, other than `except`. */
+  const nearest = (p: Pt, within: number, except: Pt | null): { pt: Pt; major: number } | null => {
+    let best: { pt: Pt; major: number } | null = null;
     let bestD = within;
-    points.forEach((q, i) => {
-      const d = dist(p, q);
-      if (i !== except && d < bestD) {
-        best = i;
+    spots.forEach((s) => {
+      const d = dist(p, s.pt);
+      if (!(except && same(s.pt, except)) && d < bestD) {
+        best = s;
         bestD = d;
       }
     });
@@ -144,6 +167,10 @@ export function TileEditor(props: TileEditorProps): JSX.Element {
   /** Pair a with b, keeping as many of the current pairs as an allowed pairing can. */
   const connect = (a: number, b: number) => {
     reset();
+    if (info.odd) {
+      setMessage(`${points.length} points: one is always left over. Turn on one more edge to pair them all.`);
+      return;
+    }
     let best = -1;
     let bestShared = -1;
     for (const k of options) {
@@ -162,13 +189,43 @@ export function TileEditor(props: TileEditorProps): JSX.Element {
     }
   };
 
+  /** Switch on what a point needs; true when the page has to render before it is there. */
+  const switchOn = (majors: readonly number[]): boolean => {
+    const off = [...new Set(majors)].filter((m) => !selected.has(m));
+    off.forEach((m) => onToggleClass(m));
+    return off.length > 0;
+  };
+  /** Join two seam points, switching on either one's class first if it is off. */
+  const join = (a: { pt: Pt; major: number } | Pt, b: { pt: Pt; major: number }) => {
+    const ap = 'pt' in a ? a.pt : a;
+    const am = 'pt' in a ? a.major : spots.find((s) => same(s.pt, ap))?.major;
+    if (switchOn(am === undefined ? [b.major] : [am, b.major])) {
+      reset();
+      setPending({ a: ap, b: b.pt });
+      return;
+    }
+    connect(indexOf(ap), indexOf(b.pt));
+  };
+  // A pairing that waited on a class: made once both its points are switched on.
+  useEffect(() => {
+    if (!pending) return;
+    const ai = indexOf(pending.a);
+    const bi = indexOf(pending.b);
+    if (ai < 0 || bi < 0) return;
+    setPending(null);
+    connect(ai, bi);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pending, info]);
+
   const onDown = (e: PointerEvent<SVGSVGElement>) => {
     const p = toSvg(e);
     if (!p) return;
     const hit = nearest(p, grab, null);
     if (from === null) {
-      if (hit !== null && !info.odd) {
-        setFrom(hit);
+      if (hit !== null) {
+        // A point whose class is off turns on as it is pressed, and the line starts there.
+        switchOn([hit.major]);
+        setFrom(hit.pt);
         setCursor(p);
         setLatched(null);
         setDragging(true);
@@ -182,8 +239,9 @@ export function TileEditor(props: TileEditorProps): JSX.Element {
     }
     // Already holding a line: a second tap lands it (on the point tapped, or
     // the one it last latched on to), turns an edge on or off, or lets go.
-    const target = nearest(p, snapAt, from) ?? (hit === from ? null : latched);
-    if (target !== null) connect(from, target);
+    const near = nearest(p, snapAt, from);
+    const target = near ?? (hit && same(hit.pt, from) ? null : latched ? nearest(latched, grab, from) : null);
+    if (target !== null) join(from, target);
     else if (hit === null && classAt(p) !== null) toggle(classAt(p)!);
     else reset();
   };
@@ -193,17 +251,20 @@ export function TileEditor(props: TileEditorProps): JSX.Element {
     if (!p) return;
     setCursor(p);
     const near = nearest(p, snapAt, null);
-    if (near === from) setLatched(null);
-    else if (near !== null) setLatched(near);
+    if (near && same(near.pt, from)) setLatched(null);
+    else if (near !== null) setLatched(near.pt);
   };
   const onUp = () => {
-    if (dragging && from !== null && latched !== null) connect(from, latched);
+    if (dragging && from !== null && latched !== null) {
+      const target = nearest(latched, grab, from);
+      if (target) join(from, target);
+    }
     setDragging(false);
   };
 
   const snap = from !== null ? latched : null;
-  const a = from !== null ? points[from] : null;
-  const b = snap !== null ? points[snap] : cursor;
+  const a = from;
+  const b = snap ?? cursor;
   const step = (d: 1 | -1) => {
     if (options.length > 1) onSetIndex(options[(position + d + options.length) % options.length]);
   };
@@ -289,8 +350,8 @@ export function TileEditor(props: TileEditorProps): JSX.Element {
           return (
             <g key={e} className={`tile-editor-edge${on ? ' is-on' : ''}`} data-major={classes[e]}>
               <line x1={p.x} y1={p.y} x2={q.x} y2={q.y} stroke={edgeClassColor(classes[e])} strokeWidth={sw * (on ? 2.4 : 1.2)} strokeLinecap="round" />
-              <text x={out.x} y={out.y} fontSize={span * 0.06} textAnchor="middle" dominantBaseline="central" fill={edgeClassColor(classes[e])}>
-                {classes[e]}
+              <text x={out.x} y={out.y} fontSize={span * (fullLabels ? 0.045 : 0.06)} textAnchor="middle" dominantBaseline="central" fill={edgeClassColor(classes[e])} data-edge-label={fullLabels ? labels[e] : undefined}>
+                {fullLabels ? labels[e] : classes[e]}
               </text>
             </g>
           );
@@ -298,17 +359,22 @@ export function TileEditor(props: TileEditorProps): JSX.Element {
         {current.map((pair, k) => (
           <path key={k} d={chordD(pair)} className="tile-editor-chord" fill="none" strokeWidth={sw * 1.8} strokeLinecap="round" />
         ))}
+        {spots.map((s, i) =>
+          selected.has(s.major) ? null : (
+            <circle key={`o${i}`} cx={s.pt.x} cy={s.pt.y} r={sw * 1.3} className="tile-editor-dot is-off" stroke={edgeClassColor(s.major)} strokeWidth={sw * 0.7} />
+          ),
+        )}
         {points.map((p, i) => (
           <circle key={i} cx={p.x} cy={p.y} r={sw * 1.6} className={`tile-editor-dot${info.odd ? ' is-odd' : ''}`} />
         ))}
-        {points.map((p, i) => (
-          <circle key={`h${i}`} cx={p.x} cy={p.y} r={grab} fill="transparent" className="tile-editor-hit" data-point={i} />
+        {spots.map((s, i) => (
+          <circle key={`h${i}`} cx={s.pt.x} cy={s.pt.y} r={grab} fill="transparent" className="tile-editor-hit" data-point={indexOf(s.pt)} />
         ))}
         {a && b && (
           <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="var(--accent)" strokeWidth={sw * 1.4} strokeLinecap="round" strokeDasharray={snap === null ? `${sw * 2} ${sw * 1.5}` : undefined} />
         )}
         {a && <circle cx={a.x} cy={a.y} r={sw * 3} fill="none" stroke="var(--accent)" strokeWidth={sw * 0.9} />}
-        {snap !== null && <circle cx={points[snap].x} cy={points[snap].y} r={sw * 3} fill="var(--accent)" fillOpacity={0.25} stroke="var(--accent)" strokeWidth={sw * 0.9} />}
+        {snap !== null && <circle cx={snap.x} cy={snap.y} r={sw * 3} fill="var(--accent)" fillOpacity={0.25} stroke="var(--accent)" strokeWidth={sw * 0.9} />}
       </svg>
       <EdgeClassLegend
         family={family}
@@ -352,7 +418,7 @@ export function TileEditor(props: TileEditorProps): JSX.Element {
           (from !== null
             ? 'Drag or tap to the point to pair it with.'
             : info.odd
-              ? 'An odd number of points: tap an edge to turn its class on or off and even them up.'
+              ? 'An odd number of points: press a hollow point to turn its class on, or tap an edge to turn its class off.'
               : points.length < 3
                 ? 'Tap an edge to turn its class on or off.'
                 : 'Tap a point to draw from it, or an edge to turn its class on or off. ← → change tile, ↑ ↓ change pairing.')}
