@@ -202,6 +202,20 @@ export interface Closure {
   readonly family: string;
 }
 
+/** A circuit the search knows: its word key (`foundations.ts`'s `wordKey`), tiles and the level it is born at. */
+export interface KnownWord {
+  readonly key: string;
+  readonly length: number;
+  readonly level: number;
+}
+
+/** A circuit born lower closing again in the supertile searched, and how many times. */
+export interface Copy {
+  readonly length: number;
+  readonly level: number;
+  readonly times: number;
+}
+
 export interface BruteResult {
   readonly from: { readonly level: number; readonly length: number };
   /** The level from which up the harmonic must read as A. */
@@ -217,8 +231,8 @@ export interface BruteResult {
   readonly tried: number;
   /** Closed walks there that are not the harmonic: another family, or not reading as A. */
   readonly others: readonly (Closure & { readonly agreed: number | null })[];
-  /** Closed walks there with A's own word: A closing again in a bigger supertile, not a circuit of its own. */
-  readonly copies: number;
+  /** Closed walks there with the word of a circuit born lower, A's own among them: that circuit closing again in a bigger supertile, not a circuit of its own; by the circuit copied and how many times. */
+  readonly copies: readonly Copy[];
   /** Walks that left the supertile. */
   readonly open: number;
   /** Without a harmonic: where the walks that left the supertile close, climbing on (`climb`). */
@@ -242,6 +256,8 @@ export interface BruteOptions {
   readonly beyond?: number;
   /** A's visits at the floor to look through at most; every one by default. */
   readonly windows?: number;
+  /** Circuits known already: a closed walk with the word of one born below the level searched is that circuit closing again, not a find. A itself is always known. */
+  readonly known?: readonly KnownWord[];
   readonly onProgress?: Report;
 }
 
@@ -270,14 +286,23 @@ export function harmonicAbove(R: SparseRoutes, a: Walked, opts: BruteOptions = {
   const open: number[] = [];
   let tried = 0;
   let windows = 0;
-  let copies = 0;
-  /** A's word key, worked out when a walk of its length closes, through whichever children; past the word cap a walk of its length is taken for a copy. */
-  let aKey: string | null = null;
-  const isCopy = (b: Walked): boolean => {
-    if (b.length !== a.length) return false;
-    if (a.length > wordCap) return true;
-    aKey ??= wordKeyOf(walkedWordCodes(R, a));
-    return wordKeyOf(walkedWordCodes(R, b)) === aKey;
+  const copies = new Map<string, Copy>();
+  /** The circuits known, born below `top`, by their tiles; A among them, its word key worked out when a walk of its length closes, through whichever children. */
+  const knownBy = new Map<number, { key: string | null; level: number }[]>();
+  for (const k of opts.known ?? []) if (k.level < top) (knownBy.get(k.length) ?? knownBy.set(k.length, []).get(k.length)!).push({ key: k.key, level: k.level });
+  const self = { key: null as string | null, level: a.level };
+  (knownBy.get(a.length) ?? knownBy.set(a.length, []).get(a.length)!).push(self);
+  /** The circuit a closed walk is a copy of, or null: past the word cap a walk of a known circuit's length is taken for its copy. */
+  const copyOf = (b: Walked): { length: number; level: number } | null => {
+    const same = knownBy.get(b.length);
+    if (!same) return null;
+    if (b.length > wordCap) return { length: b.length, level: same[0].level };
+    const key = wordKeyOf(walkedWordCodes(R, b));
+    for (const k of same) {
+      if (k === self) self.key ??= wordKeyOf(walkedWordCodes(R, a));
+      if (k.key === key) return { length: b.length, level: k.level };
+    }
+    return null;
   };
   // each window: A's visit at level `floor`, as its slots from the birth down, the first visit first
   for (const path of visitPaths(R, a, floor)) {
@@ -328,8 +353,11 @@ export function harmonicAbove(R: SparseRoutes, a: Walked, opts: BruteOptions = {
       const b: Walked = { level: top, type: a.type, length: w.length, steps };
       const fam = familyOfSteps(steps);
       const other = `${w.length}/${fam}`;
-      if (isCopy(b)) {
-        copies++;
+      const copied = copyOf(b);
+      if (copied) {
+        const id = `${copied.length}/${copied.level}`;
+        const had = copies.get(id);
+        copies.set(id, { ...copied, times: (had?.times ?? 0) + 1 });
         sketch.relabel('other');
         continue;
       }
@@ -383,7 +411,7 @@ export function harmonicAbove(R: SparseRoutes, a: Walked, opts: BruteOptions = {
     windows,
     tried,
     others: [...others.values()],
-    copies,
+    copies: [...copies.values()],
     open: open.length,
     beyond,
     climbed,

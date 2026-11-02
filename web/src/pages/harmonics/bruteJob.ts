@@ -7,7 +7,7 @@
  */
 import type { BornCircuit } from '../shapes/circuitShapes';
 import { CircuitShapes } from '../shapes/circuitShapes';
-import { climb, harmonicAbove, longestArc, type BruteResult, type ClimbResult, type Progress, type Report } from './bruteForce';
+import { climb, harmonicAbove, longestArc, type BruteResult, type ClimbResult, type KnownWord, type Progress, type Report } from './bruteForce';
 import { bornOfFound, foundThumb, Placed, readRows, SparseRows, type Found } from './found';
 import { SparseRoutes, TYPES, typeIndex, type Walked } from './sparseRoutes';
 
@@ -25,6 +25,8 @@ export interface BruteFrom {
   readonly addressed: boolean;
   readonly floor: number;
   readonly gap?: number;
+  /** The circuits known, built or found: a closed walk with the word of one born lower is a copy of it (`bruteForce.ts`). */
+  readonly known?: readonly KnownWord[];
 }
 
 export class BruteEngine {
@@ -44,7 +46,7 @@ export class BruteEngine {
   harmonic(job: BruteCombo, from: BruteFrom, onProgress?: Report): BruteResult {
     const a = from.circuit;
     const R = this.routes(job, from.addressed ? BASE : a.level - 1);
-    return harmonicAbove(R, from.addressed ? a : R.walked(a), { floor: from.floor, gap: from.gap, beyond: Infinity, onProgress });
+    return harmonicAbove(R, from.addressed ? a : R.walked(a), { floor: from.floor, gap: from.gap, known: from.known, beyond: Infinity, onProgress });
   }
 
   /** A circuit found, drawn small as `found.ts` draws one for the Harmonics page: at most `budget` points, closed. */
@@ -187,7 +189,9 @@ export function describeResult(r: BruteResult): string {
     return `Level ${r.level}: a ${nf(f.length)}-tile circuit of family ${f.family} closes in the ${r.type}, reading as the ${nf(fromLength)} ${r.gap === 2 ? 'two' : r.gap} levels down ${reads}; ${f.key.includes('/') ? 'place' : 'word'} key ${f.key}. ${work}`;
   }
   const others = r.others.length ? ` Closed there instead: ${r.others.map((o) => `${nf(o.length)} (family ${o.family})`).join(', ')}.` : '';
-  const copies = r.copies ? ` The ${nf(fromLength)} itself closes there ${r.copies === 1 ? 'once' : `${nf(r.copies)} times`}, in a bigger supertile.` : '';
+  const copies = r.copies.length
+    ? ` Closing there again, in a bigger supertile: ${r.copies.map((c) => `the ${nf(c.length)}${c.length === fromLength && c.level === r.from.level ? ' itself' : ` (born at level ${c.level})`} ${c.times === 1 ? 'once' : `${nf(c.times)} times`}`).join(', ')}.`
+    : '';
   const beyond = r.beyond.length ? ` The ${nf(r.open)} walks that leave it close, climbed, at ${r.beyond.map((b) => `level ${b.level} (${nf(b.length)}, family ${b.family})`).join(', ')}.` : r.open ? ` ${nf(r.open)} walks leave it.` : '';
   return `Level ${r.level}: no circuit reading as the ${nf(fromLength)} closes in the ${r.type}.${copies}${others}${beyond} ${work}`;
 }

@@ -36,6 +36,8 @@ scope.onmessage = (event) => {
                         ? engine.breakdownPicture(m.c, m.k, m.index)
                         : m.type === 'born'
                           ? engine.bornOf(m.c)
+                          : m.type === 'words'
+                            ? engine.words()
                           : m.type === 'found'
                             ? engine.found(m.list, m.budget)
                             : m.type === 'score'

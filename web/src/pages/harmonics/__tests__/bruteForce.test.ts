@@ -7,6 +7,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { readCircuit, wordKey } from '../../foundations/foundations';
+import type { KnownWord } from '../bruteForce';
 import { CircuitShapes, familyOf, type BornCircuit } from '../../shapes/circuitShapes';
 import { climb, harmonicAbove, longestArc, parentOf, readWalked, type Progress } from '../bruteForce';
 import { describeResult } from '../bruteJob';
@@ -169,12 +170,38 @@ describe('a circuit closing again in a bigger supertile', () => {
     for (const gap of [2, 4]) {
       const r = harmonicAbove(R, R.walked(a), { floor: 2, gap });
       expect(r.found).toBeNull();
-      expect(r.copies).toBeGreaterThanOrEqual(1);
+      expect(r.copies).toEqual([{ length: 126, level: 4, times: expect.any(Number) }]);
       expect(r.others.some((o) => o.length === 126)).toBe(false);
       expect(r.picture.counts.harmonic).toBe(0);
     }
     const six = harmonicAbove(R, R.walked(a), { floor: 2, gap: 2 });
-    expect(describeResult(six)).toMatch(/^Level 6: no circuit reading as the 126 closes in the Delta\. The 126 itself closes there (once|[\d,]+ times), in a bigger supertile\./);
+    expect(describeResult(six)).toMatch(/^Level 6: no circuit reading as the 126 closes in the Delta\. Closing there again, in a bigger supertile: the 126 itself (once|[\d,]+ times)\./);
+  });
+
+  it('nor is a circuit born lower: told the build’s words, the search from 110000001’s 87 finds no 219, 2,244 or 130,434 above it, only copies of them', () => {
+    const cs = build('110000001', 8);
+    const R = new SparseRoutes(cs, 8);
+    const a = bornAt(cs, 4, 87);
+    expect(familyOf(a)).toBe('47');
+    // every closing's word, at the lowest level it closes: the build's circuits
+    const lowest = new Map<string, KnownWord>();
+    for (const c of cs.born) {
+      const key = wordKey(cs, c);
+      const had = lowest.get(key);
+      if (!had || c.level < had.level) lowest.set(key, { key, length: c.length, level: c.level });
+    }
+    const known = [...lowest.values()];
+    expect(known.find((k) => k.length === 219)?.level).toBe(5);
+    // without them the 219 closing again at level 6 reads as the 87 at its top two levels
+    const naive = harmonicAbove(R, R.walked(a), { floor: 2, gap: 2 });
+    expect(naive.found?.length).toBe(219);
+    for (const [gap, copy] of [[2, 219], [4, 2244]] as const) {
+      const r = harmonicAbove(R, R.walked(a), { floor: 2, gap, known });
+      expect(r.found).toBeNull();
+      expect(r.copies.map((c) => c.length)).toContain(copy);
+      expect(r.copies.every((c) => c.level < 4 + gap)).toBe(true);
+    }
+    expect(describeResult(harmonicAbove(R, R.walked(a), { floor: 2, gap: 2, known }))).toMatch(/Closing there again, in a bigger supertile: .*the 219 \(born at level 5\) (once|\d+ times)/);
   });
 });
 

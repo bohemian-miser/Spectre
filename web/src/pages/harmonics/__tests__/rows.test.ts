@@ -10,6 +10,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { HarmonicsEngine } from '../harmonicsJob';
+import { wordKey } from '../../foundations/foundations';
 import { THUMB_VISITS } from '../found';
 import { THUMB_POINTS } from '../ChainViews';
 import { alignReadings, sameCyclic, visitsAt, type Visit } from '../readings';
@@ -213,6 +214,17 @@ describe.each(['000100000', '140000001'])('rows of 023468 / %s', (combo) => {
       }),
     );
     expect(paired).toBeGreaterThan(0);
+  });
+
+  it('names every circuit by its word, with its tiles and birth level', () => {
+    const w = engine.words();
+    expect(w.length).toBe(r.circuits.length);
+    w.forEach((k, i) => {
+      expect(k.length).toBe(r.circuits[i].length);
+      expect(k.level).toBe(r.circuits[i].level);
+      expect(k.key).toBe(wordKey(engine.cs, engine.bornOf(i)));
+    });
+    expect(new Set(w.map((k) => k.key)).size).toBe(w.length);
   });
 
   it('draws each thumbnail at the lowest level with at most THUMB_VISITS visits, within the budget', () => {
