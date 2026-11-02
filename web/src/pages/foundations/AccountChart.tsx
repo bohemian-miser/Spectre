@@ -33,6 +33,9 @@ const groups = (segs: readonly Segment[]): [string, Segment[]][] => [
   ['Tails', segs.filter((s) => s.tail)],
 ];
 
+/** A share too small for a tenth of a percent, to two figures. */
+const fine = (x: number): string => (x > 0 && x < 0.0005 ? `${(100 * x).toPrecision(2)}%` : pct(x));
+
 /** A segment's class, by its key: the colour follows the segment's identity. */
 const classOf = (key: string): string => (key.startsWith('order') ? `fd-seg-${key.split('-')[0]}` : `fd-seg-${key}`);
 
@@ -41,7 +44,8 @@ export function AccountChart(props: { data: PageCombo }): JSX.Element {
   const [hover, setHover] = useState<number | null>(null);
   const [split, setSplit] = useState<Split>('class');
   const acc = useMemo(() => account(data, split), [data, split]);
-  const segs = useMemo(() => acc.segments.filter((s) => s.key === 'unaccounted' || s.values.some((v) => v > 1e-6)), [acc]);
+  // the infinite lines are shown however small, being a class of their own
+  const segs = useMemo(() => acc.segments.filter((s) => s.key === 'unaccounted' || s.key === 'lines' || s.values.some((v) => v > 1e-6)), [acc]);
   const { columns, projection: pr } = acc;
   const top = pr.top;
   const xOf = (c: number): number => LEFT + COL * c + (columns[c].level === null ? BREAK : 0);
@@ -128,7 +132,7 @@ export function AccountChart(props: { data: PageCombo }): JSX.Element {
                     <dt>
                       <i className={classOf(s.key)} /> {s.label}
                     </dt>
-                    <dd>{pct(s.values[shown])}</dd>
+                    <dd>{s.key === 'lines' ? fine(s.values[shown]) : pct(s.values[shown])}</dd>
                   </Fragment>
                 ))}
               </Fragment>

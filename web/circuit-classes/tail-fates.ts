@@ -22,15 +22,14 @@ import { resolve } from 'node:path';
 import { comboDigitChar, comboOptionCounts } from '../src/core';
 import { investigate, type Investigation } from '../src/pages/fates/investigate';
 import type { Part } from '../src/pages/fates/remainder';
-import { pageCombo } from '../src/pages/foundations/pageData';
+import { namesOf } from '../src/pages/fates/investigate';
+import { account, pageCombo, type PageCombo, type SweepFile } from '../src/pages/foundations/pageData';
 
 const CAP = 14;
 const all = process.argv.slice(2).filter((a) => a !== '--');
 const toPage = all.includes('--page');
 const args = all.filter((a) => a !== '--page');
 
-if (args[0] === '--report') report(args[1]);
-else sweep();
 
 function sweep(): void {
   const [rule, lv, sm] = args;
@@ -90,7 +89,16 @@ interface Row {
   readonly lineArcs: number;
   readonly remainder: Investigation['remainder'];
   readonly example: Investigation['splits'][number] | null;
+  readonly names: Record<string, string>;
   readonly seconds: number;
+}
+
+/** A remainder with the lines' part as the account of the sweep's file has it (the lines enter the open part with the opposite sign). */
+function withLines(rem: Investigation['remainder'], p: PageCombo): Investigation['remainder'] {
+  const acc = account(p, 'class');
+  const lines = acc.segments.find((x) => x.key === 'lines')?.values[acc.columns.length - 1] ?? 0;
+  const { parts } = rem;
+  return { ...rem, parts: { ...parts, lines: { share: lines, se: 0 }, openPastCap: { ...parts.openPastCap, share: parts.openPastCap.share + parts.lines.share - lines } } };
 }
 
 function report(rule: string): void {
@@ -100,6 +108,8 @@ function report(rule: string): void {
     .map((f) => JSON.parse(readFileSync(resolve(from, f), 'utf8')) as Omit<Investigation, 'analysis'>)
     .map((r) => {
       const levels = [...new Set(r.counts.map((c) => c.level))].sort((a, b) => a - b);
+      // the sweep's file of the combination holds the lines' shares to seven figures
+      const sweep = JSON.parse(readFileSync(resolve(__dirname, `data/foundations/hex-${rule}/${r.combo}.json`), 'utf8')) as SweepFile;
       return {
         combo: r.combo,
         limit: r.limit,
@@ -110,10 +120,11 @@ function report(rule: string): void {
           return [m, at.reduce((s, c) => s + c.closingClasses, 0), at.reduce((s, c) => s + c.tails, 0)] as [number, number, number];
         }),
         weightDiff: Math.max(...r.weights.map((w) => w.diff)),
-        lines: r.lines.map((l) => l.share),
+        lines: sweep.shares.lines ?? r.lines.map((l) => l.share),
         lineArcs: r.lines[r.top].arcs.length,
-        remainder: r.remainder,
-        example: r.splits.find((s) => s.level === Math.max(...r.splits.map((x) => x.level))) ?? null,
+        remainder: withLines(r.remainder, pageCombo(sweep)),
+        example: r.splits.find((s) => s.level === 5) ?? r.splits.find((s) => s.level === Math.max(...r.splits.map((x) => x.level))) ?? null,
+        names: r.names ?? namesOf(pageCombo(sweep)),
         seconds: r.seconds,
       };
     });
@@ -129,6 +140,18 @@ function report(rule: string): void {
 }
 
 const pct = (x: number, d = 3): string => `${(100 * x).toFixed(d)}%`;
+
+/** The followed tails' fates other than a chain or nugget, in words. */
+const FATE: Record<string, string> = { budget: 'routes ran out, open', open: 'open at 14', unknown: 'a circuit not known', ends: 'ends in a tile' };
+
+/** A closing's bucket (`root|class|order`) in words. */
+function labelName(label: string, names: Record<string, string>): string {
+  const [root, cls, order] = label.split('|');
+  if (cls === undefined) return label;
+  if (cls === 'nugget') return names[`nugget ${root}`] ?? `nugget ${root}`;
+  const chain = names[`chain ${root}`] ?? `chain ${root}`;
+  return cls === 'foundational' ? `${chain}, foundational` : `${chain}, harmonic ${order}`;
+}
 const lvl = (x: number | null): string => (x === null ? 'none' : String(x));
 
 function tables(rule: string, rows: readonly Row[]): string {
@@ -154,12 +177,12 @@ function tables(rule: string, rows: readonly Row[]): string {
   const shown = [...short, ...rows.filter((r) => r.limit >= 0.995 && r.classifiable === null)].slice(0, 12);
   for (const r of shown) out.push(`| ${r.combo} | ${r.split.map((s) => (s[1] ? `${s[1]} of ${s[2]}` : '0')).join(' | ')} |`);
   out.push('');
-  const ex = rows.map((r) => r.example).find((e) => e !== null);
-  if (ex) {
-    const r = rows.find((x) => x.example === ex)!;
-    out.push(`A tail with two classes in ${r.combo}: the level-${ex.level} ${ex.type} arc from place ${ex.a} to ${ex.b} (${ex.tiles} tiles).`, '');
+  const withEx = [...short, ...rows].find((r) => r.example?.level === 5) ?? rows.find((r) => r.example);
+  const ex = withEx?.example;
+  if (withEx && ex) {
+    out.push(`A level-${ex.level} ${ex.type} tail of ${withEx.combo}, from place ${ex.a} to ${ex.b} (${ex.tiles} tiles), by the shortest placements to each class:`, '');
     out.push('| placements up | closes at | into |', '|---|---|---|');
-    for (const p of ex.paths) out.push(`| ${p.steps.map((s) => `slot ${s.slot} of a ${s.parent}`).join(', ')} | ${p.level} | ${p.label} |`);
+    for (const p of ex.paths) out.push(`| ${p.steps.map((s) => `slot ${s.slot} of a ${s.parent}`).join(', ')} | ${p.level} | ${labelName(p.label, withEx.names)} |`);
     out.push('');
   }
   out.push('### Weighting', '');
@@ -176,20 +199,26 @@ function tables(rule: string, rows: readonly Row[]): string {
   out.push('### The remainder', '');
   out.push('Shares of all chords, ± one standard error of the sample:', '');
   out.push('| combination | limit | remainder | not forecast | several fates | infinite lines | unknown | forecast error | open past 14 | tails followed |', '|---|---|---|---|---|---|---|---|---|---|');
-  const remRows = [...short, ...rows.filter((r) => r.limit >= 0.995).sort((a, b) => b.remainder.remainder - a.remainder.remainder).slice(0, 6)];
-  const pm = (x: Part): string => (x.se ? `${pct(x.share, 2)} ± ${pct(x.se, 2)}` : pct(x.share, 4));
+  const remRows = [...short, ...rows.filter((r) => r.limit >= 0.995 && r.remainder.followed.samples > 0).sort((a, b) => b.remainder.remainder - a.remainder.remainder).slice(0, 6)];
+  const pm = (x: Part): string => (x.se ? `${pct(x.share, 2)} ± ${pct(x.se, 2)}` : x.share > 0 && x.share < 1e-4 ? `${(100 * x.share).toPrecision(2)}%` : pct(x.share, 2));
   for (const r of remRows) {
     const p = r.remainder.parts;
     out.push(`| ${r.combo} | ${pct(r.limit, 2)} | ${pct(r.remainder.remainder, 2)} | ${pm(p.notForecast)} | ${pm(p.severalFates)} | ${pm(p.lines)} | ${pm(p.unknown)} | ${pm(p.forecastError)} | ${pm(p.openPastCap)} | ${r.remainder.followed.samples} |`);
   }
   out.push('');
-  out.push('Where the followed tails went, as shares of the tails at the top (± one standard error):', '');
+  out.push('| combination | chains not forecast |', '|---|---|');
+  for (const r of short) out.push(`| ${r.combo} | ${r.remainder.notForecast.map((k) => r.names[k] ?? k).join(', ') || 'none'} |`);
+  out.push('');
+  out.push('Where the followed tails of the short combinations went, as shares of the tails at the top (± one standard error):', '');
   out.push('| combination | fates by level 14 |', '|---|---|');
   for (const r of short) {
-    out.push(`| ${r.combo} | ${Object.entries(r.remainder.followed.shares).map(([k, v]) => `${k} ${pct(v.share, 1)} ± ${pct(v.se, 1)}`).join('; ')} |`);
+    out.push(`| ${r.combo} | ${Object.entries(r.remainder.followed.shares).map(([k, v]) => `${FATE[k] ?? r.names[k] ?? k} ${pct(v.share, 1)} ± ${pct(v.se, 1)}`).join('; ')} |`);
   }
   out.push('');
   out.push('| run time per combination | mean | longest |', '|---|---|---|');
   out.push(`| seconds | ${(rows.reduce((s, r) => s + r.seconds, 0) / Math.max(1, rows.length)).toFixed(0)} | ${Math.max(...rows.map((r) => r.seconds)).toFixed(0)} |`);
   return out.join('\n');
 }
+
+if (args[0] === '--report') report(args[1]);
+else sweep();

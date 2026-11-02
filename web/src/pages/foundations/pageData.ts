@@ -173,7 +173,8 @@ export function pageCombo(d: SweepFile): PageCombo {
     tails: d.shares.tails.map(round),
     shares,
     unseen,
-    lines: (d.shares.lines ?? []).map(round),
+    // kept to the analysis's seven figures, being far smaller than the other shares; data swept before the lines were certified has none
+    ...((d.shares.lines as number[] | undefined) ? { lines: d.shares.lines } : {}),
     above: { known: d.above.known, predicted: d.above.predicted, unseen: d.above.unseen.map((u) => [u.length, u.places, u.word]) },
     assumption: { checked: d.assumption.checked, exceptions: d.assumption.exceptions.length },
   };

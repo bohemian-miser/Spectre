@@ -37,7 +37,7 @@ import { familyOfSteps, parentOf, readWalked, walkedWordCodes } from '../harmoni
 import { RouteLimit, SparseRoutes, TYPES, typeIndex, type Walked } from '../harmonics/sparseRoutes';
 import type { CircuitShapes } from '../shapes/circuitShapes';
 import { liftArc } from '../fates/follow';
-import { certifies, isTurn, outerEdges, type ArcAt } from '../fates/lines';
+import { certifies, isTurn, outerEdges, TURNS, type ArcAt } from '../fates/lines';
 import { cycleName, type Cycle } from '../fates/placements';
 import { IdentifyEngine, labelOf, type Candidate } from '../identify/identify';
 
@@ -564,23 +564,28 @@ const PERIOD = 4;
 
 /**
  * The cycle along which an arc at level M is certified as an infinite line
- * (`fates/lines.ts`): the ancestry from M - 2q to M repeats with period q,
- * and the arc is fixed over both turns, through arcs it was followed from.
+ * (`fates/lines.ts`): the ancestry from M - TURNS q to M repeats with
+ * period q, and the arc is fixed over every turn, through arcs it was
+ * followed from.
  */
 function certifiedLine(R: SparseRoutes, M: number, arc: Arc, anc: readonly { type: number; slot: number }[], L: number): Cycle | null {
   const down = (xs: Arc[], k: number): Arc[] => (k === 0 ? xs : down(xs.flatMap((x) => x.below), k - 1));
-  for (let q = 1; q <= PERIOD && M - 2 * q >= L; q++) {
-    let periodic = anc[M].type === anc[M - q].type;
-    for (let i = 0; periodic && i < q; i++) periodic = anc[M - 2 * q + i].type === anc[M - q + i].type && anc[M - 2 * q + i].slot === anc[M - q + i].slot;
-    if (!periodic) continue;
+  for (let q = 1; q <= PERIOD && M - TURNS * q >= L; q++) {
+    let periodic = true;
+    for (let i = M - TURNS * q; periodic && i < M - q; i++) periodic = anc[i].type === anc[i + q].type && anc[i].slot === anc[i + q].slot;
+    if (!periodic || anc[M].type !== anc[M - q].type) continue;
     const type = TYPES[anc[M].type];
     const cycle: Cycle = { type, steps: Array.from({ length: q }, (_, i) => ({ parent: TYPES[anc[M - q + i + 1].type], slot: anc[M - q + i].slot })) };
     const outer = outerEdges(cycle);
     const at = (m: number, x: Arc): ArcAt => ({ level: m, type, a: x.a, b: x.b });
-    for (const a1 of down([arc], q)) {
-      if (!isTurn(R, at(M - q, a1), at(M, arc))) continue;
-      for (const a0 of down([a1], q)) if (certifies(R, [at(M - 2 * q, a0), at(M - q, a1), at(M, arc)], outer)) return cycle;
-    }
+    // the arcs a turn apart below this one, each one turn in from the next
+    const chains = (x: Arc, m: number, left: number): ArcAt[][] => {
+      if (left === 0) return [[at(m, x)]];
+      return down([x], q)
+        .filter((y) => isTurn(R, at(m - q, y), at(m, x)))
+        .flatMap((y) => chains(y, m - q, left - 1).map((c) => [...c, at(m, x)]));
+    };
+    if (chains(arc, M, TURNS).some((c) => certifies(R, c, outer))) return cycle;
   }
   return null;
 }

@@ -20,7 +20,7 @@ export interface Followed {
   readonly tiles: number;
   readonly ancestry: readonly { readonly parent: string; readonly slot: number }[];
   readonly fate: string;
-  /** The level it closed at (the cap when open). */
+  /** The level it closed at; open, the cap; out of routes, the level it was open at. */
   readonly level: number;
 }
 
@@ -101,18 +101,14 @@ export function followAbove(
     R.limit = R.work.calls + routes;
     let a = k;
     let fate = 'open';
-    let level = cap;
+    let level = top;
     try {
-      for (let n = top; n < cap; n++) {
+      for (; level < cap; level++) {
+        const n = level;
         const st = ancestry[n - top];
         const up = liftArc(R, n, a, typeIndex.get(st.parent)!, st.slot, TYPES);
-        if (up.kind === 'ends') {
-          fate = 'ends';
-          level = n + 1;
-          break;
-        }
-        if (up.kind === 'closed') {
-          fate = classKey(nameClosing(R, catalog, up.walk, n >= R.base ? 'routes' : 'tables'));
+        if (up.kind === 'ends' || up.kind === 'closed') {
+          fate = up.kind === 'ends' ? 'ends' : classKey(nameClosing(R, catalog, up.walk, n >= R.base ? 'routes' : 'tables'));
           level = n + 1;
           break;
         }

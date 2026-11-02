@@ -8,7 +8,7 @@
  * combination.
  */
 import { classifyCombo, type Classified, type ComboAnalysis, type Progress } from '../foundations/comboAnalysis';
-import { pageCombo, project, tailFates, type PageCombo } from '../foundations/pageData';
+import { chainName, pageCombo, project, tailFates, type PageCombo } from '../foundations/pageData';
 import { Catalog } from '../explorer/tailClasses';
 import { SparseRoutes } from '../harmonics/sparseRoutes';
 import { followAbove, type Followed } from './above';
@@ -16,7 +16,7 @@ import { fateMass } from './fateMass';
 import { classifiableLevel, fateCounts, fateGraph, splits, type FateCount, type Split } from './fateSets';
 import { classOf } from './labels';
 import { liftsOf, type Lifts } from './lifts';
-import { lineArcs } from './lines';
+import { certifiedArc, lineArcs } from './lines';
 import { cycleName } from './placements';
 import { remainderOf, type Remainder } from './remainder';
 
@@ -45,6 +45,8 @@ export interface Investigation {
   readonly remainder: Remainder;
   /** The account's share of chords on circuits in the limit (`project`). */
   readonly limit: number;
+  /** Each chain and nugget by name (`chain <id>`, `nugget <id>`, as `classOf` and `classKey` key them). */
+  readonly names: Record<string, string>;
   /** The analysis, as the Foundations sweep writes it. */
   readonly analysis: ComboAnalysis;
   readonly seconds: number;
@@ -60,6 +62,10 @@ export interface Options {
   readonly seed?: number;
   readonly onProgress?: Progress;
 }
+
+/** Each chain and nugget of a combination by name, keyed as `classOf` keys them. */
+export const namesOf = (p: PageCombo): Record<string, string> =>
+  Object.fromEntries(p.found.map((f) => (f[9] ? [`nugget ${f[0]}`, `nugget of ${f[2].toLocaleString('en-US')} at level ${f[1]}`] : [`chain ${f[0]}`, chainName(p, f[0])])));
 
 /** The lifts into every type at every level of a build, each worked out once. */
 export function liftCache(c: Classified): (level: number, type: string) => Lifts {
@@ -105,7 +111,7 @@ export function investigate(subset: readonly number[], combo: string, o: Options
   const lines = c.lines.map((list, n) => ({
     level: n,
     share: p.lines?.[n] ?? 0,
-    arcs: list.map((x) => ({ type: x.cycle.type as string, cycle: cycleName(x.cycle), tiles: c.cs.levels[n][x.cycle.type].len(x.places[2]) })),
+    arcs: list.map((x) => ({ type: x.cycle.type as string, cycle: cycleName(x.cycle), tiles: c.cs.levels[n][x.cycle.type].len(certifiedArc(x).a) })),
   }));
   say('following tails above the build', 0, 1);
   const fresh = () => {
@@ -126,6 +132,7 @@ export function investigate(subset: readonly number[], combo: string, o: Options
     lines,
     remainder,
     limit: project(p).limit,
+    names: namesOf(p),
     analysis: c.analysis,
     seconds: (Date.now() - t0) / 1000,
   };

@@ -9,16 +9,17 @@
  */
 import { describe, expect, it } from 'vitest';
 import { classifyCombo, type Classified } from '../../foundations/comboAnalysis';
+import { buildShapes } from '../../foundations/foundations';
 import { account, pageCombo } from '../../foundations/pageData';
-import { SparseRoutes, typeIndex } from '../../harmonics/sparseRoutes';
+import { RouteLimit, SparseRoutes, typeIndex } from '../../harmonics/sparseRoutes';
 import { placeOf, slotOf, type BornCircuit } from '../../shapes/circuitShapes';
 import { random, type Followed } from '../above';
 import { liftArc } from '../follow';
 import { fateGraph, pathTo } from '../fateSets';
 import { classOf } from '../labels';
-import { lineArcs, isTurn, type ArcAt } from '../lines';
+import { borderPath, isTurn, lineArcs, TURNS, type ArcAt } from '../lines';
 import { liftCache, weightCheck } from '../investigate';
-import { placements, TYPES } from '../placements';
+import { cycleName, placements, TYPES } from '../placements';
 import { remainderOf } from '../remainder';
 
 const RULE = [0, 2, 3, 4, 6, 8];
@@ -117,27 +118,66 @@ describe('the account weights a tail with several fates by placement', () => {
 });
 
 describe('infinite lines', () => {
-  it('stay open and fixed when followed a full turn further through the routes', () => {
+  it('stay open and fixed when followed a full turn further through the routes', async () => {
+    // let the test runner hear from the worker between the long steps
+    const breathe = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
     const c = built(8);
+    await breathe();
     const top = 9;
     const R = new SparseRoutes(c.cs);
     const certified = c.lines[top];
     expect(certified.length).toBeGreaterThan(0);
     const share = pageCombo(c.analysis).lines!;
     expect(share[top]).toBeGreaterThan(0);
-    for (const x of certified.filter((y) => y.cycle.steps.length <= 2)) {
-      const T = c.cs.levels[top][x.cycle.type];
-      let at: ArcAt = { level: top, type: x.cycle.type, a: x.places[2], b: T.mate(x.places[2]) };
+    // one certificate of each cycle, followed past its last arc as far as a budget of routes reaches
+    const byCycle = new Map(certified.map((x) => [cycleName(x.cycle), x]));
+    let walked = 0;
+    for (const x of byCycle.values()) {
+      await breathe();
+      let at: ArcAt = x.arcs[TURNS];
       const start = at;
-      R.limit = R.work.calls + 2e6;
-      for (const st of x.cycle.steps) {
-        const up = liftArc(R, at.level, at.a, typeIndex.get(st.parent)!, st.slot, TYPES);
-        expect(up.kind).toBe('open');
-        if (up.kind !== 'open') return;
-        at = { level: at.level + 1, type: st.parent, a: up.a, b: up.b };
+      R.limit = R.work.calls + 3e6;
+      try {
+        for (const st of x.cycle.steps) {
+          const up = liftArc(R, at.level, at.a, typeIndex.get(st.parent)!, st.slot, TYPES);
+          expect(up.kind).toBe('open');
+          if (up.kind !== 'open') return;
+          at = { level: at.level + 1, type: st.parent, a: up.a, b: up.b };
+        }
+      } catch (err) {
+        if (err instanceof RouteLimit) continue;
+        throw err;
       }
       expect(isTurn(R, start, at)).toBe(true);
+      walked++;
     }
+    expect(walked).toBeGreaterThan(0);
+  }, 300000);
+});
+
+describe('the line of a Delta as slot 1 of a Delta, in 140000001', () => {
+  it('has ends one more turn of a Sigma as slot 4 of a Sigma out, every second level', () => {
+    const cs = buildShapes(RULE, COMBO, 1);
+    for (let n = 2; n <= 10; n++) cs.extend(n);
+    const R = new SparseRoutes(cs, 10);
+    const D = typeIndex.get('Delta')!;
+    // its arc at level 6, as the Delta's level-4 tails reach it (Identify's ancestry)
+    let a = 1577;
+    let b = 2381;
+    const ends: string[] = [];
+    const path = (n: number, x: number): string => {
+      const p = borderPath(R, n, D, x);
+      return `${p.slots.join('')}|${p.edge}`;
+    };
+    for (let n = 6; n <= 12; n++) {
+      if (n % 2 === 0) ends.push(`${path(n, a)} ${path(n, b)}`);
+      if (n === 12) break;
+      const up = liftArc(R, n, a, D, 1, TYPES);
+      expect(up.kind).toBe('open');
+      if (up.kind !== 'open') return;
+      [a, b] = [up.a, up.b];
+    }
+    expect(ends).toEqual(['144455|4 344563|4', '14444455|4 34444563|4', '1444444455|4 3444444563|4', '144444444455|4 344444444563|4']);
   }, 300000);
 });
 

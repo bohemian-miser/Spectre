@@ -20,12 +20,13 @@
  *   combination's circuits do not name;
  * - **forecast error**: the tails closing by the cap into every other chain
  *   and nugget less what the forecast puts there;
- * - **open past the cap**: the tails still open at the cap (or where the
- *   routes ran out), less the forecast's closings above the cap, less the
- *   infinite lines.
+ * - **open past the cap**: the tails still open at the cap, less the
+ *   forecast's closings above the cap, less the infinite lines.
  *
- * The parts other than the lines and several fates are estimates from the
- * sample, each with its standard error.
+ * A tail whose routes run out before the cap is compared with the forecast
+ * to the level it reached. The parts other than the lines and several fates
+ * are estimates from the sample, each with its standard error; they add up
+ * to the remainder.
  */
 import { account, notCarried, type PageCombo } from '../foundations/pageData';
 import type { Followed } from './above';
@@ -63,42 +64,53 @@ export function remainderOf(p: PageCombo, followed: readonly Followed[], cap: nu
   const last = acc.columns.length - 1;
   const lines = acc.segments.find((s) => s.key === 'lines')?.values[last] ?? 0;
   const tailsTop = p.tails[T];
-  // the forecast by class: by the cap, and above it
-  const byCap = new Map<string, number>();
-  let above = 0;
+  // the forecast by class and level, from T + 1 to the cap
+  const byLevel = new Map<string, number[]>();
+  let total = 0;
   for (const l of pr.lines) {
     const key = `${l.cls === 0 ? 'nugget' : 'chain'} ${l.root}`;
-    byCap.set(key, (byCap.get(key) ?? 0) + sum(l.values.slice(T + 1, cap + 1)));
-    above += sum(l.values.slice(cap + 1)) + l.rest;
+    const row = byLevel.get(key) ?? byLevel.set(key, new Array<number>(cap + 1).fill(0)).get(key)!;
+    for (let m = T + 1; m <= cap; m++) row[m] += l.values[m];
+    total += sum(l.values.slice(T + 1)) + l.rest;
   }
-  const forecast = sum([...byCap.values()]) + above;
-  const remainder = tailsTop - forecast;
+  /** The forecast closing into the classes `keep` from T + 1 to level c. */
+  const by = (c: number, keep: (k: string) => boolean): number => sum([...byLevel].filter(([k]) => keep(k)).map(([, row]) => sum(row.slice(T + 1, c + 1))));
+  const remainder = tailsTop - total;
   const N = followed.length;
   const counts = new Map<string, number>();
   for (const f of followed) counts.set(f.fate, (counts.get(f.fate) ?? 0) + 1);
-  const part = (keys: (k: string) => boolean): Part => {
-    const s = N ? sum([...counts].filter(([k]) => keys(k)).map(([, c]) => c)) / N : 0;
-    return { share: s * tailsTop, se: N ? Math.sqrt((s * (1 - s)) / N) * tailsTop : 0 };
-  };
   const shares: Record<string, Part> = {};
   for (const [k, c] of [...counts].sort((a, b) => b[1] - a[1])) shares[k] = { share: c / N, se: Math.sqrt(((c / N) * (1 - c / N)) / N) };
   const notForecast = pr.fits.filter((f) => !f.nugget && notCarried(f)).map((f) => `chain ${f.root}`);
   const nf = new Set(notForecast);
+  const none = { share: 0, se: 0 };
+  // nothing followed: only the lines are told apart
+  if (!N) {
+    return {
+      remainder,
+      parts: { notForecast: none, severalFates: none, lines: { share: lines, se: 0 }, unknown: none, forecastError: none, openPastCap: { share: remainder - lines, se: 0 } },
+      followed: { samples: 0, cap, shares },
+      notForecast,
+    };
+  }
   const open = (k: string): boolean => k === 'open' || k === 'budget' || k === 'ends';
-  const forecastHit = part((k) => !open(k) && k !== 'unknown' && !nf.has(k));
-  const byCapOf = (f: (k: string) => boolean): number => sum([...byCap].filter(([k]) => f(k)).map(([, v]) => v));
-  const forecastByCap = byCapOf((k) => !nf.has(k));
-  const opened = part(open);
-  const notCarriedOn = part((k) => nf.has(k));
+  // each sample against the forecast to the level it was followed to: the cap, or where the routes ran out
+  const reach = (f: Followed): number => (f.fate === 'budget' ? Math.max(T, Math.min(cap, f.level)) : cap);
+  /** Tails in the classes `keep` (as a share of all chords) less the forecast's share there by each sample's reach, with its standard error. */
+  const part = (inSample: (k: string) => boolean, forecast: (c: number) => number): Part => {
+    const x = followed.map((f) => (inSample(f.fate) ? tailsTop : 0) - forecast(reach(f)));
+    const mean = sum(x) / N;
+    return { share: mean, se: Math.sqrt(sum(x.map((v) => (v - mean) ** 2)) / (N * Math.max(1, N - 1))) };
+  };
   return {
     remainder,
     parts: {
-      notForecast: { share: notCarriedOn.share - byCapOf((k) => nf.has(k)), se: notCarriedOn.se },
-      severalFates: { share: 0, se: 0 },
+      notForecast: part((k) => nf.has(k), (c) => by(c, (k) => nf.has(k))),
+      severalFates: none,
       lines: { share: lines, se: 0 },
-      unknown: part((k) => k === 'unknown'),
-      forecastError: { share: forecastHit.share - forecastByCap, se: forecastHit.se },
-      openPastCap: { share: opened.share - above - lines, se: opened.se },
+      unknown: part((k) => k === 'unknown', () => 0),
+      forecastError: part((k) => !open(k) && k !== 'unknown' && !nf.has(k), (c) => by(c, (k) => !nf.has(k))),
+      openPastCap: part(open, (c) => total - by(c, () => true) + lines),
     },
     followed: { samples: N, cap, shares },
     notForecast,

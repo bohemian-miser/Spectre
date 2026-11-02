@@ -9,20 +9,23 @@
  * when each end's border path up there is its border path down here with one
  * block of q slots repeated where it already stood once: the ends sit at the
  * same place of the same pattern, one turn of the pattern further out. A
- * strand is certified as an infinite line when its arc is fixed for two
+ * strand is certified as an infinite line when its arc is fixed for `TURNS`
  * turns running, and neither end lies on an edge of X that the ancestry keeps
  * on the outline for ever (the strand would leave the union of the
- * supertiles there, into whatever surrounds it).
+ * supertiles there, into whatever surrounds it). Two turns are not enough:
+ * in 110000001 arcs fixed from level 3 to 5 and 5 to 7, ends at a run of one
+ * slot, move off it at level 9.
  *
  * In 023468 · 140000001 a level-4 Delta taken as slot 1 of a Delta at every
- * level has one such strand: its ends at levels 6, 8 and 10 are
+ * level has one such strand: its ends at levels 6, 8, 10 and 12 are
  *
- *     1 4 4 4 5 5 | edge 4      1 4 4 4 4 4 5 5 | edge 4      1 4 4 4 4 4 4 4 5 5 | edge 4
+ *     1 4 4 4 5 5 | edge 4      1 4 4 4 4 4 5 5 | edge 4      1 4 4 4 4 4 4 4 5 5 | edge 4      …
  *
  * a Sigma's Sigma child at slot 4, once more each turn.
  */
 import { edgeParts, type HexType } from '../../core';
-import { typeIndex, type SparseRoutes } from '../harmonics/sparseRoutes';
+import { RouteLimit, TYPES, typeIndex, type SparseRoutes } from '../harmonics/sparseRoutes';
+import { liftArc } from './follow';
 import { lift, liftsOf, type Lifts } from './lifts';
 import { typeFrequencies } from '../foundations/foundations';
 import { cycles, placements, type Cycle } from './placements';
@@ -113,66 +116,104 @@ export function leavesUnion(R: SparseRoutes, arc: ArcAt, outer: Set<number>): bo
   return [arc.a, arc.b].some((x) => outer.has(R.locate(arc.level, ti, x) & 7));
 }
 
-/** Three arcs a turn apart along one ancestry: certified when each is the one before one turn further out and the last stays inside. */
-export function certifies(R: SparseRoutes, arcs: readonly [ArcAt, ArcAt, ArcAt], outer: Set<number>): boolean {
-  return isTurn(R, arcs[0], arcs[1]) && isTurn(R, arcs[1], arcs[2]) && !leavesUnion(R, arcs[2], outer);
-}
+/** Turns of the ancestry an arc must be fixed for. */
+export const TURNS = 3;
 
-/** An arc certified at a level: the cycle, and its three arcs a turn apart (lower ends' places), the last at the level. */
-export interface Certified {
-  readonly cycle: Cycle;
-  readonly level: number;
-  readonly places: readonly [number, number, number];
+/** `TURNS` + 1 arcs a turn apart along one ancestry: certified when each is the one before one turn further out and the last stays inside. */
+export function certifies(R: SparseRoutes, arcs: readonly ArcAt[], outer: Set<number>): boolean {
+  if (arcs.length !== TURNS + 1) throw new Error(`a certificate takes ${TURNS + 1} arcs`);
+  for (let i = 1; i < arcs.length; i++) if (!isTurn(R, arcs[i - 1], arcs[i])) return false;
+  return !leavesUnion(R, arcs[arcs.length - 1], outer);
 }
 
 /**
- * The arcs of the full tables at `level` certified along some cycle, each
- * with the arcs two turns and one turn down that it is the fixed point of.
- * `liftsAt` gives the lifts into a supertile of a type at a level.
+ * An arc of a level-n supertile on a certified line: the cycle, and the
+ * `TURNS` + 1 arcs a turn apart that certify it, from `TURNS` - 1 turns
+ * below n to one turn above it.
+ */
+export interface Certified {
+  readonly cycle: Cycle;
+  readonly level: number;
+  readonly arcs: readonly ArcAt[];
+}
+
+/** The arc of the level-n supertile itself: the last but one of the certificate. */
+export const certifiedArc = (c: Certified): ArcAt => c.arcs[TURNS - 1];
+
+/** Routes worked out at most for the last turn of a certificate above the full tables. */
+const ROUTES = 1e6;
+
+/**
+ * The arcs of level-n supertiles on a certified line, along every cycle.
+ * The turns within the full tables are lifted (`liftsAt`); a turn above
+ * them is followed through the routes, at most `ROUTES` routes for each.
  */
 export function certifiedArcs(R: SparseRoutes, level: number, cycles: readonly Cycle[], liftsAt: (level: number, type: string) => Lifts): Certified[] {
   const cs = R.cs;
   const out: Certified[] = [];
   for (const c of cycles) {
     const q = c.steps.length;
-    const from = level - 2 * q;
-    if (from < 1) continue;
+    const from = level - (TURNS - 1) * q;
+    if (from < 1 || level > R.base) continue;
     const outer = outerEdges(c);
     const T0 = cs.levels[from][c.type];
-    const up = (m: number, k: number): number => {
+    /** The arc a turn up from `x`, or null when the turn closes it. */
+    const up = (x: ArcAt): ArcAt | null => {
+      let { a, b } = x;
       for (let i = 0; i < q; i++) {
         const st = c.steps[i];
-        const to = lift(liftsAt(m + i + 1, st.parent), k, st.slot);
-        if (!to || !('arc' in to)) return -1;
-        k = to.arc;
+        const m = x.level + i;
+        if (m + 1 <= R.base) {
+          const to = lift(liftsAt(m + 1, st.parent), a, st.slot);
+          if (!to || !('arc' in to)) return null;
+          [a, b] = [to.arc, cs.levels[m + 1][st.parent].mate(to.arc)];
+        } else {
+          const to = liftArc(R, m, a, typeIndex.get(st.parent)!, st.slot, TYPES);
+          if (to.kind !== 'open') return null;
+          [a, b] = [to.a, to.b];
+        }
       }
-      return k;
+      return { level: x.level + q, type: c.type, a, b };
     };
-    const arcAt = (m: number, k: number): ArcAt => ({ level: m, type: c.type, a: k, b: cs.levels[m][c.type].mate(k) });
     for (const k of T0.crossings()) {
       if (T0.mate(k) < k) continue;
-      const k1 = up(from, k);
-      if (k1 < 0) continue;
-      const k2 = up(from + q, k1);
-      if (k2 >= 0 && certifies(R, [arcAt(from, k), arcAt(from + q, k1), arcAt(level, k2)], outer)) out.push({ cycle: c, level, places: [k, k1, k2] });
+      const arcs: ArcAt[] = [{ level: from, type: c.type, a: k, b: T0.mate(k) }];
+      try {
+        for (let t = 0; t < TURNS; t++) {
+          // the turns below cost nothing: the last only once the others hold
+          if (t > 0 && !isTurn(R, arcs[t - 1], arcs[t])) break;
+          if (arcs[t].level + q > R.base) R.limit = R.work.calls + ROUTES;
+          const next = up(arcs[t]);
+          if (!next) break;
+          arcs.push(next);
+        }
+      } catch (err) {
+        if (!(err instanceof RouteLimit)) throw err;
+      } finally {
+        R.limit = Infinity;
+      }
+      if (arcs.length === TURNS + 1 && certifies(R, arcs, outer)) out.push({ cycle: c, level, arcs });
     }
   }
   return out;
 }
 
-/** The certified arcs by type: the lower end's place of each. */
+/** The certified arcs by type: the lower end's place of each, at its level. */
 export function lineArcs(list: readonly Certified[]): Map<string, Set<number>> {
   const out = new Map<string, Set<number>>();
-  for (const c of list) (out.get(c.cycle.type) ?? out.set(c.cycle.type, new Set()).get(c.cycle.type)!).add(c.places[2]);
+  for (const c of list) {
+    const x = certifiedArc(c);
+    (out.get(x.type) ?? out.set(x.type, new Set()).get(x.type)!).add(Math.min(x.a, x.b));
+  }
   return out;
 }
 
-/** The share of a type's copies whose next two turns of ancestry are the cycle. */
-export function twoTurns(c: Cycle): number {
+/** The share of a type's copies whose next `TURNS` turns of ancestry are the cycle. */
+export function turnsShare(c: Cycle): number {
   const place = placements();
   let p = 1;
   let below: HexType = c.type;
-  for (const st of [...c.steps, ...c.steps]) {
+  for (const st of Array.from({ length: TURNS }, () => c.steps).flat()) {
     p *= place[below].find((x) => x.parent === st.parent && x.slot === st.slot)!.weight;
     below = st.parent;
   }
@@ -181,23 +222,23 @@ export function twoTurns(c: Cycle): number {
 
 /**
  * The share of all chords on certified lines at a level, through the
- * ancestry that certifies them: the chords on each arc two turns down (as
- * a share of every chord at that level, each type weighted by its
+ * ancestry that certifies them: the chords on the certificate's first arc
+ * (as a share of every chord at its level, each type weighted by its
  * frequency; `chordsAt` gives the weighted total), times the share of that
- * type's copies whose next two turns of ancestry are the cycle. All of them
- * are on a tail at the level, on a fixed arc. The chance of the cycle going
- * on for ever is nil, so in the limit the share is too.
+ * type's copies whose next `TURNS` turns of ancestry are the cycle. All of
+ * them are on a tail at the level, on a certified arc. The chance of the
+ * cycle going on for ever is nil, so in the limit the share is too.
  */
 export function lineShare(R: SparseRoutes, list: readonly Certified[], chordsAt: (level: number) => number): number {
   const freq = typeFrequencies('hex');
   let out = 0;
   const seen = new Set<string>();
   for (const c of list) {
-    const from = c.level - 2 * c.cycle.steps.length;
-    const key = `${c.cycle.type} ${from} ${c.places[0]}`;
+    const first = c.arcs[0];
+    const key = `${first.type} ${first.level} ${Math.min(first.a, first.b)}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    out += (freq[typeIndex.get(c.cycle.type)!] * R.cs.levels[from][c.cycle.type].len(c.places[0]) * twoTurns(c.cycle)) / chordsAt(from);
+    out += (freq[typeIndex.get(first.type)!] * R.cs.levels[first.level][first.type].len(first.a) * turnsShare(c.cycle)) / chordsAt(first.level);
   }
   return out;
 }
@@ -209,7 +250,7 @@ export function lineShare(R: SparseRoutes, list: readonly Certified[], chordsAt:
  */
 export function linesByLevel(R: SparseRoutes, top: number, liftsAt?: (level: number, type: string) => Lifts): Certified[][] {
   const all = cycles();
-  const reach = 2 * Math.max(...all.map((c) => c.steps.length));
+  const reach = TURNS * Math.max(...all.map((c) => c.steps.length));
   const kept = new Map<string, Lifts>();
   const at =
     liftsAt ??
