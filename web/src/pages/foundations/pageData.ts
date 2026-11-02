@@ -804,6 +804,52 @@ export function pageIndex(rule: string, combos: readonly PageCombo[]): PageIndex
   return { rule, combos: sorted.map(indexRow), monsters: sorted.flatMap(monstersOf) };
 }
 
+/**
+ * A combination's index row as one line, for a rule with too many
+ * combinations for a file each: the combination, First (the floor), Last
+ * found (with `*` when not settled), foundational circuits, nuggets, tiles
+ * of the largest, monsters, tails at the top level, the limit, and the marks
+ * by letter (`-` for none), then the limit's parts (`LIMIT_PARTS`),
+ * comma-separated; all space-separated:
+ *
+ *   140000001 3 7 9 4 2079 1 0.0123456 0.9987654 fu 0.12,0.3,…
+ *
+ * The chains not forecast keep only their count's sign; the combination's
+ * own analysis names them.
+ */
+export function indexLine(r: IndexRow): string {
+  const marks = (Object.keys(MARK_LETTERS) as Mark[]).filter((m) => MARKS[m].has(r)).map((m) => MARK_LETTERS[m]).join('');
+  return [r.combo, r.floor, `${r.lastNew}${r.settled ? '' : '*'}`, r.found, r.nuggets, r.largest, r.monsters, round(r.tails), r.limit, marks || '-', r.parts.map(round).join(',')].join(' ');
+}
+
+const MARK_LETTERS: Record<Mark, string> = { short: 's', notForecast: 'f', unexplained: 'u', missed: 'm' };
+
+/** What an index line keeps of a chain not forecast. */
+export const NOT_FORECAST_LINE = 'a chain is not carried on past the build; the combination names it';
+
+/** An index line (`indexLine`) read back, for a rule classified to `levels`. */
+export function lineRow(line: string, levels: number): IndexRow {
+  const [combo, floor, last, found, nuggets, largest, monsters, tails, limit, marks, parts] = line.trim().split(' ');
+  if (marks === undefined || !/^[0-9a-z]+$/.test(combo)) throw new Error(`not an index line: ${line}`);
+  return {
+    combo,
+    levels,
+    floor: Number(floor),
+    settled: !last.endsWith('*'),
+    lastNew: parseInt(last, 10),
+    found: Number(found),
+    nuggets: Number(nuggets),
+    largest: Number(largest),
+    monsters: Number(monsters),
+    misses: marks.includes('m') ? 1 : 0,
+    tails: Number(tails),
+    limit: Number(limit),
+    parts: parts ? parts.split(',').map(Number) : LIMIT_PARTS.map((x) => (x.key === 'unaccounted' ? Math.max(0, 1 - Number(limit)) : 0)),
+    notForecast: marks.includes('f') ? [NOT_FORECAST_LINE] : [],
+    unexplained: marks.includes('u') ? 1 : 0,
+  };
+}
+
 /** One member of a chain: its tiles, and how it is known. */
 export interface ChainMember {
   readonly id: number | null;
