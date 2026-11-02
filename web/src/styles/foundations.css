@@ -22,6 +22,7 @@
   --fd-c4: #008300;
   --fd-c5: #6250d6;
   --fd-tails: color-mix(in srgb, var(--muted) 45%, var(--bg));
+  --fd-line: #127f96;
   --fd-monster: #c0392b;
   display: grid;
   gap: 16px;
@@ -47,6 +48,7 @@
     --fd-c4: #008300;
     --fd-c5: #9085e9;
     --fd-tails: color-mix(in srgb, var(--muted) 40%, var(--bg));
+    --fd-line: #4fb3c9;
     --fd-monster: #ff7a6b;
   }
 }
@@ -568,6 +570,11 @@
 .fd-seg-unaccounted {
   fill: var(--fd-tails);
   background: var(--fd-tails);
+}
+/* tails on a certified infinite line */
+.fd-seg-lines {
+  fill: var(--fd-line);
+  background: var(--fd-line);
 }
 /* tails that known circuits close later: their circuit's colour, faded */
 .fd-seg-later-found {

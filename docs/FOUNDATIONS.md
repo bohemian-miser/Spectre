@@ -22,6 +22,8 @@ combination,
 [`foundations-recurrence.ts`](../web/circuit-classes/foundations-recurrence.ts)
 (the lengths along a chain). Data: `web/circuit-classes/data/foundations/hex-023468/`. Tests:
 [`foundations.test.ts`](../web/src/pages/foundations/__tests__/foundations.test.ts).
+The tails' fates over every placement, the infinite lines and what the
+account leaves over in the limit: [`TAIL_FATES.md`](TAIL_FATES.md).
 
 The Foundations page (`foundations.html`) shows every combination's
 foundational circuits, chains and account of chords, from a cut of the

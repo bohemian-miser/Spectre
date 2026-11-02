@@ -36,6 +36,9 @@ import type { PageCombo } from '../foundations/pageData';
 import { familyOfSteps, parentOf, readWalked, walkedWordCodes } from '../harmonics/bruteForce';
 import { RouteLimit, SparseRoutes, TYPES, typeIndex, type Walked } from '../harmonics/sparseRoutes';
 import type { CircuitShapes } from '../shapes/circuitShapes';
+import { liftArc } from '../fates/follow';
+import { certifies, isTurn, outerEdges, TURNS, type ArcAt } from '../fates/lines';
+import { cycleName, type Cycle } from '../fates/placements';
 import { IdentifyEngine, labelOf, type Candidate } from '../identify/identify';
 
 /** The highest level of the full tables (level 9 holds about half a million places). */
@@ -118,9 +121,11 @@ export interface Near {
 export type TailFate =
   | { readonly state: 'closed'; readonly closing: number }
   | { readonly state: 'open'; readonly level: number; readonly tiles: number; readonly why: 'cap' | 'routes'; /** The tail every tail on the same strand is followed as. */ readonly strand: number }
-  | { readonly state: 'ends'; readonly level: number };
+  | { readonly state: 'ends'; readonly level: number }
+  /** On a strand certified as an infinite line at `level` (`fates/lines.ts`), through the ancestry's repeating part, `cycle` (`cycleName`). */
+  | { readonly state: 'line'; readonly level: number; readonly tiles: number; readonly cycle: string; readonly strand: number };
 
-/** A class of the legend: a chain, a nugget, a circuit not known, or still open. */
+/** A class of the legend: a chain, a nugget, a circuit not known, or still open (the Explorer keys an infinite line `line`). */
 export const classKey = (c: Closing | null): string =>
   !c ? 'open' : !c.named ? 'unknown' : `${c.named.nugget ? 'nugget' : 'chain'} ${c.named.root.id}`;
 
@@ -339,12 +344,13 @@ export function placeTiles(cs: CircuitShapes, root: string, L: number): Map<numb
   return out;
 }
 
-/** An arc being followed: its two ends at its level, and the tails on it. */
+/** An arc being followed: its two ends at its level, the tails on it, and the arcs a level down it was followed from. */
 interface Arc {
   readonly a: number;
   readonly b: number;
   readonly tiles: number;
   readonly tails: number[];
+  readonly below: Arc[];
 }
 
 /** A combination's full tables, the routes above them and its circuits by name, kept for every patch of it. */
@@ -403,6 +409,8 @@ export class TailClassifier {
     readonly job: TailJob,
     readonly shapes: TailShapes,
     private readonly onUpdate: (u: TailUpdate) => void = () => {},
+    /** Whether a strand certified as an infinite line is settled as one, rather than followed to the cap. */
+    private readonly lines = true,
   ) {
     if (job.level > shapes.base) throw new Error(`the tables are followed to level ${shapes.base}, below the patch`);
     this.cs = shapes.cs;
@@ -441,14 +449,18 @@ export class TailClassifier {
       const m = k === undefined ? -1 : T.mate(k);
       if (k === undefined || m < 0 || T.len(k) !== t.tiles) return;
       const key = Math.min(k, m);
-      const arc = frontier.get(key) ?? frontier.set(key, { a: k, b: m, tiles: T.len(k), tails: [] }).get(key)!;
+      const arc = frontier.get(key) ?? frontier.set(key, { a: k, b: m, tiles: T.len(k), tails: [], below: [] }).get(key)!;
       arc.tails.push(i);
     });
 
     let ti = typeIndex.get(job.root)!;
+    // the type at each level from L, and the slot it sits in one level up
+    const anc: { type: number; slot: number }[] = [];
     for (let n = L; n < this.cap && frontier.size; n++) {
       const given = job.above?.[n - L];
       const p = given ? { type: typeIndex.get(given.type)!, slot: given.slot } : parentOf(R, ti);
+      anc[n] = { type: ti, slot: p.slot };
+      anc[n + 1] = { type: p.type, slot: -1 };
       if (R.kid(p.type, p.slot) !== ti) throw new Error(`a level-${n + 1} ${TYPES[p.type]} has no ${TYPES[ti]} in slot ${p.slot}`);
       const next = new Map<number, Arc>();
       const fates: (readonly [number, TailFate])[] = [];
@@ -478,43 +490,37 @@ export class TailClassifier {
           continue;
         }
         try {
-          const x0 = arc.a * 8 + p.slot;
-          const fwd: number[] = [];
-          const w = R.walk(n + 1, p.type, x0, fwd);
-          if (w.end === 'ends') {
+          const up1 = liftArc(R, n, arc.a, p.type, p.slot, TYPES);
+          if (up1.kind === 'ends') {
             taken.add(key);
             this.settle(arc, { state: 'ends', level: n + 1 }, fates);
             continue;
           }
-          if (w.end === 'closed') {
-            const walk: Walked = { level: n + 1, type: TYPES[p.type], length: w.length, steps: fwd };
+          if (up1.kind === 'closed') {
             const ci = this.closings.length;
-            const closing = this.close(walk, n > this.shapes.base ? 'routes' : 'tables');
+            const closing = this.close(up1.walk, n > this.shapes.base ? 'routes' : 'tables');
             this.closings.push(closing);
             closings.push([ci, closing]);
             taken.add(key);
             this.settle(arc, { state: 'closed', closing: ci }, fates);
-            absorb(fwd, (o) => this.settle(o, { state: 'closed', closing: ci }, fates));
+            absorb(up1.steps, (o) => this.settle(o, { state: 'closed', closing: ci }, fates));
             continue;
           }
-          const z = R.across(n + 1, p.type, x0);
-          const back: number[] = [];
-          const bw = z < 0 ? null : R.walk(n + 1, p.type, z, back);
-          if (bw && bw.end !== 'out') throw new Error(`level ${n + 1}: an arc that leaves one way does not leave the other`);
-          const a = bw ? bw.exit : R.placeOf(n + 1, x0);
-          const b = w.exit;
-          const up: Arc = { a, b, tiles: w.length + (bw ? bw.length : 0), tails: [] };
+          const { a, b } = up1;
+          const up: Arc = { a, b, tiles: up1.tiles, tails: [], below: [] };
           const merge = (o: Arc): void => {
             up.tails.push(...o.tails);
+            up.below.push(o);
           };
           taken.add(key);
           merge(arc);
-          absorb(fwd, merge);
-          absorb(back, merge);
+          absorb(up1.steps, merge);
           const nk = Math.min(a, b);
           const had = next.get(nk);
-          if (had) had.tails.push(...up.tails);
-          else next.set(nk, up);
+          if (had) {
+            had.tails.push(...up.tails);
+            had.below.push(...up.below);
+          } else next.set(nk, up);
         } catch (err) {
           if (!(err instanceof RouteLimit)) throw err;
           limited = true;
@@ -522,6 +528,14 @@ export class TailClassifier {
         }
       }
       if (limited) for (const arc of next.values()) this.settle(arc, { state: 'open', level: n + 1, tiles: arc.tiles, strand: arc.tails[0], why: 'routes' }, fates);
+      else if (this.lines) {
+        for (const [key, arc] of next) {
+          const c = certifiedLine(R, n + 1, arc, anc, L);
+          if (!c) continue;
+          next.delete(key);
+          this.settle(arc, { state: 'line', level: n + 1, tiles: arc.tiles, cycle: cycleName(c), strand: arc.tails[0] }, fates);
+        }
+      }
       frontier = limited ? new Map() : next;
       ti = p.type;
       this.post(`followed to level ${n + 1}`, fates, closings);
@@ -534,10 +548,46 @@ export class TailClassifier {
 
   /** A closing walk, named. */
   private close(walk: Walked, via: Closing['via']): Closing {
-    const word = walk.length <= WORD_CAP ? wordKeyOf(walkedWordCodes(this.R, walk)) : null;
-    const named = this.catalog.name(walk, word);
-    return { level: walk.level, type: walk.type, length: walk.length, word, via, named, near: named ? null : this.catalog.near };
+    return nameClosing(this.R, this.catalog, walk, via);
   }
+}
+
+/** A closing walk, named from the combination's circuits. */
+export function nameClosing(R: SparseRoutes, catalog: Catalog, walk: Walked, via: Closing['via']): Closing {
+  const word = walk.length <= WORD_CAP ? wordKeyOf(walkedWordCodes(R, walk)) : null;
+  const named = catalog.name(walk, word);
+  return { level: walk.level, type: walk.type, length: walk.length, word, via, named, near: named ? null : catalog.near };
+}
+
+/** The longest period of ancestry an infinite line is looked for along. */
+const PERIOD = 4;
+
+/**
+ * The cycle along which an arc at level M is certified as an infinite line
+ * (`fates/lines.ts`): the ancestry from M - TURNS q to M repeats with
+ * period q, and the arc is fixed over every turn, through arcs it was
+ * followed from.
+ */
+function certifiedLine(R: SparseRoutes, M: number, arc: Arc, anc: readonly { type: number; slot: number }[], L: number): Cycle | null {
+  const down = (xs: Arc[], k: number): Arc[] => (k === 0 ? xs : down(xs.flatMap((x) => x.below), k - 1));
+  for (let q = 1; q <= PERIOD && M - TURNS * q >= L; q++) {
+    let periodic = true;
+    for (let i = M - TURNS * q; periodic && i < M - q; i++) periodic = anc[i].type === anc[i + q].type && anc[i].slot === anc[i + q].slot;
+    if (!periodic || anc[M].type !== anc[M - q].type) continue;
+    const type = TYPES[anc[M].type];
+    const cycle: Cycle = { type, steps: Array.from({ length: q }, (_, i) => ({ parent: TYPES[anc[M - q + i + 1].type], slot: anc[M - q + i].slot })) };
+    const outer = outerEdges(cycle);
+    const at = (m: number, x: Arc): ArcAt => ({ level: m, type, a: x.a, b: x.b });
+    // the arcs a turn apart below this one, each one turn in from the next
+    const chains = (x: Arc, m: number, left: number): ArcAt[][] => {
+      if (left === 0) return [[at(m, x)]];
+      return down([x], q)
+        .filter((y) => isTurn(R, at(m - q, y), at(m, x)))
+        .flatMap((y) => chains(y, m - q, left - 1).map((c) => [...c, at(m, x)]));
+    };
+    if (chains(arc, M, TURNS).some((c) => certifies(R, c, outer))) return cycle;
+  }
+  return null;
 }
 
 /** A tail's first tile as a slot path from a level-L root (`1.7.0`). */

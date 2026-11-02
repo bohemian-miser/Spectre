@@ -26,6 +26,9 @@ import {
   type Foundations,
   type FoundationsCache,
 } from './foundations';
+import { lineShare, linesByLevel, type Certified } from '../fates/lines';
+import { SparseRoutes } from '../harmonics/sparseRoutes';
+import type { BornCircuit, CircuitShapes } from '../shapes/circuitShapes';
 
 const TYPES = leafOrder('hex') as readonly string[];
 
@@ -83,9 +86,11 @@ export interface ComboAnalysis {
    * level, by `root|class|order` (`bucketOf`) or
    * `unseen` (a circuit at levels + 1 that is no known word and was not
    * predicted). tails[m - 1] = tails[m] + the closings at m, exactly but for
-   * rounding.
+   * rounding. `lines`: the share on tails certified as infinite lines
+   * through the ancestry that certifies them, part of the tails
+   * (`fates/lines.ts`, `lineShare`).
    */
-  readonly shares: { tails: number[]; closings: Record<string, number[]> };
+  readonly shares: { tails: number[]; closings: Record<string, number[]>; lines: number[] };
   /** The closings at levels + 1, built but not classified: places whose word is a known circuit, places predicted as a harmonic, and the rest, unseen. */
   readonly above: { level: number; known: number; predicted: number; unseen: { length: number; places: number; word: string }[] };
   /** Every harmonic's copies per type at its lowest level against its parent's copies two levels down: checked pairs and the exceptions. */
@@ -100,6 +105,19 @@ export type Progress = (stage: string, done: number, of: number) => void;
 const sig = (x: number): number => (x === 0 ? 0 : Number(x.toPrecision(7)));
 
 export function analyseCombo(subset: readonly number[], combo: string, levels: number, onProgress: Progress = () => {}): ComboAnalysis {
+  return classifyCombo(subset, combo, levels, onProgress).analysis;
+}
+
+/** An analysis, with the build it ran on (to `levels` + 1) and each closing's bucket in the shares (`bucketOf`, or `unseen`). */
+export interface Classified {
+  readonly analysis: ComboAnalysis;
+  readonly cs: CircuitShapes;
+  readonly bucket: (c: BornCircuit) => string;
+  /** Per level, the arcs certified as infinite lines there (`fates/lines.ts`). */
+  readonly lines: Certified[][];
+}
+
+export function classifyCombo(subset: readonly number[], combo: string, levels: number, onProgress: Progress = () => {}): Classified {
   const t0 = Date.now();
   const L = levels;
   onProgress('building', 0, L + 1);
@@ -201,12 +219,17 @@ export function analyseCombo(subset: readonly number[], combo: string, levels: n
   // shares of chords, by chain and class, to the level above
   onProgress('accounting', 0, 1);
   const ofKey = new Map(f.closings.flatMap((c) => c.keys.map((k) => [k, bucketOf(c, order(f, c))] as const)));
-  const chainRows = account(cs, (c) => {
+  const bucket = (c: BornCircuit): string => {
     const k = closingKey(c);
     return ofKey.get(k) ?? aboveBucket.get(k) ?? 'unclassified';
-  });
+  };
+  const chainRows = account(cs, bucket);
+  onProgress('certifying infinite lines', 0, 1);
+  const R = new SparseRoutes(cs);
+  const lines = linesByLevel(R, L + 1);
   const freq = typeFrequencies('hex');
-  const shares: ComboAnalysis['shares'] = { tails: [], closings: {} };
+  const shares: ComboAnalysis['shares'] = { tails: [], closings: {}, lines: [] };
+  const chordsAt = (n: number): number => chainRows.filter((r) => r.level === n).reduce((s, r, t) => s + freq[t] * r.chords, 0);
   const buckets = new Set<string>();
   for (const r of chainRows) for (const b of Object.keys(r.closedHere)) buckets.add(b);
   for (const b of buckets) shares.closings[b] = [];
@@ -215,11 +238,12 @@ export function analyseCombo(subset: readonly number[], combo: string, levels: n
     const w = (g: (r: AccountRow) => number): number => at.reduce((s, r, t) => s + freq[t] * g(r), 0);
     const W = w((r) => r.chords);
     shares.tails.push(sig(w((r) => r.tails) / W));
+    shares.lines.push(sig(lineShare(R, lines[n], chordsAt)));
     for (const b of buckets) shares.closings[b].push(sig(w((r) => r.closedHere[b] ?? 0) / W));
   }
   const status = tileAccount(cs, f);
   const arcs = longestArcs(cs);
-  return {
+  const analysis: ComboAnalysis = {
     family: 'hex',
     rule: subset.join(''),
     combo,
@@ -247,6 +271,7 @@ export function analyseCombo(subset: readonly number[], combo: string, levels: n
       return { level: n, length: Math.max(...at.map((a) => a.length)), nested: at.filter((a) => a.nested).length };
     }),
   };
+  return { analysis, cs, bucket, lines };
 }
 
 /** A circuit's harmonic order: 0 for a foundational circuit, 1 for its harmonic two levels up, and so on. */

@@ -199,6 +199,8 @@ export default function FoundationsPage(props: { forceSync?: boolean }): JSX.Ele
             <dd>a foundational circuit with no harmonic: it only closes again, in more places</dd>
             <dt>Monster</dt>
             <dd>a combination whose tails are not all accounted for (short), or a foundational circuit first closing at floor + 4 or later (late) or of at least 100,000 tiles (giant)</dd>
+            <dt>Infinite line</dt>
+            <dd>a tail still open at the top level built whose arc, followed up a repeating ancestry, reaches the same border places one turn further out twice running: a strand that ancestry never closes. Its share is as computed at the top, never forecast</dd>
             <dt>Limit</dt>
             <dd>the share of chords on known circuits once the chains are forecast past the build</dd>
             {MARK_KEYS.map((m) => (

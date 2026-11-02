@@ -1,0 +1,3390 @@
+[
+ {
+  "combo": "000100000",
+  "limit": 1.0000061779490672,
+  "classifiable": 9,
+  "classifiableWithOpen": null,
+  "split": [
+   [
+    1,
+    14,
+    35
+   ],
+   [
+    2,
+    33,
+    107
+   ],
+   [
+    3,
+    94,
+    407
+   ],
+   [
+    4,
+    207,
+    1683
+   ],
+   [
+    5,
+    494,
+    7083
+   ],
+   [
+    6,
+    1077,
+    29963
+   ],
+   [
+    7,
+    1901,
+    126879
+   ],
+   [
+    8,
+    1029,
+    537427
+   ],
+   [
+    9,
+    0,
+    2276531
+   ]
+  ],
+  "weightDiff": 0.0000016458543570171957,
+  "lines": [
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   2.955789e-8,
+   2.134265e-8
+  ],
+  "lineArcs": 8,
+  "remainder": {
+   "remainder": -0.000006177949067313893,
+   "parts": {
+    "notForecast": {
+     "share": 0,
+     "se": 0
+    },
+    "severalFates": {
+     "share": 0,
+     "se": 0
+    },
+    "lines": {
+     "share": 0,
+     "se": 0
+    },
+    "unknown": {
+     "share": 0.0026028225,
+     "se": 0.001463701384007242
+    },
+    "forecastError": {
+     "share": -0.004869032055504437,
+     "se": 0.002481340337367027
+    },
+    "openPastCap": {
+     "share": 0.002260031606437122,
+     "se": 0.002222854195239153
+    }
+   },
+   "followed": {
+    "samples": 40,
+    "cap": 14,
+    "shares": {
+     "chain 4": {
+      "share": 0.575,
+      "se": 0.07816249100431741
+     },
+     "open": {
+      "share": 0.2,
+      "se": 0.0632455532033676
+     },
+     "chain 3": {
+      "share": 0.15,
+      "se": 0.05645794895318108
+     },
+     "unknown": {
+      "share": 0.075,
+      "se": 0.04164582812239421
+     }
+    }
+   },
+   "notForecast": []
+  },
+  "example": {
+   "level": 5,
+   "type": "Delta",
+   "a": 421,
+   "b": 437,
+   "tiles": 22,
+   "paths": [
+    {
+     "steps": [
+      {
+       "parent": "Xi",
+       "slot": 1
+      },
+      {
+       "parent": "Delta",
+       "slot": 0
+      },
+      {
+       "parent": "Delta",
+       "slot": 1
+      }
+     ],
+     "label": "6|harmonic|2",
+     "level": 8
+    },
+    {
+     "steps": [
+      {
+       "parent": "Delta",
+       "slot": 1
+      },
+      {
+       "parent": "Delta",
+       "slot": 1
+      },
+      {
+       "parent": "Delta",
+       "slot": 1
+      }
+     ],
+     "label": "4|harmonic|2",
+     "level": 8
+    },
+    {
+     "steps": [
+      {
+       "parent": "Theta",
+       "slot": 1
+      },
+      {
+       "parent": "Gamma",
+       "slot": 3
+      },
+      {
+       "parent": "Delta",
+       "slot": 7
+      }
+     ],
+     "label": "1|harmonic|3",
+     "level": 8
+    }
+   ]
+  },
+  "names": {
+   "nugget 0": "nugget of 3 at level 2",
+   "chain 1": "chain of 9 at level 2",
+   "nugget 2": "nugget of 18 at level 2",
+   "chain 3": "chain of 15 at level 4",
+   "chain 4": "chain of 66 at level 4",
+   "chain 6": "chain of 441 at level 4"
+  },
+  "seconds": 147.471
+ },
+ {
+  "combo": "001001100",
+  "limit": 0.9998284236114996,
+  "classifiable": 9,
+  "classifiableWithOpen": null,
+  "split": [
+   [
+    1,
+    30,
+    35
+   ],
+   [
+    2,
+    30,
+    107
+   ],
+   [
+    3,
+    31,
+    407
+   ],
+   [
+    4,
+    60,
+    1683
+   ],
+   [
+    5,
+    111,
+    7083
+   ],
+   [
+    6,
+    234,
+    29963
+   ],
+   [
+    7,
+    388,
+    126879
+   ],
+   [
+    8,
+    209,
+    537427
+   ],
+   [
+    9,
+    0,
+    2276531
+   ]
+  ],
+  "weightDiff": 8.923345049469122e-7,
+  "lines": [
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "lineArcs": 0,
+  "remainder": {
+   "remainder": 0.0001715763885004537,
+   "parts": {
+    "notForecast": {
+     "share": 0,
+     "se": 0
+    },
+    "severalFates": {
+     "share": 0,
+     "se": 0
+    },
+    "lines": {
+     "share": 0,
+     "se": 0
+    },
+    "unknown": {
+     "share": 0.00751458,
+     "se": 0.0028644169971083267
+    },
+    "forecastError": {
+     "share": -0.009450059660431533,
+     "se": 0.0037572900000000004
+    },
+    "openPastCap": {
+     "share": 0.0021070560489319747,
+     "se": 0.0030480855237004626
+    }
+   },
+   "followed": {
+    "samples": 40,
+    "cap": 14,
+    "shares": {
+     "chain 2": {
+      "share": 0.425,
+      "se": 0.07816249100431741
+     },
+     "open": {
+      "share": 0.175,
+      "se": 0.060078074203489575
+     },
+     "chain 3": {
+      "share": 0.175,
+      "se": 0.060078074203489575
+     },
+     "unknown": {
+      "share": 0.15,
+      "se": 0.05645794895318108
+     },
+     "chain 0": {
+      "share": 0.075,
+      "se": 0.04164582812239421
+     }
+    }
+   },
+   "notForecast": []
+  },
+  "example": {
+   "level": 5,
+   "type": "Delta",
+   "a": 421,
+   "b": 740,
+   "tiles": 640,
+   "paths": [
+    {
+     "steps": [
+      {
+       "parent": "Xi",
+       "slot": 1
+      },
+      {
+       "parent": "Delta",
+       "slot": 0
+      },
+      {
+       "parent": "Delta",
+       "slot": 1
+      }
+     ],
+     "label": "5|harmonic|2",
+     "level": 8
+    },
+    {
+     "steps": [
+      {
+       "parent": "Delta",
+       "slot": 1
+      },
+      {
+       "parent": "Delta",
+       "slot": 1
+      },
+      {
+       "parent": "Delta",
+       "slot": 1
+      }
+     ],
+     "label": "2|harmonic|2",
+     "level": 8
+    },
+    {
+     "steps": [
+      {
+       "parent": "Theta",
+       "slot": 1
+      },
+      {
+       "parent": "Gamma",
+       "slot": 3
+      },
+      {
+       "parent": "Delta",
+       "slot": 7
+      }
+     ],
+     "label": "4|harmonic|2",
+     "level": 8
+    }
+   ]
+  },
+  "names": {
+   "chain 0": "chain of 6 at level 3",
+   "nugget 1": "nugget of 6 at level 3",
+   "chain 2": "chain of 105 at level 4",
+   "chain 3": "chain of 108 at level 4",
+   "chain 4": "chain of 222 at level 4",
+   "chain 5": "chain of 675 at level 4"
+  },
+  "seconds": 211.235
+ },
+ {
+  "combo": "001100101",
+  "limit": 1.0000052603882092,
+  "classifiable": 9,
+  "classifiableWithOpen": null,
+  "split": [
+   [
+    1,
+    25,
+    35
+   ],
+   [
+    2,
+    33,
+    107
+   ],
+   [
+    3,
+    94,
+    407
+   ],
+   [
+    4,
+    207,
+    1683
+   ],
+   [
+    5,
+    494,
+    7083
+   ],
+   [
+    6,
+    1077,
+    29963
+   ],
+   [
+    7,
+    1901,
+    126879
+   ],
+   [
+    8,
+    1029,
+    537427
+   ],
+   [
+    9,
+    0,
+    2276531
+   ]
+  ],
+  "weightDiff": 0.000001359643869838778,
+  "lines": [
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   2.03671e-8,
+   1.465656e-8
+  ],
+  "lineArcs": 8,
+  "remainder": {
+   "remainder": -0.000005260388209259864,
+   "parts": {
+    "notForecast": {
+     "share": 0,
+     "se": 0
+    },
+    "severalFates": {
+     "share": 0,
+     "se": 0
+    },
+    "lines": {
+     "share": 0,
+     "se": 0
+    },
+    "unknown": {
+     "share": 0.0023782399999999998,
+     "se": 0.0011424695415162313
+    },
+    "forecastError": {
+     "share": -0.003930549313878252,
+     "se": 0.001745151051059874
+    },
+    "openPastCap": {
+     "share": 0.0015470489256689892,
+     "se": 0.001523292722021641
+    }
+   },
+   "followed": {
+    "samples": 40,
+    "cap": 14,
+    "shares": {
+     "chain 5": {
+      "share": 0.575,
+      "se": 0.07816249100431741
+     },
+     "open": {
+      "share": 0.2,
+      "se": 0.0632455532033676
+     },
+     "chain 4": {
+      "share": 0.125,
+      "se": 0.05229125165837972
+     },
+     "unknown": {
+      "share": 0.1,
+      "se": 0.047434164902525694
+     }
+    }
+   },
+   "notForecast": []
+  },
+  "example": {
+   "level": 5,
+   "type": "Delta",
+   "a": 421,
+   "b": 437,
+   "tiles": 16,
+   "paths": [
+    {
+     "steps": [
+      {
+       "parent": "Xi",
+       "slot": 1
+      },
+      {
+       "parent": "Delta",
+       "slot": 0
+      },
+      {
+       "parent": "Delta",
+       "slot": 1
+      }
+     ],
+     "label": "7|harmonic|2",
+     "level": 8
+    },
+    {
+     "steps": [
+      {
+       "parent": "Delta",
+       "slot": 1
+      },
+      {
+       "parent": "Delta",
+       "slot": 1
+      },
+      {
+       "parent": "Delta",
+       "slot": 1
+      }
+     ],
+     "label": "5|harmonic|2",
+     "level": 8
+    },
+    {
+     "steps": [
+      {
+       "parent": "Theta",
+       "slot": 1
+      },
+      {
+       "parent": "Gamma",
+       "slot": 3
+      },
+      {
+       "parent": "Delta",
+       "slot": 7
+      }
+     ],
+     "label": "6|harmonic|2",
+     "level": 8
+    }
+   ]
+  },
+  "names": {
+   "nugget 0": "nugget of 3 at level 1",
+   "nugget 1": "nugget of 3 at level 1",
+   "nugget 2": "nugget of 6 at level 2",
+   "nugget 3": "nugget of 15 at level 3",
+   "chain 4": "chain of 6 at level 4",
+   "chain 5": "chain of 48 at level 4",
+   "chain 6": "chain of 108 at level 4",
+   "chain 7": "chain of 306 at level 4"
+  },
+  "seconds": 149.398
+ },
+ {
+  "combo": "011000100",
+  "limit": 1.0002840763403067,
+  "classifiable": 9,
+  "classifiableWithOpen": null,
+  "split": [
+   [
+    1,
+    30,
+    35
+   ],
+   [
+    2,
+    32,
+    107
+   ],
+   [
+    3,
+    63,
+    407
+   ],
+   [
+    4,
+    134,
+    1683
+   ],
+   [
+    5,
+    303,
+    7083
+   ],
+   [
+    6,
+    656,
+    29963
+   ],
+   [
+    7,
+    1144,
+    126879
+   ],
+   [
+    8,
+    619,
+    537427
+   ],
+   [
+    9,
+    0,
+    2276531
+   ]
+  ],
+  "weightDiff": 0.0000011965679284631214,
+  "lines": [
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   6.399957e-8,
+   4.035752e-8
+  ],
+  "lineArcs": 7,
+  "remainder": {
+   "remainder": -0.000284076340306777,
+   "parts": {
+    "notForecast": {
+     "share": 0,
+     "se": 0
+    },
+    "severalFates": {
+     "share": 0,
+     "se": 0
+    },
+    "lines": {
+     "share": 0,
+     "se": 0
+    },
+    "unknown": {
+     "share": 0.021667450000000005,
+     "se": 0.004728225225793852
+    },
+    "forecastError": {
+     "share": -0.023839870557468147,
+     "se": 0.004950327273160252
+    },
+    "openPastCap": {
+     "share": 0.0018883442171613724,
+     "se": 0.003766634273287215
+    }
+   },
+   "followed": {
+    "samples": 40,
+    "cap": 14,
+    "shares": {
+     "unknown": {
+      "share": 0.35,
+      "se": 0.07541551564499178
+     },
+     "chain 7": {
+      "share": 0.35,
+      "se": 0.07541551564499178
+     },
+     "open": {
+      "share": 0.175,
+      "se": 0.060078074203489575
+     },
+     "chain 6": {
+      "share": 0.1,
+      "se": 0.047434164902525694
+     },
+     "nugget 5": {
+      "share": 0.025,
+      "se": 0.024685522072664372
+     }
+    }
+   },
+   "notForecast": []
+  },
+  "example": {
+   "level": 5,
+   "type": "Delta",
+   "a": 421,
+   "b": 430,
+   "tiles": 25,
+   "paths": [
+    {
+     "steps": [
+      {
+       "parent": "Xi",
+       "slot": 1
+      },
+      {
+       "parent": "Delta",
+       "slot": 0
+      },
+      {
+       "parent": "Delta",
+       "slot": 1
+      }
+     ],
+     "label": "9|harmonic|1",
+     "level": 8
+    },
+    {
+     "steps": [
+      {
+       "parent": "Delta",
+       "slot": 1
+      },
+      {
+       "parent": "Delta",
+       "slot": 1
+      },
+      {
+       "parent": "Delta",
+       "slot": 1
+      }
+     ],
+     "label": "7|harmonic|1",
+     "level": 8
+    },
+    {
+     "steps": [
+      {
+       "parent": "Theta",
+       "slot": 1
+      },
+      {
+       "parent": "Gamma",
+       "slot": 3
+      },
+      {
+       "parent": "Delta",
+       "slot": 7
+      }
+     ],
+     "label": "8|harmonic|1",
+     "level": 8
+    }
+   ]
+  },
+  "names": {
+   "nugget 0": "nugget of 3 at level 1",
+   "nugget 1": "nugget of 6 at level 3",
+   "nugget 2": "nugget of 6 at level 3",
+   "nugget 3": "nugget of 204 at level 4",
+   "nugget 4": "nugget of 972 at level 4",
+   "nugget 5": "nugget of 84 at level 5",
+   "chain 6": "chain of 489 at level 6",
+   "chain 7": "chain of 2,715 at level 6",
+   "chain 8": "chain of 6,615 at level 6",
+   "chain 9": "chain of 18,171 at level 6"
+  },
+  "seconds": 164.568
+ },
+ {
+  "combo": "020100000",
+  "limit": 1.0000061779490672,
+  "classifiable": 9,
+  "classifiableWithOpen": null,
+  "split": [
+   [
+    1,
+    14,
+    35
+   ],
+   [
+    2,
+    33,
+    107
+   ],
+   [
+    3,
+    94,
+    407
+   ],
+   [
+    4,
+    207,
+    1683
+   ],
+   [
+    5,
+    494,
+    7083
+   ],
+   [
+    6,
+    1077,
+    29963
+   ],
+   [
+    7,
+    1901,
+    126879
+   ],
+   [
+    8,
+    1029,
+    537427
+   ],
+   [
+    9,
+    0,
+    2276531
+   ]
+  ],
+  "weightDiff": 0.0000016458543570171957,
+  "lines": [
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   2.955789e-8,
+   2.134265e-8
+  ],
+  "lineArcs": 8,
+  "remainder": {
+   "remainder": -0.000006177949067313893,
+   "parts": {
+    "notForecast": {
+     "share": 0,
+     "se": 0
+    },
+    "severalFates": {
+     "share": 0,
+     "se": 0
+    },
+    "lines": {
+     "share": 0,
+     "se": 0
+    },
+    "unknown": {
+     "share": 0.0026028225,
+     "se": 0.001463701384007242
+    },
+    "forecastError": {
+     "share": -0.004869032055504437,
+     "se": 0.002481340337367027
+    },
+    "openPastCap": {
+     "share": 0.002260031606437122,
+     "se": 0.002222854195239153
+    }
+   },
+   "followed": {
+    "samples": 40,
+    "cap": 14,
+    "shares": {
+     "chain 5": {
+      "share": 0.575,
+      "se": 0.07816249100431741
+     },
+     "open": {
+      "share": 0.2,
+      "se": 0.0632455532033676
+     },
+     "chain 4": {
+      "share": 0.15,
+      "se": 0.05645794895318108
+     },
+     "unknown": {
+      "share": 0.075,
+      "se": 0.04164582812239421
+     }
+    }
+   },
+   "notForecast": []
+  },
+  "example": {
+   "level": 5,
+   "type": "Delta",
+   "a": 421,
+   "b": 437,
+   "tiles": 22,
+   "paths": [
+    {
+     "steps": [
+      {
+       "parent": "Xi",
+       "slot": 1
+      },
+      {
+       "parent": "Delta",
+       "slot": 0
+      },
+      {
+       "parent": "Delta",
+       "slot": 1
+      }
+     ],
+     "label": "7|harmonic|2",
+     "level": 8
+    },
+    {
+     "steps": [
+      {
+       "parent": "Delta",
+       "slot": 1
+      },
+      {
+       "parent": "Delta",
+       "slot": 1
+      },
+      {
+       "parent": "Delta",
+       "slot": 1
+      }
+     ],
+     "label": "5|harmonic|2",
+     "level": 8
+    },
+    {
+     "steps": [
+      {
+       "parent": "Theta",
+       "slot": 1
+      },
+      {
+       "parent": "Gamma",
+       "slot": 3
+      },
+      {
+       "parent": "Delta",
+       "slot": 7
+      }
+     ],
+     "label": "6|harmonic|2",
+     "level": 8
+    }
+   ]
+  },
+  "names": {
+   "nugget 0": "nugget of 3 at level 2",
+   "nugget 1": "nugget of 3 at level 2",
+   "nugget 2": "nugget of 6 at level 2",
+   "nugget 3": "nugget of 18 at level 2",
+   "chain 4": "chain of 15 at level 4",
+   "chain 5": "chain of 66 at level 4",
+   "chain 6": "chain of 162 at level 4",
+   "chain 7": "chain of 441 at level 4"
+  },
+  "seconds": 148.722
+ },
+ {
+  "combo": "031101001",
+  "limit": 1.00042797177233,
+  "classifiable": 9,
+  "classifiableWithOpen": null,
+  "split": [
+   [
+    1,
+    33,
+    35
+   ],
+   [
+    2,
+    62,
+    107
+   ],
+   [
+    3,
+    170,
+    407
+   ],
+   [
+    4,
+    354,
+    1683
+   ],
+   [
+    5,
+    879,
+    7083
+   ],
+   [
+    6,
+    1920,
+    29963
+   ],
+   [
+    7,
+    3411,
+    126879
+   ],
+   [
+    8,
+    1848,
+    537427
+   ],
+   [
+    9,
+    0,
+    2276531
+   ]
+  ],
+  "weightDiff": 2.1629308471354802e-7,
+  "lines": [
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   9.409912e-8,
+   6.682799e-8
+  ],
+  "lineArcs": 8,
+  "remainder": {
+   "remainder": -0.0004279717723299076,
+   "parts": {
+    "notForecast": {
+     "share": 0,
+     "se": 0
+    },
+    "severalFates": {
+     "share": 0,
+     "se": 0
+    },
+    "lines": {
+     "share": 0,
+     "se": 0
+    },
+    "unknown": {
+     "share": 0.0368294,
+     "se": 0.007222839587458236
+    },
+    "forecastError": {
+     "share": -0.03995406097021211,
+     "se": 0.007288375443612057
+    },
+    "openPastCap": {
+     "share": 0.002696689197882201,
+     "se": 0.00560206762985625
+    }
+   },
+   "followed": {
+    "samples": 40,
+    "cap": 14,
+    "shares": {
+     "unknown": {
+      "share": 0.4,
+      "se": 0.07745966692414834
+     },
+     "chain 5": {
+      "share": 0.4,
+      "se": 0.07745966692414834
+     },
+     "open": {
+      "share": 0.175,
+      "se": 0.060078074203489575
+     },
+     "chain 4": {
+      "share": 0.025,
+      "se": 0.024685522072664372
+     }
+    }
+   },
+   "notForecast": []
+  },
+  "example": {
+   "level": 5,
+   "type": "Delta",
+   "a": 421,
+   "b": 423,
+   "tiles": 10,
+   "paths": [
+    {
+     "steps": [
+      {
+       "parent": "Xi",
+       "slot": 1
+      },
+      {
+       "parent": "Delta",
+       "slot": 0
+      },
+      {
+       "parent": "Delta",
+       "slot": 1
+      }
+     ],
+     "label": "7|harmonic|1",
+     "level": 8
+    },
+    {
+     "steps": [
+      {
+       "parent": "Delta",
+       "slot": 1
+      },
+      {
+       "parent": "Delta",
+       "slot": 1
+      },
+      {
+       "parent": "Delta",
+       "slot": 1
+      }
+     ],
+     "label": "5|harmonic|1",
+     "level": 8
+    },
+    {
+     "steps": [
+      {
+       "parent": "Theta",
+       "slot": 1
+      },
+      {
+       "parent": "Gamma",
+       "slot": 3
+      },
+      {
+       "parent": "Delta",
+       "slot": 7
+      }
+     ],
+     "label": "6|harmonic|1",
+     "level": 8
+    }
+   ]
+  },
+  "names": {
+   "nugget 0": "nugget of 12 at level 4",
+   "nugget 1": "nugget of 330 at level 4",
+   "nugget 2": "nugget of 96 at level 5",
+   "nugget 3": "nugget of 1,422 at level 5",
+   "chain 4": "chain of 780 at level 6",
+   "chain 5": "chain of 4,098 at level 6",
+   "chain 6": "chain of 10,062 at level 6",
+   "chain 7": "chain of 27,540 at level 6"
+  },
+  "seconds": 107.488
+ },
+ {
+  "combo": "100000101",
+  "limit": 0.9998676068049035,
+  "classifiable": 9,
+  "classifiableWithOpen": null,
+  "split": [
+   [
+    1,
+    30,
+    35
+   ],
+   [
+    2,
+    30,
+    107
+   ],
+   [
+    3,
+    31,
+    407
+   ],
+   [
+    4,
+    60,
+    1683
+   ],
+   [
+    5,
+    111,
+    7083
+   ],
+   [
+    6,
+    234,
+    29963
+   ],
+   [
+    7,
+    388,
+    126879
+   ],
+   [
+    8,
+    209,
+    537427
+   ],
+   [
+    9,
+    0,
+    2276531
+   ]
+  ],
+  "weightDiff": 0.00000131525658014775,
+  "lines": [
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "lineArcs": 0,
+  "remainder": {
+   "remainder": 0.00013239319509654457,
+   "parts": {
+    "notForecast": {
+     "share": 0,
+     "se": 0
+    },
+    "severalFates": {
+     "share": 0,
+     "se": 0
+    },
+    "lines": {
+     "share": 0,
+     "se": 0
+    },
+    "unknown": {
+     "share": 0.0058227750000000005,
+     "se": 0.002219532652568396
+    },
+    "forecastError": {
+     "share": -0.008316201897959338,
+     "se": 0.002964811910244053
+    },
+    "openPastCap": {
+     "share": 0.0026258200930558695,
+     "se": 0.0024863738953931104
+    }
+   },
+   "followed": {
+    "samples": 40,
+    "cap": 14,
+    "shares": {
+     "chain 4": {
+      "share": 0.425,
+      "se": 0.07816249100431741
+     },
+     "open": {
+      "share": 0.2,
+      "se": 0.0632455532033676
+     },
+     "unknown": {
+      "share": 0.15,
+      "se": 0.05645794895318108
+     },
+     "chain 3": {
+      "share": 0.15,
+      "se": 0.05645794895318108
+     },
+     "nugget 2": {
+      "share": 0.075,
+      "se": 0.04164582812239421
+     }
+    }
+   },
+   "notForecast": []
+  },
+  "example": {
+   "level": 5,
+   "type": "Delta",
+   "a": 421,
+   "b": 740,
+   "tiles": 490,
+   "paths": [
+    {
+     "steps": [
+      {
+       "parent": "Xi",
+       "slot": 1
+      },
+      {
+       "parent": "Delta",
+       "slot": 0
+      },
+      {
+       "parent": "Delta",
+       "slot": 1
+      }
+     ],
+     "label": "6|harmonic|2",
+     "level": 8
+    },
+    {
+     "steps": [
+      {
+       "parent": "Delta",
+       "slot": 1
+      },
+      {
+       "parent": "Delta",
+       "slot": 1
+      },
+      {
+       "parent": "Delta",
+       "slot": 1
+      }
+     ],
+     "label": "4|harmonic|2",
+     "level": 8
+    },
+    {
+     "steps": [
+      {
+       "parent": "Theta",
+       "slot": 1
+      },
+      {
+       "parent": "Gamma",
+       "slot": 3
+      },
+      {
+       "parent": "Delta",
+       "slot": 7
+      }
+     ],
+     "label": "5|harmonic|2",
+     "level": 8
+    }
+   ]
+  },
+  "names": {
+   "nugget 0": "nugget of 3 at level 1",
+   "chain 1": "chain of 6 at level 3",
+   "nugget 2": "nugget of 6 at level 3",
+   "chain 3": "chain of 78 at level 4",
+   "chain 4": "chain of 81 at level 4",
+   "chain 5": "chain of 174 at level 4",
+   "chain 6": "chain of 531 at level 4"
+  },
+  "seconds": 214.187
+ },
+ {
+  "combo": "101000001",
+  "limit": 0.9941883608584255,
+  "classifiable": 5,
+  "classifiableWithOpen": null,
+  "split": [
+   [
+    1,
+    35,
+    35
+   ],
+   [
+    2,
+    99,
+    107
+   ],
+   [
+    3,
+    331,
+    407
+   ],
+   [
+    4,
+    698,
+    1683
+   ],
+   [
+    5,
+    0,
+    7083
+   ],
+   [
+    6,
+    0,
+    29963
+   ],
+   [
+    7,
+    0,
+    126879
+   ],
+   [
+    8,
+    0,
+    537427
+   ],
+   [
+    9,
+    0,
+    2276531
+   ]
+  ],
+  "weightDiff": 2.999316484758596e-7,
+  "lines": [
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   4.908269e-9,
+   0
+  ],
+  "lineArcs": 0,
+  "remainder": {
+   "remainder": 0.005811639141574454,
+   "parts": {
+    "notForecast": {
+     "share": 0,
+     "se": 0
+    },
+    "severalFates": {
+     "share": 0,
+     "se": 0
+    },
+    "lines": {
+     "share": 0,
+     "se": 0
+    },
+    "unknown": {
+     "share": 0.027079484666666667,
+     "se": 0.0080270760934372
+    },
+    "forecastError": {
+     "share": -0.01794479583978836,
+     "se": 0.013753848027254326
+    },
+    "openPastCap": {
+     "share": -0.0033230496853039306,
+     "se": 0.015176404378390072
+    }
+   },
+   "followed": {
+    "samples": 300,
+    "cap": 14,
+    "shares": {
+     "budget": {
+      "share": 0.58,
+      "se": 0.028495613697550014
+     },
+     "open": {
+      "share": 0.25333333333333335,
+      "se": 0.025110127807689838
+     },
+     "chain 1": {
+      "share": 0.06666666666666667,
+      "se": 0.01440164599646191
+     },
+     "chain 2": {
+      "share": 0.06333333333333334,
+      "se": 0.014062031885212775
+     },
+     "unknown": {
+      "share": 0.03666666666666667,
+      "se": 0.010850840554571832
+     }
+    }
+   },
+   "notForecast": []
+  },
+  "example": {
+   "level": 4,
+   "type": "Delta",
+   "a": 0,
+   "b": 2,
+   "tiles": 4,
+   "paths": [
+    {
+     "steps": [
+      {
+       "parent": "Phi",
+       "slot": 1
+      },
+      {
+       "parent": "Pi",
+       "slot": 3
+      },
+      {
+       "parent": "Delta",
+       "slot": 5
+      },
+      {
+       "parent": "Delta",
+       "slot": 1
+      },
+      {
+       "parent": "Delta",
+       "slot": 1
+      }
+     ],
+     "label": "2|harmonic|2",
+     "level": 9
+    },
+    {
+     "steps": [
+      {
+       "parent": "Sigma",
+       "slot": 1
+      },
+      {
+       "parent": "Pi",
+       "slot": 4
+      },
+      {
+       "parent": "Delta",
+       "slot": 5
+      },
+      {
+       "parent": "Delta",
+       "slot": 1
+      },
+      {
+       "parent": "Delta",
+       "slot": 1
+      }
+     ],
+     "label": "1|harmonic|2",
+     "level": 9
+    }
+   ]
+  },
+  "names": {
+   "nugget 0": "nugget of 3 at level 1",
+   "chain 1": "chain of 57 at level 5",
+   "chain 2": "chain of 60 at level 5"
+  },
+  "seconds": 474.924
+ },
+ {
+  "combo": "101000100",
+  "limit": 0.999966638922028,
+  "classifiable": 9,
+  "classifiableWithOpen": null,
+  "split": [
+   [
+    1,
+    30,
+    35
+   ],
+   [
+    2,
+    30,
+    107
+   ],
+   [
+    3,
+    31,
+    407
+   ],
+   [
+    4,
+    60,
+    1683
+   ],
+   [
+    5,
+    111,
+    7083
+   ],
+   [
+    6,
+    234,
+    29963
+   ],
+   [
+    7,
+    388,
+    126879
+   ],
+   [
+    8,
+    209,
+    537427
+   ],
+   [
+    9,
+    0,
+    2276531
+   ]
+  ],
+  "weightDiff": 0.000001472882305356138,
+  "lines": [
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "lineArcs": 0,
+  "remainder": {
+   "remainder": 0.00003336107797204113,
+   "parts": {
+    "notForecast": {
+     "share": 0,
+     "se": 0
+    },
+    "severalFates": {
+     "share": 0,
+     "se": 0
+    },
+    "lines": {
+     "share": 0,
+     "se": 0
+    },
+    "unknown": {
+     "share": 0.0038388375,
+     "se": 0.0021587763905256303
+    },
+    "forecastError": {
+     "share": -0.005910480398097495,
+     "se": 0.00354900652421128
+    },
+    "openPastCap": {
+     "share": 0.0021050039760695306,
+     "se": 0.00311424058605763
+    }
+   },
+   "followed": {
+    "samples": 40,
+    "cap": 14,
+    "shares": {
+     "chain 3": {
+      "share": 0.6,
+      "se": 0.07745966692414834
+     },
+     "open": {
+      "share": 0.175,
+      "se": 0.060078074203489575
+     },
+     "chain 2": {
+      "share": 0.15,
+      "se": 0.05645794895318108
+     },
+     "unknown": {
+      "share": 0.075,
+      "se": 0.04164582812239421
+     }
+    }
+   },
+   "notForecast": []
+  },
+  "example": {
+   "level": 5,
+   "type": "Delta",
+   "a": 421,
+   "b": 740,
+   "tiles": 658,
+   "paths": [
+    {
+     "steps": [
+      {
+       "parent": "Xi",
+       "slot": 1
+      },
+      {
+       "parent": "Delta",
+       "slot": 0
+      },
+      {
+       "parent": "Delta",
+       "slot": 1
+      }
+     ],
+     "label": "5|harmonic|2",
+     "level": 8
+    },
+    {
+     "steps": [
+      {
+       "parent": "Delta",
+       "slot": 1
+      },
+      {
+       "parent": "Delta",
+       "slot": 1
+      },
+      {
+       "parent": "Delta",
+       "slot": 1
+      }
+     ],
+     "label": "3|harmonic|2",
+     "level": 8
+    },
+    {
+     "steps": [
+      {
+       "parent": "Theta",
+       "slot": 1
+      },
+      {
+       "parent": "Gamma",
+       "slot": 3
+      },
+      {
+       "parent": "Delta",
+       "slot": 7
+      }
+     ],
+     "label": "4|harmonic|2",
+     "level": 8
+    }
+   ]
+  },
+  "names": {
+   "nugget 0": "nugget of 6 at level 3",
+   "nugget 1": "nugget of 6 at level 3",
+   "chain 2": "chain of 102 at level 4",
+   "chain 3": "chain of 102 at level 4",
+   "chain 4": "chain of 234 at level 4",
+   "chain 5": "chain of 702 at level 4"
+  },
+  "seconds": 189.544
+ },
+ {
+  "combo": "101001101",
+  "limit": 0.999966638922028,
+  "classifiable": 9,
+  "classifiableWithOpen": null,
+  "split": [
+   [
+    1,
+    30,
+    35
+   ],
+   [
+    2,
+    30,
+    107
+   ],
+   [
+    3,
+    31,
+    407
+   ],
+   [
+    4,
+    60,
+    1683
+   ],
+   [
+    5,
+    111,
+    7083
+   ],
+   [
+    6,
+    234,
+    29963
+   ],
+   [
+    7,
+    388,
+    126879
+   ],
+   [
+    8,
+    209,
+    537427
+   ],
+   [
+    9,
+    0,
+    2276531
+   ]
+  ],
+  "weightDiff": 0.000001472882305356138,
+  "lines": [
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "lineArcs": 0,
+  "remainder": {
+   "remainder": 0.00003336107797204113,
+   "parts": {
+    "notForecast": {
+     "share": 0,
+     "se": 0
+    },
+    "severalFates": {
+     "share": 0,
+     "se": 0
+    },
+    "lines": {
+     "share": 0,
+     "se": 0
+    },
+    "unknown": {
+     "share": 0.0038388375,
+     "se": 0.0021587763905256303
+    },
+    "forecastError": {
+     "share": -0.005910480398097495,
+     "se": 0.00354900652421128
+    },
+    "openPastCap": {
+     "share": 0.0021050039760695306,
+     "se": 0.00311424058605763
+    }
+   },
+   "followed": {
+    "samples": 40,
+    "cap": 14,
+    "shares": {
+     "chain 3": {
+      "share": 0.6,
+      "se": 0.07745966692414834
+     },
+     "open": {
+      "share": 0.175,
+      "se": 0.060078074203489575
+     },
+     "chain 2": {
+      "share": 0.15,
+      "se": 0.05645794895318108
+     },
+     "unknown": {
+      "share": 0.075,
+      "se": 0.04164582812239421
+     }
+    }
+   },
+   "notForecast": []
+  },
+  "example": {
+   "level": 5,
+   "type": "Delta",
+   "a": 421,
+   "b": 740,
+   "tiles": 658,
+   "paths": [
+    {
+     "steps": [
+      {
+       "parent": "Xi",
+       "slot": 1
+      },
+      {
+       "parent": "Delta",
+       "slot": 0
+      },
+      {
+       "parent": "Delta",
+       "slot": 1
+      }
+     ],
+     "label": "5|harmonic|2",
+     "level": 8
+    },
+    {
+     "steps": [
+      {
+       "parent": "Delta",
+       "slot": 1
+      },
+      {
+       "parent": "Delta",
+       "slot": 1
+      },
+      {
+       "parent": "Delta",
+       "slot": 1
+      }
+     ],
+     "label": "3|harmonic|2",
+     "level": 8
+    },
+    {
+     "steps": [
+      {
+       "parent": "Theta",
+       "slot": 1
+      },
+      {
+       "parent": "Gamma",
+       "slot": 3
+      },
+      {
+       "parent": "Delta",
+       "slot": 7
+      }
+     ],
+     "label": "4|harmonic|2",
+     "level": 8
+    }
+   ]
+  },
+  "names": {
+   "nugget 0": "nugget of 6 at level 3",
+   "nugget 1": "nugget of 6 at level 3",
+   "chain 2": "chain of 102 at level 4",
+   "chain 3": "chain of 102 at level 4",
+   "chain 4": "chain of 234 at level 4",
+   "chain 5": "chain of 702 at level 4"
+  },
+  "seconds": 190.942
+ },
+ {
+  "combo": "110000001",
+  "limit": 0.6332345693877646,
+  "classifiable": 5,
+  "classifiableWithOpen": null,
+  "split": [
+   [
+    1,
+    35,
+    35
+   ],
+   [
+    2,
+    74,
+    107
+   ],
+   [
+    3,
+    180,
+    407
+   ],
+   [
+    4,
+    324,
+    1683
+   ],
+   [
+    5,
+    0,
+    7083
+   ],
+   [
+    6,
+    0,
+    29963
+   ],
+   [
+    7,
+    0,
+    126879
+   ],
+   [
+    8,
+    0,
+    537427
+   ],
+   [
+    9,
+    0,
+    2276531
+   ]
+  ],
+  "weightDiff": 2.697401038087577e-7,
+  "lines": [
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   1.575494e-9,
+   0
+  ],
+  "lineArcs": 0,
+  "remainder": {
+   "remainder": 0.36676543061223554,
+   "parts": {
+    "notForecast": {
+     "share": 0.04984856545265829,
+     "se": 0.008945831573234834
+    },
+    "severalFates": {
+     "share": 0,
+     "se": 0
+    },
+    "lines": {
+     "share": 0,
+     "se": 0
+    },
+    "unknown": {
+     "share": 0.015197730000000001,
+     "se": 0.004733061302062047
+    },
+    "forecastError": {
+     "share": -0.00652747919553254,
+     "se": 0.006204284478370984
+    },
+    "openPastCap": {
+     "share": 0.30824661435511014,
+     "se": 0.010879179065615786
+    }
+   },
+   "followed": {
+    "samples": 300,
+    "cap": 14,
+    "shares": {
+     "budget": {
+      "share": 0.47333333333333333,
+      "se": 0.028826428203351226
+     },
+     "open": {
+      "share": 0.3,
+      "se": 0.026457513110645904
+     },
+     "chain 4": {
+      "share": 0.13333333333333333,
+      "se": 0.019626135258506327
+     },
+     "chain 3": {
+      "share": 0.056666666666666664,
+      "se": 0.013348602368232609
+     },
+     "unknown": {
+      "share": 0.03333333333333333,
+      "se": 0.010363754503432016
+     },
+     "nugget 5": {
+      "share": 0.0033333333333333335,
+      "se": 0.003327773140415986
+     }
+    }
+   },
+   "notForecast": [
+    "chain 4"
+   ]
+  },
+  "example": {
+   "level": 4,
+   "type": "Delta",
+   "a": 0,
+   "b": 2,
+   "tiles": 4,
+   "paths": [
+    {
+     "steps": [
+      {
+       "parent": "Phi",
+       "slot": 1
+      },
+      {
+       "parent": "Pi",
+       "slot": 3
+      },
+      {
+       "parent": "Delta",
+       "slot": 5
+      },
+      {
+       "parent": "Delta",
+       "slot": 1
+      },
+      {
+       "parent": "Delta",
+       "slot": 1
+      }
+     ],
+     "label": "4|harmonic|2",
+     "level": 9
+    },
+    {
+     "steps": [
+      {
+       "parent": "Sigma",
+       "slot": 1
+      },
+      {
+       "parent": "Pi",
+       "slot": 4
+      },
+      {
+       "parent": "Delta",
+       "slot": 5
+      },
+      {
+       "parent": "Delta",
+       "slot": 1
+      },
+      {
+       "parent": "Delta",
+       "slot": 1
+      }
+     ],
+     "label": "3|harmonic|2",
+     "level": 9
+    }
+   ]
+  },
+  "names": {
+   "nugget 0": "nugget of 87 at level 4",
+   "nugget 1": "nugget of 126 at level 4",
+   "nugget 2": "nugget of 180 at level 4",
+   "chain 3": "chain of 57 at level 5",
+   "chain 4": "chain of 60 at level 5",
+   "nugget 5": "nugget of 219 at level 5"
+  },
+  "seconds": 525.227
+ },
+ {
+  "combo": "111000001",
+  "limit": 0.6488596047440214,
+  "classifiable": 5,
+  "classifiableWithOpen": null,
+  "split": [
+   [
+    1,
+    35,
+    35
+   ],
+   [
+    2,
+    74,
+    107
+   ],
+   [
+    3,
+    180,
+    407
+   ],
+   [
+    4,
+    324,
+    1683
+   ],
+   [
+    5,
+    0,
+    7083
+   ],
+   [
+    6,
+    0,
+    29963
+   ],
+   [
+    7,
+    0,
+    126879
+   ],
+   [
+    8,
+    0,
+    537427
+   ],
+   [
+    9,
+    0,
+    2276531
+   ]
+  ],
+  "weightDiff": 2.0498554942349756e-7,
+  "lines": [
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   1.454302e-9,
+   0
+  ],
+  "lineArcs": 0,
+  "remainder": {
+   "remainder": 0.3511403952559787,
+   "parts": {
+    "notForecast": {
+     "share": 0.03884592021679292,
+     "se": 0.007966847770039606
+    },
+    "severalFates": {
+     "share": 0,
+     "se": 0
+    },
+    "lines": {
+     "share": 0,
+     "se": 0
+    },
+    "unknown": {
+     "share": 0.01596378666666666,
+     "se": 0.004732088955535711
+    },
+    "forecastError": {
+     "share": 0.0037410042606347877,
+     "se": 0.006892515416688735
+    },
+    "openPastCap": {
+     "share": 0.29258968411188496,
+     "se": 0.010497606227681887
+    }
+   },
+   "followed": {
+    "samples": 300,
+    "cap": 14,
+    "shares": {
+     "budget": {
+      "share": 0.46,
+      "se": 0.02877498913987632
+     },
+     "open": {
+      "share": 0.30666666666666664,
+      "se": 0.02662218512332789
+     },
+     "chain 5": {
+      "share": 0.11333333333333333,
+      "se": 0.018301993415007094
+     },
+     "chain 4": {
+      "share": 0.07,
+      "se": 0.014730919862656237
+     },
+     "unknown": {
+      "share": 0.03666666666666667,
+      "se": 0.010850840554571832
+     },
+     "nugget 6": {
+      "share": 0.013333333333333334,
+      "se": 0.006622073078111707
+     }
+    }
+   },
+   "notForecast": [
+    "chain 5"
+   ]
+  },
+  "example": {
+   "level": 4,
+   "type": "Delta",
+   "a": 0,
+   "b": 2,
+   "tiles": 4,
+   "paths": [
+    {
+     "steps": [
+      {
+       "parent": "Phi",
+       "slot": 1
+      },
+      {
+       "parent": "Pi",
+       "slot": 3
+      },
+      {
+       "parent": "Delta",
+       "slot": 5
+      },
+      {
+       "parent": "Delta",
+       "slot": 1
+      },
+      {
+       "parent": "Delta",
+       "slot": 1
+      }
+     ],
+     "label": "5|harmonic|2",
+     "level": 9
+    },
+    {
+     "steps": [
+      {
+       "parent": "Sigma",
+       "slot": 1
+      },
+      {
+       "parent": "Pi",
+       "slot": 4
+      },
+      {
+       "parent": "Delta",
+       "slot": 5
+      },
+      {
+       "parent": "Delta",
+       "slot": 1
+      },
+      {
+       "parent": "Delta",
+       "slot": 1
+      }
+     ],
+     "label": "4|harmonic|2",
+     "level": 9
+    }
+   ]
+  },
+  "names": {
+   "nugget 0": "nugget of 3 at level 1",
+   "nugget 1": "nugget of 87 at level 4",
+   "nugget 2": "nugget of 126 at level 4",
+   "nugget 3": "nugget of 177 at level 4",
+   "chain 4": "chain of 57 at level 5",
+   "chain 5": "chain of 60 at level 5",
+   "nugget 6": "nugget of 216 at level 5"
+  },
+  "seconds": 479.371
+ },
+ {
+  "combo": "120001001",
+  "limit": 1.0000549525898457,
+  "classifiable": 8,
+  "classifiableWithOpen": null,
+  "split": [
+   [
+    1,
+    24,
+    35
+   ],
+   [
+    2,
+    59,
+    107
+   ],
+   [
+    3,
+    128,
+    407
+   ],
+   [
+    4,
+    299,
+    1683
+   ],
+   [
+    5,
+    650,
+    7083
+   ],
+   [
+    6,
+    1141,
+    29963
+   ],
+   [
+    7,
+    618,
+    126879
+   ],
+   [
+    8,
+    0,
+    537427
+   ],
+   [
+    9,
+    0,
+    2276531
+   ]
+  ],
+  "weightDiff": 3.200811344618304e-7,
+  "lines": [
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   9.982797e-8,
+   6.267503e-8,
+   5.054966e-8
+  ],
+  "lineArcs": 14,
+  "remainder": {
+   "remainder": -0.000054952589845690125,
+   "parts": {
+    "notForecast": {
+     "share": 0,
+     "se": 0
+    },
+    "severalFates": {
+     "share": 0,
+     "se": 0
+    },
+    "lines": {
+     "share": 0,
+     "se": 0
+    },
+    "unknown": {
+     "share": 0,
+     "se": 0
+    },
+    "forecastError": {
+     "share": -0.00376468656890743,
+     "se": 0.0038406737690150163
+    },
+    "openPastCap": {
+     "share": 0.0037097339790617503,
+     "se": 0.003840673769015016
+    }
+   },
+   "followed": {
+    "samples": 40,
+    "cap": 14,
+    "shares": {
+     "chain 5": {
+      "share": 0.65,
+      "se": 0.07541551564499178
+     },
+     "open": {
+      "share": 0.2,
+      "se": 0.0632455532033676
+     },
+     "chain 7": {
+      "share": 0.125,
+      "se": 0.05229125165837972
+     },
+     "chain 4": {
+      "share": 0.025,
+      "se": 0.024685522072664372
+     }
+    }
+   },
+   "notForecast": []
+  },
+  "example": {
+   "level": 5,
+   "type": "Delta",
+   "a": 0,
+   "b": 2,
+   "tiles": 4,
+   "paths": [
+    {
+     "steps": [
+      {
+       "parent": "Delta",
+       "slot": 1
+      },
+      {
+       "parent": "Delta",
+       "slot": 1
+      },
+      {
+       "parent": "Delta",
+       "slot": 1
+      },
+      {
+       "parent": "Delta",
+       "slot": 1
+      }
+     ],
+     "label": "5|harmonic|2",
+     "level": 9
+    },
+    {
+     "steps": [
+      {
+       "parent": "Phi",
+       "slot": 1
+      },
+      {
+       "parent": "Delta",
+       "slot": 3
+      },
+      {
+       "parent": "Delta",
+       "slot": 1
+      },
+      {
+       "parent": "Delta",
+       "slot": 1
+      }
+     ],
+     "label": "4|harmonic|2",
+     "level": 9
+    },
+    {
+     "steps": [
+      {
+       "parent": "Delta",
+       "slot": 1
+      },
+      {
+       "parent": "Xi",
+       "slot": 1
+      },
+      {
+       "parent": "Delta",
+       "slot": 0
+      },
+      {
+       "parent": "Delta",
+       "slot": 1
+      }
+     ],
+     "label": "7|harmonic|2",
+     "level": 9
+    },
+    {
+     "steps": [
+      {
+       "parent": "Gamma",
+       "slot": 1
+      },
+      {
+       "parent": "Delta",
+       "slot": 7
+      }
+     ],
+     "label": "6|harmonic|1",
+     "level": 7
+    }
+   ]
+  },
+  "names": {
+   "nugget 0": "nugget of 6 at level 2",
+   "nugget 1": "nugget of 42 at level 3",
+   "nugget 2": "nugget of 192 at level 3",
+   "nugget 3": "nugget of 12 at level 4",
+   "chain 4": "chain of 96 at level 5",
+   "chain 5": "chain of 534 at level 5",
+   "chain 6": "chain of 1,302 at level 5",
+   "chain 7": "chain of 3,576 at level 5"
+  },
+  "seconds": 125.427
+ },
+ {
+  "combo": "130001000",
+  "limit": 1.0000409428521078,
+  "classifiable": 8,
+  "classifiableWithOpen": null,
+  "split": [
+   [
+    1,
+    22,
+    35
+   ],
+   [
+    2,
+    59,
+    107
+   ],
+   [
+    3,
+    128,
+    407
+   ],
+   [
+    4,
+    299,
+    1683
+   ],
+   [
+    5,
+    650,
+    7083
+   ],
+   [
+    6,
+    1141,
+    29963
+   ],
+   [
+    7,
+    618,
+    126879
+   ],
+   [
+    8,
+    0,
+    537427
+   ],
+   [
+    9,
+    0,
+    2276531
+   ]
+  ],
+  "weightDiff": 7.124564085358998e-7,
+  "lines": [
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   7.393391e-8,
+   4.710189e-8,
+   3.809404e-8
+  ],
+  "lineArcs": 14,
+  "remainder": {
+   "remainder": -0.000040942852107768435,
+   "parts": {
+    "notForecast": {
+     "share": 0,
+     "se": 0
+    },
+    "severalFates": {
+     "share": 0,
+     "se": 0
+    },
+    "lines": {
+     "share": 0,
+     "se": 0
+    },
+    "unknown": {
+     "share": 0,
+     "se": 0
+    },
+    "forecastError": {
+     "share": -0.004012097891501873,
+     "se": 0.003045001944660234
+    },
+    "openPastCap": {
+     "share": 0.003971155039394099,
+     "se": 0.003045001944660235
+    }
+   },
+   "followed": {
+    "samples": 40,
+    "cap": 14,
+    "shares": {
+     "chain 7": {
+      "share": 0.475,
+      "se": 0.07895805848676878
+     },
+     "open": {
+      "share": 0.225,
+      "se": 0.06602556323122129
+     },
+     "chain 6": {
+      "share": 0.15,
+      "se": 0.05645794895318108
+     },
+     "chain 9": {
+      "share": 0.125,
+      "se": 0.05229125165837972
+     },
+     "nugget 5": {
+      "share": 0.025,
+      "se": 0.024685522072664372
+     }
+    }
+   },
+   "notForecast": []
+  },
+  "example": {
+   "level": 5,
+   "type": "Delta",
+   "a": 0,
+   "b": 2,
+   "tiles": 4,
+   "paths": [
+    {
+     "steps": [
+      {
+       "parent": "Delta",
+       "slot": 1
+      },
+      {
+       "parent": "Delta",
+       "slot": 1
+      },
+      {
+       "parent": "Delta",
+       "slot": 1
+      },
+      {
+       "parent": "Delta",
+       "slot": 1
+      }
+     ],
+     "label": "7|harmonic|2",
+     "level": 9
+    },
+    {
+     "steps": [
+      {
+       "parent": "Phi",
+       "slot": 1
+      },
+      {
+       "parent": "Delta",
+       "slot": 3
+      },
+      {
+       "parent": "Delta",
+       "slot": 1
+      },
+      {
+       "parent": "Delta",
+       "slot": 1
+      }
+     ],
+     "label": "6|harmonic|2",
+     "level": 9
+    },
+    {
+     "steps": [
+      {
+       "parent": "Delta",
+       "slot": 1
+      },
+      {
+       "parent": "Xi",
+       "slot": 1
+      },
+      {
+       "parent": "Delta",
+       "slot": 0
+      },
+      {
+       "parent": "Delta",
+       "slot": 1
+      }
+     ],
+     "label": "9|harmonic|2",
+     "level": 9
+    },
+    {
+     "steps": [
+      {
+       "parent": "Gamma",
+       "slot": 1
+      },
+      {
+       "parent": "Delta",
+       "slot": 7
+      }
+     ],
+     "label": "8|harmonic|1",
+     "level": 7
+    }
+   ]
+  },
+  "names": {
+   "nugget 0": "nugget of 3 at level 1",
+   "nugget 1": "nugget of 3 at level 2",
+   "nugget 2": "nugget of 3 at level 2",
+   "nugget 3": "nugget of 33 at level 3",
+   "nugget 4": "nugget of 138 at level 3",
+   "nugget 5": "nugget of 12 at level 4",
+   "chain 6": "chain of 78 at level 5",
+   "chain 7": "chain of 399 at level 5",
+   "chain 8": "chain of 987 at level 5",
+   "chain 9": "chain of 2,694 at level 5"
+  },
+  "seconds": 120.122
+ },
+ {
+  "combo": "140000001",
+  "limit": 0.9945021551155033,
+  "classifiable": 8,
+  "classifiableWithOpen": null,
+  "split": [
+   [
+    1,
+    31,
+    35
+   ],
+   [
+    2,
+    85,
+    107
+   ],
+   [
+    3,
+    312,
+    407
+   ],
+   [
+    4,
+    1191,
+    1683
+   ],
+   [
+    5,
+    4562,
+    7083
+   ],
+   [
+    6,
+    15955,
+    29963
+   ],
+   [
+    7,
+    14204,
+    126879
+   ],
+   [
+    8,
+    0,
+    537427
+   ],
+   [
+    9,
+    0,
+    2276531
+   ]
+  ],
+  "weightDiff": 1.277426147777705e-7,
+  "lines": [
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   4.104052e-7,
+   5.49619e-7
+  ],
+  "lineArcs": 22,
+  "remainder": {
+   "remainder": 0.005497844884496672,
+   "parts": {
+    "notForecast": {
+     "share": 0,
+     "se": 0
+    },
+    "severalFates": {
+     "share": 0,
+     "se": 0
+    },
+    "lines": {
+     "share": 5.49619e-7,
+     "se": 0
+    },
+    "unknown": {
+     "share": 0.027078629333333323,
+     "se": 0.006597665026471009
+    },
+    "forecastError": {
+     "share": -0.045381791672838595,
+     "se": 0.009384584061740564
+    },
+    "openPastCap": {
+     "share": 0.023800457605001855,
+     "se": 0.010389689475567994
+    }
+   },
+   "followed": {
+    "samples": 300,
+    "cap": 14,
+    "shares": {
+     "budget": {
+      "share": 0.65,
+      "se": 0.02753785273643051
+     },
+     "open": {
+      "share": 0.15,
+      "se": 0.020615528128088305
+     },
+     "chain 2": {
+      "share": 0.06666666666666667,
+      "se": 0.01440164599646191
+     },
+     "chain 4": {
+      "share": 0.056666666666666664,
+      "se": 0.013348602368232609
+     },
+     "unknown": {
+      "share": 0.05333333333333334,
+      "se": 0.012972906239401265
+     },
+     "chain 3": {
+      "share": 0.023333333333333334,
+      "se": 0.008715673408461504
+     }
+    }
+   },
+   "notForecast": []
+  },
+  "example": {
+   "level": 5,
+   "type": "Delta",
+   "a": 0,
+   "b": 2,
+   "tiles": 4,
+   "paths": [
+    {
+     "steps": [
+      {
+       "parent": "Sigma",
+       "slot": 1
+      },
+      {
+       "parent": "Pi",
+       "slot": 4
+      },
+      {
+       "parent": "Delta",
+       "slot": 5
+      },
+      {
+       "parent": "Delta",
+       "slot": 1
+      },
+      {
+       "parent": "Delta",
+       "slot": 1
+      }
+     ],
+     "label": "4|harmonic|2",
+     "level": 10
+    },
+    {
+     "steps": [
+      {
+       "parent": "Delta",
+       "slot": 1
+      },
+      {
+       "parent": "Gamma",
+       "slot": 1
+      },
+      {
+       "parent": "Delta",
+       "slot": 7
+      }
+     ],
+     "label": "1|harmonic|2",
+     "level": 8
+    },
+    {
+     "steps": [
+      {
+       "parent": "Gamma",
+       "slot": 1
+      },
+      {
+       "parent": "Delta",
+       "slot": 7
+      }
+     ],
+     "label": "3|harmonic|1",
+     "level": 7
+    }
+   ]
+  },
+  "names": {
+   "nugget 0": "nugget of 60 at level 3",
+   "chain 1": "chain of 303 at level 4",
+   "chain 2": "chain of 57 at level 5",
+   "chain 3": "chain of 2,079 at level 5",
+   "chain 4": "chain of 447 at level 6"
+  },
+  "seconds": 546.099
+ },
+ {
+  "combo": "141000001",
+  "limit": 0.9954164527558876,
+  "classifiable": 8,
+  "classifiableWithOpen": null,
+  "split": [
+   [
+    1,
+    31,
+    35
+   ],
+   [
+    2,
+    85,
+    107
+   ],
+   [
+    3,
+    312,
+    407
+   ],
+   [
+    4,
+    1191,
+    1683
+   ],
+   [
+    5,
+    4562,
+    7083
+   ],
+   [
+    6,
+    15955,
+    29963
+   ],
+   [
+    7,
+    14204,
+    126879
+   ],
+   [
+    8,
+    0,
+    537427
+   ],
+   [
+    9,
+    0,
+    2276531
+   ]
+  ],
+  "weightDiff": 1.0691874553769853e-7,
+  "lines": [
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   3.990281e-7,
+   5.342136e-7
+  ],
+  "lineArcs": 22,
+  "remainder": {
+   "remainder": 0.004583547244112307,
+   "parts": {
+    "notForecast": {
+     "share": 0,
+     "se": 0
+    },
+    "severalFates": {
+     "share": 0,
+     "se": 0
+    },
+    "lines": {
+     "share": 5.342136e-7,
+     "se": 0
+    },
+    "unknown": {
+     "share": 0.01233807,
+     "se": 0.01233806999999999
+    },
+    "forecastError": {
+     "share": -0.0005914804595615979,
+     "se": 0.028619333462689665
+    },
+    "openPastCap": {
+     "share": -0.007163576509926109,
+     "se": 0.02938342807274746
+    }
+   },
+   "followed": {
+    "samples": 40,
+    "cap": 14,
+    "shares": {
+     "budget": {
+      "share": 0.625,
+      "se": 0.07654655446197431
+     },
+     "open": {
+      "share": 0.125,
+      "se": 0.05229125165837972
+     },
+     "chain 5": {
+      "share": 0.125,
+      "se": 0.05229125165837972
+     },
+     "chain 3": {
+      "share": 0.075,
+      "se": 0.04164582812239421
+     },
+     "chain 4": {
+      "share": 0.025,
+      "se": 0.024685522072664372
+     },
+     "unknown": {
+      "share": 0.025,
+      "se": 0.024685522072664372
+     }
+    }
+   },
+   "notForecast": []
+  },
+  "example": {
+   "level": 5,
+   "type": "Delta",
+   "a": 0,
+   "b": 2,
+   "tiles": 4,
+   "paths": [
+    {
+     "steps": [
+      {
+       "parent": "Sigma",
+       "slot": 1
+      },
+      {
+       "parent": "Pi",
+       "slot": 4
+      },
+      {
+       "parent": "Delta",
+       "slot": 5
+      },
+      {
+       "parent": "Delta",
+       "slot": 1
+      },
+      {
+       "parent": "Delta",
+       "slot": 1
+      }
+     ],
+     "label": "5|harmonic|2",
+     "level": 10
+    },
+    {
+     "steps": [
+      {
+       "parent": "Delta",
+       "slot": 1
+      },
+      {
+       "parent": "Gamma",
+       "slot": 1
+      },
+      {
+       "parent": "Delta",
+       "slot": 7
+      }
+     ],
+     "label": "2|harmonic|2",
+     "level": 8
+    },
+    {
+     "steps": [
+      {
+       "parent": "Gamma",
+       "slot": 1
+      },
+      {
+       "parent": "Delta",
+       "slot": 7
+      }
+     ],
+     "label": "4|harmonic|1",
+     "level": 7
+    }
+   ]
+  },
+  "names": {
+   "nugget 0": "nugget of 3 at level 1",
+   "nugget 1": "nugget of 57 at level 3",
+   "chain 2": "chain of 297 at level 4",
+   "chain 3": "chain of 57 at level 5",
+   "chain 4": "chain of 2,013 at level 5",
+   "chain 5": "chain of 438 at level 6"
+  },
+  "seconds": 150.797
+ },
+ {
+  "combo": "141101101",
+  "limit": 1.0000079573887573,
+  "classifiable": 9,
+  "classifiableWithOpen": null,
+  "split": [
+   [
+    1,
+    25,
+    35
+   ],
+   [
+    2,
+    33,
+    107
+   ],
+   [
+    3,
+    94,
+    407
+   ],
+   [
+    4,
+    207,
+    1683
+   ],
+   [
+    5,
+    494,
+    7083
+   ],
+   [
+    6,
+    1077,
+    29963
+   ],
+   [
+    7,
+    1901,
+    126879
+   ],
+   [
+    8,
+    1029,
+    537427
+   ],
+   [
+    9,
+    0,
+    2276531
+   ]
+  ],
+  "weightDiff": 8.985842619990692e-7,
+  "lines": [
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   3.460702e-8,
+   2.485572e-8
+  ],
+  "lineArcs": 8,
+  "remainder": {
+   "remainder": -0.000007957388757237616,
+   "parts": {
+    "notForecast": {
+     "share": 0,
+     "se": 0
+    },
+    "severalFates": {
+     "share": 0,
+     "se": 0
+    },
+    "lines": {
+     "share": 0,
+     "se": 0
+    },
+    "unknown": {
+     "share": 0.0050354375,
+     "se": 0.0021333097898230745
+    },
+    "forecastError": {
+     "share": -0.007662882206935798,
+     "se": 0.0030212625
+    },
+    "openPastCap": {
+     "share": 0.002619487318178568,
+     "se": 0.002580208993522892
+    }
+   },
+   "followed": {
+    "samples": 40,
+    "cap": 14,
+    "shares": {
+     "chain 3": {
+      "share": 0.55,
+      "se": 0.07866066361276136
+     },
+     "open": {
+      "share": 0.2,
+      "se": 0.0632455532033676
+     },
+     "unknown": {
+      "share": 0.125,
+      "se": 0.05229125165837972
+     },
+     "chain 2": {
+      "share": 0.125,
+      "se": 0.05229125165837972
+     }
+    }
+   },
+   "notForecast": []
+  },
+  "example": {
+   "level": 5,
+   "type": "Delta",
+   "a": 421,
+   "b": 437,
+   "tiles": 28,
+   "paths": [
+    {
+     "steps": [
+      {
+       "parent": "Xi",
+       "slot": 1
+      },
+      {
+       "parent": "Delta",
+       "slot": 0
+      },
+      {
+       "parent": "Delta",
+       "slot": 1
+      }
+     ],
+     "label": "5|harmonic|2",
+     "level": 8
+    },
+    {
+     "steps": [
+      {
+       "parent": "Delta",
+       "slot": 1
+      },
+      {
+       "parent": "Delta",
+       "slot": 1
+      },
+      {
+       "parent": "Delta",
+       "slot": 1
+      }
+     ],
+     "label": "3|harmonic|2",
+     "level": 8
+    },
+    {
+     "steps": [
+      {
+       "parent": "Theta",
+       "slot": 1
+      },
+      {
+       "parent": "Gamma",
+       "slot": 3
+      },
+      {
+       "parent": "Delta",
+       "slot": 7
+      }
+     ],
+     "label": "4|harmonic|2",
+     "level": 8
+    }
+   ]
+  },
+  "names": {
+   "nugget 0": "nugget of 12 at level 2",
+   "nugget 1": "nugget of 24 at level 3",
+   "chain 2": "chain of 6 at level 4",
+   "chain 3": "chain of 84 at level 4",
+   "chain 4": "chain of 180 at level 4",
+   "chain 5": "chain of 522 at level 4"
+  },
+  "seconds": 169.107
+ }
+]
