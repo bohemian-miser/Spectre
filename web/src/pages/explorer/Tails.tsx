@@ -19,6 +19,8 @@ const CHAIN_COLOURS = ['#2a78d6', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#
 const NUGGET_COLOURS = ['#eb6834', '#b8860b', '#f4a582', '#8c3a14'];
 const UNKNOWN = '#e34948';
 const OPEN = '#8a8984';
+/** A strand certified as an infinite line: the Foundations chart's `--fd-line`. */
+const LINE = '#127f96';
 
 const nf = (n: number): string => n.toLocaleString('en-US');
 
@@ -45,6 +47,7 @@ const nearLabel = (x: Near): string =>
 /** A tail's fate in a sentence. */
 export function fateText(f: TailFate, closing: Closing | null, candidate: string | null | undefined): string {
   if (f.state === 'ends') return `ends inside a tile at level ${f.level}`;
+  if (f.state === 'line') return `an infinite line, certified at level ${f.level} along ${f.cycle}, ${nf(f.tiles)} tiles so far`;
   if (f.state === 'open') {
     const past = `open past level ${f.level}${f.why === 'routes' ? ' (route budget)' : ''}`;
     const cand = candidate === undefined ? '; candidate: reading…' : candidate ? `; candidate: ${candidate}` : '';
@@ -57,7 +60,7 @@ export function fateText(f: TailFate, closing: Closing | null, candidate: string
 
 /** Each tail's class key (null while pending), and the legend. */
 export function tailClasses(state: TailsState, tiles: readonly number[]): { keys: (string | null)[]; classes: TailClass[] } {
-  const keys = state.fates.map((f) => (!f ? null : f.state === 'closed' ? classKey(state.closings[f.closing]) : 'open'));
+  const keys = state.fates.map((f) => (!f ? null : f.state === 'closed' ? classKey(state.closings[f.closing]) : f.state === 'line' ? 'line' : 'open'));
   const by = new Map<string, { tails: number; tiles: number; named: Named | null; top: number }>();
   keys.forEach((k, i) => {
     if (!k) return;
@@ -66,10 +69,11 @@ export function tailClasses(state: TailsState, tiles: readonly number[]): { keys
     e.tails++;
     e.tiles += tiles[i] ?? 0;
     if (f.state === 'closed') e.named ??= state.closings[f.closing].named;
-    else e.top = Math.max(e.top, f.level);
+    else if (f.state !== 'line') e.top = Math.max(e.top, f.level);
   });
   const rank = (k: string, n: Named | null): number => {
     if (k === 'open') return 3e9;
+    if (k === 'line') return 2.5e9;
     if (k === 'unknown') return 2e9;
     if (n!.nugget) return 1e9 + n!.root.length;
     const r = state.chains.indexOf(n!.root.id);
@@ -84,6 +88,7 @@ export function tailClasses(state: TailsState, tiles: readonly number[]): { keys
     const n = e.named;
     if (key === 'open') return { key, label: `open past level ${e.top}`, colour: OPEN, dashed: true, tails: e.tails, tiles: e.tiles };
     if (key === 'unknown') return { key, label: 'not known', colour: UNKNOWN, dashed: false, tails: e.tails, tiles: e.tiles };
+    if (key === 'line') return { key, label: 'infinite line', colour: LINE, dashed: false, tails: e.tails, tiles: e.tiles };
     if (n!.nugget) {
       const family = lengths.get(n!.root.length)! > 1 ? ` (${n!.root.families.split(' ')[0]})` : '';
       return { key, label: `${nf(n!.root.length)} nugget${family}`, colour: NUGGET_COLOURS[nuggets++ % NUGGET_COLOURS.length], dashed: false, tails: e.tails, tiles: e.tiles };

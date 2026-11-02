@@ -64,11 +64,30 @@ describe('the tails of a level-4 Delta patch', () => {
         expect(c.named).not.toBeNull();
       } else {
         expect(found.kind).toBe('open');
-        expect(f!.state === 'open' || (f!.state === 'closed' && tc.closings[(f as { closing: number }).closing].level === 10)).toBe(true);
+        expect(f!.state === 'open' || f!.state === 'line' || (f!.state === 'closed' && tc.closings[(f as { closing: number }).closing].level === 10)).toBe(true);
       }
     });
     expect(closed).toBe(39);
   }, 60000);
+
+  it('settles the strand Identify finds never closing as an infinite line, and no strand that closes', () => {
+    const job = { subset: RULE, combo: COMBO, root: 'Delta' as const, level: L, tails, cap: 12 };
+    const withLines = new TailClassifier(job, shapes()).run();
+    const without = new TailClassifier(job, shapes(), undefined, false).run();
+    let lines = 0;
+    withLines.forEach((f, i) => {
+      if (f?.state !== 'line') {
+        expect(f).toEqual(without[i]);
+        return;
+      }
+      lines++;
+      // a Delta as slot 1 of a Delta, certified from two turns of two levels
+      expect(f.cycle).toBe('Delta 1Delta 1Delta');
+      expect(without[i]!.state).toBe('open');
+    });
+    // every tail the build leaves open in Identify's ancestry is on the one line
+    expect(lines).toBe(tails.length - 39);
+  }, 120000);
 
   it('is classified the same from routes above a build cut at the patch level as from the full build', () => {
     const job = { subset: RULE, combo: COMBO, root: 'Delta' as const, level: L, tails, cap: 10 };
