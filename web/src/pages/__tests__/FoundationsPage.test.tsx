@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import FoundationsPage from '../FoundationsPage';
+import { indexLine, type PageIndex } from '../foundations/pageData';
 
 const dir = resolve(__dirname, '../../../public/data/foundations/hex-023468');
 
@@ -90,6 +91,35 @@ describe('FoundationsPage', () => {
     await waitFor(() => expect(screen.getByTestId('fd-summary').textContent).toMatch(/^First4/));
     expect(location.search).toMatch(/^\?combo=031001001&circuit=\d+$/);
     expect(screen.getAllByTestId('fd-card').find((c) => c.className.includes('fd-card-on'))!.textContent).toMatch(/^170,976 tiles/);
+  }, 60000);
+
+  it("reads another rule's precomputed data at its level", async () => {
+    history.replaceState(null, '', '/Spectre/foundations.html?rule=258');
+    const d258 = resolve(dir, '../hex-258');
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => new Response(readFileSync(resolve(d258, url.split('/').pop()!), 'utf8'))));
+    render(<FoundationsPage forceSync />);
+    await waitFor(() => expect(screen.getAllByTestId('fd-row')).toHaveLength(64));
+    expect(screen.getByTestId('fd-live').textContent).toMatch(/^Rule 258: 64 combinations · precomputed to level 8/);
+    await waitFor(() => expect(screen.getByTestId('fd-summary').textContent).toMatch(/^First\d/));
+    expect(screen.queryByTestId('fd-sweep')).toBeNull();
+  }, 60000);
+
+  it('lists a rule written as index lines by first digit', async () => {
+    history.replaceState(null, '', '/Spectre/foundations.html?rule=258');
+    const d258 = resolve(dir, '../hex-258');
+    const rows = (JSON.parse(readFileSync(resolve(d258, 'index.json'), 'utf8')) as PageIndex).combos;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) =>
+        url.endsWith('index.json')
+          ? new Response(JSON.stringify({ rule: '258', format: 'lines', levels: 8, shards: { 0: rows.length } }))
+          : new Response(rows.map(indexLine).join('\n')),
+      ),
+    );
+    render(<FoundationsPage forceSync />);
+    await waitFor(() => expect(screen.getAllByTestId('fd-row')).toHaveLength(64));
+    expect(screen.getByTestId('fd-live').textContent).toMatch(/^Rule 258: 64 combinations · listed to level 8; each combination analysed here when chosen/);
+    expect((screen.getByTestId('fd-first-digit') as HTMLSelectElement).value).toBe('0');
   }, 60000);
 
   it('analyses a rule with no precomputed data live, and sweeps it', async () => {

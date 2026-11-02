@@ -1,7 +1,7 @@
 /** A rule's combinations, sortable and filtered, one compact row each, with their marks (`MARKS`). */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { MARKS, marksOf, SHORT, type IndexRow, type Mark } from './pageData';
-import { compact, limitPct } from './data';
+import { compact, limitPct, nf } from './data';
 
 export type SortKey = 'combo' | 'floor' | 'lastNew' | 'found' | 'largest' | 'monsters' | 'limit';
 
@@ -54,6 +54,9 @@ export function sortRows(rows: readonly IndexRow[], sort: { key: SortKey; desc: 
 /** Where a column's sort starts: the combination and the limit (short ones first) ascending, the counts largest first. */
 const firstDesc = (k: SortKey): boolean => k !== 'combo' && k !== 'limit';
 const BY_LIMIT = { key: 'limit', desc: false } as const;
+
+/** Rows drawn at most; the search and filters narrow a longer list. */
+export const ROWS_DRAWN = 2000;
 
 export function ComboList(props: { rows: readonly IndexRow[]; selected: string | null; onSelect: (combo: string) => void }): JSX.Element {
   const [filters, setFilters] = useState<Filters>(NO_FILTERS);
@@ -165,7 +168,7 @@ export function ComboList(props: { rows: readonly IndexRow[]; selected: string |
           ))}
           <span />
         </div>
-        {shown.map((r) => {
+        {(shown.length > ROWS_DRAWN ? shown.slice(0, ROWS_DRAWN) : shown).map((r) => {
           const marks = marksOf(r);
           return (
             <div key={r.combo} role="option" aria-selected={r.combo === props.selected} className="fd-row" onClick={() => props.onSelect(r.combo)} data-testid="fd-row">
@@ -188,7 +191,8 @@ export function ComboList(props: { rows: readonly IndexRow[]; selected: string |
         })}
       </div>
       <p className="fd-count">
-        {shown.length === props.rows.length ? `${props.rows.length} combinations` : `${shown.length} of ${props.rows.length}`}; ↑ ↓ to move
+        {shown.length === props.rows.length ? `${nf(props.rows.length)} combinations` : `${nf(shown.length)} of ${nf(props.rows.length)}`}
+        {shown.length > ROWS_DRAWN ? `, the first ${nf(ROWS_DRAWN)} drawn; search by digits for more` : ''}; ↑ ↓ to move
       </p>
     </div>
   );

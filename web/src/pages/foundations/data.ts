@@ -1,6 +1,6 @@
 /** Loading the Foundations page's data (`pageData.ts`), and the page's address. */
 import { validEdgeSubsets } from '../../core';
-import type { PageCombo, PageIndex } from './pageData';
+import { lineRow, type IndexRow, type PageCombo, type PageIndex } from './pageData';
 
 /** The rule whose combinations are precomputed and shown first. */
 export const RULE = '023468';
@@ -38,18 +38,72 @@ export const freshCombo = (p: PageCombo): boolean =>
 export const freshIndex = (i: PageIndex): boolean =>
   Array.isArray(i.combos) && i.combos.every((r) => typeof r.limit === 'number' && Array.isArray(r.notForecast) && typeof r.unexplained === 'number');
 
-/** A rule's precomputed index, or null when the rule has none. */
-export async function loadIndex(base: string, rule = RULE, signal?: AbortSignal): Promise<PageIndex | null> {
+/**
+ * A rule's precomputed data, read from `hex-<rule>/index.json` when the rule
+ * has one: an index with a file per combination (`foundations-page.ts`), or,
+ * for a rule with more combinations than files are kept for, index lines
+ * (`indexLine`) in a file per first digit, each combination analysed live
+ * when chosen.
+ */
+export type Precomputed =
+  | { readonly kind: 'files'; readonly level: number; readonly index: PageIndex }
+  | { readonly kind: 'lines'; readonly level: number; readonly shards: Readonly<Record<string, number>> };
+
+/** A rule with more combinations than this is written as index lines, not a file per combination. */
+export const LINES_FROM = 10000;
+
+/** The `index.json` of a rule written as index lines. */
+export interface LinesHead {
+  readonly rule: string;
+  readonly format: 'lines';
+  readonly levels: number;
+  /** Combinations per first digit; the lines are in `<digit>.txt`. */
+  readonly shards: Readonly<Record<string, number>>;
+}
+
+const isLines = (x: unknown): x is LinesHead => (x as LinesHead | null)?.format === 'lines';
+
+/** A rule's precomputed data, or null when the rule has none. */
+export async function loadPrecomputed(base: string, rule = RULE, signal?: AbortSignal): Promise<Precomputed | null> {
   const url = `${foundationsDir(base, rule)}index.json`;
-  let first: PageIndex;
+  let first: PageIndex | LinesHead;
   try {
-    first = await fetchJson<PageIndex>(url, signal, 'no-cache');
+    first = await fetchJson<PageIndex | LinesHead>(url, signal, 'no-cache');
   } catch (e) {
     if (signal?.aborted) throw e;
     return null;
   }
-  return freshIndex(first) ? first : load<PageIndex>(url, signal, freshIndex);
+  if (isLines(first)) return { kind: 'lines', level: first.levels, shards: first.shards };
+  const index = freshIndex(first) ? first : await load<PageIndex>(url, signal, freshIndex);
+  return index.combos.length ? { kind: 'files', level: index.combos[0].levels, index } : null;
 }
+
+/** The index lines of a rule's combinations starting with `digit`. */
+export async function loadLines(base: string, rule: string, digit: string, levels: number, signal?: AbortSignal): Promise<IndexRow[]> {
+  const res = await fetch(`${foundationsDir(base, rule)}${digit}.txt`, { signal, cache: 'no-cache' });
+  if (!res.ok) throw new Error(`the server answered ${res.status}`);
+  return (await res.text())
+    .split('\n')
+    .filter((l) => l.trim())
+    .map((l) => lineRow(l, levels));
+}
+
+/** The level a live analysis runs to unless asked; one more is built for what the tails close into. */
+export const LIVE_LEVEL = 8;
+
+/** Where the page reads a rule at a level: the level, whether the list of combinations is precomputed, and whether the combination shown is. */
+export interface Source {
+  readonly level: number;
+  readonly list: boolean;
+  readonly combo: boolean;
+}
+
+/** Precomputed data whenever the rule has it at the level asked (null: no level asked), live otherwise. */
+export function sourceOf(pre: Precomputed | null, asked: number | null): Source {
+  if (pre && (asked === null || asked === pre.level)) return { level: pre.level, list: true, combo: pre.kind === 'files' };
+  return { level: asked ?? LIVE_LEVEL, list: false, combo: false };
+}
+
 export const loadCombo = (base: string, combo: string, signal?: AbortSignal, rule = RULE): Promise<PageCombo> =>
   load<PageCombo>(`${foundationsDir(base, rule)}${combo}.json`, signal, freshCombo);
 
