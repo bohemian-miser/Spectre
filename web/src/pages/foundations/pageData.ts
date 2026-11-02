@@ -63,6 +63,8 @@ export interface PageCombo {
   readonly shares: ShareRow[];
   /** Per level, the share closing into circuits at levels + 1 that are no known word and were not predicted. */
   readonly unseen: number[];
+  /** Per level 0 to levels + 1, the share on tails certified as infinite lines (`fates/lines.ts`, `lineShare`); absent in data swept before it. */
+  readonly lines?: number[];
   /** At levels + 1: places whose word is a known circuit, places predicted as harmonics, and unseen circuits (tiles, places, word key). */
   readonly above: { readonly known: number; readonly predicted: number; readonly unseen: [length: number, places: number, word: string][] };
   /** Harmonics' copies per type against their parents' two levels down: pairs checked, pairs that differ. */
@@ -171,6 +173,7 @@ export function pageCombo(d: SweepFile): PageCombo {
     tails: d.shares.tails.map(round),
     shares,
     unseen,
+    lines: (d.shares.lines ?? []).map(round),
     above: { known: d.above.known, predicted: d.above.predicted, unseen: d.above.unseen.map((u) => [u.length, u.places, u.word]) },
     assumption: { checked: d.assumption.checked, exceptions: d.assumption.exceptions.length },
   };
@@ -415,7 +418,10 @@ export const CHAINS_SHOWN = 6;
  * later (in the build, or forecast past it), and the rest, not accounted
  * for. Without a split the tails that close later are told apart by when
  * their circuit first closes: a foundational circuit found later, a
- * harmonic of a chain known by the column, or a circuit closing again. Past
+ * harmonic of a chain known by the column, or a circuit closing again.
+ * Chords on tails still open at the top level built on an arc certified as
+ * an infinite line, through the ancestry that certifies it, are a part of
+ * their own in every column, as computed at the top and never forecast. Past
  * the top level the closings are forecast, and the last column is the
  * limit. In every column the segments add up to 1, but for rounding.
  */
@@ -489,15 +495,19 @@ export function account(p: PageCombo, split: Split): Account {
   let u = 0;
   const unseen = [...p.unseen.map((x) => (u += x)), ...new Array<number>(C - p.unseen.length).fill(u)];
   closedSegs.push({ key: 'unseen', label: 'Unseen circuits', values: unseen });
-  // the tails' parts that close later, and the rest; past the top, the closings forecast there come out of the tails at the top
+  // the tails' parts that close later, the infinite lines, and the rest; past the top, the closings forecast there come out of the tails at the top
   const unaccounted = new Array<number>(C).fill(0);
+  const onLines = new Array<number>(C).fill(0);
+  const lineShare = p.lines?.[T] ?? 0;
   let over = 0;
   for (let c = 0; c < C; c++) {
     const past = c > T ? closedSegs.map((s) => s.values[c] - s.values[T]) : [];
     const known = sum(tailSegs.map((s) => s.values[c])) + sum(past);
     const left = p.tails[Math.min(c, T)] - known;
-    if (left >= 0) unaccounted[c] = left;
-    else {
+    if (left >= 0) {
+      onLines[c] = Math.min(lineShare, left);
+      unaccounted[c] = left - onLines[c];
+    } else {
       // the forecast takes more than the tails hold: its parts scaled to fit
       over = Math.max(over, -left);
       const k = known > 0 ? Math.max(0, p.tails[Math.min(c, T)]) / known : 0;
@@ -505,6 +515,7 @@ export function account(p: PageCombo, split: Split): Account {
       closedSegs.forEach((s, i) => c > T && (s.values[c] = s.values[T] + past[i] * k));
     }
   }
+  if (lineShare > 0) tailSegs.push({ key: 'lines', label: 'Infinite lines', values: onLines, tail: true });
   tailSegs.push({ key: 'unaccounted', label: 'Not accounted for', values: unaccounted, tail: true });
   return { columns, segments: [...closedSegs, ...tailSegs], projection: pr, over };
 }
