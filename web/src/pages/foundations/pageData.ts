@@ -88,6 +88,8 @@ export interface IndexRow {
   readonly tails: number;
   /** The share of chords on circuits in the limit (`project`). */
   readonly limit: number;
+  /** The limit column of the account split by class, one share per `LIMIT_PARTS` entry (`limitParts`). */
+  readonly parts: number[];
   /** The chains not carried on past the build (`notCarried`), each named with why (`stopText`). */
   readonly notForecast: string[];
   /** Late monsters with no chain. */
@@ -509,6 +511,29 @@ export function account(p: PageCombo, split: Split): Account {
   return { columns, segments: [...closedSegs, ...tailSegs], projection: pr, over };
 }
 
+/** The segments of the account split by class, in its order: the parts of the limit column. */
+export const LIMIT_PARTS: readonly { readonly key: string; readonly label: string }[] = [
+  { key: 'nugget', label: 'Nuggets' },
+  { key: 'found', label: 'Foundational' },
+  { key: 'harm', label: 'Harmonics' },
+  { key: 'unseen', label: 'Unseen circuits' },
+  { key: 'later-found', label: 'Foundational found later' },
+  { key: 'later-next', label: 'Next harmonics' },
+  { key: 'later-again', label: 'Closing again' },
+  { key: 'unaccounted', label: 'Not accounted for' },
+];
+
+/** The account's limit column split by class, one share per `LIMIT_PARTS` entry. */
+export function limitParts(p: PageCombo): number[] {
+  const acc = account(p, 'class');
+  const c = acc.columns.length - 1;
+  return LIMIT_PARTS.map(({ key }) => round(acc.segments.find((s) => s.key === key)!.values[c]));
+}
+
+/** The share of a limit not accounted for, from its parts. */
+const UNACCOUNTED = LIMIT_PARTS.findIndex((x) => x.key === 'unaccounted');
+export const unaccountedOf = (r: IndexRow): number => r.parts[UNACCOUNTED];
+
 /** The account's segments alone. */
 export const segments = (p: PageCombo, split: Split): Segment[] => account(p, split).segments;
 
@@ -768,6 +793,7 @@ export function indexRow(p: PageCombo): IndexRow {
     misses: p.pred.filter((x) => x[2] === 'missed' || x[2] === 'other').length,
     tails: p.tails[p.levels],
     limit: round(pr.limit),
+    parts: limitParts(p),
     notForecast: pr.fits.filter(notCarried).map((f) => stopText(p, f)),
     unexplained: monsters.filter((m) => m.late && !explained(m)).length,
   };

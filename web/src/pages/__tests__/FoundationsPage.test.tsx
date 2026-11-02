@@ -3,7 +3,10 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { matchingIndicesToCombo } from '../../core';
+import { hashToState } from '../../lib/urlState';
 import FoundationsPage from '../FoundationsPage';
+import { LIMIT_PARTS, type PageIndex } from '../foundations/pageData';
 
 const dir = resolve(__dirname, '../../../public/data/foundations/hex-023468');
 
@@ -44,6 +47,21 @@ describe('FoundationsPage', () => {
     expect(within(c303).getByText('Build-up').getAttribute('href')).toBe(`${import.meta.env.BASE_URL}buildup.html?rule=023468&combo=140000001&level=4&circuit=303`);
     expect(within(c303).getByText('Explorer').getAttribute('href')).toMatch(/#\/explorer\?/);
     expect(within(c303).getByText('Harmonics').getAttribute('href')).toBe(`${import.meta.env.BASE_URL}harmonics.html?rule=023468&combo=140000001&level=8&c=4-303`);
+    // the combination's own links, the Explorer's read back by the Explorer's own reader
+    const links = within(screen.getByTestId('fd-combo-links'));
+    const href = links.getByText('Explorer').getAttribute('href')!;
+    expect(href.startsWith(`${import.meta.env.BASE_URL}#/explorer?`)).toBe(true);
+    const state = hashToState(href.slice(href.indexOf('#')));
+    expect([state.family, state.subset.join(''), matchingIndicesToCombo(state.family, state.subset, state.matching), state.rootTile, state.level, state.mode]).toEqual([
+      'hex',
+      '023468',
+      '140000001',
+      'Delta',
+      4,
+      undefined,
+    ]);
+    expect(links.getByText('Harmonics').getAttribute('href')).toBe(`${import.meta.env.BASE_URL}harmonics.html?rule=023468&combo=140000001&level=8`);
+    expect(links.getByText('Build-up').getAttribute('href')).toBe(`${import.meta.env.BASE_URL}buildup.html?rule=023468&combo=140000001&level=4`);
     // choosing a card puts it in the address
     fireEvent.click(c303);
     expect(location.search).toBe('?combo=140000001&circuit=1');
@@ -56,6 +74,19 @@ describe('FoundationsPage', () => {
     const limits = screen.getAllByTestId('fd-limit').map((e) => parseFloat(e.textContent!));
     expect(limits).toEqual([...limits].sort((a, b) => a - b));
     expect(screen.getAllByTestId('fd-row').slice(0, 4).map((r) => r.querySelector('.fd-digits')!.textContent)).toEqual(['110000001', '111000001', '101000001', '140000001']);
+    // each row's bar is its limit's parts, from the index; its title gives each part's share
+    const index = JSON.parse(readFileSync(resolve(dir, 'index.json'), 'utf8')) as PageIndex;
+    for (const row of screen.getAllByTestId('fd-row')) {
+      const r = index.combos.find((x) => x.combo === row.querySelector('.fd-digits')!.textContent)!;
+      const bar = within(row).getByTestId('fd-bar');
+      const drawn = [...bar.querySelectorAll('i')].map((i) => [i.getAttribute('data-part'), Number(i.getAttribute('data-value'))]);
+      expect(drawn).toEqual(LIMIT_PARTS.map((x, i) => [x.key, r.parts[i]]).filter(([, v]) => (v as number) > 0));
+    }
+    expect(within(screen.getAllByTestId('fd-row')[0]).getByTestId('fd-bar').getAttribute('title')).toBe('Nuggets 37.5%\nFoundational 9.7%\nHarmonics 16.1%\nNot accounted for 36.7%');
+    // sorted by what is not accounted for, the short ones lead
+    fireEvent.click(screen.getByTestId('fd-sort-unaccounted'));
+    expect(screen.getAllByTestId('fd-row').slice(0, 4).map((r) => r.querySelector('.fd-digits')!.textContent)).toEqual(['110000001', '111000001', '101000001', '140000001']);
+    fireEvent.click(screen.getByTestId('fd-sort-limit'));
     const short = screen.getByTestId('fd-mark-short');
     expect(short.textContent).toMatch(/short 4$/);
     fireEvent.click(short);

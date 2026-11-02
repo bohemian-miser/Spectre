@@ -1,20 +1,21 @@
 /**
- * One combination, in one panel: its key numbers and marks, a table of what
- * is proven and what only observed, the account of chords by level, and its
- * foundational circuits by the level they first close at: each chain as a
+ * One combination, in one panel: links to it on the Explorer, Harmonics and
+ * Build-up pages, its key numbers and marks, a table of what is proven and
+ * what only observed, the account of chords by level, and its foundational
+ * circuits by the level they first close at: each chain as a
  * row, its foundational circuit's card then its harmonics (`ChainRow.tsx`),
  * and each nugget as a card. Every circuit is drawn from a fresh build in a
  * worker.
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import type { TileTypeId } from '../../core';
-import { explorerCircuitHref } from '../shapes/explorerLink';
+import { HEAVY_LEVEL, type TileTypeId } from '../../core';
+import { explorerCircuitHref, explorerComboHref } from '../shapes/explorerLink';
 import { AccountChart } from './AccountChart';
 import type { ChainBrute } from './bruteChains';
 import { bruteLevels, ChainRow } from './ChainRow';
 import { Glyph } from './Glyph';
 import { TailsPanel } from './TailsPanel';
-import { buildupHref, harmonicsHref, limitPct, nf, pct, slots, subsetOf } from './data';
+import { buildupComboHref, buildupHref, harmonicsHref, limitPct, nf, pct, slots, subsetOf } from './data';
 import type { DrawClient, Drawing } from './drawings';
 import { ChainLine, kindOf } from './MonstersTable';
 import { chainOf, factsOf, indexRow, isLate, MARKS, marksOf, monstersOf, SHORT, type ChainStep, type FoundRow, type Monster, type PageCombo } from './pageData';
@@ -107,6 +108,25 @@ function Card(props: {
   );
 }
 
+/** The level a combination opens at on other pages: its floor, at least 4, short of the rooted patch's heavy levels. */
+const openLevel = (p: PageCombo): number => Math.min(HEAVY_LEVEL, Math.max(4, p.floor));
+
+/** The combination on the Explorer, Harmonics and Build-up pages. */
+function ComboLinks(props: { data: PageCombo }): JSX.Element {
+  const { data } = props;
+  const base = import.meta.env.BASE_URL;
+  const level = openLevel(data);
+  return (
+    <nav className="fd-links fd-combo-links" aria-label="Open the combination" data-testid="fd-combo-links">
+      <a href={explorerComboHref(base, { family: 'hex', subset: subsetOf(data.rule), combo: data.combo, root: 'Delta', level })} title={`The rooted patch of a level-${level} Delta`}>
+        Explorer
+      </a>
+      <a href={harmonicsHref(base, data.combo, Math.min(data.levels, data.lastNew + 2), data.rule)}>Harmonics</a>
+      <a href={buildupComboHref(base, data.combo, level, data.rule)}>Build-up</a>
+    </nav>
+  );
+}
+
 export function ComboView(props: { data: PageCombo; client: DrawClient; brute: ChainBrute; circuit: number | null; onCircuit: (id: number | null) => void }): JSX.Element {
   const { data } = props;
   const [drawings, setDrawings] = useState<{ combo: string; byId: Map<number, Drawing> } | null>(null);
@@ -148,9 +168,12 @@ export function ComboView(props: { data: PageCombo; client: DrawClient; brute: C
   return (
     <section className="fd-combo" data-testid="fd-combo" aria-labelledby="fd-combo-title">
       <header className="fd-combo-head">
-        <h2 id="fd-combo-title">
-          {data.combo} <span className="fd-muted">rule {data.rule}</span>
-        </h2>
+        <div className="fd-combo-title">
+          <h2 id="fd-combo-title">
+            {data.combo} <span className="fd-muted">rule {data.rule}</span>
+          </h2>
+          <ComboLinks data={data} />
+        </div>
         <dl className="fd-keys" data-testid="fd-summary">
           {keys.map(([k, v, title]) => (
             <div key={k} title={title}>

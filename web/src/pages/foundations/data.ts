@@ -34,9 +34,9 @@ async function load<T>(url: string, signal: AbortSignal | undefined, fresh: (x: 
 /** A combination file of the current shape: every foundational row has its ten fields (the nugget flag last), every harmonic row its nine (the place drawn last). */
 export const freshCombo = (p: PageCombo): boolean =>
   Array.isArray(p.found) && p.found.every((f) => f.length >= 10) && Array.isArray(p.harm) && p.harm.every((h) => h.length >= 9) && Array.isArray(p.tails);
-/** An index of the current shape: every row has its limit and the counts its marks read. */
+/** An index of the current shape: every row has its limit, the limit's parts and the counts its marks read. */
 export const freshIndex = (i: PageIndex): boolean =>
-  Array.isArray(i.combos) && i.combos.every((r) => typeof r.limit === 'number' && Array.isArray(r.notForecast) && typeof r.unexplained === 'number');
+  Array.isArray(i.combos) && i.combos.every((r) => typeof r.limit === 'number' && Array.isArray(r.parts) && Array.isArray(r.notForecast) && typeof r.unexplained === 'number');
 
 /** A rule's precomputed index, or null when the rule has none. */
 export async function loadIndex(base: string, rule = RULE, signal?: AbortSignal): Promise<PageIndex | null> {
@@ -101,6 +101,9 @@ export const harmonicsHref = (base: string, combo: string, level: number, rule =
 /** The Build-up page on the circuit of this many tiles closing at `level`. */
 export const buildupHref = (base: string, combo: string, level: number, tiles: number, rule = RULE): string =>
   `${root(base)}buildup.html?rule=${rule}&combo=${combo}&level=${level}&circuit=${tiles}`;
+
+/** The Build-up page on a combination, at `level`. */
+export const buildupComboHref = (base: string, combo: string, level: number, rule = RULE): string => `${root(base)}buildup.html?rule=${rule}&combo=${combo}&level=${level}`;
 
 export const nf = (n: number): string => n.toLocaleString('en-US');
 

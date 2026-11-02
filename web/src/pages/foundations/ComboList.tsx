@@ -1,9 +1,13 @@
-/** A rule's combinations, sortable and filtered, one compact row each, with their marks (`MARKS`). */
+/**
+ * A rule's combinations, sortable and filtered, one compact row each: its
+ * limit split as the account chart's limit column is (`LIMIT_PARTS`), drawn
+ * as a thin stacked bar, and its marks (`MARKS`).
+ */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { MARKS, marksOf, SHORT, type IndexRow, type Mark } from './pageData';
-import { compact, limitPct } from './data';
+import { LIMIT_PARTS, MARKS, marksOf, SHORT, unaccountedOf, type IndexRow, type Mark } from './pageData';
+import { compact, limitPct, pct } from './data';
 
-export type SortKey = 'combo' | 'floor' | 'lastNew' | 'found' | 'largest' | 'monsters' | 'limit';
+export type SortKey = 'combo' | 'floor' | 'lastNew' | 'found' | 'largest' | 'monsters' | 'unaccounted' | 'limit';
 
 const COLUMNS: readonly { key: SortKey; label: string; title: string }[] = [
   { key: 'combo', label: 'Combination', title: 'Combination digits' },
@@ -12,6 +16,7 @@ const COLUMNS: readonly { key: SortKey; label: string; title: string }[] = [
   { key: 'found', label: 'Foundational', title: 'Foundational circuits' },
   { key: 'largest', label: 'Largest', title: 'Tiles of the largest foundational circuit' },
   { key: 'monsters', label: 'M', title: 'Monsters: late or giant circuits, and the combination itself when short' },
+  { key: 'unaccounted', label: 'Not accounted', title: 'Share of chords not accounted for in the limit' },
   { key: 'limit', label: 'Limit', title: 'Share of chords on known circuits in the limit' },
 ];
 
@@ -46,7 +51,7 @@ export function markCounts(rows: readonly IndexRow[], f: Filters): Record<Mark, 
 export function sortRows(rows: readonly IndexRow[], sort: { key: SortKey; desc: boolean }): IndexRow[] {
   const k = sort.key;
   return [...rows].sort((a, b) => {
-    const d = k === 'combo' ? a.combo.localeCompare(b.combo) : a[k] - b[k];
+    const d = k === 'combo' ? a.combo.localeCompare(b.combo) : k === 'unaccounted' ? unaccountedOf(a) - unaccountedOf(b) : a[k] - b[k];
     return (sort.desc ? -d : d) || a.combo.localeCompare(b.combo);
   });
 }
@@ -54,6 +59,19 @@ export function sortRows(rows: readonly IndexRow[], sort: { key: SortKey; desc: 
 /** Where a column's sort starts: the combination and the limit (short ones first) ascending, the counts largest first. */
 const firstDesc = (k: SortKey): boolean => k !== 'combo' && k !== 'limit';
 const BY_LIMIT = { key: 'limit', desc: false } as const;
+
+/** A row's limit as a stacked bar in the account chart's colours; its title gives each part's share. */
+function LimitBar(props: { parts: readonly number[] }): JSX.Element {
+  const total = props.parts.reduce((a, b) => a + b, 0) || 1;
+  const shown = LIMIT_PARTS.map((p, i) => ({ ...p, value: props.parts[i] })).filter((p) => p.value > 0 || p.key === 'unaccounted');
+  return (
+    <span className="fd-bar" title={shown.map((p) => `${p.label} ${pct(p.value)}`).join('\n')} data-testid="fd-bar">
+      {shown.map((p) =>
+        p.value > 0 ? <i key={p.key} className={`fd-seg-${p.key}`} style={{ width: `${(100 * p.value) / total}%` }} data-part={p.key} data-value={p.value} /> : null,
+      )}
+    </span>
+  );
+}
 
 export function ComboList(props: { rows: readonly IndexRow[]; selected: string | null; onSelect: (combo: string) => void }): JSX.Element {
   const [filters, setFilters] = useState<Filters>(NO_FILTERS);
@@ -175,6 +193,7 @@ export function ComboList(props: { rows: readonly IndexRow[]; selected: string |
               <span>{r.found}</span>
               <span title={`${r.largest.toLocaleString('en-US')} tiles`}>{compact(r.largest)}</span>
               <span>{r.monsters ? <span className="fd-badge" title={`${r.monsters} monsters`}>{r.monsters}</span> : null}</span>
+              <LimitBar parts={r.parts} />
               <span data-testid="fd-limit" className={r.limit < SHORT ? 'fd-short' : undefined}>
                 {limitPct(r.limit)}
               </span>

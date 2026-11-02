@@ -1,9 +1,10 @@
 /**
- * Opening a circuit in the Explorer's infinite view, at any level: a world
- * whose ancestor chain starts at the circuit's first tile and climbs to the
- * supertile the circuit is born in (`WorldChain`). The first tile is the
- * world's frame, so the view opens on it, and the link's trace seed is the
- * circuit's chord across it, so the Explorer traces exactly that circuit.
+ * Opening a combination in the Explorer's rooted patch, and a circuit in
+ * its infinite view at any level: a world whose ancestor chain starts at
+ * the circuit's first tile and climbs to the supertile the circuit is born
+ * in (`WorldChain`). The first tile is the world's frame, so the view opens
+ * on it, and the link's trace seed is the circuit's chord across it, so the
+ * Explorer traces exactly that circuit.
  */
 
 import {
@@ -69,6 +70,19 @@ export function explorerCircuitHref(base: string, link: CircuitLink): string {
     mode: 'infinite',
     worldChain: encodeWorldChain(chain),
     traceSeed: [r(at.x), r(at.y), r(b.x), r(b.y)],
+  });
+  return `${base.endsWith('/') ? base : `${base}/`}#/explorer?${q.toString()}`;
+}
+
+/** The Explorer's hash route for a combination: the rooted patch of a supertile of `root` at `level`, under its rule and combination. */
+export function explorerComboHref(base: string, link: { family: TileFamilyId; subset: readonly number[]; combo: string; root: TileTypeId; level: number }): string {
+  const q = encodeExplorerState({
+    ...DEFAULT_LINK_STATE,
+    family: link.family,
+    rootTile: link.root,
+    level: link.level,
+    subset: link.subset,
+    matching: comboToMatchingIndices(link.family, link.subset, link.combo),
   });
   return `${base.endsWith('/') ? base : `${base}/`}#/explorer?${q.toString()}`;
 }
