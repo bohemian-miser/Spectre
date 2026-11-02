@@ -1659,7 +1659,7 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
         // Size the next feed to the walk's appetite: a full-speed walk that
         // drank the whole rect and wants more gets a bigger one; a paced or
         // stalled walk gets the small one back.
-        const consumed = trail.status === 'frontier' && trail.steps > stepsBefore;
+        const consumed = (trail.status === 'frontier' || trail.status === 'walking') && trail.steps > stepsBefore;
         feedHalfRef.current =
           consumed && paceRef.current == null
             ? Math.min(FEED_HALF_MAX, feedHalfRef.current * FEED_GROW)
@@ -1684,7 +1684,11 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
     const index = ensureIndex();
     if (!index && followOnRef.current) {
       // The display is at glyph LOD (or too dense to index): the chase must
-      // not stall or read 'offscreen' — the feeder keeps it walking.
+      // not stall or read 'offscreen' — the feeder keeps it walking. A slice
+      // that hit its step cap is 'walking' with more to do, and only the
+      // feeder can do it here: it reads as a frontier, or it would wait for
+      // a display cut that cannot help.
+      if (trail.status === 'walking') trail.status = 'frontier';
       maybeFeed();
       ensureFollow();
       return;
@@ -1844,6 +1848,10 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
   useEffect(() => {
     const client = createTilingClient({ forceSync: forceSyncClient });
     clientRef.current = client;
+    // The feeder's own worker: a display cut far out takes seconds, and a
+    // feed queued behind it would leave the chase standing for as long as
+    // the view stays wide. Two workers hold two copies of the world's engine.
+    const feedClient = createTilingClient({ forceSync: forceSyncClient });
     const scheduler = createQueryScheduler<
       UnrootedQueryRequest,
       { res: UnrootedQueryResponse; ms: number }
@@ -1910,7 +1918,7 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
     >({
       run: async (req) => {
         const t0 = performance.now();
-        const res = await client.query(req);
+        const res = await feedClient.query(req);
         return { res, ms: performance.now() - t0 };
       },
       onResult: ({ res }, req) => {
@@ -1946,6 +1954,7 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
       scheduler.dispose();
       feedScheduler.dispose();
       client.dispose();
+      feedClient.dispose();
       schedulerRef.current = null;
       feedSchedulerRef.current = null;
       clientRef.current = null;
