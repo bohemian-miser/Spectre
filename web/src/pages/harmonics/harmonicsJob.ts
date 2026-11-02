@@ -15,6 +15,8 @@ import { arcsOf, circuitDescent, levelLine, visitsIn, type Descent } from './lev
 import { chainsOf, closestInFamily, harmonicLinks, nearLinks, type Chain, type Link, type Near } from './chains';
 import { alignReadings, extraRuns, readDown, sameCyclic, type Alignment, type Reading } from './readings';
 import { scoreAll, scorePair, type Scored } from './similarity';
+import { wordKey } from '../foundations/foundations';
+import type { KnownWord } from './bruteForce';
 import { bornOfFound, firstTileOf, foundKey, foundDetail, foundThumb, Placed, readRows, SparseRows, thumbLevel, thumbLine, type Found } from './found';
 import { SparseRoutes } from './sparseRoutes';
 import { BreakdownStore, type BreakdownSets } from './breakdownStore';
@@ -229,6 +231,17 @@ export class HarmonicsEngine {
   private geometry: Geometry | null = null;
   private readonly rowsOf = new Map<BornCircuit, CircuitRows>();
 
+  private wordsAt: { level: number; list: KnownWord[] } | null = null;
+
+  /** Every circuit of the last result by its word key (`foundations.ts`'s `wordKey`), with its tiles and birth level. */
+  words(): KnownWord[] {
+    const list = this.list();
+    if (this.wordsAt?.level !== this.cs.maxLevel) {
+      this.wordsAt = { level: this.cs.maxLevel, list: list.map((c, i) => ({ key: wordKey(this.cs, this.bornOf(i)), length: c.length, level: c.level })) };
+    }
+    return this.wordsAt.list;
+  }
+
   /** The born circuit behind circuit `ci` of the last result (or found after them). */
   bornOf(ci: number): BornCircuit {
     this.list();
@@ -440,6 +453,7 @@ export type WorkerMessage =
   | { type: 'breakdowns'; cs: readonly number[] }
   | { type: 'breakdownPicture'; c: number; k: number; index: number }
   | { type: 'born'; c: number }
+  | { type: 'words' }
   | { type: 'found'; list: readonly Found[]; budget: number }
   | { type: 'score'; a: number; b: number; fold: Fold };
 
@@ -467,6 +481,8 @@ export interface HarmonicsClient {
   breakdownPicture(c: number, k: number, index: number): Promise<Side>;
   /** The born circuit behind a circuit of the last result: its supertile and the child crossings it enters. */
   born(c: number): Promise<BornCircuit>;
+  /** Every circuit of the last result by its word, for the brute force to know a closed walk with that word as the circuit closing again. */
+  words(): Promise<KnownWord[]>;
   /** Circuits found above the build, taken in after the last result's circuits: read, with their thumbnails. */
   found(list: readonly Found[], budget: number): Promise<{ info: CircuitInfo; stop: number; pts: Float64Array }[]>;
   /** How alike a circuit and one two levels above it read under a fold. */
@@ -556,6 +572,10 @@ export function createHarmonicsClient(opts: { forceSync?: boolean } = {}): Harmo
     born(c) {
       if (!worker) return sync(() => need().bornOf(c));
       return ask({ type: 'born', c });
+    },
+    words() {
+      if (!worker) return sync(() => need().words());
+      return ask({ type: 'words' });
     },
     found(list, budget) {
       if (!worker) return sync(() => need().found(list, budget));

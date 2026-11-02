@@ -15,7 +15,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { FLOOR, type Chain } from './chains';
-import type { BruteResult, ClimbResult, Harmonic, Progress } from './bruteForce';
+import type { BruteResult, ClimbResult, Harmonic, KnownWord, Progress } from './bruteForce';
 import { BASE, createBruteClient, describeResult, fromBorn, STOPPED, type BruteCombo, type BruteFrom } from './bruteJob';
 import { percent, scoreTitle, Thumb, type MemberInfo } from './ChainViews';
 import type { Found } from './found';
@@ -177,9 +177,13 @@ export function useBruteForce(
     const below = fromLevel(row, level);
     const gap = level - below;
     const prev = below > row.lastLevel ? foundIn(row, below) : null;
-    const from: Promise<BruteFrom> = prev
-      ? Promise.resolve({ circuit: prev, addressed: true, floor: row.floor, gap })
-      : harmonics.born(row.top).then((c) => fromBorn(c, row.floor, gap));
+    // the circuits known: the build's by word, and every member found so far with a word key
+    const foundWords: KnownWord[] = [];
+    for (const c of map.values()) if (c.state === 'done' && c.result.found && !c.result.found.key.includes('/')) foundWords.push({ key: c.result.found.key, length: c.result.found.length, level: c.result.found.level });
+    const from: Promise<BruteFrom> = Promise.all([
+      prev ? Promise.resolve<BruteFrom>({ circuit: prev, addressed: true, floor: row.floor, gap }) : harmonics.born(row.top).then((c) => fromBorn(c, row.floor, gap)),
+      harmonics.words(),
+    ]).then(([f, words]) => ({ ...f, known: [...words, ...foundWords] }));
     from
       .then((f) => client.current.harmonic(job, f, (p) => put(key, { state: 'running', progress: p })))
       .then((res) => put(key, { state: 'done', result: res }))
