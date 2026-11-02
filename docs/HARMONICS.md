@@ -360,6 +360,13 @@ walks that leave the supertile close instead. A circuit found within the
 build is one the table already holds, so its cell opens that circuit's own
 row.
 
+A closed walk with the member's own word is the member closing again in a
+bigger supertile, across a seam of its children: another placement of one
+circuit, which the build never counts twice. The search counts these as
+copies and reads on; without that, 110000001's 126 at level 4 would be its
+own harmonic at every level, since it reads at the top two levels of any
+placement as it reads at its own.
+
 The search is drawn as it runs (`harmonics/searchPicture.ts`,
 `harmonics/SearchView.tsx`): the supertile and its children outlined, the
 windows looked through shaded, and every arc followed as a line through the

@@ -217,6 +217,8 @@ export interface BruteResult {
   readonly tried: number;
   /** Closed walks there that are not the harmonic: another family, or not reading as A. */
   readonly others: readonly (Closure & { readonly agreed: number | null })[];
+  /** Closed walks there with A's own word: A closing again in a bigger supertile, not a circuit of its own. */
+  readonly copies: number;
   /** Walks that left the supertile. */
   readonly open: number;
   /** Without a harmonic: where the walks that left the supertile close, climbing on (`climb`). */
@@ -268,6 +270,15 @@ export function harmonicAbove(R: SparseRoutes, a: Walked, opts: BruteOptions = {
   const open: number[] = [];
   let tried = 0;
   let windows = 0;
+  let copies = 0;
+  /** A's word key, worked out when a walk of its length closes, through whichever children; past the word cap a walk of its length is taken for a copy. */
+  let aKey: string | null = null;
+  const isCopy = (b: Walked): boolean => {
+    if (b.length !== a.length) return false;
+    if (a.length > wordCap) return true;
+    aKey ??= wordKeyOf(walkedWordCodes(R, a));
+    return wordKeyOf(walkedWordCodes(R, b)) === aKey;
+  };
   // each window: A's visit at level `floor`, as its slots from the birth down, the first visit first
   for (const path of visitPaths(R, a, floor)) {
     if (found.length || windows === (opts.windows ?? Infinity)) break;
@@ -317,6 +328,11 @@ export function harmonicAbove(R: SparseRoutes, a: Walked, opts: BruteOptions = {
       const b: Walked = { level: top, type: a.type, length: w.length, steps };
       const fam = familyOfSteps(steps);
       const other = `${w.length}/${fam}`;
+      if (isCopy(b)) {
+        copies++;
+        sketch.relabel('other');
+        continue;
+      }
       if (fam !== family) {
         sketch.relabel('other');
         if (!others.has(other)) others.set(other, { level: top, type: a.type, length: w.length, family: fam, agreed: null });
@@ -367,6 +383,7 @@ export function harmonicAbove(R: SparseRoutes, a: Walked, opts: BruteOptions = {
     windows,
     tried,
     others: [...others.values()],
+    copies,
     open: open.length,
     beyond,
     climbed,

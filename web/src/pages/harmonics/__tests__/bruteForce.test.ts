@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest';
 import { readCircuit, wordKey } from '../../foundations/foundations';
 import { CircuitShapes, familyOf, type BornCircuit } from '../../shapes/circuitShapes';
 import { climb, harmonicAbove, longestArc, parentOf, readWalked, type Progress } from '../bruteForce';
+import { describeResult } from '../bruteJob';
 import { bornOfFound, Placed, SparseRows } from '../found';
 import { ARC_POINTS, type SearchPicture } from '../searchPicture';
 import { SparseRoutes, TYPES, typeIndex } from '../sparseRoutes';
@@ -156,6 +157,24 @@ describe('the harmonic of 023468 · 000100000’s 441', () => {
     expect(r.windows).toBe(1);
     expect(r.work.calls).toBe(0);
     expect(r.found!.key).toBe(wordKey(cs, bornAt(cs, 8, 175221)));
+  });
+});
+
+describe('a circuit closing again in a bigger supertile', () => {
+  it('is not its own harmonic: 110000001’s 126 at level 4 closes in the level-6, 8 and 10 Deltas with its own word, and nothing reads as it there', () => {
+    const cs = build('110000001', 8);
+    const R = new SparseRoutes(cs, 6);
+    const a = bornAt(cs, 4, 126);
+    expect(familyOf(a)).toBe('14');
+    for (const gap of [2, 4]) {
+      const r = harmonicAbove(R, R.walked(a), { floor: 2, gap });
+      expect(r.found).toBeNull();
+      expect(r.copies).toBeGreaterThanOrEqual(1);
+      expect(r.others.some((o) => o.length === 126)).toBe(false);
+      expect(r.picture.counts.harmonic).toBe(0);
+    }
+    const six = harmonicAbove(R, R.walked(a), { floor: 2, gap: 2 });
+    expect(describeResult(six)).toMatch(/^Level 6: no circuit reading as the 126 closes in the Delta\. The 126 itself closes there (once|[\d,]+ times), in a bigger supertile\./);
   });
 });
 

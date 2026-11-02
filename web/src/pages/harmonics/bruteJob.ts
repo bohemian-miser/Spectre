@@ -187,6 +187,7 @@ export function describeResult(r: BruteResult): string {
     return `Level ${r.level}: a ${nf(f.length)}-tile circuit of family ${f.family} closes in the ${r.type}, reading as the ${nf(fromLength)} ${r.gap === 2 ? 'two' : r.gap} levels down ${reads}; ${f.key.includes('/') ? 'place' : 'word'} key ${f.key}. ${work}`;
   }
   const others = r.others.length ? ` Closed there instead: ${r.others.map((o) => `${nf(o.length)} (family ${o.family})`).join(', ')}.` : '';
+  const copies = r.copies ? ` The ${nf(fromLength)} itself closes there ${r.copies === 1 ? 'once' : `${nf(r.copies)} times`}, in a bigger supertile.` : '';
   const beyond = r.beyond.length ? ` The ${nf(r.open)} walks that leave it close, climbed, at ${r.beyond.map((b) => `level ${b.level} (${nf(b.length)}, family ${b.family})`).join(', ')}.` : r.open ? ` ${nf(r.open)} walks leave it.` : '';
-  return `Level ${r.level}: no circuit reading as the ${nf(fromLength)} closes in the ${r.type}.${others}${beyond} ${work}`;
+  return `Level ${r.level}: no circuit reading as the ${nf(fromLength)} closes in the ${r.type}.${copies}${others}${beyond} ${work}`;
 }
