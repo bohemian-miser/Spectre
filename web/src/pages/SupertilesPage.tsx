@@ -467,7 +467,6 @@ export function SupertilesPage(props: SupertilesPageProps): JSX.Element {
           subset={state.subset}
           matching={state.matching}
           contracts={state.contracts}
-          tileSize={state.family === 'hex' ? 84 : undefined}
           onSubsetChange={(subset) => patchRule(() => ({ subset }))}
           onToggleMajor={(major) => patchRule((prev) => ({ subset: toggleClass(prev.subset, major) }))}
           onMatchingChange={(tileType, index) =>

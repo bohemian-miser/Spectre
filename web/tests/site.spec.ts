@@ -43,8 +43,8 @@ test('a deep link reproduces the scene', async ({ page }) => {
   await page.goto('#/explorer?v=1&f=spectre&lv=1&e=2578');
   const svg = page.locator('svg.tiling-view');
   await expect(svg).toHaveAttribute('data-level', '1');
-  await expect(page.locator('.matching-slider').first()).toBeVisible();
-  await expect(page.getByTestId('combo-string')).toHaveValue('2578-0000000000');
+  await expect(page.locator('.combo-tile').first()).toBeVisible();
+  await expect(page.getByTestId('combo-code')).toHaveAttribute('data-code', '2578-0000000000');
 });
 
 test('legacy.html still runs the p5 app', async ({ page }) => {
@@ -61,23 +61,25 @@ test('widgets.html still renders the dev gallery', async ({ page }) => {
   await expect(page.locator('.tile-palette-cell').first()).toBeVisible();
 });
 
-test('the quick bar under the field steps pairings, opens tiles and sets strands', async ({ page }) => {
+test('the combination bar under the field steps combinations, pastes a code and opens tiles', async ({ page }) => {
   await page.goto('#/explorer?v=1&f=spectre&lv=2&e=2578&c=0100101100');
-  const bar = page.getByTestId('quick-bar');
+  const bar = page.getByTestId('combo-bar');
   await expect(bar).toBeVisible();
-  await expect(page.getByTestId('quick-tail-free')).toHaveClass(/good/);
+  await expect(page.getByTestId('combo-count')).toHaveText('58/64');
 
-  const before = await page.getByTestId('quick-position').innerText();
-  await bar.getByRole('button', { name: 'Next pairing ›' }).click();
-  await expect(page.getByTestId('quick-position')).not.toHaveText(before);
+  await bar.getByRole('button', { name: 'Next combination' }).click();
+  await expect(page.getByTestId('combo-count')).toHaveText('59/64');
 
-  await bar.locator('[data-tile="Theta"]').click();
+  await page.getByTestId('combo-paste').click();
+  await page.getByTestId('combo-paste-text').fill('https://bohemian-miser.github.io/Spectre/harmonics.html?rule=023468&combo=140000001');
+  await page.getByTestId('combo-paste-use').click();
+  await expect(page.getByTestId('combo-code')).toHaveAttribute('data-code', '023468-140000001');
+  await expect(page.locator('select[aria-label="Tile family"]')).toHaveValue('hex');
+
+  await bar.getByRole('button', { name: 'Open Theta to draw its lines' }).click();
   await expect(page.getByTestId('tile-editor')).toBeVisible();
-  await page.getByRole('button', { name: 'Close' }).click();
-
-  await page.getByTestId('quick-strands-5').click();
-  await expect(page.getByTestId('quick-strands-5')).toHaveText('×2');
-  await expect(page.getByTestId('quick-tail-free')).toHaveClass(/bad/);
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('tile-editor')).toHaveCount(0);
 });
 
 test('the Corners page fits a circuit’s polygons and draws its spectrum', async ({ page }) => {

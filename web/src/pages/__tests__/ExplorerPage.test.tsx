@@ -10,7 +10,7 @@
 import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import ExplorerPage from '../ExplorerPage';
-import { leafOrder } from '../../core';
+import { leafOrder, validEdgeSubsets } from '../../core';
 
 afterEach(cleanup);
 beforeEach(() => {
@@ -41,30 +41,24 @@ describe('ExplorerPage', () => {
     expect(container.querySelector('.explorer-advanced')).not.toBeNull();
   });
 
-  it('draws full edge labels when the Edge labels toggle is on', () => {
-    // A rule gives the tiles connection points, which is what puts the
-    // per-tile matching editors (and so any labels) on screen at all.
+  it('draws full edge labels in the tile view when the Edge labels toggle is on', () => {
     window.history.replaceState(null, '', '/#/explorer?v=1&lv=1&e=2578');
-    const { container } = render(<ExplorerPage />);
-    const labelled = () => container.querySelectorAll('.edge-labels text');
-    const majors = () => container.querySelectorAll('[data-major-number]');
+    const { container, getByRole } = render(<ExplorerPage />);
+    const texts = () => [...container.querySelectorAll('.tile-editor-edge text')].map((t) => t.textContent ?? '');
 
-    // Off by default: the matching editors wear bare class numbers.
-    expect(labelled()).toHaveLength(0);
-    expect(majors().length).toBeGreaterThan(0);
+    // Off by default: the tile view wears bare class numbers.
+    fireEvent.click(getByRole('button', { name: 'Open Delta to draw its lines' }));
+    expect(texts().length).toBeGreaterThan(0);
+    expect(texts().every((t) => /^\d$/.test(t))).toBe(true);
 
     const toggle = [...container.querySelectorAll('.display-toggles label')].find((l) =>
       l.textContent?.includes('Edge labels'),
     ) as HTMLElement;
     fireEvent.click(toggle.querySelector('input') as Element);
 
-    // On: every physical edge spells itself out, and the bare numbers stand
-    // down rather than double-labelling each edge.
-    const texts = [...labelled()].map((t) => t.textContent ?? '');
-    expect(texts.length).toBeGreaterThan(0);
-    expect(texts).toContain('1.0A');
-    expect(texts.every((t) => /^-?\d+\.\d+[A-Z]$/.test(t))).toBe(true);
-    expect(majors()).toHaveLength(0);
+    // On: every physical edge spells itself out.
+    expect(texts()).toContain('1.0A');
+    expect(texts().every((t) => /^-?\d+\.\d+[A-Z]$/.test(t))).toBe(true);
   });
 
   it('opens with circuits found, followed and held on screen', () => {
@@ -216,13 +210,9 @@ describe('ExplorerPage', () => {
     const { container } = render(<ExplorerPage />);
 
     expect(container.querySelector('svg.tiling-view')?.getAttribute('data-level')).toBe('1');
-    // Every leaf type has connection points under 2578, so every editor shows.
-    expect(container.querySelectorAll('.matching-slider')).toHaveLength(
-      leafOrder('spectre').length,
-    );
-    expect((container.querySelector('[data-testid="combo-string"]') as HTMLInputElement).value).toBe(
-      '2578-0100000000',
-    );
+    // One tile per leaf type under the combination bar, and the code it was linked with.
+    expect(container.querySelectorAll('.combo-tile')).toHaveLength(leafOrder('spectre').length);
+    expect(container.querySelector('[data-testid="combo-code"]')!.textContent!.replace('▾', '')).toBe('2578-0100000000');
   });
 
   it('mirrors edits into the hash after the debounce', async () => {
@@ -247,11 +237,10 @@ describe('ExplorerPage', () => {
     expect(container.querySelector('.warning-badge')?.textContent).toContain('canvas');
   });
 
-  it('switching family reshapes the matching editors (hex has 9 leaves)', () => {
+  it('switching family reshapes the combination bar (hex has 9 leaves)', () => {
     window.history.replaceState(null, '', '/#/explorer?v=1&e=15');
     const { container } = render(<ExplorerPage />);
-    const before = container.querySelectorAll('.matching-slider').length;
-    expect(before).toBeGreaterThan(0);
+    expect(container.querySelectorAll('.combo-tile')).toHaveLength(10);
 
     fireEvent.change(container.querySelector('select[aria-label="Tile family"]') as Element, {
       target: { value: 'hex' },
@@ -260,8 +249,8 @@ describe('ExplorerPage', () => {
       'value',
       'hex',
     );
-    // Hex tiles carry different classes, so the editor set changes shape.
-    expect(container.querySelectorAll('.matching-slider').length).toBeLessThanOrEqual(9);
+    // The hexagons have one Gamma, so nine tiles.
+    expect(container.querySelectorAll('.combo-tile')).toHaveLength(9);
   });
 
   it('draws overlay chords on every instance of a tile type', () => {
@@ -493,7 +482,7 @@ describe('ExplorerPage — infinite mode', () => {
     const { container } = render(<ExplorerPage />);
     const d = container.querySelector('.circuit-path')?.getAttribute('d') ?? '';
     expect(d).toContain(' C ');
-    expect(container.querySelector('.matching-chords path.chord')).not.toBeNull();
+    expect(container.querySelector('.combo-tile-chord')?.getAttribute('d')).toContain(' C ');
     cleanup();
     window.history.replaceState(null, '', '/#/explorer?v=1&f=hex&lv=2&e=15');
     const off = render(<ExplorerPage />);
@@ -517,10 +506,10 @@ describe('ExplorerPage — infinite mode', () => {
     // Each count went up by one pair, so every tile still pairs up.
     expect(container.textContent).toContain('Every tile pairs up');
     expect(circuits()).toBeGreaterThan(before);
-    // No combination string can say how many strands there are.
-    expect(getByTestId('combo-crossing').textContent).toContain('Several strands');
+    // No code can say how many strands there are.
+    expect(getByTestId('combo-status').textContent).toContain('Several strands');
     // Pi now has 8 points, so 105 ways to pair them.
-    const pi = container.querySelector('.matching-slider[data-tile-type="Pi"] .matching-badge')!;
+    const pi = container.querySelector('.combo-tile[data-tile="Pi"] .combo-tile-of')!;
     expect(pi.textContent).toBe('1/105');
     fireEvent.click(getByLabelText('Fewer strands on class 1'));
     expect(queryByTestId('strand-count-1')).toBeNull();
@@ -571,8 +560,8 @@ describe('ExplorerPage — infinite mode', () => {
   it('opens a tile in the big pairing editor, steps tiles, and closes on Escape', () => {
     // fl=23: non-crossing only off, so crossing pairings are counted too.
     window.history.replaceState(null, '', '/#/explorer?v=1&f=hex&lv=2&e=15&fl=23');
-    const { getByLabelText, getByTestId, queryByTestId } = render(<ExplorerPage />);
-    fireEvent.click(getByLabelText("Edit Pi's pairing"));
+    const { getByLabelText, getByRole, getByTestId, queryByTestId } = render(<ExplorerPage />);
+    fireEvent.click(getByRole('button', { name: 'Open Pi to draw its lines' }));
     expect(getByTestId('tile-editor').getAttribute('aria-label')).toBe('Pairing for Pi');
     // Pi with {1, 5}: four points, three ways to pair them.
     expect(getByTestId('tile-editor-position').textContent).toBe('1/3');
@@ -584,19 +573,34 @@ describe('ExplorerPage — infinite mode', () => {
     expect(queryByTestId('tile-editor')).toBeNull();
   });
 
+  it('the edge rule’s groups flip classes together and keep the rule tail-free', () => {
+    window.history.replaceState(null, '', '/#/explorer?v=1&f=hex&lv=2&e=15');
+    const { getByTestId } = render(<ExplorerPage />);
+    const groups = getByTestId('rule-groups').querySelectorAll('button');
+    expect(groups.length).toBe(3);
+    const code = () => getByTestId('combo-code').getAttribute('data-code') ?? '';
+    const tailFree = validEdgeSubsets('hex').map((v) => v.edges.join(''));
+    for (const g of [...groups]) {
+      const before = code();
+      fireEvent.click(g);
+      expect(code()).not.toBe(before);
+      expect(tailFree).toContain(code().split('-')[0]);
+    }
+  });
+
   it('steps every tile through the combinations at once, like aperiodic-circuits', () => {
     // fl=23: non-crossing only off, so crossing pairings are counted too.
     window.history.replaceState(null, '', '/#/explorer?v=1&f=hex&lv=2&e=15&fl=23');
     const { getByLabelText, getByTestId } = render(<ExplorerPage />);
     // Hexagons with {1, 5}: Pi and Psi have three pairings each, nothing else has a choice.
-    const pos = () => getByTestId('combo-position').textContent;
-    expect(pos()).toBe('Combination 1 of 9');
+    const pos = () => getByTestId('combo-count').textContent;
+    expect(pos()).toBe('1/9');
     fireEvent.click(getByLabelText('Next combination'));
-    expect(pos()).toBe('Combination 2 of 9');
+    expect(pos()).toBe('2/9');
     fireEvent.click(getByLabelText('Previous combination'));
     fireEvent.click(getByLabelText('Previous combination'));
     // Back past the first wraps to the last.
-    expect(pos()).toBe('Combination 9 of 9');
+    expect(pos()).toBe('9/9');
   });
 
   it('shows the rule’s decomposition, and picks out one kind of loop', () => {

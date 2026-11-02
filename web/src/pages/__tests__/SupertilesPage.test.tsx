@@ -26,6 +26,9 @@ afterEach(() => {
   cleanup();
 });
 
+/** The code the combination bar shows. */
+const codeText = (c: HTMLElement): string => c.querySelector('[data-testid="combo-code"]')!.textContent!.replace('▾', '');
+
 describe('SupertilesPage', () => {
   it('takes the default supertile apart into the pieces its rule names', async () => {
     const { container } = render(<SupertilesPage />);
@@ -143,7 +146,7 @@ describe('SupertilesPage', () => {
     );
     // The rule controls are there from the start — picking a rule is the point.
     expect(container.querySelector('.edge-subset-picker')).not.toBeNull();
-    expect(container.querySelector('.matching-grid')).not.toBeNull();
+    expect(container.querySelector('[data-testid="combo-bar"]')).not.toBeNull();
   });
 
   it('welds and traces the supertile once the rule is on', async () => {
@@ -204,9 +207,7 @@ describe('SupertilesPage', () => {
     expect((container.querySelector('[data-testid="st-family"]') as HTMLSelectElement).value).toBe('hex');
     expect(container.querySelectorAll('.supertile-island')).toHaveLength(8);
     expect(container.querySelectorAll('.supertile-strand').length).toBeGreaterThan(0);
-    expect((container.querySelector('[data-testid="combo-string"]') as HTMLInputElement).value).toBe(
-      '023468-111000100',
-    );
+    expect(codeText(container)).toBe('023468-111000100');
   });
 
   it('switching family starts from that family\'s usual rule', async () => {
@@ -217,26 +218,26 @@ describe('SupertilesPage', () => {
       target: { value: 'hex' },
     });
     await settle();
-    expect((container.querySelector('[data-testid="combo-string"]') as HTMLInputElement).value).toBe(
-      '023468-111000100',
-    );
+    expect(codeText(container)).toBe('023468-111000100');
   });
 
-  it('sets the rule from a typed combination string', async () => {
+  it('sets the rule from a pasted code', async () => {
     window.history.replaceState(null, '', '/#/supertiles?ln=1');
     const { container } = render(<SupertilesPage />);
     await settle();
-    const field = container.querySelector('[data-testid="combo-string"]') as HTMLInputElement;
-    fireEvent.change(field, { target: { value: '15-0000000000' } });
-    fireEvent.keyDown(field, { key: 'Enter' });
+    const paste = (text: string) => {
+      fireEvent.click(container.querySelector('[data-testid="combo-paste"]')!);
+      fireEvent.change(document.querySelector('[data-testid="combo-paste-text"]')!, { target: { value: text } });
+    };
+    paste('15-0000000000');
+    fireEvent.click(document.querySelector('[data-testid="combo-paste-use"]')!);
     await settle();
-    expect(field.value).toBe('15-0000000000');
+    expect(codeText(container)).toBe('15-0000000000');
     expect(container.querySelector('.edge-chip[data-major="1"]')?.getAttribute('aria-pressed')).toBe('true');
 
-    fireEvent.change(field, { target: { value: '15-00' } });
-    fireEvent.keyDown(field, { key: 'Enter' });
-    await settle();
-    expect(container.querySelector('[data-testid="combo-note"]')?.textContent).toContain('Not a combination string');
+    paste('15-00');
+    expect(document.querySelector('[data-testid="combo-paste-read"]')?.textContent).toContain('2 digits after the dash');
+    expect((document.querySelector('[data-testid="combo-paste-use"]') as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('says nothing in the URL while everything is at its default', async () => {

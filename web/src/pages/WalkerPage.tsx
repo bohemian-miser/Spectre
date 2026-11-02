@@ -14,13 +14,12 @@
 import { useCallback, useEffect, useMemo, useReducer, useState } from 'react';
 
 import {
-  DEFAULT_LINK_STATE, HEX_TYPES, addressFromId, encodeExplorerState, leafOrder, letter, matchingIndicesToCombo, normalizeMatchingVector,
+  DEFAULT_LINK_STATE, HEX_TYPES, addressFromId, encodeExplorerState, letter, matchingIndicesToCombo, normalizeMatchingVector,
   sideRuns, slotsOfType,
   type Address, type HexType, type TileTypeId,
 } from '../core';
 import { TileGlyph } from '../components/TileGlyph';
-import { QuickBar } from '../components/controls/QuickBar';
-import { cycleMatchingIndex, tileMatchingInfo } from '../lib/matchingModel';
+import { ComboBar } from '../components/controls/ComboBar';
 import { HexBoard, type BoardMark, type BoardStep, type BoardTile } from '../components/HexBoard';
 import { HEX_OUTLINE, nearest, placeWorld, supertileEdges, tileCentre, tilesAround, type PlacedTile } from '../lib/hexBoard';
 import { tileColor } from '../lib/palette';
@@ -114,16 +113,6 @@ export function WalkerPage(): JSX.Element {
     setWalked(NO_CHOICES);
     dispatch({ type: 'reset', start: t });
   }, []);
-  const setSubset = (subset: readonly number[]): void => {
-    setPattern((p) => ({ subset, matching: normalizeMatchingVector('hex', subset, p.matching) }));
-    reset(startType);
-  };
-  const setMatching = (matching: readonly number[]): void => { setPattern((p) => ({ ...p, matching })); reset(startType); };
-  const cycleTile = (type: TileTypeId, delta: number): void => {
-    const at = leafOrder('hex').indexOf(type);
-    const info = tileMatchingInfo('hex', type, new Set(pattern.subset));
-    setMatching(pattern.matching.map((m, i) => (i === at ? cycleMatchingIndex(info, m, delta, true) : m)));
-  };
 
   // --- the board -------------------------------------------------------------
   const placed = useMemo(() => placeWorld(world), [world]);
@@ -263,18 +252,16 @@ export function WalkerPage(): JSX.Element {
       <section className="td__section wk__setup">
         <div className="wk__rulepanel">
           <h2>1. The pattern</h2>
-          <QuickBar
+          <ComboBar
             family="hex"
             subset={pattern.subset}
             matching={pattern.matching}
             curvedStrands
             nonCrossingOnly
-            onToggleMajor={(m) => setSubset(pattern.subset.includes(m) ? pattern.subset.filter((x) => x !== m) : [...pattern.subset, m].sort((a, b) => a - b))}
-            onSubsetChange={setSubset}
-            onStrands={() => undefined}
-            onMatchingVectorChange={setMatching}
-            onCycleTile={(type, delta) => cycleTile(type, delta)}
-            onOpenTile={(type) => cycleTile(type, 1)}
+            onChange={(next) => {
+              setPattern({ subset: next.subset, matching: normalizeMatchingVector('hex', next.subset, next.matching) });
+              reset(startType);
+            }}
           />
           <p data-testid="wk-pattern">
             Rule <span className="td__mono">{pattern.subset.join('')}</span>, combination <span className="td__mono">{combo ?? '(crossing)'}</span>.{' '}

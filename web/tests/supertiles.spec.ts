@@ -130,24 +130,24 @@ test('a supertile too big to trace says so instead of hanging', async ({ page })
  * returns nothing for such an index, so some tiles quietly stopped drawing
  * their strand at all.
  */
-test('narrowing the edge rule keeps a combination string and keeps drawing', async ({ page }) => {
+test('narrowing the edge rule keeps a code and keeps drawing', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   await page.setViewportSize({ width: 1400, height: 1000 });
   await page.goto('supertiles.html#/supertiles?lv=2&gap=0.35&ln=1&e=012&c=');
   await expect(page.locator('.supertile-view')).toBeVisible({ timeout: 30000 });
-  await expect(page.getByTestId('combo-string')).toHaveValue(/^012-/);
+  await expect(page.getByTestId('combo-code')).toHaveAttribute('data-code', /^012-/);
 
   // Push every matching to its highest index, so there is something to go
   // stale when the subset shrinks under it.
-  const sliders = page.locator('.matching-grid input[type="range"]');
+  const sliders = page.locator('.combo-tiles input[type="range"]:not([disabled])');
   const count = await sliders.count();
   expect(count).toBeGreaterThan(0);
   for (let i = 0; i < count; i++) {
     const max = await sliders.nth(i).getAttribute('max');
     await sliders.nth(i).fill(max ?? '0');
   }
-  await expect(page.getByTestId('combo-string')).not.toHaveValue('');
+  await expect(page.getByTestId('combo-code')).not.toHaveAttribute('data-code', '');
   const drawnBefore = await page.locator('.supertile-strand').count();
   expect(drawnBefore).toBeGreaterThan(0);
 
@@ -155,8 +155,8 @@ test('narrowing the edge rule keeps a combination string and keeps drawing', asy
   await page.locator('.edge-subset-picker button').filter({ hasText: /^2$/ }).first().click();
 
   // Still a real rule with a real combination string, still drawing.
-  await expect(page.getByTestId('combo-string')).toHaveValue(/^01-/);
-  await expect(page.locator('.combo-readout')).not.toContainText('crosses itself');
+  await expect(page.getByTestId('combo-code')).toHaveAttribute('data-code', /^01-/);
+  await expect(page.getByTestId('combo-status')).not.toContainText('cross');
   await expect.poll(() => page.locator('.supertile-strand').count()).toBeGreaterThan(0);
   expect(errors).toEqual([]);
 });
