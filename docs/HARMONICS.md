@@ -330,6 +330,38 @@ combination is read to level 9 in a few seconds. The tests check the
 renormalisation's readings against the tile-by-tile trace for every circuit
 of the base combination at every level.
 
+### Brute force past the build
+
+Above the level built, every row of the table ends in a ? cell two levels
+above its last member, a chain's or a circuit's alone. Brute force
+(`harmonics/bruteForce.ts`) looks for the harmonic where the forecast puts
+it: the strands entering the member's level-2 supertiles are lifted into the
+supertile two levels above the member's birth and followed through its
+children, with the routes above the tables worked out on demand and kept
+(`harmonics/sparseRoutes.ts`), until a closed walk through the same children
+reads as the member from level 2 up. Every level-2 visit of the member is a
+window looked through in turn; when no walk closes, the walks that leave the
+supertile are climbed a level at a time until they close. Nothing bounds
+the search but the Stop button; any number of cells can be set going, and
+they run one after another in the brute-force worker.
+
+The search is drawn as it runs (`harmonics/searchPicture.ts`,
+`harmonics/SearchView.tsx`): the supertile and its children outlined, the
+windows looked through shaded, and every arc followed as a line through the
+child crossings it enters, grey where it leaves the supertile, amber where it
+closes in another family, red where it closes reading differently, green for
+the harmonic, blue for the one being followed. The lines are the walk's own
+steps placed through the child frames, thinned to 200 points each, so the
+picture of a level-12 search costs no more than one at level 8. Under the
+table, Climb follows the longest arc of any type's supertile at any level of
+the tables upwards, each supertile a child of its own type, until the strand
+closes, and draws the arc through each supertile climbed into.
+
+The tests check the pictures against the tables: the harmonic's line in the
+search for the 441's harmonic is the 8,784 drawn through its level-5 visits,
+and the two halves of a climbed arc enter as many child crossings as the
+tables' arc.
+
 ## Reproducing
 
 ```bash

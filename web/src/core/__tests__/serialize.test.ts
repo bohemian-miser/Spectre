@@ -452,3 +452,15 @@ describe('tk / tg / fx (ticker, transition graph, find ceiling)', () => {
     expect(encodeExplorerQuery(back)).toBe('v=1&e=2578&c=0100101100&md=infinite');
   });
 });
+
+describe('tcl (trace colouring by shared supertile)', () => {
+  it('is omitted for the rainbow and round-trips the ancestry colouring', () => {
+    expect(encodeExplorerQuery(DEFAULT_EXPLORER_STATE)).not.toContain('tcl=');
+    const q = encodeExplorerQuery({ ...DEFAULT_EXPLORER_STATE, traceColour: 'ancestor' });
+    expect(q).toContain('tcl=a');
+    const back = decodeExplorerQuery(q);
+    expect(back.traceColour).toBe('ancestor');
+    expect(encodeExplorerQuery(back)).toBe(q);
+    expect(decodeExplorerQuery('tcl=x').traceColour).toBeUndefined();
+  });
+});

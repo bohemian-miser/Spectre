@@ -612,12 +612,15 @@ export function createWebGLRenderer(
   interface TrailBuffers {
     readonly xy: WebGLBuffer;
     readonly arc: WebGLBuffer;
+    /** Per-segment ink (`TrailGeometry.rgba`); bound at location 8, enabled only when the geometry carries it. */
+    readonly rgba: WebGLBuffer;
     readonly vao: WebGLVertexArrayObject;
   }
 
   const makeTrailBuffers = (): TrailBuffers => {
     const xy = G.createBuffer();
     const arc = G.createBuffer();
+    const rgba = G.createBuffer();
     const vao = G.createVertexArray();
     G.bindVertexArray(vao);
     G.bindBuffer(G.ARRAY_BUFFER, xy);
@@ -634,14 +637,26 @@ export function createWebGLRenderer(
     G.enableVertexAttribArray(7);
     G.vertexAttribPointer(7, 1, G.FLOAT, false, 4, 4);
     G.vertexAttribDivisor(7, 1);
+    G.bindBuffer(G.ARRAY_BUFFER, rgba);
+    G.vertexAttribPointer(8, 4, G.FLOAT, false, 16, 0);
+    G.vertexAttribDivisor(8, 1);
+    G.disableVertexAttribArray(8);
     G.bindVertexArray(null);
-    return { xy, arc, vao };
+    return { xy, arc, rgba, vao };
   };
 
   const deleteTrailBuffers = (b: TrailBuffers): void => {
     G.deleteBuffer(b.xy);
     G.deleteBuffer(b.arc);
+    G.deleteBuffer(b.rgba);
     G.deleteVertexArray(b.vao);
+  };
+
+  /** Switch the per-segment ink attribute of the bound trail VAO on or off: off, the constant set by `vertexAttrib4f` is read. */
+  const useSegmentInk = (vao: WebGLVertexArrayObject, on: boolean): void => {
+    G.bindVertexArray(vao);
+    if (on) G.enableVertexAttribArray(8);
+    else G.disableVertexAttribArray(8);
   };
 
   /** A batch of found circuits on the GPU: one segment list, drawn in one call. */
@@ -879,6 +894,10 @@ export function createWebGLRenderer(
     G.bufferData(G.ARRAY_BUFFER, trail.xy, G.DYNAMIC_DRAW);
     G.bindBuffer(G.ARRAY_BUFFER, vboTrailS);
     G.bufferData(G.ARRAY_BUFFER, trail.arc, G.DYNAMIC_DRAW);
+    if (trail.rgba) {
+      G.bindBuffer(G.ARRAY_BUFFER, trailBufs.rgba);
+      G.bufferData(G.ARRAY_BUFFER, trail.rgba, G.DYNAMIC_DRAW);
+    }
     trailUploaded = trail.version;
   };
 
@@ -905,6 +924,10 @@ export function createWebGLRenderer(
       G.bufferData(G.ARRAY_BUFFER, geom.xy, G.STATIC_DRAW);
       G.bindBuffer(G.ARRAY_BUFFER, bufs.arc);
       G.bufferData(G.ARRAY_BUFFER, geom.arc, G.STATIC_DRAW);
+      if (geom.rgba) {
+        G.bindBuffer(G.ARRAY_BUFFER, bufs.rgba);
+        G.bufferData(G.ARRAY_BUFFER, geom.rgba, G.STATIC_DRAW);
+      }
       circuitBufs.set(geom, bufs);
     }
   };
@@ -1097,7 +1120,7 @@ export function createWebGLRenderer(
         else G.vertexAttrib4f(8, 0, 0, 0, 0);
         G.enable(G.BLEND);
         G.blendFunc(G.SRC_ALPHA, G.ONE_MINUS_SRC_ALPHA);
-        G.bindVertexArray(vao);
+        useSegmentInk(vao, !!geom.rgba);
         G.drawArraysInstanced(G.TRIANGLES, 0, 6, geom.pointCount - 1);
         G.disable(G.BLEND);
         drawCalls++;

@@ -35,6 +35,12 @@ export interface TrailGeometry {
    * chase and kept tails).
    */
   readonly color?: readonly [number, number, number];
+  /**
+   * Ink per segment (4 floats, 0..1 RGBA, `pointCount - 1` of them) when the
+   * line is coloured chord by chord, as by shared ancestry; absent for the
+   * rainbow or a solid colour.
+   */
+  readonly rgba?: Float32Array;
   readonly origin: Pt;
   /** 2 floats per point, relative to `origin`. */
   readonly xy: Float32Array;

@@ -17,6 +17,7 @@
  * supertile taken as a child of its own type where the substitution has one.
  */
 import { agreement, canonicalCycle, cancelCyclic, isHarmonic, NONE, tokenCode, wordKeyOf, type TopReadings } from '../foundations/foundations';
+import { Sketch, type SearchPicture } from './searchPicture';
 import { RouteLimit, SparseRoutes, TYPES, typeIndex, type Walked, type Work } from './sparseRoutes';
 
 /** Child slots a walk runs through, sorted: its family. */
@@ -141,15 +142,24 @@ export type Lift = { readonly end: 'closed'; readonly length: number; readonly s
  * open, by the crossing of the parent's outline it enters at (the end it
  * reaches going back from q).
  */
-export function lift(R: SparseRoutes, n: number, q: number, pti: number, slot: number): Lift {
+export function lift(R: SparseRoutes, n: number, q: number, pti: number, slot: number, sketch?: Sketch): Lift {
   const x0 = q * 8 + slot;
   const steps: number[] = [];
+  sketch?.follow(steps);
   const w = R.walk(n + 1, pti, x0, steps);
-  if (w.end === 'closed') return { end: 'closed', length: w.length, steps };
+  if (w.end === 'closed') {
+    sketch?.ended('closed', w.length);
+    return { end: 'closed', length: w.length, steps };
+  }
+  sketch?.ended(w.end === 'ends' ? 'ends' : 'open', w.length);
   if (w.end === 'ends') return { end: 'ends' };
   const z = R.across(n + 1, pti, x0);
   if (z < 0) return { end: 'out', place: R.placeOf(n + 1, x0) };
-  const back = R.walk(n + 1, pti, z);
+  // the other half of the arc: from the seam at x0 back to where it enters the parent
+  const backSteps: number[] = [];
+  sketch?.follow(backSteps);
+  const back = R.walk(n + 1, pti, z, backSteps);
+  sketch?.ended(back.end === 'out' ? 'open' : 'ends', back.length);
   return back.end === 'out' ? { end: 'out', place: back.exit } : { end: 'ends' };
 }
 
@@ -159,10 +169,14 @@ export function parentOf(R: SparseRoutes, ti: number): { type: number; slot: num
   throw new Error(`no type has a ${TYPES[ti]} child`);
 }
 
-/** Progress of a brute force: the level being followed and the work so far. */
+/** Progress of a brute force: the level being followed, the work so far and, when the report asked for it (`bruteJob.ts`), the search drawn. */
 export interface Progress extends Work {
   readonly level: number;
+  readonly picture?: SearchPicture;
 }
+
+/** Told of progress as the search goes, with a drawing of the search on request. */
+export type Report = (p: Progress, draw: () => SearchPicture) => void;
 
 /** The harmonic found: a closed walk two levels above its fundamental. */
 export interface Harmonic {
@@ -204,8 +218,12 @@ export interface BruteResult {
   readonly open: number;
   /** Without a harmonic: where the walks that left the supertile close, climbing on (`climb`). */
   readonly beyond: readonly Closure[];
+  /** Where the open walks were climbed to when none closed: the arc through each supertile climbed, drawn (`climb`). */
+  readonly climbed: readonly SearchPicture[];
   readonly work: Work;
   readonly seconds: number;
+  /** The search drawn when it ended. */
+  readonly picture: SearchPicture;
 }
 
 export interface BruteOptions {
@@ -213,11 +231,11 @@ export interface BruteOptions {
   readonly maxRaw?: number;
   /** Walks longer than this get a place key instead of a word key. */
   readonly wordCap?: number;
-  /** Levels to climb above the supertile when no harmonic closes in it. */
+  /** Levels to climb above the supertile when no harmonic closes in it: none by default, every level until the walks close when infinite. */
   readonly beyond?: number;
-  /** A's visits at the floor to look through at most. */
+  /** A's visits at the floor to look through at most; every one by default. */
   readonly windows?: number;
-  readonly onProgress?: (p: Progress) => void;
+  readonly onProgress?: Report;
 }
 
 /** The harmonic of A (closed at `a.level`, its steps as addresses) two levels up. */
@@ -226,11 +244,15 @@ export function harmonicAbove(R: SparseRoutes, a: Walked, opts: BruteOptions = {
   const floor = opts.floor ?? 2;
   const maxRaw = opts.maxRaw ?? 3e6;
   const wordCap = opts.wordCap ?? 6e7;
+  const top = a.level + 2;
+  const sketch = new Sketch(R.cs, R, top, a.type);
   let at = a.level;
-  R.onWork = opts.onProgress ? (w) => opts.onProgress!({ level: at, ...w }) : null;
+  const report = opts.onProgress;
+  const draw = () => sketch.draw();
+  const tell = (): void => report?.({ level: at, ...R.work }, draw);
+  R.onWork = report ? (w) => report({ level: at, ...w }, draw) : null;
   const ra = readWalked(R, a, floor, maxRaw);
   const family = familyOfSteps(a.steps);
-  const top = a.level + 2;
   const T = typeIndex.get(a.type)!;
   /** Child arcs of the supertile two levels up already followed, as place * 8 + slot. */
   const done = new Set<number>();
@@ -241,8 +263,10 @@ export function harmonicAbove(R: SparseRoutes, a: Walked, opts: BruteOptions = {
   let windows = 0;
   // each window: A's visit at level `floor`, as its slots from the birth down, the first visit first
   for (const path of visitPaths(R, a, floor)) {
-    if (found.length || windows === (opts.windows ?? 32)) break;
+    if (found.length || windows === (opts.windows ?? Infinity)) break;
     windows++;
+    sketch.window(path);
+    tell();
     // the supertiles from two levels above A down to the one at the window: anc[i] at level top - i
     const anc = [T];
     for (const s of path) anc.push(R.kid(anc[anc.length - 1], s));
@@ -272,7 +296,10 @@ export function harmonicAbove(R: SparseRoutes, a: Walked, opts: BruteOptions = {
       if (done.has(q * 8 + path[0])) continue;
       tried++;
       const steps: number[] = [];
+      sketch.follow(steps);
       const w = R.walk(top, T, q * 8 + path[0], steps);
+      sketch.ended(w.end === 'closed' ? 'closed' : w.end === 'out' ? 'open' : 'ends', w.length);
+      tell();
       for (const s of steps) {
         if (s % 8 !== path[0]) continue;
         done.add(s);
@@ -283,29 +310,41 @@ export function harmonicAbove(R: SparseRoutes, a: Walked, opts: BruteOptions = {
       const b: Walked = { level: top, type: a.type, length: w.length, steps };
       const fam = familyOfSteps(steps);
       const other = `${w.length}/${fam}`;
-      if (others.has(other)) continue;
       if (fam !== family) {
-        others.set(other, { level: top, type: a.type, length: w.length, family: fam, agreed: null });
+        sketch.relabel('other');
+        if (!others.has(other)) others.set(other, { level: top, type: a.type, length: w.length, family: fam, agreed: null });
+        continue;
+      }
+      const seen = others.get(other);
+      if (seen) {
+        sketch.relabel('differs');
         continue;
       }
       const rb = readWalked(R, b, floor + 2, maxRaw);
       const g = agreement(ra, a.level, rb);
       if (isHarmonic(g.floor, a.level, floor) || (g.limited && g.floor <= a.level - 2)) {
+        sketch.relabel('harmonic');
         found.push({ ...b, family: fam, key: '', agreed: g.floor, limited: g.limited, deep: [] });
-      } else others.set(other, { level: top, type: a.type, length: w.length, family: fam, agreed: g.floor });
+      } else {
+        sketch.relabel('differs');
+        others.set(other, { level: top, type: a.type, length: w.length, family: fam, agreed: g.floor });
+      }
+      tell();
     }
   }
   found.sort((x, y) => y.length - x.length);
   const best = found[0] ?? null;
   for (const f of found.slice(1)) others.set(`${f.length}/${f.family}`, { level: f.level, type: f.type, length: f.length, family: f.family, agreed: f.agreed });
   const beyond: Closure[] = [];
+  const climbed: SearchPicture[] = [];
   if (!best && opts.beyond) {
     const met = new Set<string>();
     for (const x of new Set(open)) {
-      const c = climb(R, top, T, x, top + opts.beyond, (n) => { at = n; });
+      const c = climb(R, top, T, x, { cap: top + opts.beyond, onProgress: report });
       if (c.closed && !met.has(`${c.closed.level}/${c.closed.length}`)) {
         met.add(`${c.closed.level}/${c.closed.length}`);
         beyond.push(c.closed);
+        climbed.push(...c.pictures);
       }
     }
   }
@@ -322,8 +361,10 @@ export function harmonicAbove(R: SparseRoutes, a: Walked, opts: BruteOptions = {
     others: [...others.values()],
     open: open.length,
     beyond,
+    climbed,
     work: R.work,
     seconds: (Date.now() - t0) / 1000,
+    picture: sketch.draw(),
   };
 }
 
@@ -334,31 +375,52 @@ export interface ClimbResult {
   readonly closed: Closure | null;
   /** The level the routes' limit (`SparseRoutes.limit`) stopped the climb at, or null. */
   readonly limitedAt: number | null;
+  /** The arc through each supertile climbed into, drawn: one picture per level above the start, in order. */
+  readonly pictures: readonly SearchPicture[];
   readonly work: Work;
   readonly seconds: number;
 }
 
+export interface ClimbOptions {
+  /** The level the climb stops at, open; none by default. */
+  readonly cap?: number;
+  readonly onProgress?: Report;
+}
+
 /**
  * The strand entering crossing `place` of a level-n supertile of type ti,
- * climbed a level at a time (`parentOf`) until it closes, the arc reaches
- * level `cap` or the routes reach their limit.
+ * climbed a level at a time (`parentOf`) until it closes, ends in a tile,
+ * the arc reaches level `cap` or the routes reach their limit.
  */
-export function climb(R: SparseRoutes, n: number, ti: number, place: number, cap: number, onLevel?: (level: number) => void): ClimbResult {
+export function climb(R: SparseRoutes, n: number, ti: number, place: number, opts: ClimbOptions = {}): ClimbResult {
   const t0 = Date.now();
+  const cap = opts.cap ?? Infinity;
   const levels: { level: number; type: string; length: number; place: number }[] = [{ level: n, type: TYPES[ti], length: R.len(n, ti, place), place }];
+  const pictures: SearchPicture[] = [];
   let closed: Closure | null = null;
   let limitedAt: number | null = null;
+  const report = opts.onProgress;
+  const was = R.onWork;
   while (n < cap) {
     const p = parentOf(R, ti);
-    onLevel?.(n + 1);
+    const sketch = new Sketch(R.cs, R, n + 1, TYPES[p.type]);
+    const at = n + 1;
+    const draw = () => sketch.draw();
+    if (report) {
+      R.onWork = (w) => report({ level: at, ...w }, draw);
+      report({ level: at, ...R.work }, draw);
+    }
     let up: Lift;
     try {
-      up = lift(R, n, place, p.type, p.slot);
+      up = lift(R, n, place, p.type, p.slot, sketch);
     } catch (err) {
       if (!(err instanceof RouteLimit)) throw err;
       limitedAt = n + 1;
+      pictures.push(sketch.draw());
       break;
     }
+    pictures.push(sketch.draw());
+    report?.({ level: at, ...R.work }, draw);
     if (up.end === 'closed') {
       closed = { level: n + 1, type: TYPES[p.type], length: up.length, family: familyOfSteps(up.steps) };
       break;
@@ -369,7 +431,8 @@ export function climb(R: SparseRoutes, n: number, ti: number, place: number, cap
     place = up.place;
     levels.push({ level: n, type: TYPES[ti], length: R.len(n, ti, place), place });
   }
-  return { levels, closed, limitedAt, work: R.work, seconds: (Date.now() - t0) / 1000 };
+  R.onWork = was;
+  return { levels, closed, limitedAt, pictures, work: R.work, seconds: (Date.now() - t0) / 1000 };
 }
 
 /** The longest arc of a level-n supertile of type ti held by the full tables: its crossing. */

@@ -144,6 +144,12 @@ export interface ExplorerState {
    */
   readonly showTransitions?: boolean;
   /**
+   * Ink the traced strand chord by chord with the level of the lowest
+   * supertile each tile shares with the start tile (`tcl=a`), instead of the
+   * arc-length rainbow. Omitted when off (the default).
+   */
+  readonly traceColour?: 'ancestor';
+  /**
    * Tiles find-all may analyse in one pass (`fx=`), which also sets where
    * "circuit zoom" parks. Absent = {@link DEFAULT_FIND_CEILING}.
    */
@@ -566,6 +572,7 @@ export function encodeExplorerState(s: ExplorerState): URLSearchParams {
   if (s.persistFound === false) q.set('pf', '0');
   if (s.showTicker === true) q.set('tk', '1');
   if (s.showTransitions) q.set('tg', '1');
+  if (s.traceColour === 'ancestor') q.set('tcl', 'a');
   if (s.findCeiling !== undefined && clampFindCeiling(s.findCeiling) !== DEFAULT_FIND_CEILING) {
     q.set('fx', String(clampFindCeiling(s.findCeiling)));
   }
@@ -684,6 +691,7 @@ export function decodeExplorerState(q: URLSearchParams): ExplorerState {
   const showTicker = tkRaw === '1' || tkRaw === 'true' ? true : undefined;
   const tgRaw = q.get('tg');
   const showTransitions = tgRaw === '1' || tgRaw === 'true' ? true : undefined;
+  const traceColour = q.get('tcl') === 'a' ? ('ancestor' as const) : undefined;
   const fxRaw = Number.parseInt(q.get('fx') ?? '', 10);
   const findCeiling = Number.isFinite(fxRaw) ? clampFindCeiling(fxRaw) : undefined;
   const fhRaw = Number.parseInt(q.get('fh') ?? '', 10);
@@ -727,6 +735,7 @@ export function decodeExplorerState(q: URLSearchParams): ExplorerState {
     ...(persistFound === false ? { persistFound } : {}),
     ...(showTicker === true ? { showTicker } : {}),
     ...(showTransitions ? { showTransitions } : {}),
+    ...(traceColour ? { traceColour } : {}),
     ...(findCeiling !== undefined && findCeiling !== DEFAULT_FIND_CEILING ? { findCeiling } : {}),
     ...(foundHold !== undefined && foundHold !== DEFAULT_FOUND_HOLD ? { foundHold } : {}),
     ...(highlightOnScreen ? { highlightOnScreen } : {}),

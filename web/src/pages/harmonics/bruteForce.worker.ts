@@ -1,7 +1,6 @@
 /** Brute-force worker: keeps a combination's routes and answers `harmonic`, `climb` and `thumb` (`bruteJob.ts`), posting progress as it goes. */
 
-import { answer, BruteEngine, type BruteMessage } from './bruteJob';
-import type { Progress } from './bruteForce';
+import { answer, BruteEngine, reporter, type BruteMessage } from './bruteJob';
 
 type Message = BruteMessage & { id: number };
 type WorkerScope = {
@@ -14,13 +13,7 @@ const engine = new BruteEngine();
 
 scope.onmessage = (event) => {
   const m = event.data;
-  let last = 0;
-  const progress = (p: Progress): void => {
-    const now = Date.now();
-    if (now - last < 250) return;
-    last = now;
-    scope.postMessage({ id: m.id, progress: p });
-  };
+  const progress = reporter((p) => scope.postMessage({ id: m.id, progress: p }));
   try {
     const result = answer(engine, m, progress);
     scope.postMessage({ id: m.id, result });

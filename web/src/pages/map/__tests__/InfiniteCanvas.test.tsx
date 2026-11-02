@@ -175,6 +175,7 @@ interface HarnessProps {
   readonly highlightInPath?: boolean;
   readonly chainLength?: number | null;
   readonly followPace?: number | null;
+  readonly trailColour?: 'rainbow' | 'ancestor';
   readonly traceSeed?: readonly [number, number, number, number] | null;
   readonly onTraceSeed?: (seed: readonly [number, number, number, number] | null) => void;
   readonly camera?: MapCamera;
@@ -206,6 +207,7 @@ function Harness(props: HarnessProps): JSX.Element {
       highlightInPath={props.highlightInPath ?? false}
       chainLength={props.chainLength ?? null}
       followPace={props.followPace ?? null}
+      trailColour={props.trailColour ?? 'rainbow'}
       traceSeed={props.traceSeed ?? null}
       onTraceSeed={props.onTraceSeed}
       initialCamera={props.camera ?? createCamera(0, 0, 36)}
@@ -1319,5 +1321,41 @@ describe('InfiniteCanvas — find-all off the main thread', () => {
     expect(finds.calls[0].keep).toEqual([]);
     await finds.release();
     expect(m.status().trace.found).toBeGreaterThan(0);
+  });
+});
+
+describe('InfiniteCanvas — colouring by the supertile shared with the start', () => {
+  it('inks the chase chord by chord and reports the levels, and re-inks a live chase on toggle', async () => {
+    const m = await mount({ trailColour: 'ancestor' });
+    const target = chordTargetOn(createCamera(0, 0, 36));
+    tap(m.host, target.x, target.y);
+    await settle();
+    const trace = m.status().trace;
+    expect(trace.active).toBe(true);
+    expect(trace.levels.length).toBeGreaterThan(1);
+    expect(trace.levels[0]).toEqual({ level: 0, count: 1 });
+    expect(trace.levels.some((l) => l.level > 0)).toBe(true);
+    expect(trace.levels.some((l) => l.level < 0)).toBe(false);
+    const inked = m.renderer.trails.at(-1)!;
+    expect(inked.rgba).toBeDefined();
+    expect(inked.rgba!.length).toBe(4 * (inked.pointCount - 1));
+
+    // Back to the rainbow: the same chase, re-inked without per-chord colour.
+    await m.rerender({ trailColour: 'rainbow' });
+    await settle();
+    const plain = m.renderer.trails.at(-1)!;
+    expect(plain.rgba).toBeUndefined();
+    expect(plain.pointCount).toBeGreaterThanOrEqual(inked.pointCount);
+  });
+
+  it('leaves the levels unknown for a chase begun under the rainbow', async () => {
+    const m = await mount();
+    const target = chordTargetOn(createCamera(0, 0, 36));
+    tap(m.host, target.x, target.y);
+    await settle();
+    const trace = m.status().trace;
+    expect(trace.active).toBe(true);
+    expect(trace.levels).toEqual([{ level: -1, count: trace.steps }]);
+    expect(m.renderer.trails.at(-1)!.rgba).toBeUndefined();
   });
 });

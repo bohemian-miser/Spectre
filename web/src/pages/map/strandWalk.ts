@@ -43,6 +43,7 @@ import {
   type ViewRect,
   type ViewportCut,
 } from '../../core';
+import { levelRgb, LEVEL_SPAN } from './ancestry';
 import type { LeafChordTable } from './chords';
 import type { TrailGeometry } from './rendererTypes';
 
@@ -220,6 +221,8 @@ export interface ChordEnd {
   readonly leafType: number;
   /** The chord's curve handles in world coordinates, when strands are curved. */
   readonly ctrl?: StrandCurve;
+  /** The tile's id in the world's ancestor chain, when the cut carried ids. */
+  readonly tileId?: string;
 }
 
 /**
@@ -236,7 +239,7 @@ function forEachNearbyChord(
   localX: number,
   localY: number,
   reach: number,
-  visit: (ax: number, ay: number, bx: number, by: number, leafType: number, ctrl: StrandCurve | undefined) => void,
+  visit: (ax: number, ay: number, bx: number, by: number, leafType: number, ctrl: StrandCurve | undefined, instance: number) => void,
 ): void {
   const { cut, chords, cols, rows, starts, items, minX, minY, origin } = index;
   const probe = Math.ceil((reach + chordReachOf(chords)) / CELL);
@@ -281,6 +284,7 @@ function forEachNearbyChord(
                   c2: { x: co * mir * c.c2.x - si * c.c2.y + px, y: si * mir * c.c2.x + co * c.c2.y + py },
                 }
               : undefined,
+            i,
           );
         }
       }
@@ -305,8 +309,9 @@ export function hitTestChord(index: ChordIndex, world: Pt, maxDist: number): Cho
   let hitToY = 0;
   let hitType = 0;
   let hitCtrl: StrandCurve | undefined;
+  let hitInstance = -1;
   let found = false;
-  forEachNearbyChord(index, lx, ly, maxDist, (ax, ay, bx, by, leafType, ctrl) => {
+  forEachNearbyChord(index, lx, ly, maxDist, (ax, ay, bx, by, leafType, ctrl, instance) => {
     const dx = bx - ax;
     const dy = by - ay;
     const len2 = dx * dx + dy * dy;
@@ -320,6 +325,7 @@ export function hitTestChord(index: ChordIndex, world: Pt, maxDist: number): Cho
     found = true;
     hitType = leafType;
     hitCtrl = ctrl;
+    hitInstance = instance;
     // Head for whichever end the tap was closest to.
     if (t <= 0.5) {
       hitAtX = ax;
@@ -339,6 +345,7 @@ export function hitTestChord(index: ChordIndex, world: Pt, maxDist: number): Cho
         to: { x: hitToX, y: hitToY },
         leafType: hitType,
         ...(hitCtrl ? { ctrl: hitCtrl } : {}),
+        ...(index.cut.ids && hitInstance >= 0 ? { tileId: index.cut.ids[hitInstance] } : {}),
       }
     : null;
 }
@@ -376,7 +383,7 @@ export function continuationAt(
   point: Pt,
   from: Pt,
   searchRadius = WELD_EPSILON,
-): { kind: 'step'; next: Pt; leafType: number; ctrl?: StrandCurve } | { kind: 'none' } | { kind: 'junction' } {
+): { kind: 'step'; next: Pt; leafType: number; instance: number; ctrl?: StrandCurve } | { kind: 'none' } | { kind: 'junction' } {
   const sr2 = searchRadius * searchRadius;
   const lx = point.x - index.origin.x;
   const ly = point.y - index.origin.y;
@@ -391,7 +398,9 @@ export function continuationAt(
   const memT: number[] = [];
   // Each candidate chord's curve handles (undefined when straight).
   const memC: (StrandCurve | undefined)[] = [];
-  forEachNearbyChord(index, lx, ly, searchRadius, (ax, ay, bx, by, leafType, ctrl) => {
+  /** The cut instance each candidate chord belongs to. */
+  const memI: number[] = [];
+  forEachNearbyChord(index, lx, ly, searchRadius, (ax, ay, bx, by, leafType, ctrl, instance) => {
     const da = (ax - point.x) * (ax - point.x) + (ay - point.y) * (ay - point.y);
     const db = (bx - point.x) * (bx - point.x) + (by - point.y) * (by - point.y);
     // A degenerate (near-zero-length) chord can enrol both of its ends.
@@ -401,6 +410,7 @@ export function continuationAt(
       memY.push(by);
       memT.push(leafType);
       memC.push(ctrl);
+      memI.push(instance);
     }
     if (db < sr2) {
       memD.push(db);
@@ -408,6 +418,7 @@ export function continuationAt(
       memY.push(ay);
       memT.push(leafType);
       memC.push(ctrl);
+      memI.push(instance);
     }
   });
   if (memD.length === 0) return { kind: 'none' };
@@ -446,6 +457,7 @@ export function continuationAt(
     kind: 'step',
     next: { x: memX[best], y: memY[best] },
     leafType: memT[best],
+    instance: memI[best],
     ...(memC[best] ? { ctrl: memC[best] } : {}),
   };
 }
@@ -578,6 +590,22 @@ export interface StrandTrail {
    */
   types: Uint8Array;
   /**
+   * The level of the lowest supertile each chord's tile shares with the
+   * start tile (`ancestry.ts`), indexed like {@link types}; -1 where it is
+   * not known (the cut carried no ids, or the colouring was off).
+   */
+  levels: Int16Array;
+  /**
+   * How many chords of the whole chase fell at each shared level, kept
+   * through trims like {@link transitions}: index `level + 1`, with 0 for
+   * the unknown ones and levels past {@link LEVEL_SPAN} together at the end.
+   */
+  readonly levelCounts: Uint32Array;
+  /** How the line is inked: the arc-length rainbow, or each chord by its shared level. */
+  colourBy: 'rainbow' | 'ancestor';
+  /** The start tile's id in the world's ancestor chain, when the tapped cut carried ids. */
+  readonly startId?: string;
+  /**
    * Sum of every point ever appended and how many, kept through trims, so the
    * centre of the whole walk is known however long it runs ({@link trailCentre}).
    */
@@ -626,10 +654,19 @@ function grow(trail: StrandTrail, need: number): void {
   types.set(trail.types.subarray(0, trail.count));
   const ctrl = new Float64Array(cap * 4).fill(NaN);
   ctrl.set(trail.ctrl.subarray(0, trail.count * 4));
+  const levels = new Int16Array(cap).fill(-1);
+  levels.set(trail.levels.subarray(0, trail.count));
   trail.xy = xy;
   trail.arc = arc;
   trail.types = types;
   trail.ctrl = ctrl;
+  trail.levels = levels;
+}
+
+/** Record a chord's shared level: on the chord and in the whole-chase counts. */
+function setLevel(trail: StrandTrail, chord: number, level: number): void {
+  trail.levels[chord] = level;
+  trail.levelCounts[level < 0 ? 0 : Math.min(level, LEVEL_SPAN) + 1]++;
 }
 
 function push(trail: StrandTrail, p: Pt): void {
@@ -675,6 +712,10 @@ export function startTrail(seed: ChordEnd, typeCount: number = TRANSITION_TYPES)
     geom: null,
     types: new Uint8Array(1024),
     ctrl: new Float64Array(4096).fill(NaN),
+    levels: new Int16Array(1024).fill(-1),
+    levelCounts: new Uint32Array(LEVEL_SPAN + 2),
+    colourBy: 'rainbow',
+    ...(seed.tileId !== undefined ? { startId: seed.tileId } : {}),
     typeCount,
     transitions: new Uint32Array(typeCount * typeCount),
     lastType: -1,
@@ -689,6 +730,8 @@ export function startTrail(seed: ChordEnd, typeCount: number = TRANSITION_TYPES)
   // one — a circuit of three tiles listed two.
   trail.types[0] = seed.leafType;
   setCtrl(trail, 0, seed.ctrl);
+  // The tapped chord crosses the start tile itself.
+  setLevel(trail, 0, seed.tileId !== undefined ? 0 : -1);
   trail.lastType = seed.leafType;
   trail.steps = 1;
   return trail;
@@ -757,6 +800,7 @@ export function trimTrail(trail: StrandTrail, maxPoints: number): StrandTrail {
   // the same number of leading chords.
   trail.types.copyWithin(0, drop, trail.count);
   trail.ctrl.copyWithin(0, drop * 4, trail.count * 4);
+  trail.levels.copyWithin(0, drop, trail.count);
   trail.count = max;
   trail.version++;
   trail.geom = null;
@@ -786,6 +830,11 @@ export interface AdvanceOptions {
    * it the trail keeps every point it passes, as many as memory holds.
    */
   readonly hold?: number | null;
+  /**
+   * The shared level of a tile by its id (`ancestry.ts`), for colouring by
+   * ancestry; the cut must carry ids. Without it every chord's level is -1.
+   */
+  readonly levelOf?: (id: string | undefined) => number;
 }
 
 /**
@@ -806,6 +855,8 @@ export function advanceWalk(
   const maxSteps = opts.maxSteps ?? ADVANCE_MAX_STEPS;
   const hold = opts.hold ?? null;
   const trimAt = hold != null ? hold + Math.max(1024, hold >> 2) : 0;
+  const levelOf = opts.levelOf;
+  const ids = index.cut.ids;
   // Closure is "the head IS the start point", so it uses the same drift-scaled
   // snap as the weld — a strand merely passing a crowded neighbour of its
   // start must not read as a circuit. `start` is trail state, not a trail
@@ -832,6 +883,7 @@ export function advanceWalk(
     // here is the last one: index count - 2.
     trail.types[trail.count - 2] = cont.leafType;
     setCtrl(trail, trail.count - 2, cont.ctrl);
+    setLevel(trail, trail.count - 2, levelOf ? levelOf(ids?.[cont.instance]) : -1);
     if (trail.lastType >= 0) {
       trail.transitions[trail.lastType * trail.typeCount + cont.leafType]++;
     }
@@ -887,6 +939,12 @@ export function trailGeometry(trail: StrandTrail): TrailGeometry | null {
   // along their chord, so the rainbow reads exactly as it does straight.
   const arcBase = trail.arc[0];
   const arc = new Float32Array(m);
+  // Colouring by ancestry: each output segment takes its chord's level ink.
+  const rgba = trail.colourBy === 'ancestor' ? new Float32Array(4 * (m - 1)) : null;
+  const ink = (seg: number, chord: number): void => {
+    const c = levelRgb(trail.levels[chord]);
+    rgba!.set([c[0], c[1], c[2], 1], 4 * seg);
+  };
   const P = trail.xy;
   let o = 0;
   for (let i = 0; i < n; i++) {
@@ -903,16 +961,19 @@ export function trailGeometry(trail: StrandTrail): TrailGeometry | null {
         xy[o * 2] = q.x - anchor.x;
         xy[o * 2 + 1] = q.y - anchor.y;
         arc[o] = a0 + (a1 - a0) * t;
+        if (rgba) ink(o - 1, i - 1);
         o++;
       }
     }
     xy[o * 2] = P[i * 2] - anchor.x;
     xy[o * 2 + 1] = P[i * 2 + 1] - anchor.y;
     arc[o] = trail.arc[i] - arcBase;
+    if (rgba && o > 0) ink(o - 1, i - 1);
     o++;
   }
   const geom: TrailGeometry = {
     ...(trail.color ? { color: trail.color } : {}),
+    ...(rgba ? { rgba } : {}),
     origin: anchor,
     xy,
     arc,

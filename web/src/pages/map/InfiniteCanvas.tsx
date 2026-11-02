@@ -63,6 +63,8 @@ import {
   type MapCamera,
 } from './camera';
 import { CANVAS2D_MAX_INSTANCES } from './canvasRenderer';
+import { unrootedEngineFor } from '../../core';
+import { levelOfFrom } from './ancestry';
 import type { LeafChordTable } from './chords';
 import { buildRegionMesh, createRegionTracker, type RegionMesh, type RegionTracker } from './regionFill';
 import {
@@ -327,6 +329,12 @@ export interface InfiniteTraceInfo {
   /** The run length {@link chains} was counted at; 0 = not counted. */
   readonly chainLength: number;
   /**
+   * Chords of the whole chase by the level of the lowest supertile their
+   * tile shares with the start tile, lowest level first; -1 counts the
+   * chords whose level is not known.
+   */
+  readonly levels: readonly { readonly level: number; readonly count: number }[];
+  /**
    * Total steps the chase has taken, odometer-style. The ticker keys its chips
    * off this so a sliding window keeps the SAME chip identities frame to
    * frame — without it every publish looks like a whole new list.
@@ -347,8 +355,18 @@ const NO_TRACE: InfiniteTraceInfo = Object.freeze({
   transitions: Object.freeze([]) as readonly number[],
   chains: Object.freeze([]) as readonly Chain[],
   chainLength: 0,
+  levels: Object.freeze([]) as readonly { level: number; count: number }[],
   steps: 0,
 });
+
+/** The chase's chords by shared level (`StrandTrail.levelCounts`), for the legend. */
+function levelsOf(trail: StrandTrail): { level: number; count: number }[] {
+  const out: { level: number; count: number }[] = [];
+  for (let i = 0; i < trail.levelCounts.length; i++) {
+    if (trail.levelCounts[i]) out.push({ level: i - 1, count: trail.levelCounts[i] });
+  }
+  return out;
+}
 
 const NO_CHAINS = Object.freeze([]) as readonly Chain[];
 
@@ -557,6 +575,12 @@ export interface InfiniteCanvasProps {
    */
   readonly chainLength?: number | null;
   /**
+   * How the traced strand is inked: the arc-length rainbow, or each chord by
+   * the level of the lowest supertile its tile shares with the start tile
+   * (`ancestry.ts`). The latter asks every cut for tile ids.
+   */
+  readonly trailColour?: 'rainbow' | 'ancestor';
+  /**
    * Chase pace, in tiles per second — the walk explores that many tiles and
    * no more, so it can be watched tile by tile. null/undefined = full speed.
    */
@@ -622,6 +646,7 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
     highlightOnScreen = false,
     highlightInPath = false,
     chainLength = null,
+    trailColour = 'rainbow',
     followPace = null,
     followDamping = 1,
     traceSeed = null,
@@ -943,6 +968,7 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
       ...(worldRef.current.chain ? { chain: worldRef.current.chain } : {}),
       view: viewRectFor(camRef.current, width, height),
       budget: effBudget,
+      ...(trailColourRef.current === 'ancestor' ? { emitIds: true } : {}),
     });
   }, []);
 
@@ -1014,6 +1040,7 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
             transitions: transitionCounts(trail),
             chains: chainsFor(trail),
             chainLength: Math.max(0, Math.floor(chainLengthRef.current ?? 0)),
+            levels: levelsOf(trail),
             steps: trail.steps,
           }
         : circuits || found || skipped
@@ -1143,6 +1170,10 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
   highlightOnScreenRef.current = highlightOnScreen;
   const highlightInPathRef = useRef(highlightInPath);
   highlightInPathRef.current = highlightInPath;
+  const trailColourRef = useRef(trailColour);
+  trailColourRef.current = trailColour;
+  /** The live chase's tile-id-to-shared-level function, while colouring by ancestry. */
+  const levelOfRef = useRef<((id: string | undefined) => number) | null>(null);
 
   /**
    * One run of strand as drawable ink, anchored at its own first point so f32
@@ -1536,6 +1567,7 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
       ...(worldRef.current.chain ? { chain: worldRef.current.chain } : {}),
       view: { cx: trail.head.x, cy: trail.head.y, halfW: half, halfH: half },
       budget: FEED_BUDGET,
+      ...(trailColourRef.current === 'ancestor' ? { emitIds: true } : {}),
     });
   }, []);
 
@@ -1579,6 +1611,7 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
         covered,
         hold,
         ...(budget !== undefined ? { maxSteps: budget } : {}),
+        ...(levelOfRef.current ? { levelOf: levelOfRef.current } : {}),
       });
       if (budget !== undefined) {
         paceTokensRef.current = Math.max(0, paceTokensRef.current - (trail.steps - stepsBefore));
@@ -1702,6 +1735,19 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
     scheduleDraw();
   }, [publishTrace, publishSeed, scheduleDraw, setKept, stopFollow]);
 
+  /**
+   * Set a fresh (or re-inked) chase's colouring: by ancestry, its chords take
+   * the shared level of their tile with the start tile, read off the ids the
+   * cuts carry against the world's ancestor chain.
+   */
+  const armColouring = useCallback((trail: StrandTrail): void => {
+    const on = trailColourRef.current === 'ancestor';
+    trail.colourBy = on ? 'ancestor' : 'rainbow';
+    const { seed, family, chain } = worldRef.current;
+    levelOfRef.current =
+      on && trail.startId !== undefined ? levelOfFrom(unrootedEngineFor(seed, family, chain || undefined), trail.startId) : null;
+  }, []);
+
   /** Start a trace at a viewport position in CSS px. */
   const traceAt = useCallback(
     (x: number, y: number): boolean => {
@@ -1721,6 +1767,7 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
       archiveFinishedTrail();
       const fresh = startTrail(hit, chordsRef.current?.rows ?? TRANSITION_TYPES);
       trailRef.current = fresh;
+      armColouring(fresh);
       // A new chase gets a fresh dolly NOW, not on the first follow frame: a
       // tiny circuit can close inside the very first walk slice, and a dolly
       // that does not exist yet would have nothing to glide to the closure.
@@ -1729,7 +1776,7 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
       runWalk();
       return true;
     },
-    [ensureIndex, runWalk, archiveFinishedTrail, publishSeed],
+    [ensureIndex, runWalk, archiveFinishedTrail, publishSeed, armColouring],
   );
 
   /**
@@ -1749,6 +1796,7 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
       ...(worldRef.current.chain ? { chain: worldRef.current.chain } : {}),
       view: { cx: seed[0], cy: seed[1], halfW: FEED_HALF_MIN, halfH: FEED_HALF_MIN },
       budget: FEED_BUDGET,
+      ...(trailColourRef.current === 'ancestor' ? { emitIds: true } : {}),
     });
   }, []);
 
@@ -1779,15 +1827,16 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
       Math.hypot(hit.to.x - seed[0], hit.to.y - seed[1]);
     // Flipping only swaps which end the walk leaves from; it is the same
     // chord, so it keeps the same tile.
-    const oriented: ChordEnd = flip ? { at: hit.to, to: hit.at, leafType: hit.leafType } : hit;
+    const oriented: ChordEnd = flip ? { ...hit, at: hit.to, to: hit.at } : hit;
     const fresh = startTrail(oriented, chordsRef.current?.rows ?? TRANSITION_TYPES);
     trailRef.current = fresh;
+    armColouring(fresh);
     // Same rule as a live tap: the dolly must exist before the first walk
     // slice, or an instantly-closed circuit would never be glided to.
     followStateRef.current = followOnRef.current ? createFollowCamera(fresh) : null;
     publishSeed(oriented);
     runWalk();
-  }, [ensureIndex, publishSeed, runWalk, requestSeedFeed]);
+  }, [ensureIndex, publishSeed, runWalk, requestSeedFeed, armColouring]);
   const tryReplayRef = useRef(tryReplay);
   tryReplayRef.current = tryReplay;
 
@@ -2033,6 +2082,21 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
     tryReplay();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [traceSeedKey]);
+
+  // A change of colouring re-inks the live chase: chords walked before the
+  // cuts carried ids keep an unknown level (grey) until a new trace.
+  useEffect(() => {
+    const trail = trailRef.current;
+    if (!trail) return;
+    armColouring(trail);
+    trail.version++;
+    trail.geom = null;
+    rendererRef.current?.setTrail(trailGeometry(trail));
+    publishTrace();
+    scheduleDraw();
+    requestQuery();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trailColour]);
 
   // Toggling a keep switch off lets that kind of kept strand go.
   useEffect(() => {
