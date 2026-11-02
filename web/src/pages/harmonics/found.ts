@@ -15,6 +15,7 @@
  * through the child crossing it is (`crossingPt`).
  */
 import { mul, transPt, type Affine, type Pt, type TileTypeId } from '../../core';
+import { simplify, spanOf } from '../../lib/simplify';
 import type { Box } from '../../lib/viewport';
 import type { BornCircuit, CircuitShapes } from '../shapes/circuitShapes';
 import { MAX_ROW, CircuitRows, READ_CAP } from './rows';
@@ -180,17 +181,35 @@ function thinned(pts: Float64Array, n: number): Float64Array {
 /** Raw visits at a level from the readings, or none known. */
 const rawOf = (readings: readonly Reading[]) => (s: number) => readings.find((r) => r.level === s)?.raw ?? Infinity;
 
+/** A thumbnail is drawn at the lowest level with at most this many visits. */
+export const THUMB_VISITS = 400000;
+/** Its line is simplified to this fraction of its span: below a device pixel at the sizes it is shown. */
+export const THUMB_DETAIL = 600;
+
+/**
+ * The level a circuit born at `level` is drawn small at: the lowest with at
+ * most `THUMB_VISITS` visits (`raw`, Infinity where unknown), so that the
+ * members of a chain are drawn at about the same depth below their birth.
+ */
+export function thumbLevel(level: number, raw: (s: number) => number): number {
+  let s = Math.max(0, level - 1);
+  while (s > 0 && raw(s - 1) <= THUMB_VISITS) s--;
+  return s;
+}
+
+/** A closed line as a thumbnail: simplified to `THUMB_DETAIL`, then thinned to `budget` points while still over. */
+export function thumbLine(pts: Float64Array, budget: number): Float64Array {
+  const fine = simplify(pts, spanOf(pts) / THUMB_DETAIL);
+  return thinned(fine, budget);
+}
+
 /**
  * A circuit's thumbnail, as `HarmonicsEngine.thumbs` draws a built one: at
- * two levels below its birth, or lower while the visits there stay within
- * `budget`; closed, thinned to `budget` points when over.
+ * `thumbLevel`, its line simplified to the pixel (`thumbLine`); closed.
  */
 export function foundThumb(placed: Placed, readings: readonly Reading[], budget: number): { stop: number; pts: Float64Array } {
-  const raw = rawOf(readings);
-  const c = placed.rows.c;
-  let s = Math.max(0, c.level - 2);
-  while (s > 0 && raw(s - 1) <= budget) s--;
-  return { stop: s, pts: thinned(closedLine(placed.line(s)), budget) };
+  const s = thumbLevel(placed.rows.c.level, rawOf(readings));
+  return { stop: s, pts: thumbLine(closedLine(placed.line(s)), budget) };
 }
 
 /**

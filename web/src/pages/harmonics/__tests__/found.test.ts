@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest';
 
 import { CircuitShapes, familyOf, type BornCircuit } from '../../shapes/circuitShapes';
 import { harmonicAbove } from '../bruteForce';
-import type { Found } from '../found';
+import { THUMB_VISITS, type Found } from '../found';
 import { HarmonicsEngine } from '../harmonicsJob';
 import { readDown, sameCyclic } from '../readings';
 import { SparseRoutes } from '../sparseRoutes';
@@ -68,15 +68,23 @@ function expectSameAsBuilt(engine: HarmonicsEngine, full: CircuitShapes, f: Foun
     expect(sameCyclic(r.tokens, w.tokens)).toBe(true);
   }
   expect(want.find((x) => x.level === got.info.readings[0].level)).toBeDefined();
-  // the thumbnail at the level a built circuit's is drawn at, the tables' drawing there; finer for a view
+  // the thumbnail at the level a built circuit's is drawn at (the lowest with at most THUMB_VISITS visits), the tables' drawing there simplified alike; finer for a view
   const raw = (s: number) => want.find((x) => x.level === s)?.raw ?? Infinity;
-  let stop = built.level - 2;
-  while (stop > 0 && raw(stop - 1) <= 3000) stop--;
+  let stop = built.level - 1;
+  while (stop > 0 && raw(stop - 1) <= THUMB_VISITS) stop--;
   expect(got.stop).toBe(stop);
-  expect(got.pts.length / 2 - 1).toBe(Math.min(3000, raw(stop)));
+  expect(got.stop).toBeLessThanOrEqual(built.level - 2);
+  expect(got.pts.length / 2).toBeLessThanOrEqual(3001);
+  // closed, through points of the tables' drawing there and no more of them than it has
+  const drawn = shape(full, built, stop);
+  const onDrawn = new Set<string>();
+  for (let i = 0; i < drawn.length; i += 2) onDrawn.add(`${drawn[i].toFixed(6)},${drawn[i + 1].toFixed(6)}`);
+  expect([got.pts[0], got.pts[1]]).toEqual([got.pts[got.pts.length - 2], got.pts[got.pts.length - 1]]);
+  for (let i = 0; i < got.pts.length; i += 2) expect(onDrawn.has(`${got.pts[i].toFixed(6)},${got.pts[i + 1].toFixed(6)}`)).toBe(true);
+  expect(got.pts.length / 2 - 1).toBeLessThanOrEqual(raw(stop));
   const fine = engine.detail(n, stop + 2, null, Infinity);
-  expect(fine.stop).toBe(stop);
-  expect(sameLoop(fine.pts, shape(full, built, stop))).toBe(true);
+  expect(fine.stop).toBeLessThanOrEqual(stop);
+  expect(sameLoop(fine.pts, shape(full, built, fine.stop))).toBe(true);
   // drawn over its supertiles as a circuit of the engine, after the built ones
   const side = engine.picture([n], built.level - 1).sides[0];
   expect(side.visits).toBe(want.find((x) => x.level === built.level - 1)!.raw);
