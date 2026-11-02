@@ -200,6 +200,8 @@ export interface Closure {
   readonly type: string;
   readonly length: number;
   readonly family: string;
+  /** The child crossings the closed walk enters at its level, as addresses, where the walk is kept. */
+  readonly steps?: readonly number[];
 }
 
 /** A circuit the search knows: its word key (`foundations.ts`'s `wordKey`), tiles and the level it is born at. */
@@ -475,7 +477,7 @@ export function climb(R: SparseRoutes, n: number, ti: number, place: number, opt
     pictures.push(sketch.draw());
     report?.({ level: at, ...R.work }, draw);
     if (up.end === 'closed') {
-      closed = { level: n + 1, type: TYPES[p.type], length: up.length, family: familyOfSteps(up.steps) };
+      closed = { level: n + 1, type: TYPES[p.type], length: up.length, family: familyOfSteps(up.steps), steps: up.steps };
       break;
     }
     if (up.end === 'ends') break;
