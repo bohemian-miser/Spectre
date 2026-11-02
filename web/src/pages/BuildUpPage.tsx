@@ -1,6 +1,11 @@
 /**
  * Build-up: a combination's supertiles built one level at a time.
  *
+ * The levels built so far run down the left (`buildup/Ladder.tsx`), each
+ * with the circuits closing at it; the chosen level's types sit in a row
+ * above the viewer, and what the viewer shows is listed beside it. A line
+ * at the top says what is followed and kept, each undone with its ✕.
+ *
  * With no circuit selected, the viewer shows the chosen type's supertile at
  * the chosen level: built from its children's route tables (each child's
  * routes that make up the supertile's routes), or every route as the
@@ -25,6 +30,7 @@ import { circuitUse, closedUse, joinedRoutes, type LevelUse } from './buildup/ci
 import { DeepPane } from './buildup/DeepPane';
 import { closesFromKept, keptLevels, type KeptLevel } from './buildup/kept';
 import { GroupStrip } from './buildup/GroupStrip';
+import { Ladder, type ChipState, type Rung } from './buildup/Ladder';
 import { PassesPane, type Frame } from './buildup/PassesPane';
 import { Viewer, type Lines, type Mark, type ViewerApi } from './buildup/Viewer';
 import { Geometry, IDENTITY, ringOf, chooseStop, circuitPasses, linesPerStop, mapBox, routePasses, routeSet, signature, subPasses, type Pass, type RouteSet } from './buildup/viewer';
@@ -67,15 +73,17 @@ const grow = (b: Box, f: number): Box => {
 };
 
 /** The combination, level and circuit asked for in the address, and the level whose routes of that circuit are kept. */
-function fromAddress(): { choice: ComboChoice; level: number | null; circuit: number | null; keep: number | null } {
+function fromAddress(): { choice: ComboChoice; level: number | null; circuit: number | null; keep: number | null; follow: number | null } {
   const q = new URLSearchParams(typeof location === 'undefined' ? '' : location.search);
   const rule = q.get('rule'), combo = q.get('combo');
   const level = Number(q.get('level')) || null, circuit = Number(q.get('circuit')) || null;
   const keep = q.has('keep') && /^\d+$/.test(q.get('keep')!) ? Number(q.get('keep')) : null;
+  // a circuit followed while another's routes are kept
+  const follow = Number(q.get('follow')) || null;
   const choice = rule && combo && /^\d+$/.test(rule) && /^[0-9a-z]{9}$/.test(combo)
     ? { subset: [...rule].map(Number), combo, level: Math.max(level ?? 0, DEFAULT.level) }
     : { ...DEFAULT, level: Math.max(level ?? 0, DEFAULT.level) };
-  return { choice, level, circuit, keep };
+  return { choice, level, circuit, keep, follow };
 }
 
 /** A circuit whose routes at one level are kept, the levels above built from them alone. */
@@ -176,6 +184,8 @@ export default function BuildUpPage(): JSX.Element {
     return counts.slice(0, built + 1);
   }, [now, built]);
 
+  const routeCounts = useMemo(() => (now ? Array.from({ length: built + 1 }, (_, k) => routesAt(now, k)) : []), [now, built]);
+
   // the circuit asked for in the address, once its level is built, and the level its routes are kept at
   useEffect(() => {
     const want = asked.current.circuit;
@@ -187,7 +197,15 @@ export default function BuildUpPage(): JSX.Element {
         setCirc(c);
         const keep = asked.current.keep;
         asked.current.keep = null;
-        if (keep !== null && keep < c.circuit.level) setKept({ circuit: c, from: keep });
+        if (keep !== null && keep < c.circuit.level) {
+          setKept({ circuit: c, from: keep });
+          const follow = asked.current.follow;
+          const f = follow ? closings.flat().find((x) => x.length === follow && x.first === x.circuit.level) : undefined;
+          if (f) {
+            setCirc(f);
+            setType(f.circuit.type as HexType);
+          }
+        }
         return;
       }
     }
@@ -199,6 +217,7 @@ export default function BuildUpPage(): JSX.Element {
     if (kept) {
       q.set('circuit', String(kept.circuit.length));
       q.set('keep', String(kept.from));
+      if (circ && circ.key !== kept.circuit.key) q.set('follow', String(circ.length));
     } else if (circ) q.set('circuit', String(circ.length));
     history.replaceState(null, '', `${location.pathname}?${q}`);
   }, [now, choice, level, circ, kept]);
@@ -390,16 +409,25 @@ export default function BuildUpPage(): JSX.Element {
     setHoverL(null);
     setHoverR(null);
   };
-  const pickCircuit = (c: Closing) => {
-    const same = circ !== null && circ.key === c.key && circ.circuit.level === c.circuit.level;
-    setCirc(same ? null : c);
-    // over the kept routes a circuit is drawn in the supertile it closes in
-    if (!same && kept) {
-      setType(c.circuit.type as HexType);
-      setRouteSel(null);
-      setHover(null);
+  const same = (a: Closing | null, b: Closing | null) => a !== null && b !== null && a.key === b.key && a.circuit.level === b.circuit.level;
+  const pickCircuit = (c: Closing, at: number) => {
+    const again = same(circ, c);
+    setCirc(again ? null : c);
+    if (!again) {
+      if (level !== at) goLevel(at);
+      // over the kept routes a circuit is drawn in the supertile it closes in
+      if (kept) {
+        setType(c.circuit.type as HexType);
+        setRouteSel(null);
+        setHover(null);
+      }
     }
     setHoverL(null);
+  };
+  /** Keeps a circuit's routes at level k and opens the level above, the first built from them alone. */
+  const keepAt = (c: Closing, k: number) => {
+    setKept({ circuit: c, from: k });
+    goLevel(Math.min(k + 1, built));
   };
   const group = groups.find((gr) => gr.includes(shownType)) ?? [shownType];
   const showing = level === 0 || keptView ? 'paths' : mode;
@@ -410,173 +438,254 @@ export default function BuildUpPage(): JSX.Element {
       {s.passes ? (
         <PassesPane g={g!} frame={s.frame} fitKey={`${s.c.key} ${s.c.circuit.level}`} passes={s.passes} passesOf={s.counts} rest={rest} matched={m}
           apiRef={api} hovered={hovered} onHover={onHover} label={s.line} testId={testId} />
-      ) : <p className="bu-muted bu-none">Over {nf(MAX_PASSES)} passes at this level: too many to draw. Step up a level.</p>}
+      ) : <p className="bu-muted bu-none">Over {nf(MAX_PASSES)} passes at this level: too many to draw. Pick a higher level.</p>}
     </div>
   );
+
+  // ---- the levels, as the ladder lists them ----
+  const rungs: Rung[] = closings.map((cl, k) => {
+    const N = circ?.circuit.level ?? -1;
+    const keptHere = kept && keptAt[k];
+    const meta = keptHere ? `${nf(keptHere.routes)} of ${nf(keptHere.of)} routes kept`
+      : circ && k < N ? `uses ${nf(useOf(circ)[k].routes)} of ${nf(routeCounts[k] ?? 0)} routes`
+      : `${nf(routeCounts[k] ?? 0)} routes${groupCounts[k] ? ` · ${groupCounts[k]} tables` : ''}`;
+    const metaTitle = keptHere ? (k === kept!.from ? 'The routes kept' : `Routes glued from the routes kept at level ${kept!.from} alone`)
+      : circ && k < N ? `Routes the ${nf(circ.length)}-tile circuit passes through at this level` : 'Routes of every type, and how many different route tables';
+    const made = kept && k > kept.from ? keptClosings[k] : undefined;
+    return {
+      level: k, meta, metaTitle,
+      tag: kept && k === kept.from ? 'kept here' : undefined,
+      dim: kept !== null && k < kept.from,
+      circuits: cl.map((c) => {
+        const state: ChipState = same(circ, c) ? 'followed' : made ? (made.includes(c) ? 'made' : 'dropped') : null;
+        const title = `${nf(c.length)} tiles, through children ${[...c.family].join(', ')}${c.first < k ? `; also closes at level ${c.first}` : '; new at this level'}`
+          + (made ? (made.includes(c) ? '; made of the kept routes' : '; not made of the kept routes') : '')
+          + (same(circ, c) ? '. Click to stop following it' : '. Click to follow it');
+        return { c, isNew: c.first === k, state, title };
+      }),
+    };
+  });
+  const hint = kept ? `Bold circuits close from the routes kept at level ${kept.from}; struck ones need routes that were dropped.`
+    : circ ? 'Pick a level to see the circuit there, or another circuit to follow it.'
+    : 'Pick a circuit to follow it down the levels. Dotted: new at that level.';
+
+  // ---- what the inspector lists ----
+  const facts: [string, string][] = [];
+  if (ready) {
+    const Tn = now!.levels[level][shownType];
+    facts.push(['Routes', `${nf(Tn.routes())}${group.length > 1 ? `, as ${group.filter((t) => t !== shownType).join(', ')}` : ''}`]);
+    if (!keptView && !circuitView && showing === 'children' && allPasses) facts.push(['Made of', `${nf(allPasses.length)} routes of its children`]);
+    facts.push(['Circuits closing', here.length ? here.map((c) => nf(c.length)).join(', ') : 'none']);
+  }
+  const keptFacts: [string, string][] = [];
+  if (keptView) {
+    const K = keptAt[kept!.from];
+    keptFacts.push([`Kept at level ${kept!.from}`, `${nf(K.routes)} of ${nf(K.of)} routes, from the ${nf(kept!.circuit.length)}-tile circuit`]);
+    if (level > kept!.from) {
+      keptFacts.push(['Kept here', `${nf(keptAt[level].routes)} of ${nf(keptAt[level].of)} routes; this ${shownType}: ${nf(rs?.keptTotal ?? 0)}`]);
+      keptFacts.push(['Circuits from them', fromKept && fromKept.length ? `${nf(fromKept.length)} of ${nf(here.length)}: ${fromKept.map((c) => nf(c.length)).join(', ')}` : `none of ${nf(here.length)}`]);
+    }
+  }
+  const circuitFacts: [string, string][] = [];
+  if (circ) {
+    const N = circ.circuit.level;
+    circuitFacts.push(['Closes in', `a level-${N} ${circ.circuit.type}`]);
+    if (level < N) {
+      const u = useOf(circ)[level];
+      circuitFacts.push([`At level ${level}`, `${nf(u.routes)} of ${nf(routesAt(now!, level))} routes, ${nf(u.passes)} passes${u.byType.has(shownType) ? '' : `; none in a ${shownType}, it runs through ${[...u.byType.keys()].join(', ')}`}`]);
+    } else if (level === N && !keptView) circuitFacts.push(['Here', `joins ${nf(useOf(circ)[N - 1].passes)} routes of its children`]);
+    else if (level > N) circuitFacts.push(['Here', `closed already, at level ${N}`]);
+  }
+  const dl = (rows: [string, string][], testId?: string) => (
+    <dl className="bu-facts" data-testid={testId}>
+      {rows.map(([k, v]) => (
+        <div key={k}><dt>{k}</dt><dd>{v}</dd></div>
+      ))}
+    </dl>
+  );
+  const keepButtons = circ && circ.circuit.level > 0 && (
+    <div className="bu-keep-at">
+      <span>Keep its routes at level</span>
+      <div className="bu-keep-levels" role="group" aria-label="Keep its routes at level">
+        {Array.from({ length: circ.circuit.level }, (_, k) => {
+          const on = kept !== null && same(kept.circuit, circ) && kept.from === k;
+          return (
+            <button key={k} type="button" className={on ? 'is-active' : ''} aria-pressed={on} onClick={() => (on ? setKept(null) : keepAt(circ, k))} data-testid="bu-keep"
+              title={on ? 'Stop keeping these routes' : `Keep the routes the circuit uses at ${k === 0 ? 'the tiles' : `level ${k}`}, drop the rest, and build the levels above from them alone`}>
+              {k === 0 ? 'tiles' : k}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+  const restBox = (circuitView || keptView) && (
+    <label className="bu-check">
+      <input type="checkbox" checked={rest} onChange={(e) => setRest(e.target.checked)} data-testid="bu-rest" />
+      Show the rest, faint
+    </label>
+  );
+
+  // ---- what is followed and kept, each undone with its ✕ ----
+  const crumb = (text: string, cls: string, undo: () => void, label: string, testId: string) => (
+    <span className={`bu-crumb ${cls}`} data-testid={testId}>
+      <span>{text}</span>
+      <button type="button" onClick={undo} aria-label={label} title={label}>✕</button>
+    </span>
+  );
+  const keptWithCirc = kept !== null && same(kept.circuit, circ);
+  const crumbs: JSX.Element[] = [];
+  if (circ) crumbs.push(crumb(`Following the ${nf(circ.length)}-tile circuit`, 'is-circuit', () => setCirc(null), 'Stop following this circuit', 'bu-picked'));
+  if (kept) {
+    const text = keptWithCirc ? `Keeping its ${kept.from === 0 ? 'tile' : `level-${kept.from}`} routes` : `Keeping the ${kept.from === 0 ? 'tile' : `level-${kept.from}`} routes of the ${nf(kept.circuit.length)}-tile circuit`;
+    const el = crumb(text, 'is-kept', () => setKept(null), 'Stop keeping these routes', 'bu-kept');
+    if (keptWithCirc) crumbs.push(el);
+    else crumbs.unshift(el);
+  }
 
   return (
     <div className="bu-page">
       <header className="bu-head">
         <h1>Build-up</h1>
-        <p className="bu-muted">
-          Each supertile is built from its children, one level at a time. A strand entering a supertile at a crossing on its border leaves by another: that is a route, and a type's route table lists them all. A supertile's routes are its children's routes glued end to end where the children meet; a strand that closes up inside instead is a circuit closing at that level.
-        </p>
+        <details className="bu-about">
+          <summary>Routes, circuits and how a level is built</summary>
+          <p className="bu-muted">
+            Each supertile is built from its children, one level at a time. A strand entering a supertile at a crossing on its border leaves by another: that is a route, and a type's route table lists them all. A supertile's routes are its children's routes glued end to end where the children meet; a strand that closes up inside instead is a circuit closing at that level.
+          </p>
+          <p className="bu-muted">
+            Following a circuit shows the routes it uses at each level below the one it closes at. Keeping its routes at one of those levels drops every other route there; the levels above are then built from the kept routes alone, and the ladder shows which circuits still close.
+          </p>
+        </details>
       </header>
 
-      <div className="bu-bar" data-testid="bu-bar">
+      <nav className="bu-path" aria-label="What is shown" data-testid="bu-bar">
         <details className="bu-combo">
           <summary>Combination <b>{choice.subset.join('')} · {choice.combo}</b></summary>
           <ComboPicker busy={busy} onAdd={(c) => buildTo(c.level, c)} levels="any" verb="Build" initialLevel={DEFAULT.level} initialCombo={choice.combo} />
         </details>
-        <div className="bu-stepper" role="group" aria-label="Level">
-          <button type="button" disabled={level <= 0} onClick={() => goLevel(level - 1)} aria-label="Level down" data-testid="bu-level-down">◀</button>
-          <span data-testid="bu-level">{level === 0 ? 'Tiles' : `Level ${level}`}</span>
-          <button type="button" disabled={level >= built} onClick={() => goLevel(level + 1)} aria-label="Level up" data-testid="bu-level-up">▶</button>
-          <button type="button" className="bu-build" disabled={busy} onClick={() => buildTo(built + 1, undefined, built + 1)} data-testid="bu-next">
-            {busy ? `Building level ${built + 1}…` : `Build level ${built + 1}`}
-          </button>
-        </div>
-        {!circuitView && !keptView && (
-          <>
-            <div className="bu-toggle" role="group" aria-label="Drawing">
-              <button type="button" aria-pressed={showing === 'children'} className={showing === 'children' ? 'is-active' : ''} disabled={level === 0} onClick={() => setMode('children')} data-testid="bu-mode-children">Built from children</button>
-              <button type="button" aria-pressed={showing === 'paths'} className={showing === 'paths' ? 'is-active' : ''} onClick={() => setMode('paths')} data-testid="bu-mode-paths">Strand paths</button>
-            </div>
-          </>
-        )}
-        {circuitView && (
-          <>
-            <label className="bu-check">
-              <input type="checkbox" checked={rest} onChange={(e) => setRest(e.target.checked)} data-testid="bu-rest" />
-              Show the rest, faint
-            </label>
-            <label className="bu-check">
-              <input type="checkbox" checked={compare} onChange={(e) => setCompare(e.target.checked)} disabled={!twin} data-testid="bu-compare" />
-              Beside {twin ? `the ${nf(twin.length)}-tile circuit of the same children` : 'a circuit of the same children (none built)'}
-            </label>
-            {level < circ!.circuit.level && (
-              <button type="button" className="bu-keep" onClick={() => setKept({ circuit: circ!, from: level })} data-testid="bu-keep"
-                title="Drop every other route of this level and build the levels above from these alone">
-                Keep these routes, build up from them
-              </button>
-            )}
-          </>
-        )}
-        {keptView && (
-          <label className="bu-check">
-            <input type="checkbox" checked={rest} onChange={(e) => setRest(e.target.checked)} data-testid="bu-rest" />
-            Show the dropped routes, faint
-          </label>
-        )}
-      </div>
+        {crumbs.map((c, i) => <span key={i} className="bu-path-step"><span className="bu-path-sep" aria-hidden="true">›</span>{c}</span>)}
+        {crumbs.length === 0 && <span className="bu-muted bu-path-hint">Pick a circuit on the left to follow it.</span>}
+        <span className="bu-path-level" data-testid="bu-level">{level === 0 ? 'Tiles' : `Level ${level}`}</span>
+      </nav>
       {error && <p className="bu-error">{error}</p>}
-      {ready && g && level > 0 && (
-        <GroupStrip g={g} level={level} groups={groups} type={shownType} onPick={(t) => { setType(t); setRouteSel(null); setHover(null); }}
-          use={circ && level < circ.circuit.level && !keptView ? useOf(circ)[level] : null} closed={closed} joins={joins} built={built}
-          kept={keptView ? { at: keptAt[level], from: kept!.from } : null} />
-      )}
 
-      <section className="bu-strip" data-testid="bu-circuits">
-        {circ && (
-          <span className="bu-picked" data-testid="bu-picked">
-            Following the {nf(circ.length)}-tile circuit (closes at level {circ.circuit.level})
-            <button type="button" onClick={() => setCirc(null)} aria-label="Stop following this circuit">✕</button>
-          </span>
-        )}
-        {kept && (
-          <span className="bu-picked is-kept" data-testid="bu-kept">
-            Keeping the routes the {nf(kept.circuit.length)}-tile circuit uses at level {kept.from}
-            <button type="button" onClick={() => setKept(null)} aria-label="Stop keeping these routes">✕</button>
-          </span>
-        )}
-        <span className="bu-strip-head">
-          Circuits closing at {level === 0 ? 'the tiles' : `level ${level}`}{fromKept && here.length > 0 ? ` · ${nf(fromKept.length)} of ${nf(here.length)} from the kept routes` : ''}
-        </span>
-        {here.length === 0 ? <span className="bu-muted">none</span> : here.map((c) => {
-          const made = fromKept ? fromKept.includes(c) : null;
-          return (
-            <button key={c.key} type="button" className={`${circ?.key === c.key && circ.circuit.level === level ? 'is-active' : ''}${made === false ? ' is-dropped' : ''}`} onClick={() => pickCircuit(c)}
-              title={`Through children ${[...c.family].join(', ')}${c.first < level ? `; also closes at level ${c.first}` : ''}${made === null ? '' : made ? '; made of the kept routes' : '; not made of the kept routes'}`}
-              data-testid="bu-circuit" data-kept={made === null ? undefined : String(made)}>
-              {nf(c.length)} tiles{c.first < level ? '' : ' · new'}
-            </button>
-          );
-        })}
-      </section>
+      <div className="bu-work">
+        <Ladder rungs={rungs} level={level} onLevel={goLevel} onCircuit={pickCircuit} hint={hint}
+          build={{ label: busy ? `Building level ${built + 1}…` : `Build level ${built + 1}`, disabled: busy, onClick: () => buildTo(built + 1, undefined, built + 1) }} />
 
-      {ready && (
-        <div className={`bu-main${circuitView && right ? ' is-compare' : ''}`}>
-          {circuitView && left && sidePane(left, hoverL, setHoverL, leftApi, matched.l, 'bu-passes-left')}
-          {circuitView && compare && (right ? sidePane(right, hoverR, setHoverR, rightApi, matched.r, 'bu-passes-right')
-            : <p className="bu-muted bu-none">The other circuit has no level {level + (twin ? twin.circuit.level - circ!.circuit.level : 0)}.</p>)}
-          {!circuitView && showing === 'children' && allPasses && frame && g && (
-            <div className="bu-side-by">
-              <p className="bu-line">{`A level-${level} ${shownType}: ${routesLine}, made of ${nf(allPasses.length)} routes of its children`}</p>
-              <PassesPane g={g} frame={{ outline: ringOf(g, level, shownType).pts, box: frame }} fitKey={`${choice.combo} ${level} ${shownType}`} passes={allPasses}
-                apiRef={leftApi} hovered={hoverL} onHover={setHoverL} label={`A level-${level} ${shownType} built from its children's routes`} testId="bu-children" />
-            </div>
+        <div className="bu-center">
+          {ready && g && level > 0 && (
+            <GroupStrip g={g} level={level} groups={groups} type={shownType} onPick={(t) => { setType(t); setRouteSel(null); setHover(null); }}
+              use={circ && level < circ.circuit.level ? useOf(circ)[level] : null} closed={closed} joins={keptView ? null : joins} built={built}
+              kept={keptView ? { at: keptAt[level], from: kept!.from } : null} />
           )}
-          {!circuitView && showing === 'paths' && routeLines && frame && (
-            <div className="bu-side-by">
-              <p className="bu-line">{`A level-${level} ${shownType}: ${routesLine}, each drawn as the strand's path`}</p>
-              <Viewer
-                frame={frame}
-                fitKey={`${choice.combo} ${level} ${shownType}`}
-                lines={routeLines}
-                marks={routeMarks}
-                hovered={hover}
-                onHover={setHover}
-                onPick={(i) => setRouteSel(i === null ? null : rs!.from[i])}
-                highlight={highlight}
-                tooltip={(i) => `Route from crossing ${rs!.from[i]} to ${T!.mate(rs!.from[i])}: ${nf(rs!.tiles[i])} tiles${rs!.cls ? [' · kept', ' · dropped', ' · kept, on the followed circuit'][rs!.cls[i]] : ''}`}
-                apiRef={viewer}
-                label={`A level-${level} ${shownType} and its routes`}
-              >
-                <div className="bv-legend">
-                  <span>Tiles</span>
-                  <i className="bv-ramp" />
-                  <span>1 to {nf(rs!.tiles[rs!.tiles.length - 1] ?? 1)}</span>
+          {ready && (
+            <div className={`bu-main${circuitView && right ? ' is-compare' : ''}`}>
+              {circuitView && left && sidePane(left, hoverL, setHoverL, leftApi, matched.l, 'bu-passes-left')}
+              {circuitView && compare && (right ? sidePane(right, hoverR, setHoverR, rightApi, matched.r, 'bu-passes-right')
+                : <p className="bu-muted bu-none">The other circuit has no level {level + (twin ? twin.circuit.level - circ!.circuit.level : 0)}.</p>)}
+              {!circuitView && showing === 'children' && allPasses && frame && g && (
+                <div className="bu-side-by">
+                  <p className="bu-line">{`A level-${level} ${shownType}, built from its children's routes`}</p>
+                  <PassesPane g={g} frame={{ outline: ringOf(g, level, shownType).pts, box: frame }} fitKey={`${choice.combo} ${level} ${shownType}`} passes={allPasses}
+                    apiRef={leftApi} hovered={hoverL} onHover={setHoverL} label={`A level-${level} ${shownType} built from its children's routes`} testId="bu-children" />
                 </div>
-              </Viewer>
+              )}
+              {!circuitView && showing === 'paths' && routeLines && frame && (
+                <div className="bu-side-by">
+                  <p className="bu-line">{level === 0 ? 'A tile' : `A level-${level} ${shownType}`}: {routesLine}</p>
+                  <Viewer
+                    frame={frame}
+                    fitKey={`${choice.combo} ${level} ${shownType}`}
+                    lines={routeLines}
+                    marks={routeMarks}
+                    hovered={hover}
+                    onHover={setHover}
+                    onPick={(i) => setRouteSel(i === null ? null : rs!.from[i])}
+                    highlight={highlight}
+                    tooltip={(i) => `Route from crossing ${rs!.from[i]} to ${T!.mate(rs!.from[i])}: ${nf(rs!.tiles[i])} tiles${rs!.cls ? [' · kept', ' · dropped', ' · kept, on the followed circuit'][rs!.cls[i]] : ''}`}
+                    apiRef={viewer}
+                    label={`A level-${level} ${shownType} and its routes`}
+                  >
+                    <div className="bv-legend">
+                      {keptView ? (
+                        <>
+                          <span className="bu-key"><i style={{ background: 'var(--accent)' }} />kept</span>
+                          {circ && level <= circ.circuit.level && <span className="bu-key"><i style={{ background: 'var(--danger)' }} />the {nf(circ.length)}-tile circuit</span>}
+                          {rest && <span className="bu-key"><i style={{ background: 'var(--muted)', opacity: 0.4 }} />dropped</span>}
+                        </>
+                      ) : (
+                        <>
+                          <span>Tiles</span>
+                          <i className="bv-ramp" />
+                          <span>1 to {nf(rs!.tiles[rs!.tiles.length - 1] ?? 1)}</span>
+                        </>
+                      )}
+                    </div>
+                  </Viewer>
+                </div>
+              )}
             </div>
           )}
+        </div>
 
+        {ready && (
           <aside className="bu-side" data-testid="bu-side">
-            {keptView ? (
-              <>
-                <h2>Built from the kept routes</h2>
+            <h2>{level === 0 ? 'A tile' : `Level ${level} · ${shownType}`}</h2>
+            {dl(facts, 'bu-facts')}
+
+            {!circuitView && !keptView && level > 0 && (
+              <section className="bu-side-part">
+                <h3>Drawing</h3>
+                <div className="bu-toggle" role="group" aria-label="Drawing">
+                  <button type="button" aria-pressed={showing === 'children'} className={showing === 'children' ? 'is-active' : ''} onClick={() => setMode('children')} data-testid="bu-mode-children">Built from children</button>
+                  <button type="button" aria-pressed={showing === 'paths'} className={showing === 'paths' ? 'is-active' : ''} onClick={() => setMode('paths')} data-testid="bu-mode-paths">Strand paths</button>
+                </div>
                 <p className="bu-muted">
-                  The {nf(kept!.circuit.length)}-tile circuit uses {keptAt[kept!.from].routes === keptAt[kept!.from].of ? `every one of the ${nf(keptAt[kept!.from].of)}` : `${nf(keptAt[kept!.from].routes)} of the ${nf(keptAt[kept!.from].of)}`} routes at level {kept!.from}{keptAt[kept!.from].routes === keptAt[kept!.from].of ? '.' : '; the rest are dropped.'}
-                  {level === kept!.from
-                    ? ' These are the kept routes. Step up with ▶ to build the levels above from them alone.'
-                    : ` Built from them alone, level ${level} keeps ${nf(keptAt[level].routes)} of its ${nf(keptAt[level].of)} routes, and ${fromKept && fromKept.length ? `${nf(fromKept.length)} of the ${nf(here.length)}` : 'none of the'} circuits closing here ${fromKept && fromKept.length === 1 ? 'is' : 'are'} made of them.`}
-                  {circ && level < circ.circuit.level ? (useOf(circ)[level].byType.has(shownType)
-                    ? ` Routes the ${nf(circ.length)}-tile circuit takes are in red.`
-                    : ` A level-${level} ${shownType} has no route the ${nf(circ.length)}-tile circuit takes; at this level it runs through ${[...useOf(circ)[level].byType.keys()].join(', ')}.`) : ''}
-                  {circ && level === circ.circuit.level ? (shownType === circ.circuit.type ? ` The ${nf(circ.length)}-tile circuit is drawn in red where it closes.` : ` The ${nf(circ.length)}-tile circuit closes in a ${circ.circuit.type}.`) : ''}
-                  {' '}Pick a circuit to draw it where it closes; point at a route to read it.
+                  {showing === 'children' ? "Each child filled in its type's colour; each line one of its routes, from where the strand enters the child to where it leaves." : 'Each route drawn as the strand runs, darker for longer routes. Point at one to read it, click to select it.'}
                 </p>
-              </>
-            ) : circuitView ? (
-              <>
-                <h2>{nf(circ!.length)}-tile circuit</h2>
-                <p className="bu-muted">
-                  It closes in a level-{circ!.circuit.level} {circ!.circuit.type}. At each level below, it is drawn by the routes it uses there, in the supertiles it runs through: each supertile filled in its type's colour, each route a line from where the strand enters to where it leaves, thicker for a route the circuit passes more often in all. Step down with ◀; click a route to zoom to it.
-                </p>
-                {compare && right && <p className="bu-muted">Faint: routes whose child types the other circuit also has at its level; bold: the rest.</p>}
-              </>
-            ) : showing === 'children' ? (
-              <>
-                <h2>{level === 0 ? 'A tile' : `A level-${level} ${shownType}`}</h2>
-                <p className="bu-muted">
-                  Built from its children's route tables alone, glued at the crossings they share: each child filled in its type's colour, each line one of its routes, straight from where the strand enters the child to where it leaves. Pick a circuit below to follow it down the levels.
-                </p>
-                {group.length > 1 && <p className="bu-muted">{shownType} has the same routes as {group.filter((t) => t !== shownType).join(', ')}.</p>}
-              </>
-            ) : routeSel !== null && T && routeInfo ? (
-              <>
-                <h2>{nf(T.len(routeSel))} tiles</h2>
-                <p className="bu-muted">Route from crossing {routeSel} to {T.mate(routeSel)} of a level-{level} {shownType}. It runs through {routeInfo.children.length === 1 ? 'this child' : 'these children, in order'}, entering {routeInfo.children.length === 1 ? 'it' : 'them'} {routeInfo.steps === 1 ? 'once' : `${nf(routeInfo.steps)} times in all`}:</p>
+              </section>
+            )}
+
+            {keptView && (
+              <section className="bu-side-part is-kept">
+                <h3>Built from the kept routes</h3>
+                {dl(keptFacts, 'bu-kept-facts')}
+                <p className="bu-muted">{level === kept!.from ? 'Pick a higher level on the left to see what these routes build.' : 'A route here is kept when every route it is glued from is.'}</p>
+                {restBox}
+              </section>
+            )}
+
+            {circ && (
+              <section className="bu-side-part is-circuit">
+                <h3>The {nf(circ.length)}-tile circuit</h3>
+                {dl(circuitFacts, 'bu-circuit-facts')}
+                {circuitView && (
+                  <>
+                    <p className="bu-muted">Drawn by the routes it uses at this level, coloured by child type; thicker for a route it passes more often. Click a route to zoom to it.</p>
+                    {restBox}
+                    <label className="bu-check">
+                      <input type="checkbox" checked={compare} onChange={(e) => setCompare(e.target.checked)} disabled={!twin} data-testid="bu-compare" />
+                      Beside {twin ? `the ${nf(twin.length)}-tile circuit of the same children` : 'a circuit of the same children (none built)'}
+                    </label>
+                    {compare && right && <p className="bu-muted">Faint: routes whose child types the other circuit also has at its level; bold: the rest.</p>}
+                  </>
+                )}
+                {circuitMark && (
+                  <button type="button" onClick={() => {
+                    const pts: { x: number; y: number }[] = [];
+                    for (let i = 0; i < circuitMark.pts.length; i += 2) pts.push({ x: circuitMark.pts[i], y: circuitMark.pts[i + 1] });
+                    viewer.current?.fit(grow(boxOf(pts), 0.15));
+                  }} data-testid="bu-zoom-circuit">Zoom to it</button>
+                )}
+                {keepButtons}
+              </section>
+            )}
+
+            {showing === 'paths' && !circuitView && routeSel !== null && T && routeInfo && (
+              <section className="bu-side-part">
+                <h3>Route of {nf(T.len(routeSel))} tiles</h3>
+                <p className="bu-muted">From crossing {routeSel} to {T.mate(routeSel)}. It runs through {routeInfo.children.length === 1 ? 'this child' : 'these children, in order'}, entering {routeInfo.children.length === 1 ? 'it' : 'them'} {routeInfo.steps === 1 ? 'once' : `${nf(routeInfo.steps)} times in all`}:</p>
                 <div className="bu-kids">
                   {routeInfo.children.map((c) => (
                     <button key={c.slot} type="button" style={{ background: tileColor(c.type) }} onClick={() => viewer.current?.fit(routeInfo.box(c.slot, c.type))} title="Zoom to this child">
@@ -585,46 +694,15 @@ export default function BuildUpPage(): JSX.Element {
                   ))}
                 </div>
                 <button type="button" onClick={() => setRouteSel(null)}>Clear</button>
-              </>
-            ) : (
-              <>
-                <h2>{level === 0 ? 'A tile' : `A level-${level} ${shownType}`}</h2>
-                <p className="bu-muted">
-                  {group.length > 1 ? `The same routes as ${group.filter((t) => t !== shownType).join(', ')}. ` : ''}Drag to move, scroll or pinch to zoom; point at a route to read it, click to select it.
-                </p>
-              </>
+              </section>
             )}
           </aside>
-        </div>
-      )}
+        )}
+      </div>
 
       <details className="bu-levels-so-far" onToggle={(e) => setDeepOpen((e.target as HTMLDetailsElement).open)} data-testid="bu-deep-open">
         <summary>Levels {built + 1} to 30, from the counts and the chains</summary>
         {deepOpen && now && !busy && <DeepPane cs={now} built={built} closings={closings} />}
-      </details>
-
-      <details className="bu-levels-so-far">
-        <summary>Levels so far</summary>
-        <table className="bu-summary-table" data-testid="bu-every-level">
-          <thead>
-            <tr>
-              <th>Level</th><th className="num">Different route tables</th><th>Circuits closing (tiles)</th>
-              {kept && <th className="num">Routes kept</th>}
-              {kept && <th>From the kept routes</th>}
-            </tr>
-          </thead>
-          <tbody>
-            {closings.map((cl, k) => (
-              <tr key={k} className={k === level ? 'is-active' : ''} onClick={() => goLevel(k)}>
-                <td>{k === 0 ? 'tiles' : k}</td>
-                <td className="num">{groupCounts[k] ?? ''}</td>
-                <td>{cl.map((c) => nf(c.length)).join(', ')}</td>
-                {kept && <td className="num">{keptAt[k] ? `${nf(keptAt[k].routes)} of ${nf(keptAt[k].of)}` : ''}</td>}
-                {kept && <td>{keptClosings[k] ? keptClosings[k]!.map((c) => nf(c.length)).join(', ') || 'none' : k === kept.from ? 'the kept level' : ''}</td>}
-              </tr>
-            ))}
-          </tbody>
-        </table>
       </details>
     </div>
   );

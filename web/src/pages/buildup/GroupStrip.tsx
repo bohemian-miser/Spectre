@@ -8,10 +8,11 @@
  * Shown whole, or as what each group adds: first the core, the routes every
  * type but Gamma has identically (`routes.ts`), then each group's routes
  * beyond it, and Gamma's whole table, Gamma being outside the core. With a
- * circuit followed, the routes it uses at this level are drawn over the
- * rest, and groups it does not use are dimmed; with routes kept
- * (`kept.ts`), the kept routes are drawn that way and groups keeping none
- * are dimmed.
+ * circuit followed, the routes it uses at this level are drawn in red over
+ * the rest, and groups it does not use are dimmed; with routes kept
+ * (`kept.ts`), the kept routes are drawn in the accent colour, the dropped
+ * ones faint, and groups keeping none are dimmed. The drawings are small:
+ * they pick the type the viewer shows.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { HexType } from '../../core';
@@ -34,8 +35,10 @@ interface Drawing {
   readonly strong: ReadonlySet<number> | null;
   /** Routes drawn at all; null for all of them. */
   readonly only?: ReadonlySet<number>;
-  /** Routes drawn over the rest, in the danger colour: a followed circuit's, or the kept ones. */
+  /** Routes drawn over the rest, in the danger colour: a followed circuit's. */
   readonly hot: ReadonlySet<number> | null;
+  /** Routes kept, drawn in the accent colour with the rest faint; null when none are kept. */
+  readonly kept: ReadonlySet<number> | null;
 }
 
 function draw(c: HTMLCanvasElement, px: number, g: Geometry, level: number, d: Drawing): void {
@@ -75,6 +78,9 @@ function draw(c: HTMLCanvasElement, px: number, g: Geometry, level: number, d: D
   const shades = [new Path2D(), new Path2D(), new Path2D()];
   const faint = new Path2D();
   const hot = new Path2D();
+  const keptPath = new Path2D();
+  // line widths drawn for a 260-pixel picture, thinner for a smaller one
+  const w = Math.max(0.5, px / 260);
   // a ring round each strongly drawn route, as one is often a few tiles long
   const marks = new Path2D();
   rs.from.forEach((k, i) => {
@@ -86,37 +92,43 @@ function draw(c: HTMLCanvasElement, px: number, g: Geometry, level: number, d: D
         let mx = 0, my = 0;
         for (let j = 0; j < a.length; j += 2) { mx += a[j]; my += a[j + 1]; }
         const X = (mx / (a.length / 2)) * s + ox, Y = -(my / (a.length / 2)) * s + oy;
-        marks.moveTo(X + 9, Y);
-        marks.arc(X, Y, 9, 0, 2 * Math.PI);
+        marks.moveTo(X + 9 * w, Y);
+        marks.arc(X, Y, 9 * w, 0, 2 * Math.PI);
       }
     };
     if (d.hot?.has(k)) pts(hot);
-    else if (d.strong && !d.strong.has(k)) {
+    else if (d.kept) {
+      if (d.kept.has(k)) pts(keptPath);
+      else if (level < 7) pts(faint);
+    } else if (d.strong && !d.strong.has(k)) {
       // the core, behind what the group adds: left out at the deep levels, where it would cost the most and show the least
       if (level < 7) pts(faint);
     } else pts(shades[Math.min(2, Math.floor((3 * Math.log(rs.tiles[i])) / most))]);
   });
   ctx.strokeStyle = color('--muted');
-  ctx.globalAlpha = 0.15;
-  ctx.lineWidth = 0.7;
+  ctx.globalAlpha = d.kept ? 0.25 : 0.15;
+  ctx.lineWidth = 0.7 * w;
   ctx.stroke(faint);
   ctx.strokeStyle = color(d.strong ? '--danger' : '--accent');
-  ctx.lineWidth = d.strong ? 1.8 : 0.9;
+  ctx.lineWidth = (d.strong ? 1.8 : 0.9) * w;
   shades.forEach((p, b) => {
     ctx.globalAlpha = (d.hot ? 0.35 : 1) * (d.strong ? 1 : [0.35, 0.65, 1][b]);
     ctx.stroke(p);
   });
   ctx.globalAlpha = 0.85;
-  ctx.lineWidth = 1.5;
+  ctx.lineWidth = 1.5 * w;
   ctx.stroke(marks);
   ctx.globalAlpha = 1;
+  ctx.strokeStyle = color('--accent');
+  ctx.lineWidth = 1.4 * w;
+  ctx.stroke(keptPath);
   if (d.hot) {
     ctx.strokeStyle = color('--danger');
-    ctx.lineWidth = 1.6;
+    ctx.lineWidth = 1.6 * w;
     ctx.stroke(hot);
   }
   ctx.strokeStyle = color('--muted');
-  ctx.lineWidth = 1;
+  ctx.lineWidth = w;
   const outline = new Path2D();
   path(ring, outline);
   ctx.stroke(outline);
@@ -154,17 +166,16 @@ export function GroupStrip(props: {
 }): JSX.Element {
   const { g, level, groups, use, closed, joins, built, kept } = props;
   const [adds, setAdds] = useState(false);
-  const px = typeof window !== 'undefined' && window.innerWidth < 640 ? 200 : 260;
+  const px = typeof window !== 'undefined' && window.innerWidth < 640 ? 92 : 112;
   const items = useMemo((): Item[] => {
     const routesOf = (t: HexType) => g.cs.levels[level][t].routes();
     // the group's types share one table, so a route counts as used (or kept) when the circuit takes it in any of them
-    const hotOf = (gr: readonly HexType[]): ReadonlySet<number> | null => {
-      if (use) return new Set(gr.flatMap((t) => [...(use.byType.get(t)?.keys() ?? [])]));
-      if (kept) return new Set(gr.flatMap((t) => [...(kept.at.byType.get(t) ?? [])]));
-      return null;
-    };
-    const dimOf = (gr: readonly HexType[]) => (use !== null || kept !== null) && hotOf(gr)!.size === 0;
-    const usedOf = (gr: readonly HexType[]) => hotOf(gr)?.size ?? 0;
+    const hotOf = (gr: readonly HexType[]): ReadonlySet<number> | null =>
+      use ? new Set(gr.flatMap((t) => [...(use.byType.get(t)?.keys() ?? [])])) : null;
+    const keptOf = (gr: readonly HexType[]): ReadonlySet<number> | null =>
+      kept ? new Set(gr.flatMap((t) => [...(kept.at.byType.get(t) ?? [])])) : null;
+    const dimOf = (gr: readonly HexType[]) => (kept ? keptOf(gr)!.size === 0 : use !== null && hotOf(gr)!.size === 0);
+    const usedOf = (gr: readonly HexType[]) => (kept ? keptOf(gr)!.size : hotOf(gr)?.size ?? 0);
     // two figures below 10%, so a small share does not read as none
     const pct = (x: number, of: number) => {
       const p = of ? (100 * x) / of : 0;
@@ -172,21 +183,15 @@ export function GroupStrip(props: {
     };
     const countOf = (gr: readonly HexType[]) => {
       const all = routesOf(gr[0]);
-      if (use) {
-        const used = usedOf(gr);
-        return `uses ${nf(used)} of ${plural(all, 'route')} (${pct(used, all)})`;
-      }
-      if (kept) {
-        const used = usedOf(gr);
-        return `${nf(used)} of ${plural(all, 'route')} kept (${pct(used, all)})`;
-      }
-      if (joins && gr.some((t) => joins.types.includes(t))) return `joins ${nf(joins.joined)} of ${nf(joins.of)} child routes (${pct(joins.joined, joins.of)})`;
+      if (kept) return `${nf(usedOf(gr))} of ${nf(all)} kept`;
+      if (use) return `uses ${nf(usedOf(gr))} of ${nf(all)}`;
+      if (joins && gr.some((t) => joins.types.includes(t))) return `joins ${nf(joins.joined)} of ${nf(joins.of)}`;
       const used = new Set(gr.flatMap((t) => [...(closed?.get(t) ?? [])])).size;
-      return `${plural(all, 'route')} · ${nf(used)} used (${pct(used, all)})`;
+      return `${plural(all, 'route')} · ${pct(used, all)} used`;
     };
     const titleOf = (gr: readonly HexType[]) => {
-      if (use) return `Routes of the table the followed circuit passes through at level ${level}`;
       if (kept) return level === kept.from ? `Routes of the table the circuit uses at level ${level}, kept` : `Routes of the table glued from the routes kept at level ${kept.from} alone`;
+      if (use) return `Routes of the table the followed circuit passes through at level ${level}`;
       if (joins && gr.some((t) => joins.types.includes(t))) return `Routes of the children's tables at level ${level - 1} the followed circuit runs through where it closes`;
       return level >= built
         ? `Used: routes on a circuit closing above level ${level}. None is built above it yet.`
@@ -195,28 +200,29 @@ export function GroupStrip(props: {
     if (!adds) {
       return groups.map((gr) => {
         return {
-          key: gr.join(), drawing: { type: gr[0], strong: null, hot: hotOf(gr) }, names: gr, label: `Routes of ${gr.join(', ')}`,
+          key: gr.join(), drawing: { type: gr[0], strong: null, hot: hotOf(gr), kept: keptOf(gr) }, names: gr, label: `Routes of ${gr.join(', ')}`,
           count: countOf(gr), countTitle: titleOf(gr), pick: gr[0], dim: dimOf(gr),
         };
       });
     }
     const core = coreRoutes(g.cs, level);
     const out: Item[] = [{
-      key: 'core', drawing: { type: 'Delta', strong: null, only: new Set(core.map((r) => r[0])), hot: hotOf(CORE_TYPES as unknown as HexType[]) }, names: null,
-      label: 'Routes every type but Gamma shares', count: `Shared by every type but Gamma: ${plural(core.length, 'route')}`, pick: null, dim: false,
+      key: 'core', drawing: { type: 'Delta', strong: null, only: new Set(core.map((r) => r[0])), hot: hotOf(CORE_TYPES as unknown as HexType[]), kept: keptOf(CORE_TYPES as unknown as HexType[]) }, names: null,
+      label: 'Routes every type but Gamma shares', count: `shared: ${plural(core.length, 'route')}`, countTitle: 'The routes every type but Gamma has, identical in each', pick: null, dim: false,
     }];
     for (const gr of groups) {
       if (!(CORE_TYPES as readonly string[]).includes(gr[0])) {
         out.push({
-          key: gr.join(), drawing: { type: gr[0], strong: null, hot: hotOf(gr) }, names: gr, label: `Routes of ${gr.join(', ')}`,
-          count: `not in the shared routes: ${countOf(gr)}`, countTitle: titleOf(gr), pick: gr[0], dim: dimOf(gr),
+          key: gr.join(), drawing: { type: gr[0], strong: null, hot: hotOf(gr), kept: keptOf(gr) }, names: gr, label: `Routes of ${gr.join(', ')}`,
+          count: countOf(gr), countTitle: `Not in the shared routes. ${titleOf(gr)}`, pick: gr[0], dim: dimOf(gr),
         });
         continue;
       }
       const extras = extraRoutes(g.cs, level, gr[0], core);
       out.push({
-        key: gr.join(), drawing: { type: gr[0], strong: new Set(extras.map((r) => r[0])), hot: hotOf(gr) }, names: gr,
-        label: `What ${gr.join(', ')} adds to the shared routes`, count: extras.length ? `+${plural(extras.length, 'route')}, ringed` : 'nothing beyond the shared routes', pick: gr[0], dim: dimOf(gr),
+        key: gr.join(), drawing: { type: gr[0], strong: new Set(extras.map((r) => r[0])), hot: hotOf(gr), kept: keptOf(gr) }, names: gr,
+        label: `What ${gr.join(', ')} adds to the shared routes`, count: extras.length ? `+${plural(extras.length, 'route')}` : 'nothing more',
+        countTitle: extras.length ? 'Routes beyond the shared ones, ringed' : 'Nothing beyond the shared routes', pick: gr[0], dim: dimOf(gr),
       });
     }
     return out;
@@ -237,9 +243,12 @@ export function GroupStrip(props: {
   }, [g, level, items, px]);
   return (
     <section className="bu-groups-wrap">
-      <div className="bu-toggle bu-groups-show" role="group" aria-label="Show">
-        <button type="button" aria-pressed={!adds} className={!adds ? 'is-active' : ''} onClick={() => setAdds(false)} data-testid="bu-groups-whole">Whole tables</button>
-        <button type="button" aria-pressed={adds} className={adds ? 'is-active' : ''} onClick={() => setAdds(true)} data-testid="bu-groups-adds">What each adds</button>
+      <div className="bu-groups-head">
+        <span className="bu-groups-title">Types at {level === 0 ? 'the tiles' : `level ${level}`}, grouped where their routes are the same</span>
+        <div className="bu-toggle bu-groups-show" role="group" aria-label="Show">
+          <button type="button" aria-pressed={!adds} className={!adds ? 'is-active' : ''} onClick={() => setAdds(false)} data-testid="bu-groups-whole">Whole tables</button>
+          <button type="button" aria-pressed={adds} className={adds ? 'is-active' : ''} onClick={() => setAdds(true)} data-testid="bu-groups-adds">What each adds</button>
+        </div>
       </div>
       <div className="bu-groups" role="group" aria-label="Types with the same routes" data-testid="bu-groups">
         {items.map((it, i) => {
