@@ -99,6 +99,8 @@ import {
   explorerShowTicker,
   explorerShowTransitions,
   explorerTraceColour,
+  explorerPyramidAt,
+  explorerTrailWidth,
   explorerTrace,
   explorerTrailHold,
   hasFlag,
@@ -193,6 +195,9 @@ const INFINITE_SEED = 1;
  * with the tiles the way they always have. The map's views measure in CSS px
  * instead; the multiplier is what the two have in common.
  */
+/** Chase lengths from which the strand is drawn from its pyramid (0: never). */
+const PYRAMID_AT_CHOICES = [0, 1_000, 10_000, 100_000, 1_000_000, 10_000_000];
+
 const BASE_CIRCUIT_STROKE = 0.12;
 
 /**
@@ -363,6 +368,8 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
   const tickerOn = explorerShowTicker(state);
   const transitionsOn = explorerShowTransitions(state);
   const traceColour = explorerTraceColour(state);
+  const pyramidAt = explorerPyramidAt(state);
+  const trailWidth = explorerTrailWidth(state);
   const findCeiling = explorerFindCeiling(state);
   const foundHold = explorerFoundHold(state);
   const hlScreen = explorerHighlightOnScreen(state);
@@ -1566,6 +1573,42 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
                 {damping >= 10 ? damping.toFixed(1) : damping.toFixed(2)}×
               </span>
             </label>
+            {family === 'hex' ? (
+              <>
+                <label className="control-row">
+                  <span>Draw from the pyramid at</span>
+                  <select
+                    aria-label="Chase length from which the strand is drawn from its exact pyramid"
+                    data-testid="pyramid-at"
+                    value={String(pyramidAt)}
+                    disabled={!traceOn}
+                    onChange={(e) => dispatch({ type: 'setPyramidAt', pyramidAt: Number(e.target.value) })}
+                  >
+                    {PYRAMID_AT_CHOICES.map((n) => (
+                      <option key={n} value={String(n)}>
+                        {n === 0 ? 'never' : `${n.toLocaleString('en-US')} tiles`}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="control-row">
+                  <span>Pyramid line</span>
+                  {/* Log-scaled, 0.01 to 3 tile edges: the useful widths are all well under one. */}
+                  <input
+                    type="range"
+                    aria-label="Width in tile edges of a strand drawn from its pyramid"
+                    data-testid="trail-width"
+                    min={Math.log(0.01)}
+                    max={Math.log(3)}
+                    step="any"
+                    value={Math.log(trailWidth)}
+                    disabled={!traceOn || pyramidAt === 0}
+                    onChange={(e) => dispatch({ type: 'setTrailWidth', trailWidth: Math.exp(Number(e.target.value)) })}
+                  />
+                  <span className="muted">{trailWidth.toFixed(2)} edges</span>
+                </label>
+              </>
+            ) : null}
             <div className="control-row">
               <button
                 type="button"
@@ -1918,6 +1961,8 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
             followDamping={damping}
             traceSeed={state.traceSeed ?? null}
             trailColour={traceColour}
+            pyramidAt={pyramidAt}
+            trailWidth={trailWidth}
             onTraceSeed={onTraceSeed}
             style={infiniteStyle}
             initialCamera={initialInfiniteCamera}
@@ -2310,6 +2355,11 @@ function InfiniteHud(props: {
         {trace?.active && trace.exact ? (
           <span data-testid="inf-exact" title="The chase held exactly, a byte a tile, beside the trail drawn; its pyramid of pictures is built in idle time">
             {`exact store: ${trace.exact.points.toLocaleString('en-US')} points, ${(trace.exact.bytes / 1e6).toFixed(1)} MB · pyramid ${(trace.exact.pyramidBytes / 1e6).toFixed(1)} MB${trace.exact.behind ? `, ${trace.exact.behind.toLocaleString('en-US')} segments behind` : ''}`}
+          </span>
+        ) : null}
+        {trace?.active && trace.exact?.picture ? (
+          <span data-testid="inf-picture" title="The strand is drawn from its pyramid: a window of pixels of 2^level tile edges, from the level's stored tiles or from the store's chunks">
+            {`drawn from the pyramid: level ${trace.exact.picture.level} from ${trace.exact.picture.from}, ${trace.exact.picture.ms.toFixed(1)} ms`}
           </span>
         ) : null}
         {trace?.active && trace.status === 'closed' && shapesHref ? (

@@ -34,6 +34,8 @@ import {
 import {
   DEFAULT_FIND_CEILING,
   DEFAULT_FOUND_HOLD,
+  DEFAULT_PYRAMID_AT,
+  DEFAULT_TRAIL_WIDTH,
   type Rgb,
   type ViewportCut,
   averageLeafArea,
@@ -65,8 +67,9 @@ import {
 import { CANVAS2D_MAX_INSTANCES } from './canvasRenderer';
 import { unrootedEngineFor } from '../../core';
 import { levelOfFrom } from './ancestry';
+import { paintPicture } from './trail/paint';
 import { TrailPyramid } from './trail/pyramid';
-import { latticeOf, TrailStore } from './trail/store';
+import { latticeOf, SQRT3, TrailStore } from './trail/store';
 import type { LeafChordTable } from './chords';
 import { buildRegionMesh, createRegionTracker, type RegionMesh, type RegionTracker } from './regionFill';
 import {
@@ -123,6 +126,7 @@ import type {
   RegionFillGeometry,
   RendererMode,
   TrailGeometry,
+  TrailPicture,
 } from './rendererTypes';
 
 export type InfiniteCanvasMode = 'pending' | RendererMode | 'unsupported';
@@ -347,6 +351,17 @@ export interface InfiniteTraceInfo {
     readonly bytes: number;
     readonly pyramidBytes: number;
     readonly behind: number;
+    /**
+     * The window drawn from the pyramid in the trail's place, once the chase
+     * is `pyramidAt` tiles long: its level (pixels of 2^level tile edges),
+     * where it came from and what it cost. Null while the trail is drawn.
+     */
+    readonly picture: {
+      readonly level: number;
+      readonly from: 'tiles' | 'chunks';
+      readonly ms: number;
+      readonly pixels: number;
+    } | null;
   } | null;
   /**
    * Total steps the chase has taken, odometer-style. The ticker keys its chips
@@ -383,6 +398,18 @@ const EXACT_LEVELS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14];
 /** Time the pyramid may take of one animation frame, and the segment-levels it draws between looks at the clock. */
 const PYRAMID_SLICE_MS = 3;
 const PYRAMID_BATCH = 500;
+/**
+ * The picture drawn from the pyramid: its level is the camera's pixel in
+ * tile edges rounded to a power of two, within these levels (finer than the
+ * finest is sampled up; coarser than the coarsest stored level would read
+ * every chunk). A window is at most this many pixels a side.
+ */
+const PICTURE_MIN_LEVEL = -12;
+const PICTURE_MAX_LEVEL = EXACT_LEVELS[EXACT_LEVELS.length - 1];
+const PICTURE_MAX_SIDE = 4096;
+/** A picture is redrawn every frame it is stale, unless the last took longer than this: then every `PICTURE_REPEAT_MS`. */
+const PICTURE_LIVE_MS = 60;
+const PICTURE_REPEAT_MS = 160;
 
 /** The chase's chords by shared level (`StrandTrail.levelCounts`), for the legend. */
 function levelsOf(trail: StrandTrail): { level: number; count: number }[] {
@@ -606,6 +633,14 @@ export interface InfiniteCanvasProps {
    */
   readonly trailColour?: 'rainbow' | 'ancestor';
   /**
+   * Chases of at least this many tiles are drawn from their exact pyramid
+   * (`trail/pyramid.ts`) in the trail's place, a window a frame; 0 never.
+   * Only a chase with a store (the hexagons) can be.
+   */
+  readonly pyramidAt?: number;
+  /** The width in tile edges of a chase drawn from its pyramid. */
+  readonly trailWidth?: number;
+  /**
    * Chase pace, in tiles per second — the walk explores that many tiles and
    * no more, so it can be watched tile by tile. null/undefined = full speed.
    */
@@ -672,6 +707,8 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
     highlightInPath = false,
     chainLength = null,
     trailColour = 'rainbow',
+    pyramidAt = DEFAULT_PYRAMID_AT,
+    trailWidth = DEFAULT_TRAIL_WIDTH,
     followPace = null,
     followDamping = 1,
     traceSeed = null,
@@ -948,12 +985,85 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
   });
 
   // --- draw ------------------------------------------------------------------
+  /** Whether the chase is drawn from its pyramid (`pyramidAt`) rather than the trail. */
+  const fromPyramidRef = useRef(false);
+  const publishTraceRef = useRef<(() => void) | null>(null);
+  /** The picture on the renderer: which window, from what state of the pyramid, and what it cost. */
+  const picRef = useRef({
+    picture: null as TrailPicture | null,
+    key: '',
+    total: -1,
+    behind: -1,
+    at: 0,
+    ms: 0,
+    level: 0,
+    from: 'tiles' as 'tiles' | 'chunks',
+    version: 0,
+    timer: 0,
+  });
+
+  /**
+   * The window the camera sees, from the pyramid, onto the renderer: the
+   * level is the camera's pixel in tile edges rounded to a power of two, so
+   * the picture is at most a factor of root two off the screen's pixels and
+   * is sampled linearly for the rest. Redrawn when the window or the pyramid
+   * has changed, every frame while that is quick, else a few times a second.
+   */
+  const refreshPicture = useCallback((width: number, height: number, dpr: number): void => {
+    const pyr = pyramidRef.current;
+    const renderer = rendererRef.current;
+    const pic = picRef.current;
+    if (!pyr || !renderer || !fromPyramidRef.current) return;
+    const cam = camRef.current;
+    const s = Math.min(PICTURE_MAX_LEVEL, Math.max(PICTURE_MIN_LEVEL, Math.round(Math.log2(1 / (cam.scale * dpr)))));
+    const P = 2 ** s;
+    // The store's points, and so the pixel lattice, are relative to the chase's first point.
+    const ox = pyr.store.originI / 4;
+    const oy = (pyr.store.originJ * SQRT3) / 4;
+    const halfW = width / (2 * cam.scale);
+    const halfH = height / (2 * cam.scale);
+    const m0 = Math.floor((cam.cx - ox - halfW) / P) - 1;
+    const n0 = Math.floor((cam.cy - oy - halfH) / P) - 1;
+    const w = Math.min(PICTURE_MAX_SIDE, Math.floor((cam.cx - ox + halfW) / P) + 2 - m0);
+    const h = Math.min(PICTURE_MAX_SIDE, Math.floor((cam.cy - oy + halfH) / P) + 2 - n0);
+    const key = `${s},${m0},${n0},${w},${h}`;
+    const total = pyr.store.segmentCount;
+    const behind = pyr.behind;
+    if (key === pic.key && total === pic.total && behind === pic.behind) return;
+    const now = performance.now();
+    const wait = pic.ms > PICTURE_LIVE_MS ? PICTURE_REPEAT_MS : 0;
+    if (now - pic.at < wait) {
+      // Stale, but the last draw was slow: come back for it, once.
+      if (!pic.timer) {
+        pic.timer = window.setTimeout(() => {
+          pic.timer = 0;
+          scheduleDrawRef.current();
+        }, wait - (now - pic.at));
+      }
+      return;
+    }
+    const g = pyr.grid(s, m0, n0, w, h);
+    const drawn = pyr.draw(g, 'auto', undefined, false);
+    const rgba = paintPicture(drawn.picture, g, total);
+    pic.picture = { origin: { x: ox + m0 * P, y: oy + n0 * P }, p: P, w, h, rgba, version: ++pic.version };
+    pic.key = key;
+    pic.total = total;
+    pic.behind = drawn.from === 'tiles' ? behind : 0;
+    pic.ms = performance.now() - now;
+    pic.at = now;
+    pic.level = s;
+    pic.from = drawn.from;
+    renderer.setTrailPicture?.(pic.picture);
+    publishTraceRef.current?.();
+  }, []);
+
   const draw = useCallback((): void => {
     rafRef.current = 0;
     const renderer = rendererRef.current;
     const { width, height } = sizeRef.current;
     if (!renderer || width <= 0 || height <= 0) return;
     const dpr = Math.min(2, (typeof devicePixelRatio === 'number' ? devicePixelRatio : 1) || 1);
+    refreshPicture(width, height, dpr);
     const stats: MapRenderStats = renderer.render(camRef.current, width, height, dpr);
     drawCentresRef.current(width, height, dpr);
     publish({
@@ -966,12 +1076,36 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
         trailPoints: stats.trailPoints,
       },
     });
-  }, [publish]);
+  }, [publish, refreshPicture]);
 
   const scheduleDraw = useCallback((): void => {
     if (rafRef.current) return;
     rafRef.current = requestAnimationFrame(draw);
   }, [draw]);
+  const scheduleDrawRef = useRef(scheduleDraw);
+  scheduleDrawRef.current = scheduleDraw;
+
+  /**
+   * Which of the two the chase is drawn by: the pyramid once the chase is
+   * `pyramidAt` tiles long and has one, the trail otherwise. Switching takes
+   * the other off the renderer. Returns whether it is the pyramid.
+   */
+  const syncPyramidMode = useCallback((trail: StrandTrail): boolean => {
+    const at = pyramidAtRef.current;
+    const want = !!pyramidRef.current && at > 0 && trail.steps >= at;
+    if (want === fromPyramidRef.current) return want;
+    fromPyramidRef.current = want;
+    const renderer = rendererRef.current;
+    if (want) {
+      renderer?.setTrail(null);
+    } else {
+      picRef.current.key = '';
+      picRef.current.picture = null;
+      renderer?.setTrailPicture?.(null);
+      renderer?.setTrail(trailGeometry(trail));
+    }
+    return want;
+  }, []);
 
   // Turning centres on or off only needs a redraw.
   useEffect(() => {
@@ -1072,6 +1206,10 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
                   bytes: storeRef.current.bytes,
                   pyramidBytes: pyramidRef.current?.bytes ?? 0,
                   behind: pyramidRef.current?.behind ?? 0,
+                  picture:
+                    fromPyramidRef.current && picRef.current.picture
+                      ? { level: picRef.current.level, from: picRef.current.from, ms: picRef.current.ms, pixels: picRef.current.picture.w * picRef.current.picture.h }
+                      : null,
                 }
               : null,
             steps: trail.steps,
@@ -1081,6 +1219,7 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
           : NO_TRACE,
     });
   }, [publish, chainsFor]);
+  publishTraceRef.current = publishTrace;
 
   /** The newest cut's chord index, built on first use and cached per cut. */
   const ensureIndex = useCallback((): ChordIndex | null => {
@@ -1211,6 +1350,10 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
   const storeRef = useRef<TrailStore | null>(null);
   const pyramidRef = useRef<TrailPyramid | null>(null);
   const idleRef = useRef(0);
+  const pyramidAtRef = useRef(pyramidAt);
+  pyramidAtRef.current = pyramidAt;
+  const trailWidthRef = useRef(trailWidth);
+  trailWidthRef.current = trailWidth;
 
   /**
    * One run of strand as drawable ink, anchored at its own first point so f32
@@ -1634,9 +1777,11 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
       while (behind > 0 && performance.now() < until) behind = pyr.update(PYRAMID_BATCH);
       if (behind > 0) scheduleIdle();
       else publishTrace();
+      // The picture on screen is of the tiles as they were: it has moved on.
+      if (fromPyramidRef.current) scheduleDraw();
     };
     idleRef.current = requestAnimationFrame(run);
-  }, [publishTrace]);
+  }, [publishTrace, scheduleDraw]);
 
   /** A point the walk appended: into the store, and the pyramid's next idle slice. */
   const feedPoint = useCallback(
@@ -1667,7 +1812,7 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
         const store = new TrailStore(i, j);
         for (let k = 1; k < trail.count; k++) store.append(...latticeOf(trail.xy[2 * k], trail.xy[2 * k + 1]));
         storeRef.current = store;
-        pyramidRef.current = new TrailPyramid(store, { stored: EXACT_LEVELS });
+        pyramidRef.current = new TrailPyramid(store, { stored: EXACT_LEVELS, width: trailWidthRef.current });
         scheduleIdle();
       } catch {
         storeRef.current = null;
@@ -1742,7 +1887,7 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
       } else if (trail.steps !== stepsBefore) {
         endPendingRef.current = null; // the walk moved on — no end after all
       }
-      rendererRef.current?.setTrail(trailGeometry(trail));
+      if (!syncPyramidMode(trail)) rendererRef.current?.setTrail(trailGeometry(trail));
       publishTrace();
       // The marks describe the line that was just extended, so they have to be
       // re-read here or they are left behind by the walk they describe.
@@ -1765,7 +1910,7 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
       ensureFollow();
       maybeFeed();
     },
-    [paceBudget, scheduleWalkTick, publishTrace, scheduleDraw, ensureFollow, maybeFeed, requestFeed, feedPoint],
+    [paceBudget, scheduleWalkTick, publishTrace, scheduleDraw, ensureFollow, maybeFeed, requestFeed, feedPoint, syncPyramidMode],
   );
   const advanceAgainstRef = useRef(advanceAgainst);
   advanceAgainstRef.current = advanceAgainst;
@@ -1817,7 +1962,11 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
     trailRef.current = null;
     storeRef.current = null;
     pyramidRef.current = null;
+    fromPyramidRef.current = false;
+    picRef.current.key = '';
+    picRef.current.picture = null;
     rendererRef.current?.setTrail(null);
+    rendererRef.current?.setTrailPicture?.(null);
     // Found circuits accumulate while "keep them" is on, so clearing has to
     // let go of them too — otherwise there is no way back to an empty screen.
     if (hadFound) {
@@ -2099,7 +2248,8 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
       syncRegionFill();
       // A lost context takes the trail's buffers with it; the walk itself lives
       // in world doubles on this side, so it survives and just re-uploads.
-      if (trailRef.current) renderer.setTrail(trailGeometry(trailRef.current));
+      if (trailRef.current && !fromPyramidRef.current) renderer.setTrail(trailGeometry(trailRef.current));
+      picRef.current.key = ''; // a picture is drawn afresh for the new renderer
       if (keptRef.current.length) renderer.setCircuits(keptRef.current.map((k) => k.geom));
       scheduleDraw();
       requestQuery();
@@ -2197,12 +2347,33 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
     armColouring(trail);
     trail.version++;
     trail.geom = null;
-    rendererRef.current?.setTrail(trailGeometry(trail));
+    if (!fromPyramidRef.current) rendererRef.current?.setTrail(trailGeometry(trail));
     publishTrace();
     scheduleDraw();
     requestQuery();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [trailColour]);
+
+  // A new threshold may move the chase between the trail and the pyramid.
+  useEffect(() => {
+    const trail = trailRef.current;
+    if (!trail) return;
+    syncPyramidMode(trail);
+    publishTrace();
+    scheduleDraw();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pyramidAt]);
+
+  // A new width is a new pyramid of the same store, built again in idle time.
+  useEffect(() => {
+    const store = storeRef.current;
+    if (!store) return;
+    pyramidRef.current = new TrailPyramid(store, { stored: EXACT_LEVELS, width: trailWidth });
+    picRef.current.key = '';
+    scheduleIdle();
+    scheduleDraw();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trailWidth]);
 
   // Toggling a keep switch off lets that kind of kept strand go.
   useEffect(() => {

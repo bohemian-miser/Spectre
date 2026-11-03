@@ -54,6 +54,7 @@ import {
   type RegionFillGeometry,
   type RegionMeshTable,
   type TrailGeometry,
+  type TrailPicture,
 } from './rendererTypes';
 
 /** Leaf outlines fade in between these zooms (CSS px per world unit). */
@@ -355,6 +356,31 @@ void main() {
   o = vec4(mix(hsl2rgb(deg / 360.0, 1.0, l), vSolid.rgb, vSolid.a), uAlpha);
 }`;
 
+/**
+ * The trail's picture from its pyramid: one quad from `uRect.xy` to
+ * `uRect.zw` (world, relative to the picture's origin), the texture laid over
+ * it with row 0 at the top, sampled linearly for the fraction of a level the
+ * camera is off, blended by the picture's own alpha.
+ */
+const VS_PIC = `#version 300 es
+uniform vec4 uView;
+uniform vec4 uRect;
+out vec2 vUv;
+void main() {
+  int c = gl_VertexID;
+  vec2 u = vec2(c == 1 || c == 3 || c == 5 ? 1.0 : 0.0, c == 2 || c == 4 || c == 5 ? 1.0 : 0.0);
+  vec2 w = mix(uRect.xy, uRect.zw, u);
+  vUv = vec2(u.x, 1.0 - u.y);
+  gl_Position = vec4((w.x + uView.x) * uView.z, (w.y + uView.y) * uView.w, 0.0, 1.0);
+}`;
+
+const FS_PIC = `#version 300 es
+precision mediump float;
+in vec2 vUv;
+uniform sampler2D uPic;
+out vec4 o;
+void main() { o = texture(uPic, vUv); }`;
+
 const FS_COLOR = `#version 300 es
 precision mediump float;
 in vec3 vColor;
@@ -510,6 +536,7 @@ export function createWebGLRenderer(
   let progChord: WebGLProgram;
   let progTrail: WebGLProgram;
   let progRegion: WebGLProgram;
+  let progPic: WebGLProgram;
   try {
     progLeaf = link(VS_LEAF, FS_COLOR);
     progLine = link(VS_LEAF_LINE, FS_LINE);
@@ -517,6 +544,7 @@ export function createWebGLRenderer(
     progChord = link(VS_CHORD, FS_CHORD);
     progTrail = link(VS_TRAIL, FS_TRAIL);
     progRegion = link(VS_REGION, FS_REGION);
+    progPic = link(VS_PIC, FS_PIC);
   } catch {
     return null; // context exists but shaders failed — let the caller fall back
   }
@@ -814,6 +842,9 @@ export function createWebGLRenderer(
   const uRegionView = loc(progRegion, 'uView');
   const uRegionAlpha = loc(progRegion, 'uAlpha');
   const uRegionTexLoc = loc(progRegion, 'uRegionTex');
+  const uPicView = loc(progPic, 'uView');
+  const uPicRect = loc(progPic, 'uRect');
+  const uPicTexLoc = loc(progPic, 'uPic');
 
   // --- state ------------------------------------------------------------------
   let count = 0;
@@ -821,6 +852,11 @@ export function createWebGLRenderer(
   let origin = { x: 0, y: 0 };
   let trail: TrailGeometry | null = null;
   let trailUploaded = -1; // `TrailGeometry.version` currently on the GPU
+  /** The trail's picture from its pyramid, and the version on the GPU. */
+  let picture: TrailPicture | null = null;
+  let pictureUploaded = -1;
+  let picTex: WebGLTexture | null = null;
+  const vaoPic = G.createVertexArray();
   // Kept circuits: frozen geometry, uploaded once per entry and reused (the
   // map is keyed by geometry identity; entries leave it when they leave the
   // list).
@@ -878,6 +914,29 @@ export function createWebGLRenderer(
     G.bufferData(G.ARRAY_BUFFER, fill.row, G.DYNAMIC_DRAW);
     G.bindBuffer(G.ARRAY_BUFFER, vboRegionRgb);
     G.bufferData(G.ARRAY_BUFFER, fill.rgb, G.DYNAMIC_DRAW);
+  };
+
+  const setTrailPicture = (next: TrailPicture | null): void => {
+    if (disposed || contextLost) return;
+    picture = next && next.w > 0 && next.h > 0 ? next : null;
+    if (!picture) {
+      pictureUploaded = -1;
+      return;
+    }
+    if (picture.version === pictureUploaded) return;
+    if (!picTex) {
+      picTex = G.createTexture();
+      G.bindTexture(G.TEXTURE_2D, picTex);
+      G.texParameteri(G.TEXTURE_2D, G.TEXTURE_MIN_FILTER, G.LINEAR);
+      G.texParameteri(G.TEXTURE_2D, G.TEXTURE_MAG_FILTER, G.LINEAR);
+      G.texParameteri(G.TEXTURE_2D, G.TEXTURE_WRAP_S, G.CLAMP_TO_EDGE);
+      G.texParameteri(G.TEXTURE_2D, G.TEXTURE_WRAP_T, G.CLAMP_TO_EDGE);
+    } else {
+      G.bindTexture(G.TEXTURE_2D, picTex);
+    }
+    G.pixelStorei(G.UNPACK_ALIGNMENT, 1);
+    G.texImage2D(G.TEXTURE_2D, 0, G.RGBA, picture.w, picture.h, 0, G.RGBA, G.UNSIGNED_BYTE, picture.rgba);
+    pictureUploaded = picture.version;
   };
 
   const setTrail = (next: TrailGeometry | null): void => {
@@ -1149,6 +1208,22 @@ export function createWebGLRenderer(
         const bufs = circuitBufs.get(geom);
         if (bufs) drawTrailPass(geom, bufs.vao);
       }
+      if (picture && picTex && !hideStrands) {
+        // The pyramid's picture of the whole chase, in the trail's place.
+        const off = originRelativeCenter(cam, picture.origin);
+        G.useProgram(progPic);
+        G.uniform4f(uPicView, -off.x, -off.y, (2 * cam.scale * dpr) / bw, (-2 * cam.scale * dpr) / bh);
+        G.uniform4f(uPicRect, 0, 0, picture.w * picture.p, picture.h * picture.p);
+        G.activeTexture(G.TEXTURE0);
+        G.bindTexture(G.TEXTURE_2D, picTex);
+        G.uniform1i(uPicTexLoc, 0);
+        G.enable(G.BLEND);
+        G.blendFunc(G.SRC_ALPHA, G.ONE_MINUS_SRC_ALPHA);
+        G.bindVertexArray(vaoPic);
+        G.drawArrays(G.TRIANGLES, 0, 6);
+        G.disable(G.BLEND);
+        drawCalls++;
+      }
       if (trail && trail.pointCount >= 2 && !hideStrands) drawTrailPass(trail, vaoTrail);
       // Highlights last and wider — they lie ON the line they point at, so
       // underneath at the same width they would be drawn over exactly.
@@ -1176,6 +1251,7 @@ export function createWebGLRenderer(
     setCut,
     setChords,
     setTrail,
+    setTrailPicture,
     setCircuits,
     setHighlights,
     setRegionFill,
@@ -1184,6 +1260,8 @@ export function createWebGLRenderer(
     dispose(): void {
       disposed = true;
       canvas.removeEventListener('webglcontextlost', onLost);
+      if (picTex) G.deleteTexture(picTex);
+      G.deleteVertexArray(vaoPic);
       G.deleteTexture(leafFillTex);
       G.deleteTexture(leafOutlineTex);
       G.deleteBuffer(vboPos);

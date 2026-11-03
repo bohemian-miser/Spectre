@@ -168,13 +168,15 @@ export class TrailPyramid {
   /**
    * The window's picture: from the level's tiles when it is stored (unless
    * `from` says otherwise), else from the chunks reaching the window. A
-   * stored level is brought up to date first.
+   * stored level is brought up to date first, unless `catchUp` is off: then
+   * the tiles are read as they are, `behind` segments short, for a page that
+   * updates them in slices of its own.
    */
-  draw(g: PixelGrid, from: 'auto' | 'tiles' | 'chunks' = 'auto', stats?: RasterStats): Drawn {
+  draw(g: PixelGrid, from: 'auto' | 'tiles' | 'chunks' = 'auto', stats?: RasterStats, catchUp = true): Drawn {
     const level = this.levels.get(g.s);
     if (from === 'tiles' && !level) throw new Error(`level ${g.s} is not stored`);
     if (level && from !== 'chunks') {
-      if (this.behind > 0) this.update(Infinity, stats);
+      if (catchUp && this.behind > 0) this.update(Infinity, stats);
       return this.fromTiles(level, g);
     }
     return this.fromChunks(g, stats);

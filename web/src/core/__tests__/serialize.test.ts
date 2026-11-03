@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_FIND_CEILING,
+  DEFAULT_PYRAMID_AT,
+  DEFAULT_TRAIL_WIDTH,
   MIN_FIND_CEILING,
   CODEC_VERSION,
   DEFAULT_EXPLORER_STATE,
@@ -467,5 +469,29 @@ describe('tcl (trace colouring by shared supertile)', () => {
     expect(back.traceColour).toBe('ancestor');
     expect(encodeExplorerQuery(back)).toBe(q);
     expect(decodeExplorerQuery('tcl=x').traceColour).toBeUndefined();
+  });
+});
+
+describe('tp / tw (drawing a chase from its pyramid)', () => {
+  it('omits the defaults and round-trips a threshold, never, and a width', () => {
+    const q0 = encodeExplorerQuery(DEFAULT_EXPLORER_STATE);
+    expect(q0).not.toContain('tp=');
+    expect(q0).not.toContain('tw=');
+    expect(encodeExplorerQuery({ ...DEFAULT_EXPLORER_STATE, pyramidAt: DEFAULT_PYRAMID_AT, trailWidth: DEFAULT_TRAIL_WIDTH })).toBe(q0);
+    const q = encodeExplorerQuery({ ...DEFAULT_EXPLORER_STATE, pyramidAt: 10_000, trailWidth: 0.5 });
+    expect(q).toContain('tp=10000');
+    expect(q).toContain('tw=0.5');
+    const back = decodeExplorerQuery(q);
+    expect(back.pyramidAt).toBe(10_000);
+    expect(back.trailWidth).toBe(0.5);
+    expect(encodeExplorerQuery(back)).toBe(q);
+    expect(decodeExplorerQuery('tp=0').pyramidAt).toBe(0);
+    expect(decodeExplorerQuery('tp=0&tw=0.01').trailWidth).toBe(0.01);
+    // Out of range is clamped; nonsense is dropped.
+    expect(decodeExplorerQuery('tp=5').pyramidAt).toBe(1000);
+    expect(decodeExplorerQuery('tw=99').trailWidth).toBe(3);
+    expect(decodeExplorerQuery('tw=0.0001').trailWidth).toBe(0.01);
+    expect(decodeExplorerQuery('tp=x&tw=y').pyramidAt).toBeUndefined();
+    expect(decodeExplorerQuery('tp=x&tw=y').trailWidth).toBeUndefined();
   });
 });
