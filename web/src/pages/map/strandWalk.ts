@@ -835,6 +835,11 @@ export interface AdvanceOptions {
    * ancestry; the cut must carry ids. Without it every chord's level is -1.
    */
   readonly levelOf?: (id: string | undefined) => number;
+  /**
+   * Told of every point the walk appends, as it is appended, so a listener
+   * sees them all whatever the window later trims away.
+   */
+  readonly onPoint?: (x: number, y: number) => void;
 }
 
 /**
@@ -857,6 +862,7 @@ export function advanceWalk(
   const trimAt = hold != null ? hold + Math.max(1024, hold >> 2) : 0;
   const levelOf = opts.levelOf;
   const ids = index.cut.ids;
+  const onPoint = opts.onPoint;
   // Closure is "the head IS the start point", so it uses the same drift-scaled
   // snap as the weld — a strand merely passing a crowded neighbour of its
   // start must not read as a circuit. `start` is trail state, not a trail
@@ -879,6 +885,7 @@ export function advanceWalk(
     trail.prev = trail.head;
     trail.head = cont.next;
     push(trail, cont.next);
+    if (onPoint) onPoint(cont.next.x, cont.next.y);
     // `count` already includes the point just pushed, so the chord that led
     // here is the last one: index count - 2.
     trail.types[trail.count - 2] = cont.leafType;

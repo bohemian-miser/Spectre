@@ -2336,6 +2336,11 @@ function InfiniteHud(props: {
             ))}
           </span>
         ) : null}
+        {trace?.active && trace.exact ? (
+          <span data-testid="inf-exact" title="The chase held exactly, a byte a tile, beside the trail drawn; its pyramid of pictures is built in idle time">
+            {`exact store: ${trace.exact.points.toLocaleString('en-US')} points, ${(trace.exact.bytes / 1e6).toFixed(1)} MB · pyramid ${(trace.exact.pyramidBytes / 1e6).toFixed(1)} MB${trace.exact.behind ? `, ${trace.exact.behind.toLocaleString('en-US')} segments behind` : ''}`}
+          </span>
+        ) : null}
         {trace?.active && trace.status === 'closed' && shapesHref ? (
           // A press here is the link's, not a pan or a tap on the tiling (the host captures the pointer).
           <a href={shapesHref(trace.steps)} onPointerDown={(e) => e.stopPropagation()} data-testid="inf-shapes">

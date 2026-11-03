@@ -1,18 +1,20 @@
 /**
  * The traced strand as pixels, decided exactly.
  *
- * The Explorer draws a strand as one capsule per segment, round-capped,
- * opaque, in order (`webglRenderer.ts`, the trail pass): a pixel shows the
- * last segment whose capsule holds the pixel's centre. A later segment's arc
- * is never below an earlier one's, so "last drawn" is "highest index", and a
- * picture is the per-pixel maximum of the covering segments' indices. A
- * maximum splits over any partition of the segments, which is what lets a
- * picture be assembled from stored tiles and re-walked chunks and still be
- * the picture of the whole strand.
+ * The line has a width in tile edges. Where that is a pixel or more across,
+ * a pixel shows the latest segment whose round-capped stroke holds the
+ * pixel's centre: the Explorer's own drawing order (`webglRenderer.ts`, the
+ * trail pass), where a later segment is never below an earlier one, so
+ * "last drawn" is "highest index". Where the line is thinner than a pixel,
+ * a pixel is lit by how much strand crosses it: every segment is counted
+ * once, in the pixel its midpoint falls in, each worth the area of a strip a
+ * width wide and a tile edge long over the pixel. Both are per-pixel maxima
+ * and sums, so a picture assembled from stored tiles and re-walked chunks
+ * is the picture of the whole strand.
  *
  * Pixels sit on one global lattice per level: pixel `(m, n)` of level `s` has
  * its centre at `((m + 1/2) * 2^s, (n + 1/2) * 2^s)` from the strand's first
- * point, so a pixel is `2^s` tile edges wide. The capsule radius is a
+ * point, so a pixel is `2^s` tile edges wide. A stroke's half-width is a
  * rational number of pixels.
  *
  * "Holds the centre" is decided exactly. Lattice points have `y` in
@@ -23,22 +25,68 @@
 
 import { SQRT3 } from './store';
 
-/** The capsule radius in pixels, `num / den`. */
+/** A stroke's half-width in pixels, `num / den`. */
 export interface Radius {
   readonly num: number;
   readonly den: number;
 }
 
-/** The Explorer's trail: half of 1.4 px * 1.8 (`BASE_LINE_PX`, `DEFAULT_TRAIL_SCALE`) at one device pixel per CSS pixel. */
+/** The Explorer's trail stroke: half of 1.4 px * 1.8 (`BASE_LINE_PX`, `DEFAULT_TRAIL_SCALE`) at one device pixel per CSS pixel. */
 export const TRAIL_RADIUS: Radius = { num: 63, den: 50 };
 
-/** A window of the pixel lattice of level `s`: pixels `m0 .. m0 + w - 1` by `n0 .. n0 + h - 1`. */
+/** The line's width in tile edges unless a page says otherwise. */
+export const DEFAULT_LINE_WIDTH = 0.2;
+
+/** How a level draws: a stroke of half-width `radius`, or coverage, each segment counted in its midpoint's pixel and worth `each` of it. */
+export interface Rule {
+  readonly mode: 'stroke' | 'coverage';
+  readonly radius: Radius;
+  readonly each: number;
+}
+
+/** The rule for level `s` with a line `width` tile edges wide. */
+export function ruleAt(s: number, width = DEFAULT_LINE_WIDTH): Rule {
+  const p = 2 ** s;
+  const px = width / p;
+  if (px >= 1) return { mode: 'stroke', radius: { num: Math.round((px / 2) * 1000), den: 1000 }, each: 0 };
+  return { mode: 'coverage', radius: { num: 0, den: 1 }, each: width / (p * p) };
+}
+
+/** A stroke of a fixed half-width in pixels, whatever the level. */
+export const strokeRule = (radius: Radius): Rule => ({ mode: 'stroke', radius, each: 0 });
+
+/** A window of the pixel lattice of level `s`: pixels `m0 .. m0 + w - 1` by `n0 .. n0 + h - 1`, drawn by `rule`. */
 export interface PixelGrid {
   readonly s: number;
   readonly m0: number;
   readonly n0: number;
   readonly w: number;
   readonly h: number;
+  readonly rule: Rule;
+}
+
+export function pixelGrid(s: number, m0: number, n0: number, w: number, h: number, rule: Rule = ruleAt(s)): PixelGrid {
+  return { s, m0, n0, w, h, rule };
+}
+
+/** A pixel picture: per pixel the highest covering segment index or -1, and, under coverage, how many segments crossed it. Row `n - n0`, column `m - m0`. */
+export interface Picture {
+  readonly idx: Float64Array;
+  readonly cnt: Uint32Array | null;
+}
+
+export function emptyPicture(g: PixelGrid): Picture {
+  return { idx: new Float64Array(g.w * g.h).fill(-1), cnt: g.rule.mode === 'coverage' ? new Uint32Array(g.w * g.h) : null };
+}
+
+/** Whether two pictures are the same, pixel for pixel; the first differing pixel's index, or -1. */
+export function firstDifference(a: Picture, b: Picture): number {
+  if (a.idx.length !== b.idx.length) return 0;
+  for (let i = 0; i < a.idx.length; i++) {
+    if (a.idx[i] !== b.idx[i]) return i;
+    if ((a.cnt ? a.cnt[i] : 0) !== (b.cnt ? b.cnt[i] : 0)) return i;
+  }
+  return -1;
 }
 
 /** Counts of how pixel decisions were made. */
@@ -48,11 +96,6 @@ export interface RasterStats {
 }
 
 export const newStats = (): RasterStats => ({ tested: 0, exact: 0 });
-
-/** A pixel picture: per pixel, the highest covering segment index, or -1. Row `n - n0`, column `m - m0`. */
-export function emptyPicture(g: PixelGrid): Float64Array {
-  return new Float64Array(g.w * g.h).fill(-1);
-}
 
 const EPS = 2 ** -52;
 
@@ -74,7 +117,7 @@ function signQ3(a: bigint, b: bigint): number {
 const pow2 = (e: number): bigint => (e >= 0 ? 1n << BigInt(e) : 0n);
 
 /**
- * Whether the capsule of segment `A -> B` (relative lattice points) holds the
+ * Whether the stroke of segment `A -> B` (relative lattice points) holds the
  * centre of pixel `(m, n)` of level `s`, in exact arithmetic.
  *
  * Everything is scaled by a unit `g = 2^q` small enough that pixel centres
@@ -110,26 +153,58 @@ export function coversExact(ai: number, aj: number, bi: number, bj: number, m: n
   return signQ3(a, b) <= 0;
 }
 
+/**
+ * The pixel of level `s` holding the midpoint of segment `A -> B`: column
+ * `floor(x / p)` is exact in doubles (a dyadic rational), and the row, with
+ * `y` a multiple of `sqrt(3) / 8`, is checked against its two edges exactly
+ * when the double lands within rounding of one.
+ */
+export function midpointPixel(ai: number, aj: number, bi: number, bj: number, s: number): [number, number] {
+  const p = 2 ** s;
+  const m = Math.floor((ai + bi) / 8 / p);
+  const J = aj + bj;
+  const yOverP = (J * SQRT3) / 8 / p;
+  let n = Math.floor(yOverP);
+  const frac = yOverP - n;
+  if (frac < 1e-9 || frac > 1 - 1e-9) {
+    // n * p <= J sqrt(3) / 8 < (n + 1) * p, with every term an integer multiple of 2^q.
+    const q = Math.min(s + 3, 0);
+    const B = BigInt(J) * pow2(-q);
+    const edge = (row: number): bigint => BigInt(row) * pow2(s + 3 - q);
+    if (signQ3(edge(n), -B) > 0) n--;
+    else if (signQ3(edge(n + 1), -B) <= 0) n++;
+  }
+  return [m, n];
+}
+
 // ---------------------------------------------------------------------------
 // Rasterizing
 // ---------------------------------------------------------------------------
 
 /**
- * Visit every pixel of level `s` whose centre segment `A -> B`'s capsule
- * holds, within columns `mLo..mHi` and rows `nLo..nHi`. Pixels are visited
- * row by row.
+ * Visit every pixel of level `s` that segment `A -> B` lights under `g.rule`:
+ * those whose centre its stroke holds, or under coverage the one holding its
+ * midpoint, within columns `mLo..mHi` and rows `nLo..nHi`. Pixels are
+ * visited row by row.
  */
 export function segmentPixels(
   ai: number,
   aj: number,
   bi: number,
   bj: number,
-  s: number,
-  r: Radius,
+  g: PixelGrid,
   clip: { mLo: number; mHi: number; nLo: number; nHi: number },
   visit: (m: number, n: number) => void,
   stats?: RasterStats,
 ): void {
+  const s = g.s;
+  if (g.rule.mode === 'coverage') {
+    const [m, n] = midpointPixel(ai, aj, bi, bj, s);
+    if (stats) stats.tested++;
+    if (m >= clip.mLo && m <= clip.mHi && n >= clip.nLo && n <= clip.nHi) visit(m, n);
+    return;
+  }
+  const r = g.rule.radius;
   const p = 2 ** s;
   const rw = (r.num / r.den) * p;
   const ax = ai / 4;
@@ -192,15 +267,16 @@ export function rasterize(
   count: number,
   k0: number,
   g: PixelGrid,
-  out: Float64Array,
-  r: Radius = TRAIL_RADIUS,
+  out: Picture,
   stats?: RasterStats,
 ): void {
   const clip = { mLo: g.m0, mHi: g.m0 + g.w - 1, nLo: g.n0, nHi: g.n0 + g.h - 1 };
+  const { idx, cnt } = out;
+  const w = g.w;
   for (let k = 0; k < count; k++) {
-    const idx = k0 + k;
-    segmentPixels(pts[2 * k], pts[2 * k + 1], pts[2 * k + 2], pts[2 * k + 3], g.s, r, clip, (m, n) => {
-      out[(n - g.n0) * g.w + (m - g.m0)] = idx;
-    }, stats);
+    const index = k0 + k;
+    segmentPixels(pts[2 * k], pts[2 * k + 1], pts[2 * k + 2], pts[2 * k + 3], g, clip, cnt
+      ? (m, n) => { const o = (n - g.n0) * w + (m - g.m0); idx[o] = index; cnt[o]++; }
+      : (m, n) => { idx[(n - g.n0) * w + (m - g.m0)] = index; }, stats);
   }
 }

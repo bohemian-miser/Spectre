@@ -16,7 +16,7 @@
 import { act, cleanup, fireEvent, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useRef } from 'react';
-import { comboToMatchingIndices, type ViewportCut } from '../../../core';
+import { comboToMatchingIndices, type TileFamilyId, type ViewportCut } from '../../../core';
 import { createCamera, worldToScreen, viewRectFor, type MapCamera } from '../camera';
 import { buildLeafChordTable, type LeafChordTable } from '../chords';
 import { InfiniteCanvas, type InfiniteCanvasApi, type InfiniteCanvasStatus } from '../InfiniteCanvas';
@@ -141,6 +141,10 @@ const chordsFor = (): LeafChordTable =>
  */
 const DEFAULT_CHORDS = chordsFor();
 
+/** A hexagon rule with long open strands (the seam strand's), for the exact store. */
+const HEX_SUBSET = [0, 2, 3, 4, 6, 8];
+const HEX_CHORDS = buildLeafChordTable('hex', HEX_SUBSET, comboToMatchingIndices('hex', HEX_SUBSET, '011001100'));
+
 /**
  * Screen position of a chord's midpoint under `cam` — an unambiguous tap
  * target, found through the same engine query the component will run.
@@ -150,8 +154,9 @@ function chordTargetOn(
   table: LeafChordTable = chordsFor(),
   /** World point to aim at; the view centre by default. */
   at: { x: number; y: number } = { x: cam.cx, y: cam.cy },
+  family: TileFamilyId = 'spectre',
 ): { x: number; y: number } {
-  const cut = createUnrootedEngine(SEED).query(viewRectFor(cam, WIDTH, HEIGHT), BUDGET);
+  const cut = createUnrootedEngine(SEED, family).query(viewRectFor(cam, WIDTH, HEIGHT), BUDGET);
   const index = buildChordIndex(cut, table);
   if (!index) throw new Error('no walkable cut at this camera');
   const hit = hitTestChord(index, at, 5);
@@ -177,6 +182,7 @@ interface HarnessProps {
   readonly chainLength?: number | null;
   readonly followPace?: number | null;
   readonly trailColour?: 'rainbow' | 'ancestor';
+  readonly family?: TileFamilyId;
   readonly traceSeed?: readonly [number, number, number, number] | null;
   readonly onTraceSeed?: (seed: readonly [number, number, number, number] | null) => void;
   readonly camera?: MapCamera;
@@ -209,6 +215,7 @@ function Harness(props: HarnessProps): JSX.Element {
       chainLength={props.chainLength ?? null}
       followPace={props.followPace ?? null}
       trailColour={props.trailColour ?? 'rainbow'}
+      family={props.family ?? 'spectre'}
       traceSeed={props.traceSeed ?? null}
       onTraceSeed={props.onTraceSeed}
       initialCamera={props.camera ?? createCamera(0, 0, 36)}
@@ -1377,5 +1384,38 @@ describe('InfiniteCanvas — colouring by the supertile shared with the start', 
     expect(trace.active).toBe(true);
     expect(trace.levels).toEqual([{ level: -1, count: trace.steps }]);
     expect(m.renderer.trails.at(-1)!.rgba).toBeUndefined();
+  });
+});
+
+describe('InfiniteCanvas — the exact store beside the trail', () => {
+  it('holds every point the chase passes on the hexagons, and its pyramid catches up in idle time', async () => {
+    const m = await mount({ family: 'hex', chords: HEX_CHORDS });
+    const target = chordTargetOn(createCamera(0, 0, 36), HEX_CHORDS, undefined, 'hex');
+    tap(m.host, target.x, target.y);
+    await settle();
+    const t = m.status().trace;
+    expect(t.active).toBe(true);
+    expect(t.steps).toBeGreaterThan(10);
+    // A chase of n steps has n + 1 points, the tapped chord's two among them.
+    expect(t.exact).not.toBeNull();
+    expect(t.exact!.points).toBe(t.steps + 1);
+    expect(t.exact!.bytes).toBeLessThan(2 * t.steps + 2000);
+    await settleUntil(() => m.status().trace.exact!.behind === 0, 'the pyramid to catch up');
+    const done = m.status().trace.exact!;
+    expect(done.pyramidBytes).toBeGreaterThan(0);
+    expect(done.points).toBe(m.status().trace.steps + 1);
+    // Clearing lets the store go with the trail.
+    act(() => m.api.current?.clearTrace());
+    await settle();
+    expect(m.status().trace.exact).toBeNull();
+  });
+
+  it('keeps no store on the spectres, whose chord ends are not on the lattice', async () => {
+    const m = await mount();
+    const target = chordTargetOn(createCamera(0, 0, 36));
+    tap(m.host, target.x, target.y);
+    await settle();
+    expect(m.status().trace.active).toBe(true);
+    expect(m.status().trace.exact).toBeNull();
   });
 });
