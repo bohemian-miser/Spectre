@@ -65,6 +65,8 @@ import {
 import { CANVAS2D_MAX_INSTANCES } from './canvasRenderer';
 import { unrootedEngineFor } from '../../core';
 import { levelOfFrom } from './ancestry';
+import { TrailPyramid } from './trail/pyramid';
+import { latticeOf, TrailStore } from './trail/store';
 import type { LeafChordTable } from './chords';
 import { buildRegionMesh, createRegionTracker, type RegionMesh, type RegionTracker } from './regionFill';
 import {
@@ -335,6 +337,18 @@ export interface InfiniteTraceInfo {
    */
   readonly levels: readonly { readonly level: number; readonly count: number }[];
   /**
+   * The exact store fed beside the trail with every point the chase passes
+   * (on the hexagons, whose chord ends sit on a lattice), and the pyramid of
+   * its pictures built in idle time: what they hold, and how many segments
+   * the pyramid still has to draw. Null where there is no store.
+   */
+  readonly exact: {
+    readonly points: number;
+    readonly bytes: number;
+    readonly pyramidBytes: number;
+    readonly behind: number;
+  } | null;
+  /**
    * Total steps the chase has taken, odometer-style. The ticker keys its chips
    * off this so a sliding window keeps the SAME chip identities frame to
    * frame — without it every publish looks like a whole new list.
@@ -356,8 +370,19 @@ const NO_TRACE: InfiniteTraceInfo = Object.freeze({
   chains: Object.freeze([]) as readonly Chain[],
   chainLength: 0,
   levels: Object.freeze([]) as readonly { level: number; count: number }[],
+  exact: null,
   steps: 0,
 });
+
+/**
+ * The pyramid's stored levels: from two tile edges a pixel out to 16,384.
+ * Finer levels would cost more than the strand itself (a level-0 tile is a
+ * pixel a tile edge) and are drawn from the store's chunks when wanted.
+ */
+const EXACT_LEVELS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14];
+/** Time the pyramid may take of one animation frame, and the segment-levels it draws between looks at the clock. */
+const PYRAMID_SLICE_MS = 3;
+const PYRAMID_BATCH = 500;
 
 /** The chase's chords by shared level (`StrandTrail.levelCounts`), for the legend. */
 function levelsOf(trail: StrandTrail): { level: number; count: number }[] {
@@ -1041,6 +1066,14 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
             chains: chainsFor(trail),
             chainLength: Math.max(0, Math.floor(chainLengthRef.current ?? 0)),
             levels: levelsOf(trail),
+            exact: storeRef.current
+              ? {
+                  points: storeRef.current.pointCount,
+                  bytes: storeRef.current.bytes,
+                  pyramidBytes: pyramidRef.current?.bytes ?? 0,
+                  behind: pyramidRef.current?.behind ?? 0,
+                }
+              : null,
             steps: trail.steps,
           }
         : circuits || found || skipped
@@ -1174,6 +1207,10 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
   trailColourRef.current = trailColour;
   /** The live chase's tile-id-to-shared-level function, while colouring by ancestry. */
   const levelOfRef = useRef<((id: string | undefined) => number) | null>(null);
+  /** The exact store of the live chase and its pyramid (hexagons only), and the idle slot building the pyramid. */
+  const storeRef = useRef<TrailStore | null>(null);
+  const pyramidRef = useRef<TrailPyramid | null>(null);
+  const idleRef = useRef(0);
 
   /**
    * One run of strand as drawable ink, anchored at its own first point so f32
@@ -1584,6 +1621,61 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
     requestFeed();
   }, [requestFeed]);
 
+  // --- the exact store beside the trail ------------------------------------
+  /** Draw what the pyramid is behind by, a few milliseconds of every frame, until it has caught up. */
+  const scheduleIdle = useCallback((): void => {
+    if (idleRef.current) return;
+    const run = (): void => {
+      idleRef.current = 0;
+      const pyr = pyramidRef.current;
+      if (!pyr) return;
+      const until = performance.now() + PYRAMID_SLICE_MS;
+      let behind = pyr.behind;
+      while (behind > 0 && performance.now() < until) behind = pyr.update(PYRAMID_BATCH);
+      if (behind > 0) scheduleIdle();
+      else publishTrace();
+    };
+    idleRef.current = requestAnimationFrame(run);
+  }, [publishTrace]);
+
+  /** A point the walk appended: into the store, and the pyramid's next idle slice. */
+  const feedPoint = useCallback(
+    (x: number, y: number): void => {
+      const store = storeRef.current;
+      if (!store) return;
+      try {
+        store.append(...latticeOf(x, y));
+      } catch {
+        // A point off the lattice: this chase is not one the store can hold.
+        storeRef.current = null;
+        pyramidRef.current = null;
+        return;
+      }
+      scheduleIdle();
+    },
+    [scheduleIdle],
+  );
+
+  /** A fresh chase: a store from its first points, on the hexagons; none elsewhere. */
+  const startStore = useCallback(
+    (trail: StrandTrail): void => {
+      storeRef.current = null;
+      pyramidRef.current = null;
+      if (worldRef.current.family !== 'hex') return;
+      try {
+        const [i, j] = latticeOf(trail.xy[0], trail.xy[1]);
+        const store = new TrailStore(i, j);
+        for (let k = 1; k < trail.count; k++) store.append(...latticeOf(trail.xy[2 * k], trail.xy[2 * k + 1]));
+        storeRef.current = store;
+        pyramidRef.current = new TrailPyramid(store, { stored: EXACT_LEVELS });
+        scheduleIdle();
+      } catch {
+        storeRef.current = null;
+      }
+    },
+    [scheduleIdle],
+  );
+
   /**
    * Advance the walk against one chord index and its covered rect, applying
    * the pace limit, the follow window, and the dead-end confirmation rule:
@@ -1612,6 +1704,7 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
         hold,
         ...(budget !== undefined ? { maxSteps: budget } : {}),
         ...(levelOfRef.current ? { levelOf: levelOfRef.current } : {}),
+        ...(storeRef.current ? { onPoint: feedPoint } : {}),
       });
       if (budget !== undefined) {
         paceTokensRef.current = Math.max(0, paceTokensRef.current - (trail.steps - stepsBefore));
@@ -1672,7 +1765,7 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
       ensureFollow();
       maybeFeed();
     },
-    [paceBudget, scheduleWalkTick, publishTrace, scheduleDraw, ensureFollow, maybeFeed, requestFeed],
+    [paceBudget, scheduleWalkTick, publishTrace, scheduleDraw, ensureFollow, maybeFeed, requestFeed, feedPoint],
   );
   const advanceAgainstRef = useRef(advanceAgainst);
   advanceAgainstRef.current = advanceAgainst;
@@ -1722,6 +1815,8 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
     const hadFound = foundRef.current.length > 0;
     if (!trailRef.current && keptRef.current.length === 0 && !hadFound) return;
     trailRef.current = null;
+    storeRef.current = null;
+    pyramidRef.current = null;
     rendererRef.current?.setTrail(null);
     // Found circuits accumulate while "keep them" is on, so clearing has to
     // let go of them too — otherwise there is no way back to an empty screen.
@@ -1772,6 +1867,7 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
       const fresh = startTrail(hit, chordsRef.current?.rows ?? TRANSITION_TYPES);
       trailRef.current = fresh;
       armColouring(fresh);
+      startStore(fresh);
       // A new chase gets a fresh dolly NOW, not on the first follow frame: a
       // tiny circuit can close inside the very first walk slice, and a dolly
       // that does not exist yet would have nothing to glide to the closure.
@@ -1780,7 +1876,7 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
       runWalk();
       return true;
     },
-    [ensureIndex, runWalk, archiveFinishedTrail, publishSeed, armColouring],
+    [ensureIndex, runWalk, archiveFinishedTrail, publishSeed, armColouring, startStore],
   );
 
   /**
@@ -1835,12 +1931,13 @@ export function InfiniteCanvas(props: InfiniteCanvasProps): JSX.Element {
     const fresh = startTrail(oriented, chordsRef.current?.rows ?? TRANSITION_TYPES);
     trailRef.current = fresh;
     armColouring(fresh);
+    startStore(fresh);
     // Same rule as a live tap: the dolly must exist before the first walk
     // slice, or an instantly-closed circuit would never be glided to.
     followStateRef.current = followOnRef.current ? createFollowCamera(fresh) : null;
     publishSeed(oriented);
     runWalk();
-  }, [ensureIndex, publishSeed, runWalk, requestSeedFeed, armColouring]);
+  }, [ensureIndex, publishSeed, runWalk, requestSeedFeed, armColouring, startStore]);
   const tryReplayRef = useRef(tryReplay);
   tryReplayRef.current = tryReplay;
 

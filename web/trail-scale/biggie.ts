@@ -22,7 +22,7 @@ import { buildLeafChordTable } from '../src/pages/map/chords';
 import { levelOfFrom, levelRgb, LEVEL_SPAN } from '../src/pages/map/ancestry';
 import { advanceWalk, buildChordIndex, hitTestChord, startTrail, trimTrail, type ChordEnd } from '../src/pages/map/strandWalk';
 import { TrailPyramid } from '../src/pages/map/trail/pyramid';
-import { emptyPicture, rasterize, type PixelGrid } from '../src/pages/map/trail/raster';
+import { emptyPicture, pixelGrid, rasterize, ruleAt, type Picture, type PixelGrid } from '../src/pages/map/trail/raster';
 import { CHUNK, latticeOf, SQRT3, TrailStore } from '../src/pages/map/trail/store';
 import { SEAM_STRAND, type WalkSpec } from '../src/pages/map/trail/__tests__/walkFixture';
 
@@ -144,7 +144,7 @@ for (let c = 0; c < S.chunkCount; c++) {
 log(`extent: ${(maxX - minX).toFixed(0)} by ${(maxY - minY).toFixed(0)} tile edges`);
 
 const scratch = new Float64Array(2 * (CHUNK + 1));
-function reference(g: PixelGrid): Float64Array {
+function reference(g: PixelGrid): Picture {
   const out = emptyPicture(g);
   for (let c = 0; c < S.chunkCount; c++) {
     const { first, count } = S.chunkSegments(c);
@@ -209,10 +209,10 @@ const GAP = 12;
 /** [reference | pyramid | difference] side by side; returns the mismatch count. */
 function comparison(path: string, g: PixelGrid): { wrong: number; refSec: string; pyrSec: string } {
   let t = performance.now();
-  const want = reference(g);
+  const want = reference(g).idx;
   const refSec = sec(t);
   t = performance.now();
-  const got = pyr.draw(g).picture;
+  const got = pyr.draw(g).picture.idx;
   const pyrSec = sec(t);
   const W = 3 * g.w + 2 * GAP;
   const rgb = new Uint8Array(3 * W * g.h).fill(60);
@@ -233,15 +233,15 @@ function comparison(path: string, g: PixelGrid): { wrong: number; refSec: string
 
 const centred = (x: number, y: number, s: number, w: number, h: number): PixelGrid => {
   const p = 2 ** s;
-  return { s, m0: Math.floor(x / p) - (w >> 1), n0: Math.floor(y / p) - (h >> 1), w, h };
+  return pixelGrid(s, Math.floor(x / p) - (w >> 1), Math.floor(y / p) - (h >> 1), w, h, ruleAt(s));
 };
 
 t0 = performance.now();
 const sWhole = Math.ceil(Math.log2(Math.max((maxX - minX) / 1500, (maxY - minY) / 1000)));
 {
   const p = 2 ** sWhole;
-  const g: PixelGrid = { s: sWhole, m0: Math.floor(minX / p) - 8, n0: Math.floor(minY / p) - 8, w: Math.ceil((maxX - minX) / p) + 16, h: Math.ceil((maxY - minY) / p) + 16 };
-  const pic = pyr.draw(g).picture;
+  const g = pixelGrid(sWhole, Math.floor(minX / p) - 8, Math.floor(minY / p) - 8, Math.ceil((maxX - minX) / p) + 16, Math.ceil((maxY - minY) / p) + 16, ruleAt(sWhole));
+  const pic = pyr.draw(g).picture.idx;
   const rgb = new Uint8Array(3 * g.w * g.h);
   paint(rgb, g.w, 0, g, pic);
   png(`${OUT}/whole.png`, g.w, g.h, rgb);
@@ -258,9 +258,9 @@ if (LEVELS) {
   log('chords by shared level: ' + legend.map(([l, c]) => `${l < 0 ? '?' : l}:${c.toLocaleString('en-US')}`).join(' '));
   for (const s of [sWhole, sWhole - 1, sWhole - 2]) {
     const p = 2 ** s;
-    const g: PixelGrid = { s, m0: Math.floor(minX / p) - 8, n0: Math.floor(minY / p) - 8, w: Math.ceil((maxX - minX) / p) + 16, h: Math.ceil((maxY - minY) / p) + 16 };
+    const g = pixelGrid(s, Math.floor(minX / p) - 8, Math.floor(minY / p) - 8, Math.ceil((maxX - minX) / p) + 16, Math.ceil((maxY - minY) / p) + 16, ruleAt(s));
     const t = performance.now();
-    const pic = pyr.draw(g).picture;
+    const pic = pyr.draw(g).picture.idx;
     const bar = 40;
     const rgb = new Uint8Array(3 * g.w * (g.h + bar));
     for (let row = 0; row < g.h; row++) {
@@ -303,7 +303,7 @@ const spots: [string, number, number][] = [['seed', midX, midY], ['third', third
 for (let s = sWhole; s >= -2; s--) {
   const [name, x, y] = spots[(sWhole - s) % 2];
   const g = s === sWhole
-    ? { s, m0: Math.floor(minX / 2 ** s) - 8, n0: Math.floor(minY / 2 ** s) - 8, w: Math.ceil((maxX - minX) / 2 ** s) + 16, h: Math.ceil((maxY - minY) / 2 ** s) + 16 }
+    ? pixelGrid(s, Math.floor(minX / 2 ** s) - 8, Math.floor(minY / 2 ** s) - 8, Math.ceil((maxX - minX) / 2 ** s) + 16, Math.ceil((maxY - minY) / 2 ** s) + 16, ruleAt(s))
     : centred(x, y, s, 640, 420);
   const r = comparison(`${OUT}/level-${s}.png`, g);
   wrongAll += r.wrong;

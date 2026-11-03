@@ -5,9 +5,9 @@
  * the rasterizer's single inequality.
  */
 import { describe, expect, it } from 'vitest';
-import { coversExact, emptyPicture, newStats, rasterize, TRAIL_RADIUS, type PixelGrid } from '../raster';
+import { COUNT_CAP, coversExact, emptyPicture, newStats, pixelGrid, rasterize, ruleAt, strokeRule, TRAIL_RADIUS, type Picture, type PixelGrid } from '../raster';
 import { SQRT3 } from '../store';
-import { coversBrute } from './q3';
+import { add, coversBrute, dyadic, latticePt, sign, sub } from './q3';
 
 /** A small seeded generator, so a failure names its case. */
 function rng(seed: number): () => number {
@@ -41,14 +41,32 @@ function randomPolyline(rand: () => number, n: number, start: [number, number]):
   return pts;
 }
 
-function brutePicture(pts: Float64Array, count: number, g: PixelGrid): Float64Array {
+/** Whether the midpoint of segment A -> B lies in pixel (m, n) of level s: `n p <= y < (n + 1) p` in BigInt Q(sqrt 3), and the same for x. */
+function midpointIn(ai: number, aj: number, bi: number, bj: number, m: number, n: number, s: number): boolean {
+  const [ax, ay] = latticePt(ai, aj);
+  const [bx, by] = latticePt(bi, bj);
+  const half = dyadic(1, -1);
+  const x = { a: add(ax, bx).a * half.a, b: 0n, d: add(ax, bx).d * half.d };
+  const y = { a: 0n, b: add(ay, by).b * half.a, d: add(ay, by).d * half.d };
+  const inside = (v: { a: bigint; b: bigint; d: bigint }, k: number): boolean => sign(sub(v, dyadic(k, s))) >= 0 && sign(sub(dyadic(k + 1, s), v)) > 0;
+  return inside(x, m) && inside(y, n);
+}
+
+/** Every pixel against every segment: the highest segment whose stroke holds the centre, or under coverage the highest and how many have their midpoint in it. */
+function brutePicture(pts: Float64Array, count: number, g: PixelGrid): Picture {
   const out = emptyPicture(g);
+  const r = g.rule.radius;
   for (let n = g.n0; n < g.n0 + g.h; n++) {
     for (let m = g.m0; m < g.m0 + g.w; m++) {
+      const o = (n - g.n0) * g.w + (m - g.m0);
       for (let k = count - 1; k >= 0; k--) {
-        if (coversBrute(pts[2 * k], pts[2 * k + 1], pts[2 * k + 2], pts[2 * k + 3], m, n, g.s, TRAIL_RADIUS.num, TRAIL_RADIUS.den)) {
-          out[(n - g.n0) * g.w + (m - g.m0)] = k;
-          break;
+        const hit = g.rule.mode === 'coverage'
+          ? midpointIn(pts[2 * k], pts[2 * k + 1], pts[2 * k + 2], pts[2 * k + 3], m, n, g.s)
+          : coversBrute(pts[2 * k], pts[2 * k + 1], pts[2 * k + 2], pts[2 * k + 3], m, n, g.s, r.num, r.den);
+        if (hit) {
+          if (out.idx[o] < 0) out.idx[o] = k;
+          if (out.cnt) { if (out.cnt[o] < COUNT_CAP) out.cnt[o]++; }
+          else break;
         }
       }
     }
@@ -56,12 +74,17 @@ function brutePicture(pts: Float64Array, count: number, g: PixelGrid): Float64Ar
   return out;
 }
 
+const same = (got: Picture, want: Picture): void => {
+  expect(Array.from(got.idx)).toEqual(Array.from(want.idx));
+  expect(got.cnt ? Array.from(got.cnt) : null).toEqual(want.cnt ? Array.from(want.cnt) : null);
+};
+
 /** A grid of level s around the polyline's first point, w x h pixels. */
 function gridAround(pts: Float64Array, s: number, w: number, h: number, rand: () => number): PixelGrid {
   const p = 2 ** s;
   const x = pts[0] / 4;
   const y = (pts[1] * SQRT3) / 4;
-  return { s, m0: Math.floor(x / p) - Math.floor(w * rand()), n0: Math.floor(y / p) - Math.floor(h * rand()), w, h };
+  return pixelGrid(s, Math.floor(x / p) - Math.floor(w * rand()), Math.floor(y / p) - Math.floor(h * rand()), w, h, strokeRule(TRAIL_RADIUS));
 }
 
 describe('exact trail rasterizer', () => {
@@ -81,9 +104,9 @@ describe('exact trail rasterizer', () => {
       const got = emptyPicture(g);
       rasterize(pts, count, 0, g, got);
       const want = brutePicture(pts, count, g);
-      expect(Array.from(got), `seed ${seed}, level ${s}`).toEqual(Array.from(want));
+      expect(Array.from(got.idx), `seed ${seed}, level ${s}`).toEqual(Array.from(want.idx));
       pictures++;
-      covered += want.filter((v) => v >= 0).length;
+      covered += want.idx.filter((v) => v >= 0).length;
     }
     expect(pictures).toBe(40);
     expect(covered).toBeGreaterThan(1000);
@@ -120,16 +143,45 @@ describe('exact trail rasterizer', () => {
     const stats = newStats();
     // y = 0 (j = 0) is a pixel edge at every level; segment from i = 0 to i = 6 (x 0 .. 1.5).
     const pts = new Float64Array([0, 0, 6, 0]);
-    const g: PixelGrid = { s: -2, m0: -4, n0: -4, w: 16, h: 8 };
+    const g = pixelGrid(-2, -4, -4, 16, 8, strokeRule({ num: 1, den: 2 }));
     const got = emptyPicture(g);
-    rasterize(pts, 1, 0, g, got, { num: 1, den: 2 }, stats);
-    const want = emptyPicture(g);
-    for (let n = g.n0; n < g.n0 + g.h; n++)
-      for (let m = g.m0; m < g.m0 + g.w; m++)
-        if (coversBrute(0, 0, 6, 0, m, n, g.s, 1, 2)) want[(n - g.n0) * g.w + (m - g.m0)] = 0;
-    expect(Array.from(got)).toEqual(Array.from(want));
+    rasterize(pts, 1, 0, g, got, stats);
+    const want = brutePicture(pts, 1, g);
+    same(got, want);
     expect(stats.exact).toBeGreaterThan(0);
     // The two rows touching y = 0 are both drawn, their centres exactly half a pixel away.
-    expect(want.filter((v) => v === 0).length).toBeGreaterThanOrEqual(2 * 6);
+    expect(want.idx.filter((v) => v === 0).length).toBeGreaterThanOrEqual(2 * 6);
+  }, 60000);
+
+  it('counts the crossings under coverage, and strokes where the line is a pixel or more', () => {
+    const rand = rng(21);
+    let coverage = 0;
+    let strokes = 0;
+    for (let seed = 1; seed <= 24; seed++) {
+      const count = 20 + Math.floor(rand() * 40);
+      const pts = randomPolyline(rand, count, [2 * Math.floor(rand() * 2000), 2 * Math.floor(rand() * 2000)]);
+      // A line 0.2 tile edges wide: a stroke at 8 pixels a tile edge and closer, coverage from there out.
+      const s = -4 + Math.floor(rand() * 8);
+      const rule = ruleAt(s, 0.2);
+      const p = 2 ** s;
+      const g = pixelGrid(s, Math.floor(pts[0] / 4 / p) - 12, Math.floor((pts[1] * SQRT3) / 4 / p) - 10, 24, 20, rule);
+      const got = emptyPicture(g);
+      rasterize(pts, count, 0, g, got);
+      same(got, brutePicture(pts, count, g));
+      if (rule.mode === 'coverage') {
+        coverage++;
+        expect(got.cnt).not.toBeNull();
+        // Every segment is counted once, in one pixel: never more than the segments, and the window holds some.
+        const counted = got.cnt!.reduce((a, b) => a + b, 0);
+        expect(counted).toBeGreaterThan(0);
+        expect(counted).toBeLessThanOrEqual(count);
+        expect(rule.each).toBeCloseTo(0.2 / (p * p), 12);
+      } else {
+        strokes++;
+        expect(got.cnt).toBeNull();
+      }
+    }
+    expect(coverage).toBeGreaterThan(3);
+    expect(strokes).toBeGreaterThan(3);
   }, 60000);
 });

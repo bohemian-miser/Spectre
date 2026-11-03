@@ -14,7 +14,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { deflateSync } from 'node:zlib';
 import { TrailPyramid } from '../src/pages/map/trail/pyramid';
-import { emptyPicture, newStats, rasterize, type PixelGrid } from '../src/pages/map/trail/raster';
+import { emptyPicture, newStats, pixelGrid, rasterize, ruleAt, type Picture, type PixelGrid } from '../src/pages/map/trail/raster';
 import { latticeOf, SQRT3, TrailStore } from '../src/pages/map/trail/store';
 import { SEAM_STRAND, walkPoints } from '../src/pages/map/trail/__tests__/walkFixture';
 
@@ -54,7 +54,7 @@ console.log(`walked ${n.toLocaleString('en-US')} points in ${walkSec.toFixed(1)}
 t0 = performance.now();
 const pyr = new TrailPyramid(store, { stored: STORED, tile: 256 });
 const buildStats = newStats();
-pyr.update(buildStats);
+pyr.update(Infinity, buildStats);
 console.log(`pyramid: levels ${STORED.join(', ')} built in ${sec(t0).toFixed(1)} s, ${(pyr.bytes / 1e6).toFixed(1)} MB in tiles; ${buildStats.tested.toLocaleString('en-US')} pixel tests, ${buildStats.exact} settled exactly`);
 console.log('tiles per level: ' + STORED.map((s) => `${s}:${pyr.tileCount(s)}`).join(' '));
 
@@ -65,7 +65,7 @@ for (let k = 0; k < n; k++) {
   minX = Math.min(minX, x); maxX = Math.max(maxX, x); minY = Math.min(minY, y); maxY = Math.max(maxY, y);
 }
 
-function reference(g: PixelGrid): Float64Array {
+function reference(g: PixelGrid): Picture {
   const out = emptyPicture(g);
   rasterize(pts, store.segmentCount, 0, g, out);
   return out;
@@ -73,7 +73,7 @@ function reference(g: PixelGrid): Float64Array {
 
 const centredAt = (x: number, y: number, s: number, w = W, h = H): PixelGrid => {
   const p = 2 ** s;
-  return { s, m0: Math.floor(x / p) - (w >> 1), n0: Math.floor(y / p) - (h >> 1), w, h };
+  return pixelGrid(s, Math.floor(x / p) - (w >> 1), Math.floor(y / p) - (h >> 1), w, h, ruleAt(s));
 };
 
 interface Row { windows: number; inked: number; wrong: number; refSec: number; pyrSec: number; from: Set<string>; maxSegs: number }
@@ -90,14 +90,15 @@ function check(g: PixelGrid): void {
   row.pyrSec += sec(t);
   row.from.add(got.from);
   row.maxSegs = Math.max(row.maxSegs, got.segments);
-  for (let i = 0; i < want.length; i++) {
-    if (want[i] >= 0) row.inked++;
-    if (got.picture[i] !== want[i]) row.wrong++;
+  const differ = (a: Picture, b: Picture, i: number): boolean => a.idx[i] !== b.idx[i] || (a.cnt ? a.cnt[i] : 0) !== (b.cnt ? b.cnt[i] : 0);
+  for (let i = 0; i < want.idx.length; i++) {
+    if (want.idx[i] >= 0) row.inked++;
+    if (differ(got.picture, want, i)) row.wrong++;
   }
   // Stored levels are also drawn from chunks: both routes must agree.
   if (got.from === 'tiles') {
     const viaChunks = pyr.draw(g, 'chunks').picture;
-    for (let i = 0; i < want.length; i++) if (viaChunks[i] !== want[i]) row.wrong++;
+    for (let i = 0; i < want.idx.length; i++) if (differ(viaChunks, want, i)) row.wrong++;
   }
   row.windows++;
 }
@@ -126,7 +127,7 @@ for (const s of LEVELS) {
   const w = Math.ceil((maxX - minX) / p) + 8;
   const h = Math.ceil((maxY - minY) / p) + 8;
   if (w > 2048 || h > 2048) continue;
-  check({ s, m0: Math.floor(minX / p) - 4, n0: Math.floor(minY / p) - 4, w, h });
+  check(pixelGrid(s, Math.floor(minX / p) - 4, Math.floor(minY / p) - 4, w, h, ruleAt(s)));
 }
 console.log(`checked in ${sec(t0).toFixed(0)} s\n`);
 
@@ -183,7 +184,8 @@ function colour(t: number): [number, number, number] {
   return [f(0), f(8), f(4)];
 }
 
-function picturePng(path: string, g: PixelGrid, pic: Float64Array): void {
+function picturePng(path: string, g: PixelGrid, picture: Picture): void {
+  const pic = picture.idx;
   const rgb = new Uint8Array(3 * g.w * g.h).fill(14);
   for (let row = 0; row < g.h; row++) {
     for (let col = 0; col < g.w; col++) {
@@ -199,7 +201,7 @@ function picturePng(path: string, g: PixelGrid, pic: Float64Array): void {
   // The whole strand, and a zoom into the middle of it, each from the pyramid.
   const s = Math.ceil(Math.log2(Math.max((maxX - minX) / 1100, (maxY - minY) / 800)));
   const p = 2 ** s;
-  const whole: PixelGrid = { s, m0: Math.floor(minX / p) - 8, n0: Math.floor(minY / p) - 8, w: Math.ceil((maxX - minX) / p) + 16, h: Math.ceil((maxY - minY) / p) + 16 };
+  const whole = pixelGrid(s, Math.floor(minX / p) - 8, Math.floor(minY / p) - 8, Math.ceil((maxX - minX) / p) + 16, Math.ceil((maxY - minY) / p) + 16, ruleAt(s));
   picturePng(`${OUT}/whole.png`, whole, pyr.draw(whole).picture);
   const k = Math.floor(n / 2);
   for (const z of [s - 3, s - 6, s - 9]) {

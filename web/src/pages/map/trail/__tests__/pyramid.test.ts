@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { TrailPyramid } from '../pyramid';
-import { emptyPicture, rasterize, type PixelGrid } from '../raster';
+import { emptyPicture, firstDifference, pixelGrid, rasterize, ruleAt, type Picture, type PixelGrid } from '../raster';
 import { CHUNK, latticeOf, SQRT3, TrailStore } from '../store';
 import { SEAM_STRAND, walkPoints } from './walkFixture';
 
@@ -30,7 +30,7 @@ function storeOf(xy: Float64Array, upTo = xy.length / 2): TrailStore {
   return s;
 }
 
-function reference(store: TrailStore, g: PixelGrid): Float64Array {
+function reference(store: TrailStore, g: PixelGrid): Picture {
   const out = emptyPicture(g);
   rasterize(store.allPoints(), store.segmentCount, 0, g, out);
   return out;
@@ -41,15 +41,13 @@ function windowAt(pts: Float64Array, k: number, s: number, w: number, h: number)
   const p = 2 ** s;
   const x = pts[2 * k] / 4;
   const y = (pts[2 * k + 1] * SQRT3) / 4;
-  return { s, m0: Math.floor(x / p) - (w >> 1), n0: Math.floor(y / p) - (h >> 1), w, h };
+  return pixelGrid(s, Math.floor(x / p) - (w >> 1), Math.floor(y / p) - (h >> 1), w, h, ruleAt(s));
 }
 
 /** Compare and report the first differing pixel. */
-function expectSame(got: Float64Array, want: Float64Array, what: string): void {
-  if (got.length !== want.length) throw new Error(`${what}: sizes differ`);
-  for (let i = 0; i < got.length; i++) {
-    if (got[i] !== want[i]) throw new Error(`${what}: pixel ${i} is segment ${got[i]}, should be ${want[i]}`);
-  }
+function expectSame(got: Picture, want: Picture, what: string): void {
+  const i = firstDifference(got, want);
+  if (i >= 0) throw new Error(`${what}: pixel ${i} is segment ${got.idx[i]} crossed ${got.cnt?.[i] ?? 'once'}, should be ${want.idx[i]} crossed ${want.cnt?.[i] ?? 'once'}`);
 }
 
 describe('trail pyramid', () => {
@@ -71,7 +69,7 @@ describe('trail pyramid', () => {
         expectSame(chunks.picture, want, `level ${s}, point ${k}, from chunks`);
         if (STORED.includes(s)) expectSame(pyr.draw(g, 'tiles').picture, want, `level ${s}, point ${k}, from tiles`);
         windows++;
-        inked += want.filter((v) => v >= 0).length;
+        inked += want.idx.filter((v) => v >= 0).length;
       }
     }
     expect(windows).toBe(LEVELS.length * 6);
@@ -86,18 +84,12 @@ describe('trail pyramid', () => {
     }
     for (const s of [4, 5, 6, 7, 8]) {
       const p = 2 ** s;
-      const g: PixelGrid = {
-        s,
-        m0: Math.floor(minI / 4 / p) - 3,
-        n0: Math.floor((minJ * SQRT3) / 4 / p) - 3,
-        w: Math.ceil((maxI - minI) / 4 / p) + 7,
-        h: Math.ceil(((maxJ - minJ) * SQRT3) / 4 / p) + 7,
-      };
+      const g = pixelGrid(s, Math.floor(minI / 4 / p) - 3, Math.floor((minJ * SQRT3) / 4 / p) - 3, Math.ceil((maxI - minI) / 4 / p) + 7, Math.ceil(((maxJ - minJ) * SQRT3) / 4 / p) + 7, ruleAt(s));
       const want = reference(store, g);
       expectSame(pyr.draw(g, 'tiles').picture, want, `whole strand, level ${s}, from tiles`);
       expectSame(pyr.draw(g, 'chunks').picture, want, `whole strand, level ${s}, from chunks`);
-      // Every segment's start lies under the strand's ink.
-      expect(want.some((v) => v === store.segmentCount - 1)).toBe(true);
+      // The last segment lies under the strand's ink.
+      expect(want.idx.some((v) => v === store.segmentCount - 1)).toBe(true);
     }
   }, 60000);
 
@@ -135,5 +127,24 @@ describe('trail pyramid', () => {
       }
     }
     expect(growing.pointCount).toBe(total);
+  }, 60000);
+
+  it('updates in slices to the same tiles as in one go', () => {
+    const sliced = new TrailPyramid(store, { stored: [2, 4, 6], tile: 64 });
+    let rounds = 0;
+    while (sliced.update(3000) > 0) rounds++;
+    // Each round draws 3000 segments; the last one, which leaves nothing behind, is not counted.
+    expect(rounds).toBe(Math.ceil(store.segmentCount / 3000) - 1);
+    expect(sliced.behind).toBe(0);
+    const whole = new TrailPyramid(store, { stored: [2, 4, 6], tile: 64 });
+    whole.update();
+    const rand = rng(3);
+    for (const s of [2, 4, 6]) {
+      for (let t = 0; t < 4; t++) {
+        const g = windowAt(pts, Math.floor(rand() * store.pointCount), s, 90, 60);
+        expectSame(sliced.draw(g, 'tiles').picture, whole.draw(g, 'tiles').picture, `sliced level ${s}`);
+        expectSame(sliced.draw(g, 'tiles').picture, reference(store, g), `sliced level ${s} against the reference`);
+      }
+    }
   }, 60000);
 });
