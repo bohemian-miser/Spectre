@@ -150,6 +150,14 @@ export interface ExplorerState {
    */
   readonly traceColour?: 'ancestor';
   /**
+   * Chases of at least this many tiles are drawn from their exact pyramid
+   * instead of the trail polyline (`tp=`), 0 for never. Omitted at the
+   * default, {@link DEFAULT_PYRAMID_AT}.
+   */
+  readonly pyramidAt?: number;
+  /** The width in tile edges of a chase drawn from its pyramid (`tw=`). Omitted at the default, {@link DEFAULT_TRAIL_WIDTH}. */
+  readonly trailWidth?: number;
+  /**
    * Tiles find-all may analyse in one pass (`fx=`), which also sets where
    * "circuit zoom" parks. Absent = {@link DEFAULT_FIND_CEILING}.
    */
@@ -376,6 +384,13 @@ export const DEFAULT_FLAGS = FLAG.BACKGROUNDS | FLAG.OUTLINES | FLAG.LINES | FLA
  */
 export const LINK_FLAGS = DEFAULT_FLAGS & ~FLAG.BACKGROUNDS;
 
+/** Tiles a chase has before it is drawn from its pyramid. */
+export const DEFAULT_PYRAMID_AT = 1_000_000;
+/** The width, in tile edges, of a chase drawn from its pyramid. */
+export const DEFAULT_TRAIL_WIDTH = 0.2;
+export const clampPyramidAt = (n: number): number => (Number.isFinite(n) && n > 0 ? Math.min(1e9, Math.max(1000, Math.round(n))) : 0);
+export const clampTrailWidth = (w: number): number => (Number.isFinite(w) ? Math.min(3, Math.max(0.01, Math.round(w * 100) / 100)) : DEFAULT_TRAIL_WIDTH);
+
 export const DEFAULT_EXPLORER_STATE: ExplorerState = Object.freeze({
   family: 'spectre' as TileFamilyId,
   rootTile: 'Delta' as TileTypeId,
@@ -583,6 +598,8 @@ export function encodeExplorerState(s: ExplorerState): URLSearchParams {
   if (s.showTicker === true) q.set('tk', '1');
   if (s.showTransitions) q.set('tg', '1');
   if (s.traceColour === 'ancestor') q.set('tcl', 'a');
+  if (s.pyramidAt !== undefined && clampPyramidAt(s.pyramidAt) !== DEFAULT_PYRAMID_AT) q.set('tp', String(clampPyramidAt(s.pyramidAt)));
+  if (s.trailWidth !== undefined && clampTrailWidth(s.trailWidth) !== DEFAULT_TRAIL_WIDTH) q.set('tw', String(clampTrailWidth(s.trailWidth)));
   if (s.findCeiling !== undefined && clampFindCeiling(s.findCeiling) !== DEFAULT_FIND_CEILING) {
     q.set('fx', String(clampFindCeiling(s.findCeiling)));
   }
@@ -706,6 +723,10 @@ export function decodeExplorerState(q: URLSearchParams): ExplorerState {
   const tgRaw = q.get('tg');
   const showTransitions = tgRaw === '1' || tgRaw === 'true' ? true : undefined;
   const traceColour = q.get('tcl') === 'a' ? ('ancestor' as const) : undefined;
+  const tpRaw = q.get('tp');
+  const pyramidAt = tpRaw !== null && Number.isFinite(Number(tpRaw)) && clampPyramidAt(Number(tpRaw)) !== DEFAULT_PYRAMID_AT ? clampPyramidAt(Number(tpRaw)) : undefined;
+  const twRaw = Number.parseFloat(q.get('tw') ?? '');
+  const trailWidth = Number.isFinite(twRaw) && clampTrailWidth(twRaw) !== DEFAULT_TRAIL_WIDTH ? clampTrailWidth(twRaw) : undefined;
   const fxRaw = Number.parseInt(q.get('fx') ?? '', 10);
   const findCeiling = Number.isFinite(fxRaw) ? clampFindCeiling(fxRaw) : undefined;
   const fhRaw = Number.parseInt(q.get('fh') ?? '', 10);
@@ -750,6 +771,8 @@ export function decodeExplorerState(q: URLSearchParams): ExplorerState {
     ...(showTicker === true ? { showTicker } : {}),
     ...(showTransitions ? { showTransitions } : {}),
     ...(traceColour ? { traceColour } : {}),
+    ...(pyramidAt !== undefined ? { pyramidAt } : {}),
+    ...(trailWidth !== undefined ? { trailWidth } : {}),
     ...(findCeiling !== undefined && findCeiling !== DEFAULT_FIND_CEILING ? { findCeiling } : {}),
     ...(foundHold !== undefined && foundHold !== DEFAULT_FOUND_HOLD ? { foundHold } : {}),
     ...(highlightOnScreen ? { highlightOnScreen } : {}),

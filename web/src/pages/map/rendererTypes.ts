@@ -91,6 +91,21 @@ export interface RegionFillGeometry {
   readonly alpha?: number;
 }
 
+/**
+ * A picture of the traced strand drawn from its pyramid: `w` by `h` pixels
+ * of `p` world units each, the bottom-left corner of the bottom-left pixel at
+ * `origin`, RGBA with row 0 at the top. Drawn as one textured quad in world
+ * coordinates, scaled to the camera, over everything but the highlights.
+ */
+export interface TrailPicture {
+  readonly origin: Pt;
+  readonly p: number;
+  readonly w: number;
+  readonly h: number;
+  readonly rgba: Uint8ClampedArray;
+  readonly version: number;
+}
+
 export interface MapRenderStyle {
   /**
    * Leaf fill colours in `leafOrder(family)` order for the renderer's family
@@ -160,6 +175,8 @@ export interface MapRenderer {
    * the camera goes — including back where the walk started.
    */
   setTrail(trail: TrailGeometry | null): void;
+  /** Adopt a picture of the traced strand from its pyramid (null clears it), drawn where the trail is. */
+  setTrailPicture?(picture: TrailPicture | null): void;
   /**
    * Adopt the kept closed circuits (empty/null clears them). Each entry is a
    * FROZEN trail — a walk that came back to its start — drawn exactly like the

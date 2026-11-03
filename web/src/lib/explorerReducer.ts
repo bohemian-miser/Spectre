@@ -28,6 +28,10 @@ import {
   clampTracePace,
   DEFAULT_FOLLOW_DAMPING,
   clampTrailHold,
+  clampPyramidAt,
+  clampTrailWidth,
+  DEFAULT_PYRAMID_AT,
+  DEFAULT_TRAIL_WIDTH,
   leafOrder,
   maxLevelFor,
   subsetToEdges,
@@ -88,6 +92,8 @@ export type ExplorerAction =
   | { readonly type: 'setShowTicker'; readonly showTicker: boolean }
   | { readonly type: 'setShowTransitions'; readonly showTransitions: boolean }
   | { readonly type: 'setTraceColour'; readonly traceColour: 'rainbow' | 'ancestor' }
+  | { readonly type: 'setPyramidAt'; readonly pyramidAt: number }
+  | { readonly type: 'setTrailWidth'; readonly trailWidth: number }
   | { readonly type: 'setFindCeiling'; readonly findCeiling: number }
   | { readonly type: 'setFoundHold'; readonly foundHold: number }
   | { readonly type: 'setHighlightOnScreen'; readonly on: boolean }
@@ -313,6 +319,26 @@ export function explorerReducer(state: ExplorerState, action: ExplorerAction): E
         return rest as ExplorerState;
       }
       return { ...state, showTransitions: true };
+    }
+
+    case 'setPyramidAt': {
+      const pyramidAt = clampPyramidAt(action.pyramidAt);
+      if (pyramidAt === explorerPyramidAt(state)) return state;
+      if (pyramidAt === DEFAULT_PYRAMID_AT) {
+        const { pyramidAt: _p, ...rest } = state;
+        return rest as ExplorerState;
+      }
+      return { ...state, pyramidAt };
+    }
+
+    case 'setTrailWidth': {
+      const trailWidth = clampTrailWidth(action.trailWidth);
+      if (trailWidth === explorerTrailWidth(state)) return state;
+      if (trailWidth === DEFAULT_TRAIL_WIDTH) {
+        const { trailWidth: _w, ...rest } = state;
+        return rest as ExplorerState;
+      }
+      return { ...state, trailWidth };
     }
 
     // Default rainbow: colouring by ancestry is opt-in.
@@ -650,6 +676,16 @@ export function explorerHighlightInPath(state: ExplorerState): boolean {
 /** Tile-type transition graph — OFF unless `tg=1` asks for it. */
 export function explorerShowTransitions(state: ExplorerState): boolean {
   return state.showTransitions === true;
+}
+
+/** Tiles a chase has before it is drawn from its pyramid; 0 for never. */
+export function explorerPyramidAt(state: ExplorerState): number {
+  return state.pyramidAt === undefined ? DEFAULT_PYRAMID_AT : clampPyramidAt(state.pyramidAt);
+}
+
+/** The width in tile edges of a chase drawn from its pyramid. */
+export function explorerTrailWidth(state: ExplorerState): number {
+  return state.trailWidth === undefined ? DEFAULT_TRAIL_WIDTH : clampTrailWidth(state.trailWidth);
 }
 
 /** How the traced strand is inked: the rainbow unless `tcl=a` asks for the shared-supertile colouring. */

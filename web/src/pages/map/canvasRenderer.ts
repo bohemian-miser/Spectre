@@ -43,6 +43,7 @@ import {
   type RegionFillGeometry,
   type RegionMeshTable,
   type TrailGeometry,
+  type TrailPicture,
 } from './rendererTypes';
 import {
   BASE_LINE_PX,
@@ -187,6 +188,22 @@ export function createCanvas2dRenderer(
 
   const setTrail = (next: TrailGeometry | null): void => {
     trail = next && next.pointCount >= 2 ? next : null;
+  };
+
+  /** The trail's picture from its pyramid, as a canvas to draw scaled. */
+  let picture: TrailPicture | null = null;
+  let picCanvas: HTMLCanvasElement | null = null;
+  let picVersion = -1;
+  const setTrailPicture = (next: TrailPicture | null): void => {
+    picture = next && next.w > 0 && next.h > 0 ? next : null;
+    if (!picture || picture.version === picVersion) return;
+    if (!picCanvas) picCanvas = document.createElement('canvas');
+    picCanvas.width = picture.w;
+    picCanvas.height = picture.h;
+    const pc = picCanvas.getContext('2d');
+    if (!pc) return;
+    pc.putImageData(new ImageData(new Uint8ClampedArray(picture.rgba), picture.w, picture.h), 0, 0);
+    picVersion = picture.version;
   };
 
   const setCircuits = (next: readonly TrailGeometry[] | null): void => {
@@ -361,6 +378,22 @@ export function createCanvas2dRenderer(
     for (const c of hideStrands ? [] : circuits) {
       trailPoints += strokeTrail(C, c, cam, bw, bh, dpr, BASE_LINE_PX * lineScale * trailScale);
     }
+    if (picture && picCanvas && picVersion === picture.version && !hideStrands) {
+      // The pyramid's picture of the whole chase, in the trail's place. Its
+      // row 0 is the window's highest world y, which is the bottom of the
+      // screen (world y runs down it), so the image is drawn flipped.
+      const off = originRelativeCenter(cam, picture.origin);
+      const s = cam.scale * dpr;
+      const x = (0 - off.x) * s + bw / 2;
+      const yTop = (picture.h * picture.p - off.y) * s + bh / 2;
+      C.save();
+      C.translate(x, yTop);
+      C.scale(1, -1);
+      C.imageSmoothingEnabled = true;
+      C.imageSmoothingQuality = 'high';
+      C.drawImage(picCanvas, 0, 0, picture.w * picture.p * s, picture.h * picture.p * s);
+      C.restore();
+    }
     if (trail && !hideStrands) {
       trailPoints += strokeTrail(C, trail, cam, bw, bh, dpr, BASE_LINE_PX * lineScale * trailScale);
     }
@@ -394,6 +427,7 @@ export function createCanvas2dRenderer(
     setChords,
     setRegionFill,
     setTrail,
+    setTrailPicture,
     setCircuits,
     setHighlights,
     setStyle,

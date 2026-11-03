@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   ALL_FLAGS,
   DEFAULT_EXPLORER_STATE,
+  DEFAULT_PYRAMID_AT,
+  DEFAULT_TRAIL_WIDTH,
   DEFAULT_INSTANCE_BUDGET,
   DEFAULT_LINE_SCALE,
   DEFAULT_TRACE_PACE,
@@ -39,6 +41,8 @@ import {
   explorerReducer,
   explorerTrace,
   explorerTrailHold,
+  explorerPyramidAt,
+  explorerTrailWidth,
   hasFlag,
   maxMatchingIndex,
   normalizeMatchingVector,
@@ -532,5 +536,22 @@ describe('trace colouring', () => {
     const off = run(on, { type: 'setTraceColour', traceColour: 'rainbow' });
     expect('traceColour' in off).toBe(false);
     expect(run(base, { type: 'setTraceColour', traceColour: 'rainbow' })).toBe(base);
+  });
+});
+
+describe('drawing a chase from its pyramid', () => {
+  it('keeps the threshold and width out of the state at their defaults', () => {
+    expect(explorerPyramidAt(base)).toBe(DEFAULT_PYRAMID_AT);
+    expect(explorerTrailWidth(base)).toBe(DEFAULT_TRAIL_WIDTH);
+    const at = run(base, { type: 'setPyramidAt', pyramidAt: 10_000 });
+    expect(explorerPyramidAt(at)).toBe(10_000);
+    expect(run(at, { type: 'setPyramidAt', pyramidAt: 10_000 })).toBe(at);
+    expect('pyramidAt' in run(at, { type: 'setPyramidAt', pyramidAt: DEFAULT_PYRAMID_AT })).toBe(false);
+    expect(explorerPyramidAt(run(base, { type: 'setPyramidAt', pyramidAt: 0 }))).toBe(0);
+    const w = run(base, { type: 'setTrailWidth', trailWidth: 0.456 });
+    expect(explorerTrailWidth(w)).toBe(0.46);
+    expect(run(w, { type: 'setTrailWidth', trailWidth: 0.46 })).toBe(w);
+    expect('trailWidth' in run(w, { type: 'setTrailWidth', trailWidth: DEFAULT_TRAIL_WIDTH })).toBe(false);
+    expect(explorerTrailWidth(run(base, { type: 'setTrailWidth', trailWidth: 100 }))).toBe(3);
   });
 });

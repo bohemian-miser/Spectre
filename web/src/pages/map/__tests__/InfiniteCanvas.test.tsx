@@ -20,7 +20,7 @@ import { comboToMatchingIndices, type TileFamilyId, type ViewportCut } from '../
 import { createCamera, worldToScreen, viewRectFor, type MapCamera } from '../camera';
 import { buildLeafChordTable, type LeafChordTable } from '../chords';
 import { InfiniteCanvas, type InfiniteCanvasApi, type InfiniteCanvasStatus } from '../InfiniteCanvas';
-import type { MapRenderStats, MapRenderStyle, MapRenderer, RegionFillGeometry, TrailGeometry } from '../rendererTypes';
+import type { MapRenderStats, MapRenderStyle, MapRenderer, RegionFillGeometry, TrailGeometry, TrailPicture } from '../rendererTypes';
 import {
   ADVANCE_MAX_STEPS, buildChordIndex, hitTestChord } from '../strandWalk';
 import type { GraphSelection } from '../transitions';
@@ -85,6 +85,7 @@ afterEach(() => {
 /** A renderer that records what it was told to draw. */
 interface FakeRenderer extends MapRenderer {
   readonly trails: (TrailGeometry | null)[];
+  readonly pictures: (TrailPicture | null)[];
   readonly circuitSets: (readonly TrailGeometry[] | null)[];
   readonly highlightSets: (readonly TrailGeometry[] | null)[];
   readonly cuts: ViewportCut[];
@@ -94,6 +95,7 @@ interface FakeRenderer extends MapRenderer {
 
 function makeRenderer(): FakeRenderer {
   const trails: (TrailGeometry | null)[] = [];
+  const pictures: (TrailPicture | null)[] = [];
   const circuitSets: (readonly TrailGeometry[] | null)[] = [];
   const highlightSets: (readonly TrailGeometry[] | null)[] = [];
   const cuts: ViewportCut[] = [];
@@ -101,6 +103,7 @@ function makeRenderer(): FakeRenderer {
   const r: FakeRenderer = {
     mode: 'webgl2',
     trails,
+    pictures,
     circuitSets,
     highlightSets,
     cuts,
@@ -109,6 +112,7 @@ function makeRenderer(): FakeRenderer {
     setCut: (cut) => cuts.push(cut),
     setChords: (_t: LeafChordTable | null) => {},
     setTrail: (t) => trails.push(t),
+    setTrailPicture: (p) => pictures.push(p),
     setCircuits: (c) => circuitSets.push(c),
     setHighlights: (h) => highlightSets.push(h),
     setRegionFill: (f) => regionFills.push(f),
@@ -182,6 +186,8 @@ interface HarnessProps {
   readonly chainLength?: number | null;
   readonly followPace?: number | null;
   readonly trailColour?: 'rainbow' | 'ancestor';
+  readonly pyramidAt?: number;
+  readonly trailWidth?: number;
   readonly family?: TileFamilyId;
   readonly traceSeed?: readonly [number, number, number, number] | null;
   readonly onTraceSeed?: (seed: readonly [number, number, number, number] | null) => void;
@@ -215,6 +221,8 @@ function Harness(props: HarnessProps): JSX.Element {
       chainLength={props.chainLength ?? null}
       followPace={props.followPace ?? null}
       trailColour={props.trailColour ?? 'rainbow'}
+      pyramidAt={props.pyramidAt}
+      trailWidth={props.trailWidth}
       family={props.family ?? 'spectre'}
       traceSeed={props.traceSeed ?? null}
       onTraceSeed={props.onTraceSeed}
@@ -1408,6 +1416,68 @@ describe('InfiniteCanvas — the exact store beside the trail', () => {
     act(() => m.api.current?.clearTrace());
     await settle();
     expect(m.status().trace.exact).toBeNull();
+  });
+
+  it('draws the chase from its pyramid once it is the threshold long, and from the trail again when the threshold moves', async () => {
+    const m = await mount({ family: 'hex', chords: HEX_CHORDS, pyramidAt: 1_000_000 });
+    const target = chordTargetOn(createCamera(0, 0, 36), HEX_CHORDS, undefined, 'hex');
+    tap(m.host, target.x, target.y);
+    await settleUntil(() => m.status().trace.steps >= 10, 'a chase of ten tiles');
+    await m.rerender({ pyramidAt: 10 });
+    await settleUntil(() => m.status().trace.exact?.picture !== null, 'a picture from the pyramid');
+    // The renderer's trail is taken off and a picture put in its place.
+    expect(m.renderer.trails[m.renderer.trails.length - 1]).toBeNull();
+    const pic = m.renderer.pictures[m.renderer.pictures.length - 1]!;
+    expect(pic).not.toBeNull();
+    expect(pic.w).toBeGreaterThan(0);
+    expect(pic.h).toBeGreaterThan(0);
+    expect(pic.rgba.length).toBe(4 * pic.w * pic.h);
+    // The window is the camera's: 36 CSS pixels a tile edge, so a pixel is
+    // 1/32 of a tile edge (the nearest power of two) and the window spans
+    // the viewport and a pixel of margin each side.
+    expect(pic.p).toBe(1 / 32);
+    expect(pic.w * pic.p).toBeGreaterThanOrEqual(m.host.clientWidth / 36);
+    // Some pixels are inked, and only along the chase: every inked pixel is
+    // within a tile edge of a chord of the chase.
+    const trail = m.status().trace;
+    let inked = 0;
+    for (let i = 3; i < pic.rgba.length; i += 4) if (pic.rgba[i] > 0) inked++;
+    expect(inked).toBeGreaterThan(0);
+    expect(trail.exact!.picture!.from).toBe('chunks');
+    expect(trail.exact!.picture!.level).toBe(-5);
+    // The picture is placed where the trail was: every chord end of the
+    // trail's geometry (the chase's points, on the lattice) lies on an inked
+    // pixel, read back through the picture's origin and pixel size.
+    const geom = [...m.renderer.trails].reverse().find((t) => t)!;
+    let on = 0;
+    let inWindow = 0;
+    for (let k = 0; k < geom.pointCount; k++) {
+      const col = Math.floor((geom.origin.x + geom.xy[2 * k] - pic.origin.x) / pic.p);
+      const row = pic.h - 1 - Math.floor((geom.origin.y + geom.xy[2 * k + 1] - pic.origin.y) / pic.p);
+      if (col < 0 || col >= pic.w || row < 0 || row >= pic.h) continue;
+      inWindow++;
+      if (pic.rgba[4 * (row * pic.w + col) + 3] > 0) on++;
+    }
+    expect(inWindow).toBeGreaterThan(5);
+    expect(on).toBe(inWindow);
+    // A threshold the chase is short of puts the trail back.
+    await m.rerender({ pyramidAt: 1_000_000 });
+    expect(m.status().trace.exact!.picture).toBeNull();
+    expect(m.renderer.pictures[m.renderer.pictures.length - 1]).toBeNull();
+    expect(m.renderer.trails[m.renderer.trails.length - 1]).not.toBeNull();
+    // Never: the same.
+    await m.rerender({ pyramidAt: 0 });
+    expect(m.status().trace.exact!.picture).toBeNull();
+    // Back on, and a new width builds the pyramid again without losing the chase.
+    const before = m.renderer.pictures.length;
+    await m.rerender({ pyramidAt: 10 });
+    await settleUntil(() => m.status().trace.exact?.picture !== null, 'the picture back');
+    await m.rerender({ pyramidAt: 10, trailWidth: 1 });
+    await settleUntil(() => m.renderer.pictures.length > before + 1 && m.status().trace.exact!.behind === 0, 'a picture at the new width');
+    expect(m.status().trace.exact!.points).toBe(m.status().trace.steps + 1);
+    act(() => m.api.current?.clearTrace());
+    await settle();
+    expect(m.renderer.pictures[m.renderer.pictures.length - 1]).toBeNull();
   });
 
   it('keeps no store on the spectres, whose chord ends are not on the lattice', async () => {
