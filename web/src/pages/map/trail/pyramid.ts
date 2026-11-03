@@ -14,7 +14,7 @@
  * exactly as rasterizing every segment of the strand would.
  */
 
-import { emptyPicture, midpointPixel, pixelGrid, ruleAt, segmentPixels, DEFAULT_LINE_WIDTH, type PixelGrid, type Picture, type RasterStats, type Rule } from './raster';
+import { COUNT_CAP, emptyPicture, midpointPixel, pixelGrid, ruleAt, segmentPixels, DEFAULT_LINE_WIDTH, type PixelGrid, type Picture, type RasterStats, type Rule } from './raster';
 import { CHUNK, SQRT3, type TrailStore } from './store';
 
 export interface PyramidOptions {
@@ -26,7 +26,7 @@ export interface PyramidOptions {
   readonly width?: number;
 }
 
-/** A tile: 4-byte segment indices (a strand of under 2^31 segments) and, under coverage, 2-byte counts that stop at 65,535, far past full brightness. */
+/** A tile: 4-byte segment indices (a strand of under 2^31 segments) and, under coverage, 2-byte counts stopping at `COUNT_CAP`. */
 interface Tile {
   readonly idx: Int32Array;
   readonly cnt: Uint16Array | null;
@@ -150,7 +150,7 @@ export class TrailPyramid {
           const tx = Math.floor(m / T), ty = Math.floor(n / T);
           const q = (n - ty * T) * T + (m - tx * T);
           tile.idx[q] = k;
-          if (tile.cnt![q] < 65535) tile.cnt![q]++;
+          if (tile.cnt![q] < COUNT_CAP) tile.cnt![q]++;
         }
       }
       for (const { L, i, g } of strokes) {
@@ -225,7 +225,7 @@ export class TrailPyramid {
       for (let k = 0; k < count; k++) {
         const index = first + k;
         segmentPixels(pts[2 * k], pts[2 * k + 1], pts[2 * k + 2], pts[2 * k + 3], g, clip, cnt
-          ? (m, n) => { const o = (n - g.n0) * g.w + (m - g.m0); idx[o] = index; cnt[o]++; }
+          ? (m, n) => { const o = (n - g.n0) * g.w + (m - g.m0); idx[o] = index; if (cnt[o] < COUNT_CAP) cnt[o]++; }
           : (m, n) => { idx[(n - g.n0) * g.w + (m - g.m0)] = index; }, stats);
       }
     }

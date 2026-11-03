@@ -69,14 +69,22 @@ export function pixelGrid(s: number, m0: number, n0: number, w: number, h: numbe
   return { s, m0, n0, w, h, rule };
 }
 
-/** A pixel picture: per pixel the highest covering segment index or -1, and, under coverage, how many segments crossed it. Row `n - n0`, column `m - m0`. */
+/**
+ * A pixel picture: per pixel the highest covering segment index or -1, and,
+ * under coverage, how many segments crossed it, stopping at
+ * {@link COUNT_CAP}, which is full brightness many times over. Row `n - n0`,
+ * column `m - m0`.
+ */
 export interface Picture {
   readonly idx: Float64Array;
-  readonly cnt: Uint32Array | null;
+  readonly cnt: Uint16Array | null;
 }
 
+/** Where a pixel's count stops: what two bytes hold. */
+export const COUNT_CAP = 65535;
+
 export function emptyPicture(g: PixelGrid): Picture {
-  return { idx: new Float64Array(g.w * g.h).fill(-1), cnt: g.rule.mode === 'coverage' ? new Uint32Array(g.w * g.h) : null };
+  return { idx: new Float64Array(g.w * g.h).fill(-1), cnt: g.rule.mode === 'coverage' ? new Uint16Array(g.w * g.h) : null };
 }
 
 /** Whether two pictures are the same, pixel for pixel; the first differing pixel's index, or -1. */
@@ -276,7 +284,7 @@ export function rasterize(
   for (let k = 0; k < count; k++) {
     const index = k0 + k;
     segmentPixels(pts[2 * k], pts[2 * k + 1], pts[2 * k + 2], pts[2 * k + 3], g, clip, cnt
-      ? (m, n) => { const o = (n - g.n0) * w + (m - g.m0); idx[o] = index; cnt[o]++; }
+      ? (m, n) => { const o = (n - g.n0) * w + (m - g.m0); idx[o] = index; if (cnt[o] < COUNT_CAP) cnt[o]++; }
       : (m, n) => { idx[(n - g.n0) * w + (m - g.m0)] = index; }, stats);
   }
 }

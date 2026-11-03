@@ -5,7 +5,7 @@
  * the rasterizer's single inequality.
  */
 import { describe, expect, it } from 'vitest';
-import { coversExact, emptyPicture, newStats, pixelGrid, rasterize, ruleAt, strokeRule, TRAIL_RADIUS, type Picture, type PixelGrid } from '../raster';
+import { COUNT_CAP, coversExact, emptyPicture, newStats, pixelGrid, rasterize, ruleAt, strokeRule, TRAIL_RADIUS, type Picture, type PixelGrid } from '../raster';
 import { SQRT3 } from '../store';
 import { add, coversBrute, dyadic, latticePt, sign, sub } from './q3';
 
@@ -65,7 +65,7 @@ function brutePicture(pts: Float64Array, count: number, g: PixelGrid): Picture {
           : coversBrute(pts[2 * k], pts[2 * k + 1], pts[2 * k + 2], pts[2 * k + 3], m, n, g.s, r.num, r.den);
         if (hit) {
           if (out.idx[o] < 0) out.idx[o] = k;
-          if (out.cnt) out.cnt[o]++;
+          if (out.cnt) { if (out.cnt[o] < COUNT_CAP) out.cnt[o]++; }
           else break;
         }
       }

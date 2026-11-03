@@ -54,7 +54,7 @@ console.log(`walked ${n.toLocaleString('en-US')} points in ${walkSec.toFixed(1)}
 t0 = performance.now();
 const pyr = new TrailPyramid(store, { stored: STORED, tile: 256 });
 const buildStats = newStats();
-pyr.update(buildStats);
+pyr.update(Infinity, buildStats);
 console.log(`pyramid: levels ${STORED.join(', ')} built in ${sec(t0).toFixed(1)} s, ${(pyr.bytes / 1e6).toFixed(1)} MB in tiles; ${buildStats.tested.toLocaleString('en-US')} pixel tests, ${buildStats.exact} settled exactly`);
 console.log('tiles per level: ' + STORED.map((s) => `${s}:${pyr.tileCount(s)}`).join(' '));
 
