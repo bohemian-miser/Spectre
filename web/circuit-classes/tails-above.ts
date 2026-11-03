@@ -9,6 +9,9 @@
  *
  *   node --max-old-space-size=8000 node_modules/.bin/tsx circuit-classes/tails-above.ts <combo> [build level] [sample level] [cap] [samples] [routes per tail] [seed] [rule]
  *
+ * A closing of more than 60 million tiles is told apart by its tiles alone,
+ * as working out its word would walk every tile.
+ *
  * Writes `circuit-classes/data/tails-above/<rule>-<combo>.json` (each
  * circuit's level, type, tiles, family, times met and deep addresses,
  * `SparseRoutes.deepStep`) and `.svg` beside it.
@@ -28,6 +31,8 @@ import { RouteLimit, SparseRoutes, TYPES, typeIndex, type Walked } from '../src/
 const args = process.argv.slice(2).filter((a) => a !== '--');
 const [combo = '110000001', lv = '11', sl = '9', cp = '14', sm = '300', rt = '300000', sd = '1', rule = '023468'] = args;
 const build = Number(lv), top = Number(sl), cap = Number(cp), count = Number(sm), routes = Number(rt), seed = Number(sd);
+/** Closings longer than this are known by their tiles alone: working out their word walks every tile. */
+const WORD_CAP = 6e7;
 const subset = [...rule].map(Number);
 
 const t0 = Date.now();
@@ -98,7 +103,7 @@ for (let i = 0; i < count; i++) {
       }
       if (up.kind === 'closed') {
         const w = up.walk;
-        const key = wordKeyOf(walkedWordCodes(R, w));
+        const key = w.length > WORD_CAP ? `tiles ${w.length}` : wordKeyOf(walkedWordCodes(R, w));
         const kn = known.get(key);
         if (kn) fate = `${kn.length}@${kn.level}`;
         else {
