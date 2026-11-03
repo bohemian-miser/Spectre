@@ -68,10 +68,10 @@ describe('HarmonicsPage', () => {
     render(<HarmonicsPage forceSync />);
     await waitFor(() => expect(screen.getByTestId('harm-summary').textContent).toMatch(/^11 distinct circuits/), { timeout: 60000 });
     // 023468-140000001: Delta 1, Theta 4, Gamma 1.
-    fireEvent.change(screen.getByTestId('shapes-combo-Delta'), { target: { value: '1' } });
-    fireEvent.change(screen.getByTestId('shapes-combo-Theta'), { target: { value: '4' } });
-    fireEvent.change(screen.getByTestId('shapes-combo-Gamma'), { target: { value: '1' } });
-    fireEvent.change(screen.getByTestId('shapes-combo-Xi'), { target: { value: '0' } });
+    fireEvent.change(screen.getByLabelText('Delta pairing'), { target: { value: '1' } });
+    fireEvent.change(screen.getByLabelText('Theta pairing'), { target: { value: '4' } });
+    fireEvent.change(screen.getByLabelText('Gamma pairing'), { target: { value: '1' } });
+    fireEvent.change(screen.getByLabelText('Xi pairing'), { target: { value: '0' } });
     fireEvent.change(screen.getByTestId('shapes-combo-level'), { target: { value: '6' } });
     expect(screen.getByTestId('shapes-combo-add').textContent).toBe('Read 023468 · 140000001');
     fireEvent.click(screen.getByTestId('shapes-combo-add'));

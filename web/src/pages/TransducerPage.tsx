@@ -16,9 +16,10 @@ import { useCallback, useEffect, useMemo, useReducer, useState } from 'react';
 import {
   HEX_TYPES, addressFromId, addressOfSymbols, buildSystem, childType, chordPairing, comboToMatchingIndices,
   flatten, formatAddress, hexTransducer, idOf, inv, leafOrder, leafPts, mul, parseSym, runPeriodic,
-  runTransducer, slotsOfType, sym, transPt, validEdgeSubsets,
+  normalizeMatchingVector, runTransducer, slotsOfType, sym, transPt,
   type Address, type Affine, type DfaItem, type HexType, type Sym, type TileTypeId, type TraceStep, type Transducer,
 } from '../core';
+import { ComboBar } from '../components/controls/ComboBar';
 import { tileColor } from '../lib/palette';
 import { ExpansionMap, type MapMark } from './transducer/ExpansionMap';
 import { nearest, orientationPath, supertileEdges, type BoundaryEdge } from './transducer/board';
@@ -127,16 +128,13 @@ export function TransducerPage(): JSX.Element {
   const growWorld = useCallback((parent: HexType, slot: number) => dispatch({ type: 'grow', parent, slot }), []);
 
   // --- a rule and a combination --------------------------------------------
-  const rules = useMemo(() => validEdgeSubsets(FAMILY).filter((r) => r.edges.length > 0), []);
-  const [ruleIdx, setRuleIdx] = useState(() => Math.max(0, rules.findIndex((r) => r.edges.join('') === '023468')));
-  const subset = rules[ruleIdx]?.edges ?? [];
-  const [combo, setCombo] = useState('111000100');
+  const [subset, setSubset] = useState<readonly number[]>([0, 2, 3, 4, 6, 8]);
+  const [vector, setVector] = useState<readonly number[]>(() => comboToMatchingIndices(FAMILY, [0, 2, 3, 4, 6, 8], '111000100'));
   const matching = useMemo(() => {
-    const idx = comboToMatchingIndices(FAMILY, subset, combo);
     const m: Record<string, number> = {};
-    leafOrder(FAMILY).forEach((t, i) => (m[t] = idx[i]));
+    leafOrder(FAMILY).forEach((t, i) => (m[t] = vector[i] ?? 0));
     return m;
-  }, [subset, combo]);
+  }, [vector]);
   const seams = useMemo(() => slotsOfType(FAMILY, sel.type as TileTypeId, subset), [sel, subset]);
   const pairing = useMemo(() => chordPairing(FAMILY, sel.type as TileTypeId, subset, matching[sel.type] ?? 0), [sel, subset, matching]);
   const entrySeam = entry === null ? -1 : seams.findIndex((s) => s.edge === entry);
@@ -477,17 +475,18 @@ export function TransducerPage(): JSX.Element {
           takes one such step from the selected tile, using the edge it was entered through; the crossing shows up
           in the rules and the machine above like any other.
         </p>
-        <div className="td__controls">
-          <label>Rule
-            <select value={ruleIdx} onChange={(e) => setRuleIdx(Number(e.target.value))} data-testid="td-rule">
-              {rules.map((r, i) => <option key={r.mask} value={i}>{r.edges.join('')}</option>)}
-            </select>
-          </label>
-          <label>Combination
-            <input value={combo} onChange={(e) => setCombo(e.target.value.replace(/[^0-9a-z]/gi, '').slice(0, 9))} size={11} data-testid="td-combo" />
-          </label>
-          <span className="td__hint">One digit per type, in the order {leafOrder(FAMILY).join(', ')}.</span>
-        </div>
+        <ComboBar
+          family={FAMILY}
+          subset={subset}
+          matching={vector}
+          families={[FAMILY]}
+          nonCrossingOnly
+          tilesInRow
+          onChange={(next) => {
+            setSubset(next.subset);
+            setVector(normalizeMatchingVector(FAMILY, next.subset, next.matching));
+          }}
+        />
         <p>
           The selected {sel.type} has crossings on edges{' '}
           {seams.length ? seams.map((s, i) => <button key={s.edge} type="button" className={`td__chip${entry === s.edge ? ' is-active' : ''}`} onClick={() => dispatch({ type: 'entry', edge: s.edge })} data-testid={`td-seam-${s.edge}`}>{s.edge}{pairing[i] >= 0 ? ` ↔ ${seams[pairing[i]].edge}` : ''}</button>) : 'none under this rule'}.

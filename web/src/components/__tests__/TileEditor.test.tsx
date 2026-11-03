@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { useState } from 'react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { TileEditor } from '../TileEditor';
 import { connectionPoints, leafPts, matchingAt, type Pt } from '../../core';
@@ -59,6 +60,55 @@ describe('TileEditor', () => {
     const m = matchingAt(4, props.onSetIndex.mock.calls[0][0])!;
     expect(m.some(([a, b]) => (a === 0 && b === 3) || (a === 3 && b === 0))).toBe(true);
     expect(m.some(([a, b]) => (a === 1 && b === 2) || (a === 2 && b === 1))).toBe(true);
+  });
+
+  it('a line starts from an edge whose class is off, turning it on, and lands on another that is off', () => {
+    // Pi's edges are 1, 5, 5, 1, 8, 2. With {1, 5} on, the class-8 and class-2 seams have no point yet.
+    const calls: number[][] = [];
+    function Page() {
+      const [selected, setSelected] = useState(new Set([1, 5]));
+      const [index, setIndex] = useState(0);
+      return (
+        <TileEditor
+          family="hex"
+          type="Pi"
+          selected={selected}
+          index={index}
+          nonCrossingOnly
+          onSetIndex={(i) => {
+            calls.push([selected.size, i]);
+            setIndex(i);
+          }}
+          onToggleClass={(m) => setSelected((s) => new Set(s.has(m) ? [...s].filter((x) => x !== m) : [...s, m]))}
+          onStepTile={() => {}}
+          onClose={() => {}}
+        />
+      );
+    }
+    render(<Page />);
+    const stage = () => document.querySelector('svg.tile-editor-stage') as SVGSVGElement;
+    const all = connectionPoints('hex', 'Pi', new Set([1, 2, 5, 8]));
+    const p8 = all.find((c) => c.edge.major === 8)!.pt;
+    const p2 = all.find((c) => c.edge.major === 2)!.pt;
+    // Both are drawn hollow before anything is pressed.
+    expect(document.querySelectorAll('circle.tile-editor-dot.is-off')).toHaveLength(2);
+    act(() => {
+      fireEvent.pointerDown(stage(), at(p8));
+    });
+    expect(document.querySelectorAll('circle.tile-editor-dot.is-off')).toHaveLength(1);
+    act(() => {
+      fireEvent.pointerMove(stage(), at(p2));
+    });
+    act(() => {
+      fireEvent.pointerUp(stage(), at(p2));
+    });
+    // Both classes are on, so Pi has six points, and the pairing joins the two pressed ones.
+    expect(calls).toHaveLength(1);
+    const [count, index] = calls[0];
+    expect(count).toBe(4);
+    const i8 = all.findIndex((c) => c.edge.major === 8);
+    const i2 = all.findIndex((c) => c.edge.major === 2);
+    expect(matchingAt(6, index)!.some(([a, b]) => (a === i8 && b === i2) || (a === i2 && b === i8))).toBe(true);
   });
 
   it('tapping an edge away from its points turns that class on or off', () => {

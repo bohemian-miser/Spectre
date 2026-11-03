@@ -759,7 +759,6 @@ export function TopDownPage(props: TopDownPageProps): JSX.Element {
             subset={strandRule.subset}
             matching={strandRule.matching}
             contracts={strandRule.contracts}
-            tileSize={84}
             onSubsetChange={(subset) => changeRule({ subset })}
             onToggleMajor={(major) => changeRule({ subset: toggleClass(strandRule.subset, major) })}
             onMatchingChange={(tileType, index) =>

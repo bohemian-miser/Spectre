@@ -217,28 +217,26 @@
   font-weight: 700;
 }
 .shapes-combo {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: end;
-  gap: 8px 14px;
+  display: grid;
+  gap: 8px;
+  min-width: 0;
   padding: 10px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--panel);
 }
-.shapes-combo label {
+/* The level, the page's own inputs and the button, under the combination bar. */
+.shapes-combo-run {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 8px 14px;
+}
+.shapes-combo-run label {
   display: grid;
   gap: 3px;
   font-size: 12px;
   color: var(--muted);
-}
-.shapes-combo-digits {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-.shapes-combo-digits select {
-  font-family: var(--mono);
 }
 .shapes-added {
   display: inline-flex;

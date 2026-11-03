@@ -1,0 +1,416 @@
+/* The combination bar: one line for the rule and combination, the tiles below it. */
+.combo-bar {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.combo-line {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  padding: 6px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.combo-code {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  padding: 5px 7px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  font: 700 1.2rem/1 var(--mono);
+}
+.combo-code button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+.combo-rule {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  border-radius: 4px;
+}
+.combo-rule:hover {
+  background: var(--panel-2);
+}
+.combo-class {
+  border-bottom: 3px solid var(--c);
+  padding: 0 0.5px;
+}
+.combo-empty {
+  color: var(--muted);
+}
+.combo-caret {
+  font-size: 0.6em;
+  color: var(--muted);
+  margin-left: 2px;
+}
+.combo-dash {
+  color: var(--muted);
+  padding: 0 1px;
+}
+.combo-digit {
+  border-bottom: 3px solid var(--t) !important;
+  border-radius: 2px 2px 0 0 !important;
+  padding: 0 0.5px !important;
+}
+.combo-digit:disabled {
+  cursor: default !important;
+}
+.combo-digit.is-fixed {
+  color: var(--muted);
+  font-weight: 500;
+}
+.combo-digit.is-odd,
+.combo-digit.is-cross {
+  color: var(--warn);
+}
+.combo-digit.is-hl,
+.combo-digit:not(:disabled):hover {
+  background: var(--panel-2) !important;
+}
+.combo-count {
+  font: 500 0.9rem var(--mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  min-width: 6ch;
+  text-align: center;
+}
+.combo-buttons {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+.combo-icon {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  color: var(--text);
+  cursor: pointer;
+}
+.combo-icon svg {
+  width: 18px;
+  height: 18px;
+}
+.combo-icon:disabled,
+.combo-random:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.combo-random {
+  height: 32px;
+  padding: 0 11px;
+  border-radius: 7px;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: var(--accent-ink);
+  cursor: pointer;
+}
+.combo-icon[data-tip]:hover::after,
+.combo-icon[data-tip]:focus-visible::after,
+.combo-icon.show-tip::after {
+  content: attr(data-tip);
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--text);
+  color: var(--panel);
+  font: 500 0.75rem system-ui, sans-serif;
+  padding: 3px 7px;
+  border-radius: 5px;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 5;
+}
+.combo-status {
+  min-height: 1.3em;
+  margin: 0;
+  padding: 0 2px;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+.combo-status.is-warn,
+.combo-menu-n.is-warn,
+.combo-tile-of.is-warn {
+  color: var(--warn);
+}
+
+/* rule menu */
+.combo-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 6px;
+  z-index: 30;
+  display: grid;
+  gap: 2px;
+  min-width: 240px;
+  padding: 6px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18);
+}
+.combo-menu-head {
+  padding: 4px 8px;
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.combo-menu button {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 6px 8px;
+  background: none;
+  border: 0;
+  border-radius: 6px;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.combo-menu button:hover,
+.combo-menu button[aria-checked='true'] {
+  background: var(--panel-2);
+}
+.combo-menu-rule {
+  display: inline-flex;
+  font: 700 1rem var(--mono);
+}
+.combo-menu-n {
+  font-size: 0.78rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* paste box */
+.combo-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(10, 15, 13, 0.45);
+}
+.combo-modal {
+  display: grid;
+  gap: 12px;
+  width: min(520px, 100%);
+  padding: 18px;
+  background: var(--panel);
+  color: var(--text);
+  border-radius: 12px;
+}
+.combo-modal h3 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+.combo-modal textarea {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 84px;
+  padding: 8px 10px;
+  font: 0.9rem var(--mono);
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  resize: vertical;
+}
+.combo-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* tiles */
+.combo-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+  gap: 6px;
+}
+.combo-tile {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  min-width: 0;
+  padding: 4px 4px 5px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+}
+.combo-tile.is-hl {
+  border-color: var(--text);
+}
+.combo-tile.is-odd {
+  border-color: var(--warn);
+}
+.combo-tile-open {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  width: 100%;
+  padding: 0;
+  background: none;
+  border: 0;
+  border-radius: 6px;
+  color: var(--text);
+  cursor: pointer;
+}
+.combo-tile-open:hover {
+  background: var(--panel-2);
+}
+.combo-tile-open svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1;
+}
+.combo-tile-body {
+  stroke: #1d2430;
+  stroke-opacity: 0.35;
+  stroke-linejoin: round;
+}
+.combo-tile-casing {
+  fill: none;
+  stroke: #1d2430;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.combo-tile-chord {
+  fill: none;
+  stroke: #1d2430;
+  stroke-linecap: round;
+}
+.combo-tile-badge {
+  fill: var(--panel);
+  stroke: var(--c);
+}
+.combo-tile-badge.is-on {
+  fill: var(--c);
+  stroke: #1d2430;
+}
+.combo-tile-num {
+  font-family: var(--mono);
+  font-weight: 700;
+  text-anchor: middle;
+  dominant-baseline: central;
+  fill: var(--muted);
+  pointer-events: none;
+}
+.combo-tile-num.is-on {
+  fill: #1d2430;
+}
+.combo-tile-dot {
+  fill: var(--c);
+  stroke: #1d2430;
+}
+.combo-tile-dot.is-off {
+  fill: var(--panel);
+  stroke: var(--c);
+}
+.combo-tile-dot.is-odd {
+  stroke: var(--danger);
+}
+.combo-tile-name {
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+.combo-tile-slider {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 2px;
+  width: 100%;
+}
+.combo-tile-slider button {
+  padding: 0 4px;
+  font-size: 1rem;
+  line-height: 1;
+  color: var(--text);
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+.combo-tile-slider button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.combo-tile-slider input {
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  accent-color: var(--accent);
+}
+.combo-tile-of {
+  font: 500 0.72rem var(--mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+/* One row that scrolls sideways, for a bar under a field or in a page's header. */
+.combo-tiles.is-row {
+  grid-auto-flow: column;
+  grid-template-columns: none;
+  grid-auto-columns: minmax(84px, 1fr);
+  overflow-x: auto;
+}
+@media (max-width: 560px) {
+  .combo-code {
+    flex-basis: 100%;
+    font-size: 1.05rem;
+  }
+  .combo-count {
+    margin-right: auto;
+  }
+  .combo-tiles:not(.is-row) {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* The edge rule's basis groups: flipping one keeps a rule tail-free. */
+.rule-groups summary {
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.rule-groups-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  font-size: 0.8rem;
+}
+.rule-groups-chips button {
+  padding: 1px 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text);
+  font: 600 12px var(--mono);
+  cursor: pointer;
+}
+.rule-groups-chips button.on {
+  border-color: var(--text);
+  background: var(--text);
+  color: var(--panel);
+}

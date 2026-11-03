@@ -102,7 +102,8 @@ describe('ShapesPage', () => {
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null);
     render(<ShapesPage forceSync />);
     await waitFor(() => expect(screen.getByTestId('shapes-summary').textContent).toMatch(/^3 circuits in/), { timeout: 10000 });
-    fireEvent.change(screen.getByTestId('shapes-combo-rule'), { target: { value: '15' } });
+    fireEvent.click(screen.getByTestId('combo-rule'));
+    fireEvent.click(screen.getByTestId('combo-menu').querySelector('[data-rule="15"]')!);
     fireEvent.change(screen.getByTestId('shapes-combo-level'), { target: { value: '6' } });
     fireEvent.click(screen.getByTestId('shapes-combo-add'));
     await waitFor(() => expect(screen.getByTestId('shapes-add-note').textContent).toBe('Added 15 · 000000000: 1 circuit born by level 6; the biggest is selected.'), { timeout: 20000 });

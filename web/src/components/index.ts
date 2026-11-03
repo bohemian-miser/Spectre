@@ -71,8 +71,8 @@ export { ContractSlider, contractToU, uToContract } from './controls/ContractSli
 export type { ContractSliderProps } from './controls/ContractSlider';
 
 export { StrandRuleControls } from './controls/StrandRuleControls';
-export { QuickBar } from './controls/QuickBar';
-export type { QuickBarProps } from './controls/QuickBar';
+export { ComboBar } from './controls/ComboBar';
+export type { ComboBarProps, ComboChange } from './controls/ComboBar';
 export { DecompositionPanel } from './controls/DecompositionPanel';
 export type { StrandRuleControlsProps } from './controls/StrandRuleControls';
 export { SeamContractControls } from './controls/SeamContractControls';

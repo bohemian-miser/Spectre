@@ -67,13 +67,12 @@ import {
   DisplayToggles,
   InfoTip,
   PanZoom,
-  QuickBar,
+  ComboBar,
   SeamContractControls,
   SharePanel,
   StrandRuleControls,
   StatsSummary,
   TilePalette,
-  TileEditor,
   DecompositionPanel,
   TilingCanvas,
   TilingView,
@@ -397,17 +396,6 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
     });
   }, [state]);
 
-  /** The tile type open in the big pairing editor, if any. */
-  const [editingTile, setEditingTile] = useState<TileTypeId | null>(null);
-  useEffect(() => setEditingTile(null), [family]);
-  useEffect(() => {
-    if (!editingTile) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setEditingTile(null);
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [editingTile]);
   const [hoverEdge, setHoverEdge] = useState<EdgeRef | null>(null);
   const [hoverMajor, setHoverMajor] = useState<number | null>(null);
   const [highlightLengths, setHighlightLengths] = useState<ReadonlySet<number>>(
@@ -1357,11 +1345,10 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
           contracts={state.contracts}
           colorScheme={state.colorScheme}
           customColors={state.customColors}
-          curvy={curvy}
           curvedStrands={curvedStrands}
           nonCrossingOnly={nonCrossingOnly}
           highlightMajors={highlightMajors}
-          showEdgeLabels={hasFlag(state, FLAG.EDGE_LABELS)}
+          bar={false}
           onSubsetChange={(subset) => dispatch({ type: 'setSubset', subset })}
           onToggleMajor={(major) => dispatch({ type: 'toggleMajor', major })}
           onHoverMajor={setHoverMajor}
@@ -1372,29 +1359,8 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
             dispatch({ type: 'toggleFlag', flag: FLAG.NON_CROSSING_ONLY })
           }
           onStrandCountChange={(major, count) => dispatch({ type: 'setStrandCount', major, count })}
-          onOpenTile={setEditingTile}
           onMatchingVectorChange={(matching) => dispatch({ type: 'setMatchingVector', matching })}
         />
-        {editingTile ? (
-          <TileEditor
-            key={editingTile}
-            family={family}
-            type={editingTile}
-            selected={selected}
-            contracts={state.contracts}
-            index={state.matching[leafOrder(family).indexOf(editingTile)] ?? 0}
-            nonCrossingOnly={nonCrossingOnly}
-            curvedStrands={curvedStrands}
-            onSetIndex={(index) => dispatch({ type: 'setMatching', tileType: editingTile, index })}
-            onToggleClass={(major) => dispatch({ type: 'toggleMajor', major })}
-            onStepTile={(d) => {
-              const order = leafOrder(family);
-              setEditingTile(order[(order.indexOf(editingTile) + d + order.length) % order.length]);
-            }}
-            onClose={() => setEditingTile(null)}
-            onStrands={(major, count) => dispatch({ type: 'setStrandCount', major, count })}
-          />
-        ) : null}
         {multiOnSpectres ? (
           <p className="warning-badge" role="status" data-testid="multi-on-spectres">
             Several strands per edge aren&rsquo;t drawn with the hexagons as Spectres yet. Switch the
@@ -2204,22 +2170,27 @@ export function ExplorerPage(props: ExplorerPageProps): JSX.Element {
         </div>
         </div>
 
-        <QuickBar
-          family={family}
-          subset={state.subset}
-          matching={state.matching}
-          contracts={state.contracts}
-          nonCrossingOnly={nonCrossingOnly}
-          curvedStrands={curvedStrands}
-          onToggleMajor={(major) => dispatch({ type: 'toggleMajor', major })}
-          onSubsetChange={(subset) => dispatch({ type: 'setSubset', subset })}
-          onStrands={(major, count) => dispatch({ type: 'setStrandCount', major, count })}
-          onMatchingVectorChange={(matching) => dispatch({ type: 'setMatchingVector', matching })}
-          onCycleTile={(tileType, delta) =>
-            dispatch({ type: 'cycleMatching', tileType, delta, nonCrossingOnly })
-          }
-          onOpenTile={setEditingTile}
-        />
+        <div className="explorer-combo">
+          <ComboBar
+            family={family}
+            subset={state.subset}
+            matching={state.matching}
+            contracts={state.contracts}
+            nonCrossingOnly={nonCrossingOnly}
+            curvedStrands={curvedStrands}
+            colorScheme={state.colorScheme}
+            customColors={state.customColors}
+            families={FAMILIES}
+            tilesInRow
+            edgeLabels={hasFlag(state, FLAG.EDGE_LABELS)}
+            onStrands={(major, count) => dispatch({ type: 'setStrandCount', major, count })}
+            onChange={(next) => {
+              if (next.family !== family) dispatch({ type: 'setFamily', family: next.family });
+              dispatch({ type: 'setSubset', subset: next.subset });
+              dispatch({ type: 'setMatchingVector', matching: next.matching });
+            }}
+          />
+        </div>
       </div>
     </div>
   );

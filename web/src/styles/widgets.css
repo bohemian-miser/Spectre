@@ -786,6 +786,10 @@ textarea {
 .tile-editor-dot.is-odd {
   fill: var(--warn);
 }
+/* A seam whose class is off: pressing its point turns the class on. */
+.tile-editor-dot.is-off {
+  fill: var(--panel);
+}
 .tile-editor-hit {
   cursor: crosshair;
 }

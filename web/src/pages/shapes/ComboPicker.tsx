@@ -1,10 +1,20 @@
 /**
- * Choose a combination of any valid rule on the hexagons: the rule, then one
- * pairing per tile type, then the level to run the renormalisation to.
+ * Choose a combination of any tail-free rule on the hexagons with the
+ * combination bar, then the level to run the renormalisation to. Nothing is
+ * handed on until the button is pressed, so a page's heavy work starts only
+ * then.
  */
 
 import { useMemo, useState, type ReactNode } from 'react';
-import { comboDigitChar, comboOptionCounts, leafOrder, validEdgeSubsets } from '../../core';
+import {
+  comboOptionCounts,
+  comboToMatchingIndices,
+  leafOrder,
+  matchingIndicesToCombo,
+  normalizeMatchingVector,
+  validEdgeSubsets,
+} from '../../core';
+import { ComboBar } from '../../components/controls/ComboBar';
 
 export interface ComboChoice {
   readonly subset: readonly number[];
@@ -13,6 +23,7 @@ export interface ComboChoice {
 }
 
 const LEVELS = [6, 7, 8, 9];
+const HEX = ['hex'] as const;
 
 export function ComboPicker(props: {
   busy: boolean;
@@ -28,95 +39,85 @@ export function ComboPicker(props: {
   count?: boolean;
 }): JSX.Element {
   const levels = props.levels ?? LEVELS;
-  const rules = useMemo(() => validEdgeSubsets('hex').filter((r) => r.edges.length > 0), []);
-  const [rule, setRule] = useState(props.initialRule ?? '023468');
-  const subset = useMemo(() => [...rule].map(Number), [rule]);
-  const counts = useMemo(() => comboOptionCounts('hex', subset), [subset]);
-  const types = leafOrder('hex');
-  const [digits, setDigits] = useState<number[]>(() => types.map((_, i) => parseInt(props.initialCombo?.[i] ?? '0', 36) || 0));
+  const nine = leafOrder('hex').length;
+  const [subset, setSubset] = useState<readonly number[]>(() => [...(props.initialRule ?? '023468')].map(Number));
+  const [matching, setMatching] = useState<readonly number[]>(() =>
+    comboToMatchingIndices('hex', subset, (props.initialCombo ?? '').padEnd(nine, '0').slice(0, nine)),
+  );
   const [level, setLevel] = useState(props.initialLevel ?? 7);
   // the box's text, which may be empty or partial while typing; `level` keeps the last whole number from 1 up
   const [levelText, setLevelText] = useState(String(level));
-  const safe = digits.map((d, i) => (d < counts[i] ? d : 0));
-  const combo = safe.map((d) => comboDigitChar(d) ?? '0').join('');
-  const total = counts.reduce((a, b) => a * Math.max(1, b), 1);
+
+  const rule = subset.join('');
+  const combo = matchingIndicesToCombo('hex', subset, matching);
+  const tailFree = useMemo(() => validEdgeSubsets('hex').some((v) => v.edges.join('') === rule), [rule]);
+  const total = useMemo(() => comboOptionCounts('hex', subset).reduce((a, b) => a * b, 1), [subset]);
+  const ready = subset.length > 0 && tailFree && combo !== null;
+  const verb = props.verb ?? 'Add';
+
   return (
     <div className="shapes-combo" data-testid="shapes-combo">
-      <label>
-        Rule
-        <select
-          value={rule}
-          onChange={(e) => {
-            setRule(e.target.value);
-            setDigits(types.map(() => 0));
-          }}
-          data-testid="shapes-combo-rule"
-        >
-          {rules.map((r) => (
-            <option key={r.mask} value={r.edges.join('')}>
-              {r.edges.join('')}
-            </option>
-          ))}
-        </select>
-      </label>
-      <div className="shapes-combo-digits">
-        {types.map((t, i) => (
-          <label key={t}>
-            {t}
-            <select
-              value={safe[i]}
-              disabled={counts[i] <= 1}
-              onChange={(e) => setDigits(safe.map((d, j) => (j === i ? Number(e.target.value) : d)))}
-              data-testid={`shapes-combo-${t}`}
-            >
-              {Array.from({ length: Math.max(1, counts[i]) }, (_, d) => (
-                <option key={d} value={d}>
-                  {comboDigitChar(d)}
+      <ComboBar
+        family="hex"
+        subset={subset}
+        matching={matching}
+        families={HEX}
+        nonCrossingOnly
+        tilesInRow
+        onChange={(next) => {
+          setSubset(next.subset);
+          setMatching(normalizeMatchingVector('hex', next.subset, next.matching));
+        }}
+      />
+      <div className="shapes-combo-run">
+        <label>
+          Up to level
+          {levels === 'any' ? (
+            <input
+              type="number"
+              min={1}
+              step={1}
+              style={{ width: '4.5em' }}
+              value={levelText}
+              onChange={(e) => {
+                const n = Math.floor(Number(e.target.value));
+                setLevelText(e.target.value);
+                if (e.target.value.trim() !== '' && n >= 1) setLevel(n);
+              }}
+              onBlur={() => setLevelText(String(level))}
+              data-testid="shapes-combo-level"
+            />
+          ) : (
+            <select value={level} onChange={(e) => setLevel(Number(e.target.value))} data-testid="shapes-combo-level">
+              {levels.map((l) => (
+                <option key={l} value={l}>
+                  {l}
                 </option>
               ))}
             </select>
-          </label>
-        ))}
-      </div>
-      <label>
-        Up to level
-        {levels === 'any' ? (
-          <input
-            type="number"
-            min={1}
-            step={1}
-            style={{ width: '4.5em' }}
-            value={levelText}
-            onChange={(e) => {
-              const n = Math.floor(Number(e.target.value));
-              setLevelText(e.target.value);
-              if (e.target.value.trim() !== '' && n >= 1) setLevel(n);
-            }}
-            onBlur={() => setLevelText(String(level))}
-            data-testid="shapes-combo-level"
-          />
-        ) : (
-          <select value={level} onChange={(e) => setLevel(Number(e.target.value))} data-testid="shapes-combo-level">
-            {levels.map((l) => (
-              <option key={l} value={l}>
-                {l}
-              </option>
-            ))}
-          </select>
-        )}
-      </label>
-      {props.children}
-      <button type="button" onClick={() => setDigits(counts.map((c) => Math.floor(Math.random() * Math.max(1, c))))}>
-        Random
-      </button>
-      <button type="button" disabled={props.busy} onClick={() => props.onAdd({ subset, combo, level })} data-testid="shapes-combo-add">
-        {props.busy ? 'Computing…' : `${props.verb ?? 'Add'} ${rule} · ${combo}`}
-      </button>
-      {props.count === false ? null : (
+          )}
+        </label>
+        {props.children}
+        <button
+          type="button"
+          disabled={props.busy || !ready}
+          onClick={() => combo !== null && props.onAdd({ subset, combo, level })}
+          data-testid="shapes-combo-add"
+        >
+          {props.busy ? 'Computing…' : `${verb} ${rule} · ${combo ?? '?'}`}
+        </button>
         <span className="shapes-note">
-          {total.toLocaleString('en-US')} combinations of this rule. Nothing changes below until you press {props.verb ?? 'Add'}.
+          {!ready
+            ? subset.length === 0
+              ? 'Pick an edge set to read.'
+              : !tailFree
+                ? 'This edge set has tails; pick a tail-free one to read.'
+                : 'A pairing whose lines cross has no code; step that tile.'
+            : props.count === false
+              ? null
+              : `${total.toLocaleString('en-US')} combinations of this rule. Nothing changes below until you press ${verb}.`}
         </span>
-      )}
+      </div>
     </div>
   );
 }
