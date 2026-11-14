@@ -2,12 +2,13 @@
  * The selected voice's circuit drawn large with its mapping, following the
  * voice's place in its clip: the curve rebuilt from the terms joined so far
  * and the bars (spectrum), the head and its line to the centroid (radius),
- * or the fitted polygon with the corners passed so far (corners).
+ * or the fitted polygon with the corners passed so far (corners). Held
+ * tones are drawn whole; distance held adds a ring per held pitch.
  */
 
 import { useEffect, useMemo, useRef } from 'react';
 import { FLOOR_DB, isComb, partialCurve, pointAt, shapeTerms, termLevel, termRef, type CornerFit, type Shape } from './shape';
-import { PEN_START, PRE, SPECTRUM_LAP, joinedAt, type Mapping, type Settings } from './render';
+import { PEN_START, PRE, SPECTRUM_LAP, joinedAt, radiusDrone, type Mapping, type Play, type Settings } from './render';
 
 const W = 460;
 const LOOP_H = 460;
@@ -27,18 +28,20 @@ const CURVE_POINTS = 800;
 export interface ShapeViewProps {
   readonly shape: Shape;
   readonly mapping: Mapping;
+  readonly play: Play;
   readonly settings: Settings;
   readonly fit: CornerFit;
-  /** Seconds into the voice's clip, or null when it is not playing. */
+  /** Seconds into the lap, or null for the whole of it at once. */
   time(): number | null;
 }
 
 export function ShapeView(props: ShapeViewProps): JSX.Element {
-  const { shape, mapping, settings, fit } = props;
+  const { shape, mapping, play, settings, fit } = props;
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const timeRef = useRef(props.time);
   timeRef.current = props.time;
   const H = LOOP_H + (mapping === 'spectrum' ? BARS_H : 0);
+  const drone = useMemo(() => (mapping === 'radius' && play === 'constant' ? radiusDrone(shape, settings.radius) : []), [shape, mapping, play, settings.radius]);
   const ts = useMemo(() => (mapping === 'spectrum' ? shapeTerms(shape, settings.spectrum.terms) : []), [shape, mapping, settings.spectrum.terms]);
 
   useEffect(() => {
@@ -63,9 +66,10 @@ export function ShapeView(props: ShapeViewProps): JSX.Element {
     }
     const scale = (0.8 * W) / Math.max(hix - lox, hiy - loy, 1e-9);
     const ox = W / 2 - ((lox + hix) / 2) * scale;
-    const oy = LOOP_H / 2 + ((loy + hiy) / 2) * scale;
+    // y down, as on the map.
+    const oy = LOOP_H / 2 - ((loy + hiy) / 2) * scale;
     const X = (x: number): number => ox + x * scale;
-    const Y = (y: number): number => oy - y * scale;
+    const Y = (y: number): number => oy + y * scale;
     const path = (xy: Float64Array, n: number, count = n, close = true): void => {
       g.beginPath();
       for (let i = 0; i < count; i++) {
@@ -174,6 +178,17 @@ export function ShapeView(props: ShapeViewProps): JSX.Element {
       } else if (mapping === 'radius') {
         const lap = settings.radius.lap;
         dot(0, 0, 4, TICK);
+        if (play === 'constant') {
+          // One ring per held pitch, as strong as the share of the loop at that radius.
+          const top = Math.max(...drone.map((b) => b.weight));
+          for (const b of drone) {
+            g.beginPath();
+            g.arc(X(0), Y(0), Math.max(0, b.radius) * scale, 0, 2 * Math.PI);
+            g.strokeStyle = `rgba(250,200,80,${(0.15 + 0.85 * b.weight / top).toFixed(3)})`;
+            g.lineWidth = 2;
+            g.stroke();
+          }
+        }
         if (t !== null) {
           const u = Math.max(0, Math.min(1, (t - PRE) / lap));
           trail(u);
@@ -233,7 +248,7 @@ export function ShapeView(props: ShapeViewProps): JSX.Element {
     };
     loop();
     return () => cancelAnimationFrame(frame);
-  }, [shape, mapping, settings, fit, ts, H]);
+  }, [shape, mapping, play, settings, fit, ts, drone, H]);
 
   return <canvas ref={canvasRef} className="shapesound-view" style={{ width: W, height: H }} data-testid="shapesound-view" />;
 }

@@ -442,9 +442,201 @@ export function renderCorners(shape: Shape, s: CornerSettings, sr: number): Clip
   return clip;
 }
 
-export function render(shape: Shape, m: Mapping, s: Settings, sr: number): Clip {
+export const PLAYS = ['loop', 'constant'] as const;
+export type Play = (typeof PLAYS)[number];
+
+export function render(shape: Shape, m: Mapping, s: Settings, sr: number, play: Play = 'loop'): Clip {
+  if (play === 'constant') return renderConstant(shape, m, s, sr);
   if (m === 'spectrum') return renderSpectrum(shape, s.spectrum, sr);
   if (m === 'radius') return renderRadius(shape, s.radius, sr);
   return renderCorners(shape, s.corners, sr);
 }
 
+// ---------------------------------------------------------------- constant tones
+
+/**
+ * Seconds of a constant clip. Every partial is moved to a whole number of
+ * cycles in it (at most 1/(2 CONSTANT_SECONDS) Hz away), so it loops without
+ * a seam.
+ */
+export const CONSTANT_SECONDS = 4;
+
+/** One sustained partial: frequency, level, pan, and an optional FM index (modulator at 2 x). */
+export interface Partial {
+  readonly hz: number;
+  readonly amp: number;
+  readonly pan: number;
+  readonly fm?: number;
+  /** 0..1, for tones whose harmonics follow the turning rate. */
+  readonly bright?: number;
+}
+
+/** `hz` rounded to a whole number of cycles in `seconds` divided by `div`. */
+const whole = (hz: number, seconds: number, div = 1): number => (Math.max(1, Math.round((hz * seconds) / div)) * div) / seconds;
+
+function sustain(partials: readonly Partial[], sr: number, harmonics: (p: Partial) => readonly [number, number][]): Clip {
+  const clip = blank(CONSTANT_SECONDS, sr);
+  const { left, right } = clip;
+  for (const p of partials) {
+    if (p.amp <= 0 || p.hz > MAX_HZ) continue;
+    const [gl, gr] = panGains(p.pan);
+    const hs = harmonics(p);
+    for (let i = 0; i < left.length; i++) {
+      const w = (2 * Math.PI * p.hz * i) / sr;
+      const mod = p.fm ? p.fm * Math.sin(2 * w) : 0;
+      let x = 0;
+      for (const [mult, a] of hs) x += a * Math.sin(mult * w + (mult === 1 ? mod : 0));
+      x *= p.amp;
+      left[i] += x * gl;
+      right[i] += x * gr;
+    }
+  }
+  normalise(left, right, VOICE_RMS);
+  return clip;
+}
+
+/** Spectrum held: every term's partial at once, at its bar's level. */
+export function spectrumPartials(shape: Shape, s: SpectrumSettings): Partial[] {
+  const ts = shapeTerms(shape, s.terms);
+  const ref = termRef(ts);
+  return ts.map((t) => ({ hz: whole(Math.abs(t.k) * s.f0, CONSTANT_SECONDS), amp: termLevel(t.amp, ref), pan: 0.7 * Math.sign(t.k) }));
+}
+
+export interface DroneBin {
+  /** Semitones from f0. */
+  readonly semis: number;
+  /** Share of the steps whose radius gives this pitch. */
+  readonly weight: number;
+  /** Radius (radius of gyration 1) at the bin's pitch. */
+  readonly radius: number;
+  readonly pan: number;
+  /** Mean brightness, 0..1, as the lap's turning rate sets it. */
+  readonly bright: number;
+}
+
+/**
+ * Distance held: the lap's pitch f0 x 2^(range (r - 1)) at every thinned
+ * point, rounded to the semitone; each semitone weighted by how many points
+ * give it, panned by their mean bearing.
+ */
+export function radiusDrone(shape: Shape, s: Pick<RadiusSettings, 'range'>): DroneBin[] {
+  const bins = new Map<number, { n: number; pan: number; bright: number }>();
+  const { p, n } = shape;
+  for (let i = 0; i < n; i++) {
+    const x = p[2 * i];
+    const y = p[2 * i + 1];
+    const semis = Math.round(12 * s.range * (Math.hypot(x, y) - 1));
+    const a = (i + n - 1) % n;
+    const b = (i + 1) % n;
+    const d = Math.atan2(p[2 * b + 1] - y, p[2 * b] - x) - Math.atan2(y - p[2 * a + 1], x - p[2 * a]);
+    const turn = Math.abs((((d + Math.PI) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI) - Math.PI);
+    const e = bins.get(semis) ?? { n: 0, pan: 0, bright: 0 };
+    e.n++;
+    e.pan += 0.7 * Math.cos(Math.atan2(y, x));
+    e.bright += Math.min(1, turn / 1.2);
+    bins.set(semis, e);
+  }
+  return [...bins.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([semis, e]) => ({ semis, weight: e.n / n, radius: 1 + semis / (12 * (s.range || 1)), pan: e.pan / e.n, bright: e.bright / e.n }));
+}
+
+export interface ChordNote {
+  readonly midi: number;
+  /** Share of the lap spent on sides with this note. */
+  readonly weight: number;
+  readonly sharp: number;
+  readonly pan: number;
+}
+
+/** Corners held: each side's note once, weighted by how much of the lap its sides take. */
+export function cornerChord(shape: Shape, s: CornerSettings): ChordNote[] {
+  const sides = cornerSides(shape, fitCorners(shape, s.tolerance).cuts, { ...s, lap: 1 });
+  const notes = new Map<number, { w: number; sharp: number; pan: number }>();
+  for (const sd of sides) {
+    const e = notes.get(sd.midi) ?? { w: 0, sharp: 0, pan: 0 };
+    e.w += sd.dur;
+    e.sharp += sd.sharp * sd.dur;
+    e.pan += sd.pan * sd.dur;
+    notes.set(sd.midi, e);
+  }
+  return [...notes.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([midi, e]) => ({ midi, weight: e.w, sharp: e.sharp / e.w, pan: e.pan / e.w }));
+}
+
+export function renderConstant(shape: Shape, m: Mapping, s: Settings, sr: number): Clip {
+  if (m === 'spectrum') return sustain(spectrumPartials(shape, s.spectrum), sr, () => [[1, 1]]);
+  if (m === 'radius') {
+    const parts = radiusDrone(shape, s.radius).map((b) => ({ hz: whole(s.radius.f0 * 2 ** (b.semis / 12), CONSTANT_SECONDS), amp: b.weight, pan: b.pan, bright: b.bright }));
+    // The lap's tone: harmonics 2, 3 and 5 grow with brightness.
+    return sustain(parts, sr, (p) => {
+      const br = p.bright ?? 0;
+      return [
+        [1, 1],
+        [2, 0.25 + 0.5 * br],
+        [3, 0.35 * br],
+        [5, 0.2 * br],
+      ];
+    });
+  }
+  const chord = cornerChord(shape, s.corners);
+  // Sub-octave at half the note: keep the note a whole number of cycles in half the clip.
+  return sustain(
+    chord.map((c) => ({ hz: whole(440 * 2 ** ((c.midi - 69) / 12), CONSTANT_SECONDS, 2), amp: Math.sqrt(c.weight), pan: c.pan, fm: 0.3 + c.sharp })),
+    sr,
+    () => [
+      [1, 1],
+      [0.5, 0.3],
+    ],
+  );
+}
+
+/**
+ * The pen held: running round the loop without stopping, for a whole number
+ * of laps (about `CONSTANT_SECONDS`), filters run over a lap first so the
+ * buffer starts where it ends.
+ */
+export function renderPenConstant(shape: Shape, speed: number, sr: number): Clip {
+  const lap = shape.steps / speed;
+  const laps = Math.max(1, Math.round(CONSTANT_SECONDS / lap));
+  const len = Math.round(laps * lap * sr);
+  // Samples per lap need not be whole: index by lap share so the buffer still closes.
+  const per = len / laps;
+  const warm = Math.ceil(per) * Math.max(1, Math.ceil((0.05 * sr) / per));
+  const m = warm + len + 1;
+  const zx = new Float64Array(m);
+  const zy = new Float64Array(m);
+  for (let i = 0; i < m; i++) {
+    const [x, y] = pointAt(shape.full, shape.steps, (i - warm) / per);
+    zx[i] = x;
+    zy[i] = y;
+  }
+  const vx = gradient(zx).map((v) => (v * sr) / speed);
+  const vy = gradient(zy).map((v) => (v * sr) / speed);
+  butter2(vx, 9000, sr, 'low');
+  butter2(vy, 9000, sr, 'low');
+  const yl = new Float64Array(m);
+  const yr = new Float64Array(m);
+  let sv = 0;
+  let sz = 0;
+  for (let i = warm; i < m; i++) {
+    sv += vx[i] ** 2 + vy[i] ** 2;
+    sz += zx[i] ** 2 + zy[i] ** 2;
+  }
+  const rv = Math.sqrt(sv / (2 * len)) + 1e-9;
+  const rz = Math.sqrt(sz / (2 * len)) + 1e-9;
+  for (let i = 0; i < m; i++) {
+    yl[i] = (0.7 * vx[i]) / rv + (0.3 * zx[i]) / rz;
+    yr[i] = (0.7 * vy[i]) / rv + (0.3 * zy[i]) / rz;
+  }
+  butter2(yl, 60, sr, 'high');
+  butter2(yr, 60, sr, 'high');
+  const clip: Clip = { sr, seconds: len / sr, left: new Float32Array(len), right: new Float32Array(len) };
+  for (let i = 0; i < len; i++) {
+    clip.left[i] = yl[warm + i];
+    clip.right[i] = yr[warm + i];
+  }
+  normalise(clip.left, clip.right, VOICE_RMS);
+  return clip;
+}

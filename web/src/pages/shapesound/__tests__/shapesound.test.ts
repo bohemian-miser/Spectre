@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { Pt } from '../../../core';
 import { loadWorld, reelDefaults } from '../../reel/director';
-import { DEFAULT_SETTINGS, PRE, SPECTRUM_LAP, VOICE_RMS, clipSeconds, cornerSides, renderCorners, renderPen, renderRadius, renderSpectrum } from '../render';
+import { CONSTANT_SECONDS, DEFAULT_SETTINGS, MAPPINGS, PRE, SPECTRUM_LAP, VOICE_RMS, clipSeconds, cornerChord, cornerSides, radiusDrone, renderConstant, renderCorners, renderPen, renderPenConstant, renderRadius, renderSpectrum } from '../render';
+import { applyBrush, paint, type Brush, type Voice } from '../paint';
 import { FLOOR_DB, fitCorners, isComb, makeShape, rdp, shapeTerms, termLevel, termRef } from '../shape';
 
 /** z(s) = e^{2 pi i s} + w e^{2 pi i k s}, sampled at n points. */
@@ -127,5 +128,93 @@ describe('renders', () => {
     };
     // The loop is out at u = 0 (and every third of the lap) and in at u = 1/6.
     expect(zeroCrossHz(PRE + 4 / 3)).toBeGreaterThan(zeroCrossHz(PRE + 4 / 6 + 4 / 3));
+  });
+});
+
+describe('constant tones', () => {
+  const sr = 8000;
+  const shape = makeShape(wobble(90, -2, 0.2));
+  const clips = [
+    ...MAPPINGS.map((m) => [m, renderConstant(shape, m, DEFAULT_SETTINGS, sr)] as const),
+    ['pen', renderPenConstant(shape, 7000, sr)] as const,
+  ];
+
+  it('holds a steady level', () => {
+    for (const [, c] of clips) {
+      const win = Math.round(0.25 * sr);
+      const levels: number[] = [];
+      for (let i = 0; i + win <= c.left.length; i += win) levels.push(rms(c.left.subarray(i, i + win), c.right.subarray(i, i + win)));
+      expect(Math.min(...levels) / Math.max(...levels)).toBeGreaterThan(0.8);
+      expect(rms(c.left, c.right)).toBeCloseTo(VOICE_RMS, 6);
+    }
+  });
+
+  it('loops without a click at the seam', () => {
+    for (const [m, c] of clips) {
+      for (const ch of [c.left, c.right]) {
+        let step = 0;
+        for (let i = 1; i < ch.length; i++) step = Math.max(step, Math.abs(ch[i] - ch[i - 1]));
+        // Going from the last sample back to the first is no bigger a step than any inside the clip.
+        expect(Math.abs(ch[0] - ch[ch.length - 1]), m).toBeLessThanOrEqual(step * 1.05);
+      }
+      if (m !== 'pen') expect(c.left.length).toBe(CONSTANT_SECONDS * sr);
+    }
+  });
+
+  it('weights the drone by the share of the loop at each radius, and the chord by side length', () => {
+    const drone = radiusDrone(shape, DEFAULT_SETTINGS.radius);
+    expect(drone.reduce((a, b) => a + b.weight, 0)).toBeCloseTo(1, 9);
+    expect(drone.length).toBeGreaterThan(1);
+    const gon = makeShape(wobble(12, 1, 0));
+    const chord = cornerChord(gon, DEFAULT_SETTINGS.corners);
+    expect(chord).toHaveLength(1);
+    expect(chord[0].midi).toBe(DEFAULT_SETTINGS.corners.root + 24);
+    expect(chord[0].weight).toBeCloseTo(1, 9);
+  });
+});
+
+describe('painting', () => {
+  const brush: Brush = { mode: 'corners', play: 'constant', settings: DEFAULT_SETTINGS };
+  const circ = (k: string) => ({ key: k, points: wobble(12, 1, 0) });
+
+  it('turns an off circuit on with the brush and selects it', () => {
+    const r = paint([], null, circ('a'), brush, false, 1);
+    expect(r.kind).toBe('add');
+    expect(r.selected).toBe(1);
+    expect(r.voices[0]).toMatchObject({ key: 'a', mode: 'corners', play: 'constant', on: true });
+  });
+
+  it('turns an on circuit off, dropping the selection only if it was selected', () => {
+    let vs = paint([], null, circ('a'), brush, false, 1).voices;
+    vs = paint(vs, 1, circ('b'), brush, false, 2).voices;
+    const off = paint(vs, 2, circ('a'), brush, false, 3);
+    expect(off.kind).toBe('remove');
+    expect(off.voices.map((v) => v.key)).toEqual(['b']);
+    expect(off.selected).toBe(2);
+    expect(paint(off.voices, 2, circ('b'), brush, false, 3).selected).toBeNull();
+  });
+
+  it('selects an on circuit with shift, without turning it off', () => {
+    let vs = paint([], null, circ('a'), brush, false, 1).voices;
+    vs = paint(vs, 1, circ('b'), brush, false, 2).voices;
+    const r = paint(vs, 2, circ('a'), { ...brush, mode: 'spectrum' }, true, 3);
+    expect(r.kind).toBe('select');
+    expect(r.selected).toBe(1);
+    expect(r.voices).toBe(vs);
+  });
+
+  it('stops at the cap', () => {
+    const vs = Array.from({ length: 3 }, (_, i) => paint([], null, circ(`k${i}`), brush, false, i).voices[0]);
+    expect(paint(vs, null, circ('new'), brush, false, 9, 3).kind).toBe('full');
+  });
+
+  it('edits only the selected circuit', () => {
+    let vs: readonly Voice[] = paint([], null, circ('a'), brush, false, 1).voices;
+    vs = paint(vs, 1, circ('b'), brush, false, 2).voices;
+    const edited: Brush = { ...brush, play: 'loop', settings: { ...DEFAULT_SETTINGS, corners: { ...DEFAULT_SETTINGS.corners, tolerance: 4 } } };
+    const out = applyBrush(vs, 2, edited);
+    expect(out.find((v) => v.id === 2)).toMatchObject({ play: 'loop', settings: edited.settings });
+    expect(out.find((v) => v.id === 1)).toBe(vs[0]);
+    expect(applyBrush(vs, null, edited)).toBe(vs);
   });
 });

@@ -1,6 +1,6 @@
 /**
  * Voices for the shape-sound page. Each voice plays a rendered clip and,
- * optionally, a pen clip of the same length, once or looping, through its
+ * optionally, a pen clip, once or looping, through its
  * own level into a shared bus: a reverb send (the Sound page's impulse,
  * `sound/synth.ts`), then a limiter. A new clip for a playing voice starts
  * where the old one was in its lap and crossfades in, so loops never stop.
@@ -135,7 +135,8 @@ export function createMixer(): Mixer {
       p.connect(pen).connect(gain);
       sources.push(p);
     }
-    for (const s of sources) s.start(at, offset);
+    // A constant pen clip is a whole number of its own laps, not the main clip's length.
+    for (const s of sources) s.start(at, offset % s.buffer!.duration);
     v.take = { sources, gain, pen };
     v.origin = at - offset;
     v.loop = loop;
