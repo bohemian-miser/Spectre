@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Pt } from '../../../core';
 import { loadWorld, reelDefaults } from '../../reel/director';
-import { CONSTANT_SECONDS, DEFAULT_SETTINGS, MAPPINGS, MAX_DRONE, foldHz, SPECTRUM_LAP, VOICE_RMS, clipSeconds, cornerChord, cornerSides, radiusDrone, renderConstant, renderCorners, renderPen, renderPenConstant, renderRadius, renderSpectrum } from '../render';
+import { CONSTANT_SECONDS, DEFAULT_SETTINGS, MAPPINGS, MAX_DRONE, PEN_START, foldHz, penMotion, penSpeedAt, penSteps, renderPenMotion, SPECTRUM_LAP, VOICE_RMS, clipSeconds, cornerChord, cornerSides, radiusDrone, renderConstant, renderCorners, renderPen, renderPenConstant, renderRadius, renderSpectrum } from '../render';
 import { applyBrush, paint, type Brush, type Voice } from '../paint';
 import { FLOOR_DB, fitCorners, isComb, makeShape, rdp, shapeTerms, termLevel, termRef } from '../shape';
 
@@ -109,8 +109,9 @@ describe('renders', () => {
       expect(c.left.length).toBe(Math.round(clipSeconds(m, s) * sr));
       expect(rms(c.left, c.right)).toBeCloseTo(VOICE_RMS, 6);
     }
-    const pen = renderPen(shape, 7000, sr);
-    expect(rms(pen.left, pen.right)).toBeCloseTo(VOICE_RMS, 6);
+    const pen = renderPen(shape, s.spectrum, sr);
+    const i0 = Math.ceil(PEN_START * sr);
+    expect(rms(pen.left.subarray(i0), pen.right.subarray(i0))).toBeCloseTo(VOICE_RMS, 6);
   });
 
   it('pitches the radius voice up where the head is further out', () => {
@@ -308,5 +309,36 @@ describe('distance at the extremes', () => {
     expect(drone.every((b) => b.hz >= 20 && b.hz <= 20 * 2 ** 9)).toBe(true);
     const held = renderConstant(shape, 'radius', { ...DEFAULT_SETTINGS, radius: { f0: 220, range: 100, lap: 5 } }, 8000);
     expect(rms(held.left, held.right)).toBeCloseTo(VOICE_RMS, 6);
+  });
+});
+
+describe('pen ramp', () => {
+  const ramp = penMotion({ ...DEFAULT_SETTINGS.spectrum, pen: true, penRate: 1000, penFrom: 0, penMax: 40000 });
+
+  it('integrates the speed, so the position never jumps', () => {
+    const dt = 1e-3;
+    for (const tau of [0.5, 10, 39.9995, 40, 40.0005, 41]) {
+      const v = (penSteps(ramp, tau + dt / 2) - penSteps(ramp, tau - dt / 2)) / dt;
+      expect(v).toBeCloseTo(penSpeedAt(ramp, tau), 0);
+    }
+    expect(penSteps(ramp, 40)).toBeCloseTo(800000, 6);
+    expect(penSteps(ramp, 42)).toBeCloseTo(880000, 6);
+    expect(penSpeedAt(ramp, 100)).toBe(40000);
+  });
+
+  it('sounds at the rate it laps, as the speed rises', () => {
+    // A 100-step circle: the direction of travel turns once a lap, so the pen is a sine at speed / 100.
+    const sr = 22050;
+    const circle = makeShape(wobble(100, 1, 0));
+    const fast = penMotion({ ...DEFAULT_SETTINGS.spectrum, pen: true, penRate: 2000, penFrom: 0, penMax: 20000 });
+    const c = renderPenMotion(circle, fast, 0, 10, sr);
+    const hzAt = (t: number): number => {
+      const w = 0.1;
+      let n = 0;
+      for (let i = Math.round((t - w / 2) * sr) + 1; i < Math.round((t + w / 2) * sr); i++) if (c.left[i - 1] < 0 && c.left[i] >= 0) n++;
+      return n / w;
+    };
+    for (const t of [5, 9]) expect(hzAt(t) / (penSpeedAt(fast, t) / 100)).toBeGreaterThan(0.85);
+    for (const t of [5, 9]) expect(hzAt(t) / (penSpeedAt(fast, t) / 100)).toBeLessThan(1.15);
   });
 });

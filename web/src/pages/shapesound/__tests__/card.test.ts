@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cardLaps } from '../card';
+import { cardLaps, timelineSeconds } from '../card';
 import { decodeHash, encodeHash, type HashState } from '../hash';
 import { DEFAULT_SETTINGS } from '../render';
 
@@ -25,7 +25,7 @@ describe('hash', () => {
         mode: 'corners',
         play: 'constant',
         settings: {
-          spectrum: { f0: 62, terms: 42, pen: true, penSpeed: 1234.5, penLevel: 0.3 },
+          spectrum: { f0: 62, terms: 42, pen: true, penSpeed: 1234.5, penLevel: 0.3, penRate: 1000, penFrom: 0, penMax: 40000, penHold: 2 },
           radius: { f0: 110, range: 2.25, lap: 7.5 },
           corners: { tolerance: 3.4567, root: 52, lap: 9 },
         },
@@ -52,5 +52,13 @@ describe('card length', () => {
     expect(cardLaps(2)).toBe(8);
     expect(cardLaps(7.5)).toBe(3);
     expect(cardLaps(4)).toBe(4);
+  });
+});
+
+describe('timeline cards', () => {
+  it('run for the terms, the ramp and the hold', () => {
+    const settings = { ...DEFAULT_SETTINGS, spectrum: { ...DEFAULT_SETTINGS.spectrum, pen: true, penRate: 1000, penFrom: 0, penMax: 40000, penHold: 2 } };
+    expect(timelineSeconds({ mapping: 'spectrum', play: 'loop', settings })).toBeCloseTo(2 + 40 + 2, 9);
+    expect(timelineSeconds({ mapping: 'spectrum', play: 'loop', settings: DEFAULT_SETTINGS })).toBeNull();
   });
 });

@@ -45,7 +45,7 @@ import {
 } from './shapesound/render';
 import { cornerEps, fitCorners, makeShape, type Shape } from './shapesound/shape';
 import { ShapeView } from './shapesound/ShapeView';
-import { cardAudio, cardInfo, cardPainter, recordCard, type CardPainter, type CardSource } from './shapesound/card';
+import { cardAudio, cardInfo, cardPainter, recordCard, type CardOptions, type CardPainter, type CardSource } from './shapesound/card';
 import { decodeHash, encodeHash, type HashState } from './shapesound/hash';
 import '../styles/sound.css';
 import '../styles/shapesound.css';
@@ -76,8 +76,10 @@ const mainSig = (v: Brush & { key: string }): string => {
   const { lap: _lap, ...held } = s as { lap?: number };
   return `${v.key}|${v.play}|${v.mode}|${JSON.stringify(v.play === 'constant' ? held : s)}`;
 };
-const penSig = (v: Brush & { key: string }): string =>
-  v.mode === 'spectrum' && v.settings.spectrum.pen ? `${v.key}|pen|${v.play}|${v.settings.spectrum.penSpeed}` : '';
+const penSig = (v: Brush & { key: string }): string => {
+  const s = v.settings.spectrum;
+  return v.mode === 'spectrum' && s.pen ? `${v.key}|pen|${v.play}|${s.penSpeed}|${s.penRate}|${s.penFrom}|${s.penMax}` : '';
+};
 
 function LogSlider(props: { label: string; min: number; max: number; value: number; show: string; onChange: (v: number) => void }): JSX.Element {
   const { min, max } = props;
@@ -192,7 +194,7 @@ export function ShapeSoundPage(): JSX.Element {
     const main = clipFor(mainSig(v), () => render(shape, v.mode, v.settings, SR, v.play));
     const ps = penSig(v);
     const speed = v.settings.spectrum.penSpeed;
-    const pen = ps ? clipFor(ps, () => (v.play === 'constant' ? renderPenConstant(shape, speed, SR) : renderPen(shape, speed, SR))) : null;
+    const pen = ps ? clipFor(ps, () => (v.play === 'constant' ? renderPenConstant(shape, speed, SR) : renderPen(shape, v.settings.spectrum, SR))) : null;
     return { main, pen };
   };
   const clipsRef = useRef(clipsOf);
@@ -490,9 +492,12 @@ export function ShapeSoundPage(): JSX.Element {
     const shape = shapeOf(v);
     const { main, pen } = clipsOf(v);
     const s = v.settings;
+    const sp = s.spectrum;
+    const k = (n: number): string => (n >= 1000 && n % 1000 === 0 ? `${n / 1000}k` : `${Math.round(n)}`);
+    const penPart = !sp.pen ? '' : sp.penRate > 0 ? `-pen-ramp${k(sp.penRate)}-${k(sp.penMax)}${sp.penFrom > 0 ? `-from${k(sp.penFrom)}` : ''}` : `-pen${k(sp.penSpeed)}`;
     const params =
       v.mode === 'spectrum'
-        ? `${Math.round(s.spectrum.f0)}hz-k${s.spectrum.terms}${s.spectrum.pen ? '-pen' : ''}`
+        ? `${Math.round(sp.f0)}hz-k${sp.terms}${penPart}`
         : v.mode === 'radius'
           ? `${Math.round(s.radius.f0)}hz-r${s.radius.range}`
           : `t${Number(s.corners.tolerance.toPrecision(2))}-${noteName(s.corners.root)}`;
@@ -510,25 +515,25 @@ export function ShapeSoundPage(): JSX.Element {
   // The hook export_card.py drives: the selected circuit's card, frame by frame and its sound.
   useEffect(() => {
     let painter: { sig: string; p: CardPainter } | null = null;
-    const current = (): { src: CardSource; name: string; sig: string } => {
+    const current = (opts: CardOptions = {}): { src: CardSource; name: string; sig: string } => {
       const v = selRef.current;
       if (!v) throw new Error('no circuit selected');
-      return { ...cardRef.current(v), sig: mainSig(v) + penSig(v) };
+      return { ...cardRef.current(v), sig: mainSig(v) + penSig(v) + JSON.stringify(v.settings.spectrum) + JSON.stringify(opts) };
     };
     (window as unknown as { __shapesoundCard?: unknown }).__shapesoundCard = {
       ready: () => !!selRef.current,
-      info: () => {
-        const c = current();
-        return { ...cardInfo(c.src), name: c.name };
+      info: (opts: CardOptions = {}) => {
+        const c = current(opts);
+        return { ...cardInfo(c.src, opts), name: c.name, hash: window.location.hash };
       },
-      frame: (t: number) => {
-        const c = current();
-        if (!painter || painter.sig !== c.sig) painter = { sig: c.sig, p: cardPainter(c.src) };
+      frame: (t: number, opts: CardOptions = {}) => {
+        const c = current(opts);
+        if (!painter || painter.sig !== c.sig) painter = { sig: c.sig, p: cardPainter(c.src, opts) };
         painter.p.draw(t);
         return painter.p.canvas.toDataURL('image/png');
       },
-      audio: async () => {
-        const a = await cardAudio(current().src);
+      audio: async (opts: CardOptions = {}) => {
+        const a = await cardAudio(current(opts).src, opts);
         const inter = new Float32Array(2 * a.left.length);
         for (let i = 0; i < a.left.length; i++) {
           inter[2 * i] = a.left[i];
@@ -694,7 +699,16 @@ export function ShapeSoundPage(): JSX.Element {
                 </label>
                 {sp.pen ? (
                   <>
-                    <LogSlider label="Pen speed" min={500} max={40000} value={sp.penSpeed} show={`${Math.round(sp.penSpeed)} steps/s`} onChange={(penSpeed) => setSetting('spectrum', { penSpeed })} />
+                    <Slider label="Pen ramp" min={0} max={5000} step={100} value={sp.penRate} show={sp.penRate > 0 ? `${sp.penRate} steps/s²` : 'off'} onChange={(penRate) => setSetting('spectrum', { penRate })} />
+                    {sp.penRate > 0 ? (
+                      <>
+                        <Slider label="Ramp from" min={0} max={40000} step={500} value={sp.penFrom} show={`${sp.penFrom} steps/s`} onChange={(penFrom) => setSetting('spectrum', { penFrom })} />
+                        <LogSlider label="Ramp to" min={500} max={40000} value={sp.penMax} show={`${Math.round(sp.penMax)} steps/s`} onChange={(penMax) => setSetting('spectrum', { penMax: Math.round(penMax) })} />
+                        <Slider label="Hold" min={0} max={30} step={0.5} value={sp.penHold} show={`${sp.penHold} s`} onChange={(penHold) => setSetting('spectrum', { penHold })} />
+                      </>
+                    ) : (
+                      <LogSlider label="Pen speed" min={500} max={40000} value={sp.penSpeed} show={`${Math.round(sp.penSpeed)} steps/s`} onChange={(penSpeed) => setSetting('spectrum', { penSpeed })} />
+                    )}
                     <Slider label="Pen level" min={0} max={1} step={0.01} value={sp.penLevel} show={`${Math.round(sp.penLevel * 100)}%`} onChange={(penLevel) => setSetting('spectrum', { penLevel })} />
                   </>
                 ) : null}

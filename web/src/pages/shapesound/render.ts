@@ -31,8 +31,16 @@ export interface SpectrumSettings {
   readonly f0: number;
   readonly terms: number;
   readonly pen: boolean;
+  /** Steps a second, when the pen runs at one speed. */
   readonly penSpeed: number;
   readonly penLevel: number;
+  /** Ramp: steps a second gained every second (0: no ramp, the pen runs at `penSpeed`). */
+  readonly penRate: number;
+  /** Ramp: the speed it starts from and the speed it stops rising at, steps a second. */
+  readonly penFrom: number;
+  readonly penMax: number;
+  /** Ramp: seconds a card holds the top speed before it ends. */
+  readonly penHold: number;
 }
 export interface RadiusSettings {
   readonly f0: number;
@@ -57,14 +65,14 @@ export interface Settings {
 }
 
 export const DEFAULT_SETTINGS: Settings = {
-  spectrum: { f0: 131, terms: 24, pen: false, penSpeed: 7000, penLevel: 0.5 },
+  spectrum: { f0: 131, terms: 24, pen: false, penSpeed: 7000, penLevel: 0.5, penRate: 0, penFrom: 0, penMax: 40000, penHold: 2 },
   radius: { f0: 220, range: 1.3, lap: 5 },
   corners: { tolerance: 1, root: 64, lap: 5 },
 };
 
 /** Each setting's range: the sliders, the URL hash and export_card.py all keep to it. */
 export const LIMITS: { readonly [M in Mapping]: { readonly [K in keyof Settings[M]]?: readonly [number, number] } } = {
-  spectrum: { f0: [40, 400], terms: [2, 48], penSpeed: [500, 40000], penLevel: [0, 1] },
+  spectrum: { f0: [40, 400], terms: [2, 48], penSpeed: [500, 40000], penLevel: [0, 1], penRate: [0, 10000], penFrom: [0, 40000], penMax: [500, 40000], penHold: [0, 30] },
   radius: { f0: [55, 880], range: [0.05, 100], lap: [0.1, 20] },
   corners: { tolerance: [0.05, 50], root: [36, 84], lap: [1, 20] },
 };
@@ -198,10 +206,11 @@ export function joinedAt(k: number, K: number): number {
  * |k| = 1 to K over `JOIN` seconds, then held to the end of the lap. Each
  * partial makes a whole number of cycles in the lap; the circle terms
  * (|k| = 1) sound throughout, and the rest fade out just before the lap
- * ends so the next lap can join them again.
+ * ends so the next lap can join them again. `held`: a longer clip in which
+ * the terms join and then hold to its end.
  */
-export function renderSpectrum(shape: Shape, s: SpectrumSettings, sr: number): Clip {
-  const clip = blank(SPECTRUM_LAP, sr);
+export function renderSpectrum(shape: Shape, s: SpectrumSettings, sr: number, seconds = SPECTRUM_LAP, held = false): Clip {
+  const clip = blank(seconds, sr);
   const ts = shapeTerms(shape, s.terms);
   const K = Math.max(...ts.map((t) => Math.abs(t.k)));
   const ref = termRef(ts);
@@ -223,7 +232,7 @@ export function renderSpectrum(shape: Shape, s: SpectrumSettings, sr: number): C
     let si = Math.sin(ph);
     for (let i = 0; i < len; i++) {
       const tt = i / sr;
-      const e = circle ? 1 : Math.max(0, Math.min(1, (tt - on) / 0.03)) * (1 - ramp(tt, clip.seconds - LAP_FADE, clip.seconds));
+      const e = circle ? 1 : Math.max(0, Math.min(1, (tt - on) / 0.03)) * (held ? 1 : 1 - ramp(tt, clip.seconds - LAP_FADE, clip.seconds));
       if (e > 0) {
         const x = a * si * e;
         left[i] += x * gl;
@@ -243,60 +252,118 @@ export function renderSpectrum(shape: Shape, s: SpectrumSettings, sr: number): C
   return clip;
 }
 
+/** How the pen moves once it starts: from `start` steps a second, gaining `rate` every second up to `max`. */
+export interface PenMotion {
+  readonly start: number;
+  readonly rate: number;
+  readonly max: number;
+}
+
+export function penMotion(s: SpectrumSettings): PenMotion {
+  return s.penRate > 0 ? { start: s.penFrom, rate: s.penRate, max: Math.max(s.penFrom, s.penMax) } : { start: s.penSpeed, rate: 0, max: s.penSpeed };
+}
+
+/** Seconds the ramp takes to reach its top speed (0 for a steady pen). */
+export const rampSeconds = (m: PenMotion): number => (m.rate > 0 ? (m.max - m.start) / m.rate : 0);
+
+/** Steps a second, `tau` seconds after the pen starts. */
+export function penSpeedAt(m: PenMotion, tau: number): number {
+  return tau <= 0 ? m.start : Math.min(m.max, m.start + m.rate * tau);
+}
+
+/** Steps covered `tau` seconds after the pen starts: the speed integrated, so the pen never jumps. */
+export function penSteps(m: PenMotion, tau: number): number {
+  if (tau <= 0) return 0;
+  const up = rampSeconds(m);
+  if (tau <= up) return m.start * tau + (m.rate * tau * tau) / 2;
+  return m.start * up + (m.rate * up * up) / 2 + m.max * (tau - up);
+}
+
 /**
- * `mappings.pen_trace`: a pen runs round the full loop from `PEN_START` at
- * `speed` steps a second; the sound is its velocity (x left, y right),
- * mixed 0.7 : 0.3 with its position, low-passed at 9 kHz and high-passed at
- * 60 Hz. One spectrum lap long; it fades out before the lap ends.
+ * `mappings.pen_trace`: a pen runs round the full loop from `from` seconds,
+ * moving as `motion` says. The sound is its direction of travel per step (x
+ * left, y right; for a steady pen, its velocity over its speed), mixed 0.7 :
+ * 0.3 with its position, low-passed at 9 kHz and high-passed at 60 Hz, so it
+ * repeats at the rate the pen laps and follows its speed as that changes.
+ * Brought to `VOICE_RMS` over the part where it runs; fades in over 0.1 s and
+ * out over [fadeFrom, seconds].
  */
-export function renderPen(shape: Shape, speed: number, sr: number): Clip {
-  const clip = blank(SPECTRUM_LAP, sr);
+export function renderPenMotion(shape: Shape, motion: PenMotion, from: number, seconds: number, sr: number, fadeFrom = seconds): Clip {
+  const clip = blank(seconds, sr);
   const len = clip.left.length;
-  const i0 = Math.ceil(PEN_START * sr);
+  const i0 = Math.min(len, Math.ceil(from * sr));
   const m = len - i0;
-  const zx = new Float64Array(m);
-  const zy = new Float64Array(m);
-  for (let i = 0; i < m; i++) {
-    const [x, y] = pointAt(shape.full, shape.steps, (speed * (i / sr)) / shape.steps);
+  if (m < 2) return clip;
+  // Positions one sample either side of the run too, for the differences.
+  const ss = new Float64Array(m + 2);
+  const zx = new Float64Array(m + 2);
+  const zy = new Float64Array(m + 2);
+  for (let i = 0; i < m + 2; i++) {
+    ss[i] = penSteps(motion, (i0 + i - 1) / sr - from);
+    const [x, y] = pointAt(shape.full, shape.steps, ss[i] / shape.steps);
     zx[i] = x;
     zy[i] = y;
   }
-  const vx = gradient(zx).map((v) => (v * sr) / speed);
-  const vy = gradient(zy).map((v) => (v * sr) / speed);
+  const vx = new Float64Array(m);
+  const vy = new Float64Array(m);
+  for (let i = 0; i < m; i++) {
+    const ds = ss[i + 2] - ss[i];
+    if (ds > 1e-9) {
+      vx[i] = (zx[i + 2] - zx[i]) / ds;
+      vy[i] = (zy[i + 2] - zy[i]) / ds;
+    } else {
+      // Standing still: the direction of the step it stands on.
+      const j = Math.floor(ss[i + 1]) % shape.steps;
+      const k = (j + 1) % shape.steps;
+      vx[i] = shape.full[2 * k] - shape.full[2 * j];
+      vy[i] = shape.full[2 * k + 1] - shape.full[2 * j + 1];
+    }
+  }
   butter2(vx, 9000, sr, 'low');
   butter2(vy, 9000, sr, 'low');
   let mx = 0;
   let my = 0;
-  for (let i = 0; i < m; i++) {
+  for (let i = 1; i <= m; i++) {
     mx += zx[i];
     my += zy[i];
   }
-  mx /= m || 1;
-  my /= m || 1;
+  mx /= m;
+  my /= m;
   let sv = 0;
   let sz = 0;
   for (let i = 0; i < m; i++) {
     sv += vx[i] ** 2 + vy[i] ** 2;
-    sz += (zx[i] - mx) ** 2 + (zy[i] - my) ** 2;
+    sz += (zx[i + 1] - mx) ** 2 + (zy[i + 1] - my) ** 2;
   }
   const rv = Math.sqrt(sv / (2 * m)) + 1e-9;
   const rz = Math.sqrt(sz / (2 * m)) + 1e-9;
   const yl = new Float64Array(m);
   const yr = new Float64Array(m);
   for (let i = 0; i < m; i++) {
-    yl[i] = (0.7 * vx[i]) / rv + (0.3 * (zx[i] - mx)) / rz;
-    yr[i] = (0.7 * vy[i]) / rv + (0.3 * (zy[i] - my)) / rz;
+    yl[i] = (0.7 * vx[i]) / rv + (0.3 * (zx[i + 1] - mx)) / rz;
+    yr[i] = (0.7 * vy[i]) / rv + (0.3 * (zy[i + 1] - my)) / rz;
   }
   butter2(yl, 60, sr, 'high');
   butter2(yr, 60, sr, 'high');
+  let s2 = 0;
   for (let i = 0; i < m; i++) {
     const t = (i0 + i) / sr;
-    const e = ramp(t, PEN_START, PEN_START + 0.1) * (1 - ramp(t, clip.seconds - LAP_FADE, clip.seconds));
+    const e = ramp(t, from, from + 0.1) * (1 - ramp(t, fadeFrom, seconds));
     clip.left[i0 + i] = yl[i] * e;
     clip.right[i0 + i] = yr[i] * e;
+    s2 += clip.left[i0 + i] ** 2 + clip.right[i0 + i] ** 2;
   }
-  normalise(clip.left, clip.right, VOICE_RMS);
+  const g = VOICE_RMS / (Math.sqrt(s2 / (2 * m)) || 1);
+  for (let i = i0; i < len; i++) {
+    clip.left[i] *= g;
+    clip.right[i] *= g;
+  }
   return clip;
+}
+
+/** The pen within a spectrum lap: from `PEN_START`, fading out just before the lap ends. */
+export function renderPen(shape: Shape, s: SpectrumSettings, sr: number): Clip {
+  return renderPenMotion(shape, penMotion(s), PEN_START, SPECTRUM_LAP, sr, SPECTRUM_LAP - LAP_FADE);
 }
 
 // ---------------------------------------------------------------- 2. radius
@@ -644,6 +711,7 @@ export function renderConstant(shape: Shape, m: Mapping, s: Settings, sr: number
  * buffer starts where it ends.
  */
 export function renderPenConstant(shape: Shape, speed: number, sr: number): Clip {
+  if (speed <= 0) return blank(CONSTANT_SECONDS, sr);
   const lap = shape.steps / speed;
   const laps = Math.max(1, Math.round(CONSTANT_SECONDS / lap));
   const len = Math.round(laps * lap * sr);

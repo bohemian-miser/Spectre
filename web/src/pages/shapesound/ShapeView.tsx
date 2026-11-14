@@ -9,7 +9,7 @@
 
 import { useEffect, useMemo, useRef } from 'react';
 import { FLOOR_DB, isComb, partialCurve, pointAt, shapeTerms, termLevel, termRef, type CornerFit, type Shape, type Term } from './shape';
-import { PEN_START, SPECTRUM_LAP, joinedAt, radiusDrone, type DroneBin, type Mapping, type Play, type Settings } from './render';
+import { PEN_START, SPECTRUM_LAP, joinedAt, penMotion, penSteps, radiusDrone, type DroneBin, type Mapping, type Play, type Settings } from './render';
 
 /** The preview's size, CSS px; line widths are set for it and scale with the width. */
 const W = 460;
@@ -68,11 +68,15 @@ export function prepare(s: ShapeScene): Prepared {
   };
 }
 
+/** Seconds between frames, for drawing what a fast pen covered since the last one. */
+const FRAME = 1 / 30;
+
 /**
  * One frame of scene `s` at `t` seconds into the lap (null: the whole lap),
  * into a context whose user space is `layout.w` by `loopH + barsH`.
+ * `timeline`: `t` runs past the lap and the pen keeps going (a ramp card).
  */
-export function drawShape(g: CanvasRenderingContext2D, s: ShapeScene, pre: Prepared, layout: Layout, t: number | null): void {
+export function drawShape(g: CanvasRenderingContext2D, s: ShapeScene, pre: Prepared, layout: Layout, t: number | null, timeline = false): void {
   const { shape, mapping, play, settings, fit } = s;
   const { ts, drone } = pre;
   const { w: Wd, loopH, barsH } = layout;
@@ -140,10 +144,11 @@ export function drawShape(g: CanvasRenderingContext2D, s: ShapeScene, pre: Prepa
       g.stroke();
     }
     const sp = settings.spectrum;
-    if (sp.pen && t !== null && t >= PEN_START && t <= SPECTRUM_LAP) {
-      // What the pen covered in the last 30th of a second (the whole loop when it laps faster).
-      const u = (sp.penSpeed * (t - PEN_START)) / shape.steps;
-      const u0 = Math.max(0, u - sp.penSpeed / 30 / shape.steps);
+    if (sp.pen && t !== null && t >= PEN_START && (timeline || t <= SPECTRUM_LAP)) {
+      // What the pen covered since the last frame (the whole loop when it laps faster than the frames).
+      const motion = penMotion(sp);
+      const u = penSteps(motion, t - PEN_START) / shape.steps;
+      const u0 = penSteps(motion, Math.max(0, t - PEN_START - FRAME)) / shape.steps;
       const all = u - u0 >= 1;
       const m = all ? CURVE_POINTS : 200;
       const pts = new Float64Array(2 * (m + 1));
