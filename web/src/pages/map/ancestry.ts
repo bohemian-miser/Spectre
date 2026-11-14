@@ -94,3 +94,24 @@ export function levelOfFrom(
     return level;
   };
 }
+
+/**
+ * A tile's ancestry up to level `top`: `slots[l]` is the slot of its level-l
+ * ancestor in the level-(l+1) one, `types[l]` the type of its level-l
+ * ancestor, from `rules` (child type by parent type and slot). The chain
+ * must reach level `top`.
+ */
+export function ancestorPath(
+  t: TileId,
+  chain: readonly ChainStep[],
+  rules: Readonly<Record<string, readonly string[]>>,
+  top: number,
+): { slots: number[]; types: string[] } {
+  if (chain.length < top) throw new Error(`the chain reaches level ${chain.length}, asked for ${top}`);
+  const slots: number[] = [];
+  for (let l = 0; l < top; l++) slots.push(slotAt(t, chain, l));
+  const types = new Array<string>(top + 1);
+  types[top] = chain[top - 1].parentType;
+  for (let l = top - 1; l >= 0; l--) types[l] = rules[types[l + 1]][slots[l]];
+  return { slots, types };
+}

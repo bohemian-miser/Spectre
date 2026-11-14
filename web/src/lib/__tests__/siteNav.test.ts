@@ -43,6 +43,7 @@ describe('siteNav', () => {
       'line',
       'limit',
       'identify',
+      'sound',
       'legacy',
     ]);
     expect(new Set(SITE_NAV.map((i) => i.id)).size).toBe(SITE_NAV.length);
@@ -75,6 +76,7 @@ describe('siteNav', () => {
       'line',
       'limit',
       'identify',
+      'sound',
       'legacy',
     ]);
   });

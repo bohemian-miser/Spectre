@@ -235,6 +235,14 @@ export const SITE_NAV: readonly NavItem[] = Object.freeze([
     blurb: 'A strand named by one of its tiles, followed up level by level: the circuit it closes into, or the chain it most likely belongs to.',
   },
   {
+    id: 'sound',
+    label: 'Sound',
+    short: 'Sound',
+    entry: 'sound.html',
+    status: 'ready',
+    blurb: 'Hear a rule’s circuits: a chord from the supertiles each spans, a voice that follows the trace, one voice per congruent copy.',
+  },
+  {
     id: 'legacy',
     label: 'Legacy p5 app',
     short: 'Legacy',

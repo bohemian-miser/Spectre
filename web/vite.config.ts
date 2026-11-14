@@ -49,6 +49,7 @@ export default defineConfig({
         limit: resolve(__dirname, 'limit.html'),
         identify: resolve(__dirname, 'identify.html'),
         reel: resolve(__dirname, 'reel.html'),
+        sound: resolve(__dirname, 'sound.html'),
         legacy: resolve(__dirname, 'legacy.html'),
         widgets: resolve(__dirname, 'widgets.html'),
       },

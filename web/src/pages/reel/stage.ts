@@ -5,7 +5,7 @@
  * gets every frame exactly once and identically each run.
  */
 
-import type { Pt, Rgb } from '../../core';
+import type { Pt, Rgb, ViewportCut } from '../../core';
 import type { MapCamera } from '../map/camera';
 import type { MapRenderer, TrailGeometry } from '../map/rendererTypes';
 import { LIGHT_LINE_COLOR } from '../map/webglRenderer';
@@ -18,7 +18,7 @@ const LIGHT_FRAMES = 8;
 const CULL_PAD = 4;
 const CELL = 8;
 
-function geometry(points: readonly Pt[], origin: Pt, closed: boolean, color?: Rgb, version = 0): TrailGeometry {
+export function geometry(points: readonly Pt[], origin: Pt, closed: boolean, color?: Rgb, version = 0): TrailGeometry {
   const n = points.length + (closed ? 1 : 0);
   const xy = new Float32Array(2 * n);
   const arc = new Float32Array(n);
@@ -71,36 +71,7 @@ export function createReelStage(
   const { cut } = world;
   renderer.setChords(world.table);
 
-  // Tiles by grid cell, so a frame hands the renderer only what it can see.
-  const cells = new Map<string, number[]>();
-  for (let i = 0; i < cut.count; i++) {
-    const key = `${Math.floor((cut.pos[2 * i] + cut.origin.x) / CELL)},${Math.floor((cut.pos[2 * i + 1] + cut.origin.y) / CELL)}`;
-    const list = cells.get(key);
-    if (list) list.push(i);
-    else cells.set(key, [i]);
-  }
-  const visibleCut = (cam: MapCamera): typeof cut => {
-    const hw = o.width / 2 / cam.scale + CULL_PAD;
-    const hh = o.height / 2 / cam.scale + CULL_PAD;
-    const picked: number[] = [];
-    for (let gx = Math.floor((cam.cx - hw) / CELL); gx <= Math.floor((cam.cx + hw) / CELL); gx++) {
-      for (let gy = Math.floor((cam.cy - hh) / CELL); gy <= Math.floor((cam.cy + hh) / CELL); gy++) {
-        const list = cells.get(`${gx},${gy}`);
-        if (list) for (const i of list) picked.push(i);
-      }
-    }
-    picked.sort((a, b) => a - b);
-    const pos = new Float32Array(2 * picked.length);
-    const code = new Uint8Array(picked.length);
-    const type = new Uint8Array(picked.length);
-    picked.forEach((i, j) => {
-      pos[2 * j] = cut.pos[2 * i];
-      pos[2 * j + 1] = cut.pos[2 * i + 1];
-      code[j] = cut.code[i];
-      type[j] = cut.type[i];
-    });
-    return { ...cut, count: picked.length, pos, code, type, ids: undefined, exact: undefined };
-  };
+  const visibleCut = cutCuller(cut);
 
   const solid = new Map<number, TrailGeometry>();
   const litGeometry = (c: ReelCircuit, color: Rgb, age: number): TrailGeometry => {
@@ -123,7 +94,7 @@ export function createReelStage(
       const t = frameTime(frame, o.fps);
       const hw = o.width / 2 / cam.scale;
       const hh = o.height / 2 / cam.scale;
-      renderer.setCut(visibleCut(cam));
+      renderer.setCut(visibleCut(cam, o.width, o.height));
       // Lines thin out as the camera pulls back, so a wide view stays a
       // drawing rather than a carpet of ink.
       const zoom = Math.min(1, Math.max(0.2, (cam.scale / o.scale) ** 0.7));
@@ -141,5 +112,38 @@ export function createReelStage(
       renderer.setTrail(live ? partialTrace(live, stepsAt(live, t), cut.origin) : null);
       renderer.render(cam, o.width, o.height, dpr);
     },
+  };
+}
+
+/** The cut's tiles near a view, found by grid cell, so a frame hands the renderer only what it can see. */
+export function cutCuller(cut: ViewportCut): (cam: MapCamera, width: number, height: number) => ViewportCut {
+  const cells = new Map<string, number[]>();
+  for (let i = 0; i < cut.count; i++) {
+    const key = `${Math.floor((cut.pos[2 * i] + cut.origin.x) / CELL)},${Math.floor((cut.pos[2 * i + 1] + cut.origin.y) / CELL)}`;
+    const list = cells.get(key);
+    if (list) list.push(i);
+    else cells.set(key, [i]);
+  }
+  return (cam, width, height) => {
+    const hw = width / 2 / cam.scale + CULL_PAD;
+    const hh = height / 2 / cam.scale + CULL_PAD;
+    const picked: number[] = [];
+    for (let gx = Math.floor((cam.cx - hw) / CELL); gx <= Math.floor((cam.cx + hw) / CELL); gx++) {
+      for (let gy = Math.floor((cam.cy - hh) / CELL); gy <= Math.floor((cam.cy + hh) / CELL); gy++) {
+        const list = cells.get(`${gx},${gy}`);
+        if (list) for (const i of list) picked.push(i);
+      }
+    }
+    picked.sort((a, b) => a - b);
+    const pos = new Float32Array(2 * picked.length);
+    const code = new Uint8Array(picked.length);
+    const type = new Uint8Array(picked.length);
+    picked.forEach((i, j) => {
+      pos[2 * j] = cut.pos[2 * i];
+      pos[2 * j + 1] = cut.pos[2 * i + 1];
+      code[j] = cut.code[i];
+      type[j] = cut.type[i];
+    });
+    return { ...cut, count: picked.length, pos, code, type, ids: undefined, exact: undefined };
   };
 }
