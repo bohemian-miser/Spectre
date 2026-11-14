@@ -4,9 +4,9 @@
  * their paths' common prefix, on real ids from an infinite-plane cut.
  */
 import { describe, expect, it } from 'vitest';
-import { createUnrootedEngine } from '../../../core';
+import { SUPER_RULES, createUnrootedEngine, leafOrder } from '../../../core';
 import { pathFromAncestor } from '../../explorer/xray';
-import { levelCss, levelOfFrom, levelRgb, parseTileId, sharedLevel } from '../ancestry';
+import { ancestorPath, levelCss, levelOfFrom, levelRgb, parseTileId, sharedLevel } from '../ancestry';
 
 describe('shared ancestry', () => {
   const engine = createUnrootedEngine(7, 'hex');
@@ -58,6 +58,22 @@ describe('shared ancestry', () => {
     expect(levelOf(start)).toBe(0);
     expect(levelOf(undefined)).toBe(-1);
     expect(levelOf('not an id')).toBe(-1);
+  });
+
+  it('spells each ancestor down to the leaf type the cut says, and the shared level from the slots', () => {
+    const leafNames = leafOrder('hex');
+    const paths = new Map<number, ReturnType<typeof ancestorPath>>();
+    for (let i = 0; i < ids.length; i += 37) {
+      const path = ancestorPath(parseTileId(ids[i])!, chain, SUPER_RULES, ROOT);
+      expect(path.types[0]).toBe(leafNames[cut.type[i]]);
+      paths.set(i, path);
+    }
+    const [a, ...rest] = [...paths.keys()];
+    for (const b of rest) {
+      let level = ROOT;
+      while (level > 0 && paths.get(a)!.slots[level - 1] === paths.get(b)!.slots[level - 1]) level--;
+      expect(level).toBe(sharedLevel(parseTileId(ids[a])!, parseTileId(ids[b])!, chain));
+    }
   });
 
   it('inks levels apart and the unknown grey', () => {

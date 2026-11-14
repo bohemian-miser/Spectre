@@ -119,6 +119,8 @@ function cssRgba(c: readonly [number, number, number, number]): string {
 export function createCanvas2dRenderer(
   canvas: HTMLCanvasElement,
   family: TileFamilyId = 'spectre',
+  /** Instances drawn per frame at most; past it the rest of the cut is skipped. */
+  maxInstances = CANVAS2D_MAX_INSTANCES,
 ): MapRenderer | null {
   let ctx: CanvasRenderingContext2D | null = null;
   try {
@@ -228,8 +230,8 @@ export function createCanvas2dRenderer(
   const setCut = (cut: ViewportCut): void => {
     cutRef = cut;
     byType = new Map();
-    capped = cut.count > CANVAS2D_MAX_INSTANCES;
-    const n = Math.min(cut.count, CANVAS2D_MAX_INSTANCES);
+    capped = cut.count > maxInstances;
+    const n = Math.min(cut.count, maxInstances);
     for (let i = 0; i < n; i++) {
       const t = cut.type[i];
       const list = byType.get(t);
@@ -262,7 +264,7 @@ export function createCanvas2dRenderer(
         showOutlines &&
         !aggregate &&
         cam.scale > OUTLINE_FADE_START &&
-        Math.min(cut.count, CANVAS2D_MAX_INSTANCES) <= OUTLINE_MAX_INSTANCES;
+        Math.min(cut.count, maxInstances) <= OUTLINE_MAX_INSTANCES;
       const strokeAlpha = outlineAlphaForScale(cam.scale);
 
       // Backgrounds off means no tile fills at ANY level of detail — leaf
@@ -299,7 +301,7 @@ export function createCanvas2dRenderer(
       const rf = regionFill;
       if (!aggregate && rf) {
         C.globalAlpha = rf.alpha ?? (showFills ? REGION_FILL_ALPHA : 1);
-        const n = Math.min(rf.count, CANVAS2D_MAX_INSTANCES * 4);
+        const n = Math.min(rf.count, maxInstances * 4);
         for (let i = 0; i < n; i++) {
           const path = regionPaths[rf.row[i]];
           if (!path) continue;

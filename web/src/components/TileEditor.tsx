@@ -15,6 +15,10 @@
  * The page owns which classes are on, so a point switched on here appears on
  * the next render; the line's ends are kept as positions, and a pairing that
  * waits on a class being switched on is made once its point is there.
+ *
+ * Given `onPick`, the editor picks instead of drawing: pressing a point
+ * reports it, pressing a line reports its two ends, and `marks` outlines the
+ * ones a page has given something to (the Sound page's tile sounds).
  */
 
 import { useEffect, useMemo, useRef, useState, type PointerEvent } from 'react';
@@ -38,6 +42,9 @@ import { matchingOptions, tileMatchingInfo } from '../lib/matchingModel';
 import { EdgeClassLegend } from './controls/EdgeClassLegend';
 import { edgeClassColor } from '../lib/palette';
 
+/** A point (its index among the points switched on), or a line by its two ends (lower first). */
+export type TilePick = { readonly point: number } | { readonly pair: readonly [number, number] };
+
 export interface TileEditorProps {
   readonly family: TileFamilyId;
   readonly type: TileTypeId;
@@ -58,6 +65,10 @@ export interface TileEditorProps {
   onClose(): void;
   /** Set how many strands cross each seam of a class; shows steppers on the tile's class chips. */
   onStrands?(major: number, count: number): void;
+  /** Pick points and lines instead of drawing a pairing. */
+  onPick?(pick: TilePick): void;
+  /** Points and lines (`a-b`, lower first) to outline, and the one picked. */
+  readonly marks?: { readonly points: ReadonlySet<number>; readonly pairs: ReadonlySet<string>; readonly picked?: TilePick | null };
 }
 
 /** Pairings shown at once in the gallery; the arrows reach the rest. */
@@ -77,7 +88,7 @@ const has = (m: Matching, i: number, j: number): boolean => m.some(([x, y]) => (
 
 export function TileEditor(props: TileEditorProps): JSX.Element {
   const { family, type, selected, contracts, index, nonCrossingOnly = false, curvedStrands = false, fullLabels = false } = props;
-  const { onSetIndex, onToggleClass, onStepTile, onClose, onStrands } = props;
+  const { onSetIndex, onToggleClass, onStepTile, onClose, onStrands, onPick, marks } = props;
   const [gallery, setGallery] = useState(false);
 
   const outline = leafPts(family, type);
@@ -220,6 +231,18 @@ export function TileEditor(props: TileEditorProps): JSX.Element {
   const onDown = (e: PointerEvent<SVGSVGElement>) => {
     const p = toSvg(e);
     if (!p) return;
+    if (onPick) {
+      let point = -1;
+      points.forEach((q, i) => {
+        if (dist(p, q) < grab && (point < 0 || dist(p, q) < dist(p, points[point]))) point = i;
+      });
+      if (point >= 0) return onPick({ point });
+      const line = info.odd ? undefined : current.find(([i, j]) => segmentDist(p, points[i], points[j]) < span * 0.04);
+      if (line) return onPick({ pair: [Math.min(line[0], line[1]), Math.max(line[0], line[1])] });
+      const c = classAt(p);
+      if (c !== null) toggle(c);
+      return;
+    }
     const hit = nearest(p, grab, null);
     if (from === null) {
       if (hit !== null) {
@@ -262,6 +285,7 @@ export function TileEditor(props: TileEditorProps): JSX.Element {
     setDragging(false);
   };
 
+  const picks = marks?.picked ?? null;
   const snap = from !== null ? latched : null;
   const a = from;
   const b = snap ?? cursor;
@@ -356,9 +380,22 @@ export function TileEditor(props: TileEditorProps): JSX.Element {
             </g>
           );
         })}
-        {current.map((pair, k) => (
-          <path key={k} d={chordD(pair)} className="tile-editor-chord" fill="none" strokeWidth={sw * 1.8} strokeLinecap="round" />
-        ))}
+        {current.map((pair, k) => {
+          const key = `${Math.min(...pair)}-${Math.max(...pair)}`;
+          const picked = picks && 'pair' in picks && `${picks.pair[0]}-${picks.pair[1]}` === key;
+          const marked = marks?.pairs.has(key);
+          return (
+            <path
+              key={k}
+              d={chordD(pair)}
+              className="tile-editor-chord"
+              fill="none"
+              strokeWidth={sw * (picked || marked ? 3 : 1.8)}
+              strokeLinecap="round"
+              style={picked ? { stroke: 'var(--accent)' } : marked ? { stroke: 'var(--warn)' } : undefined}
+            />
+          );
+        })}
         {spots.map((s, i) =>
           selected.has(s.major) ? null : (
             <circle key={`o${i}`} cx={s.pt.x} cy={s.pt.y} r={sw * 1.3} className="tile-editor-dot is-off" stroke={edgeClassColor(s.major)} strokeWidth={sw * 0.7} />
@@ -367,6 +404,11 @@ export function TileEditor(props: TileEditorProps): JSX.Element {
         {points.map((p, i) => (
           <circle key={i} cx={p.x} cy={p.y} r={sw * 1.6} className={`tile-editor-dot${info.odd ? ' is-odd' : ''}`} />
         ))}
+        {points.map((p, i) => {
+          const picked = picks && 'point' in picks && picks.point === i;
+          if (!picked && !marks?.points.has(i)) return null;
+          return <circle key={`m${i}`} cx={p.x} cy={p.y} r={sw * 3.2} fill="none" stroke={picked ? 'var(--accent)' : 'var(--warn)'} strokeWidth={sw * 1.1} />;
+        })}
         {spots.map((s, i) => (
           <circle key={`h${i}`} cx={s.pt.x} cy={s.pt.y} r={grab} fill="transparent" className="tile-editor-hit" data-point={indexOf(s.pt)} />
         ))}
@@ -415,7 +457,9 @@ export function TileEditor(props: TileEditorProps): JSX.Element {
       )}
       <p className="tile-editor-hint" data-testid="tile-editor-hint">
         {message ??
-          (from !== null
+          (onPick
+            ? 'Press a point to pick its edge, or a line to pick it. ‹ › change the pairing.'
+            : from !== null
             ? 'Drag or tap to the point to pair it with.'
             : info.odd
               ? 'An odd number of points: press a hollow point to turn its class on, or tap an edge to turn its class off.'

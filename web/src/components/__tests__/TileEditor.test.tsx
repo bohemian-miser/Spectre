@@ -185,4 +185,31 @@ describe('TileEditor', () => {
     fireEvent.click(items[2]);
     expect(props.onSetIndex).toHaveBeenLastCalledWith(2);
   });
+
+  it('picks points and lines instead of pairing when given onPick', () => {
+    const onPick = vi.fn();
+    const onSetIndex = vi.fn();
+    render(
+      <TileEditor
+        family="hex"
+        type="Pi"
+        selected={new Set([1, 5])}
+        index={0}
+        onSetIndex={onSetIndex}
+        onToggleClass={vi.fn()}
+        onStepTile={vi.fn()}
+        onClose={vi.fn()}
+        onPick={onPick}
+        marks={{ points: new Set([1]), pairs: new Set(['2-3']), picked: { point: 0 } }}
+      />,
+    );
+    const stage = document.querySelector('svg.tile-editor-stage') as SVGSVGElement;
+    const pts = connectionPoints('hex', 'Pi', new Set([1, 5])).map((c) => c.pt);
+    fireEvent.pointerDown(stage, at(pts[2]));
+    expect(onPick).toHaveBeenLastCalledWith({ point: 2 });
+    // The middle of the first line, (0 1) in pairing 0.
+    fireEvent.pointerDown(stage, at({ x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 }));
+    expect(onPick).toHaveBeenLastCalledWith({ pair: [0, 1] });
+    expect(onSetIndex).not.toHaveBeenCalled();
+  });
 });

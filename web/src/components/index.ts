@@ -10,7 +10,7 @@ export type { AppShellProps } from './AppShell';
 
 export { TileView, default as TileViewDefault } from './TileView';
 export { TileEditor } from './TileEditor';
-export type { TileEditorProps } from './TileEditor';
+export type { TileEditorProps, TilePick } from './TileEditor';
 export { TileGlyph } from './TileGlyph';
 export type { TileGlyphProps } from './TileGlyph';
 export type {

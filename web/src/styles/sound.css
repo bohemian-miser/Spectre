@@ -1,0 +1,234 @@
+/* Sound page. Shell tokens come from widgets.css. The stage stays dark in
+   both themes: the strands are drawn in light ink, as in the reel. */
+
+.sound-page {
+  display: grid;
+  gap: 14px;
+  padding-bottom: 32px;
+}
+.sound-page h1 {
+  margin: 0 0 6px;
+}
+.sound-note {
+  margin: 0;
+  max-width: 82ch;
+  font-size: 12px;
+  color: var(--muted);
+}
+.sound-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 8px 14px;
+}
+.sound-choice {
+  display: grid;
+  gap: 3px;
+  font-size: 12px;
+}
+.sound-choice > span:first-child,
+.sound-slider > span:first-child {
+  color: var(--muted);
+}
+.sound-combo {
+  font-family: var(--mono);
+  width: 12ch;
+}
+.sound-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 14px;
+  align-items: start;
+}
+@media (max-width: 860px) {
+  .sound-main {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .sound-main .sound-stage {
+    position: relative;
+    top: 0;
+    height: 60vh;
+  }
+}
+.sound-stage {
+  /* Sticky so the circuits stay in view while the panel scrolls. */
+  position: sticky;
+  top: 60px;
+  height: min(calc(100vh - 80px), 820px);
+  min-height: 360px;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: #0e1118;
+  touch-action: none;
+  cursor: crosshair;
+}
+.sound-stage canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+}
+.sound-error {
+  position: absolute;
+  left: 12px;
+  top: 8px;
+  margin: 0;
+  color: #ffb4b4;
+  font-size: 13px;
+}
+.sound-error-text {
+  margin: 0;
+  font-size: 12px;
+  color: var(--danger);
+}
+.sound-panel {
+  display: grid;
+  gap: 10px;
+}
+.sound-panel fieldset {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 8px 10px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.sound-panel legend {
+  font-size: 13px;
+  font-weight: 600;
+  padding: 0 4px;
+}
+.sound-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.sound-slider {
+  display: grid;
+  grid-template-columns: 7.5em minmax(0, 1fr) 5.5em;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+.sound-slider input {
+  width: 100%;
+}
+.sound-value {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.sound-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+.sound-patch {
+  width: 100%;
+  box-sizing: border-box;
+  font-family: var(--mono);
+  font-size: 12px;
+  resize: vertical;
+}
+.sound-tiles {
+  display: grid;
+  gap: 8px;
+}
+.sound-tile-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.sound-tile-row button {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  padding: 2px 3px;
+  font-size: 10px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  color: var(--text);
+}
+.sound-tile-row button.is-active {
+  border-color: var(--accent);
+}
+/* The tile editor sits in the panel here, not floating over the page. */
+.sound-tiles .tile-editor-pop {
+  position: relative;
+  left: auto;
+  bottom: auto;
+  transform: none;
+  width: auto;
+  box-shadow: none;
+  z-index: auto;
+}
+.sound-assign {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+.sound-assign input[type='number'] {
+  width: 5em;
+}
+.sound-assigned {
+  font-size: 12px;
+}
+.sound-assigned ul {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 2px;
+}
+.sound-assigned li {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+}
+.sound-assigned li button {
+  padding: 0 6px;
+}
+.sound-spectra {
+  display: grid;
+  gap: 8px;
+}
+.sound-spectrum {
+  margin: 0;
+  display: grid;
+  gap: 4px;
+}
+.sound-spectrum figcaption {
+  font-size: 12px;
+  color: var(--muted);
+}
+.sound-spectrum figcaption b {
+  color: var(--text);
+}
+.sound-spectrum svg {
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+.sound-spectrum-bar {
+  cursor: pointer;
+}
+.sound-spectrum-bar rect + rect {
+  fill: var(--accent);
+  transition: fill 0.1s;
+}
+.sound-spectrum-bar rect.is-on {
+  fill: var(--warn);
+}
+.sound-spectrum-bar:hover rect + rect {
+  opacity: 0.8;
+}
+.sound-spectrum-axis {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+.sound-spectrum-tick {
+  font-size: 9px;
+  fill: var(--muted);
+}
