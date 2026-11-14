@@ -9,7 +9,7 @@
 
 import type { TileFamilyId } from '../../core';
 import type { Brush } from './paint';
-import { DEFAULT_SETTINGS, MAPPINGS, PLAYS, type Mapping, type Play, type Settings } from './render';
+import { DEFAULT_SETTINGS, LIMITS, MAPPINGS, PLAYS, type Mapping, type Play, type Settings } from './render';
 
 export interface HashState {
   readonly family: TileFamilyId;
@@ -59,7 +59,10 @@ export function decodeHash(hash: string, fallback: HashState): HashState {
           if (raw === null) return [k, prev];
           if (typeof d === 'boolean') return [k, raw === '1' || raw === 'true'];
           const v = Number(raw);
-          return [k, Number.isFinite(v) ? v : prev];
+          if (!Number.isFinite(v)) return [k, prev];
+          // Kept to the sliders' range.
+          const lim = (LIMITS[m] as Record<string, readonly [number, number] | undefined>)[k];
+          return [k, lim ? Math.max(lim[0], Math.min(lim[1], v)) : v];
         }),
       ),
     ]),

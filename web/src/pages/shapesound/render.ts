@@ -62,6 +62,27 @@ export const DEFAULT_SETTINGS: Settings = {
   corners: { tolerance: 1, root: 64, lap: 5 },
 };
 
+/** Each setting's range: the sliders, the URL hash and export_card.py all keep to it. */
+export const LIMITS: { readonly [M in Mapping]: { readonly [K in keyof Settings[M]]?: readonly [number, number] } } = {
+  spectrum: { f0: [40, 400], terms: [2, 48], penSpeed: [500, 40000], penLevel: [0, 1] },
+  radius: { f0: [55, 880], range: [0.05, 100], lap: [0.1, 20] },
+  corners: { tolerance: [0.05, 50], root: [36, 84], lap: [1, 20] },
+};
+
+/** Lowest and highest pitch a voice plays; further out, pitches fold back by octaves. */
+export const LOW_HZ = 20;
+/** Nine octaves up from `LOW_HZ`, so folding keeps a pitch's note. */
+export const FOLD_OCTAVES = 9;
+
+/** `hz` folded by whole octaves into [LOW_HZ, LOW_HZ x 2^FOLD_OCTAVES). */
+export function foldHz(hz: number): number {
+  const o = Math.log2(hz / LOW_HZ);
+  return LOW_HZ * 2 ** (((o % FOLD_OCTAVES) + FOLD_OCTAVES) % FOLD_OCTAVES);
+}
+
+/** A harmonic's level near the top: full below MAX_HZ - 2 kHz, gone at MAX_HZ, so nothing aliases. */
+const below = (hz: number): number => Math.max(0, Math.min(1, (MAX_HZ - hz) / 2000));
+
 /** Reverb send each mapping had in the prototypes. */
 export const REVERB: Record<Mapping, number> = { spectrum: 0.12, radius: 0.22, corners: 0.2 };
 
@@ -287,14 +308,16 @@ const CONTROL_HZ = 1000;
  * `mappings.radius`: the head's distance r from the centroid (radius of
  * gyration 1) is the pitch, f0 × 2^(range (r - 1)); its bearing is the pan;
  * how fast the path turns at the head brightens the tone with harmonics 2, 3
- * and 5. The head track is periodic in the lap, the vibrato makes whole
- * cycles in it, and the pitch is nudged (by under half a cycle a lap) so the
- * tone's phase closes at the seam.
+ * and 5. Pitches beyond 20 Hz - 10 kHz fold back by octaves, and harmonics
+ * fade out before 18 kHz. The head track is periodic in the lap, the vibrato
+ * makes whole cycles in it, and the pitch is nudged (by under half a cycle a
+ * lap) so the tone's phase closes at the seam.
  */
 export function renderRadius(shape: Shape, s: RadiusSettings, sr: number): Clip {
   const clip = blank(s.lap, sr);
   const T = clip.seconds;
-  const nc = Math.max(8, Math.round(T * CONTROL_HZ));
+  // At least four control points per thinned point, so short laps still follow every turn.
+  const nc = Math.max(4 * shape.n, Math.round(T * CONTROL_HZ));
   let px: Float64Array = new Float64Array(nc);
   let py: Float64Array = new Float64Array(nc);
   for (let i = 0; i < nc; i++) {
@@ -320,10 +343,11 @@ export function renderRadius(shape: Shape, s: RadiusSettings, sr: number): Clip 
     turn[i] = Math.min(3, w * perPoint);
   }
   const bright = gauss(turn, (0.02 * nc) / T, true).map((v) => Math.min(1, v / 1.2));
-  const freq = new Float64Array(nc);
+  // Octaves above f0, interpolated before folding so a fold is a jump, never a sweep through the range.
+  const oct = new Float64Array(nc);
   const pan = new Float64Array(nc);
   for (let i = 0; i < nc; i++) {
-    freq[i] = s.f0 * 2 ** (s.range * (Math.hypot(px[i], py[i]) - 1));
+    oct[i] = s.range * (Math.hypot(px[i], py[i]) - 1);
     pan[i] = 0.7 * Math.cos(Math.atan2(py[i], px[i]));
   }
   const at = (arr: Float64Array, t: number): number => {
@@ -334,12 +358,13 @@ export function renderRadius(shape: Shape, s: RadiusSettings, sr: number): Clip 
   };
   const { left, right } = clip;
   const len = left.length;
-  const vib = whole(5.5, T);
+  // Whole vibrato cycles in the lap; none when the lap is too short for one.
+  const vib = Math.round(5.5 * T) / T;
   const hz = new Float64Array(len);
   let cycles = 0;
   for (let i = 0; i < len; i++) {
     const t = i / sr;
-    hz[i] = at(freq, t) * (1 + 0.004 * Math.sin(2 * Math.PI * vib * t));
+    hz[i] = foldHz(s.f0 * 2 ** at(oct, t)) * (1 + 0.004 * Math.sin(2 * Math.PI * vib * t));
     cycles += hz[i] / sr;
   }
   const close = Math.max(1, Math.round(cycles)) / cycles;
@@ -348,7 +373,9 @@ export function renderRadius(shape: Shape, s: RadiusSettings, sr: number): Clip 
     const t = i / sr;
     const b = at(bright, t);
     const w = 2 * Math.PI * ph;
-    const x = Math.sin(w) + (0.25 + 0.5 * b) * Math.sin(2 * w) + 0.35 * b * Math.sin(3 * w) + 0.2 * b * Math.sin(5 * w);
+    const f = hz[i] * close;
+    const x =
+      Math.sin(w) + (0.25 + 0.5 * b) * below(2 * f) * Math.sin(2 * w) + 0.35 * b * below(3 * f) * Math.sin(3 * w) + 0.2 * b * below(5 * f) * Math.sin(5 * w);
     const [gl, gr] = panGains(at(pan, t));
     left[i] = x * gl;
     right[i] = x * gr;
@@ -496,7 +523,7 @@ function sustain(partials: readonly Partial[], sr: number, harmonics: (p: Partia
       const w = (2 * Math.PI * p.hz * i) / sr;
       const mod = p.fm ? p.fm * Math.sin(2 * w) : 0;
       let x = 0;
-      for (const [mult, a] of hs) x += a * Math.sin(mult * w + (mult === 1 ? mod : 0));
+      for (const [mult, a] of hs) x += a * below(mult * p.hz) * Math.sin(mult * w + (mult === 1 ? mod : 0));
       x *= p.amp;
       left[i] += x * gl;
       right[i] += x * gr;
@@ -514,42 +541,50 @@ export function spectrumPartials(shape: Shape, s: SpectrumSettings): Partial[] {
 }
 
 export interface DroneBin {
-  /** Semitones from f0. */
-  readonly semis: number;
+  /** The held pitch, folded into the audible range. */
+  readonly hz: number;
   /** Share of the steps whose radius gives this pitch. */
   readonly weight: number;
-  /** Radius (radius of gyration 1) at the bin's pitch. */
+  /** Mean radius (radius of gyration 1) of those steps. */
   readonly radius: number;
   readonly pan: number;
   /** Mean brightness, 0..1, as the lap's turning rate sets it. */
   readonly bright: number;
 }
 
+/** Pitches a held distance tone keeps at most: the most-visited ones. */
+export const MAX_DRONE = 64;
+
 /**
  * Distance held: the lap's pitch f0 x 2^(range (r - 1)) at every thinned
- * point, rounded to the semitone; each semitone weighted by how many points
- * give it, panned by their mean bearing.
+ * point, folded by octaves into the audible range and rounded to the
+ * semitone; each semitone weighted by how many points give it, panned by
+ * their mean bearing; at most `MAX_DRONE` of them.
  */
-export function radiusDrone(shape: Shape, s: Pick<RadiusSettings, 'range'>): DroneBin[] {
-  const bins = new Map<number, { n: number; pan: number; bright: number }>();
+export function radiusDrone(shape: Shape, s: Pick<RadiusSettings, 'range' | 'f0'>): DroneBin[] {
+  const bins = new Map<number, { n: number; r: number; pan: number; bright: number }>();
   const { p, n } = shape;
   for (let i = 0; i < n; i++) {
     const x = p[2 * i];
     const y = p[2 * i + 1];
-    const semis = Math.round(12 * s.range * (Math.hypot(x, y) - 1));
+    const r = Math.hypot(x, y);
+    const key = Math.round(12 * Math.log2(foldHz(s.f0 * 2 ** (s.range * (r - 1))) / LOW_HZ));
     const a = (i + n - 1) % n;
     const b = (i + 1) % n;
     const d = Math.atan2(p[2 * b + 1] - y, p[2 * b] - x) - Math.atan2(y - p[2 * a + 1], x - p[2 * a]);
     const turn = Math.abs((((d + Math.PI) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI) - Math.PI);
-    const e = bins.get(semis) ?? { n: 0, pan: 0, bright: 0 };
+    const e = bins.get(key) ?? { n: 0, r: 0, pan: 0, bright: 0 };
     e.n++;
+    e.r += r;
     e.pan += 0.7 * Math.cos(Math.atan2(y, x));
     e.bright += Math.min(1, turn / 1.2);
-    bins.set(semis, e);
+    bins.set(key, e);
   }
   return [...bins.entries()]
+    .sort((a, b) => b[1].n - a[1].n || a[0] - b[0])
+    .slice(0, MAX_DRONE)
     .sort((a, b) => a[0] - b[0])
-    .map(([semis, e]) => ({ semis, weight: e.n / n, radius: 1 + semis / (12 * (s.range || 1)), pan: e.pan / e.n, bright: e.bright / e.n }));
+    .map(([key, e]) => ({ hz: LOW_HZ * 2 ** (key / 12), weight: e.n / n, radius: e.r / e.n, pan: e.pan / e.n, bright: e.bright / e.n }));
 }
 
 export interface ChordNote {
@@ -579,7 +614,7 @@ export function cornerChord(shape: Shape, s: CornerSettings): ChordNote[] {
 export function renderConstant(shape: Shape, m: Mapping, s: Settings, sr: number): Clip {
   if (m === 'spectrum') return sustain(spectrumPartials(shape, s.spectrum), sr, () => [[1, 1]]);
   if (m === 'radius') {
-    const parts = radiusDrone(shape, s.radius).map((b) => ({ hz: whole(s.radius.f0 * 2 ** (b.semis / 12), CONSTANT_SECONDS), amp: b.weight, pan: b.pan, bright: b.bright }));
+    const parts = radiusDrone(shape, s.radius).map((b) => ({ hz: whole(b.hz, CONSTANT_SECONDS), amp: b.weight, pan: b.pan, bright: b.bright }));
     // The lap's tone: harmonics 2, 3 and 5 grow with brightness.
     return sustain(parts, sr, (p) => {
       const br = p.bright ?? 0;

@@ -31,6 +31,7 @@ import { createMixer } from './shapesound/mixer';
 import { applyBrush, brushOf, paint, type Brush, type Voice } from './shapesound/paint';
 import {
   DEFAULT_SETTINGS,
+  LIMITS,
   MAPPINGS,
   PLAYS,
   REVERB,
@@ -701,8 +702,8 @@ export function ShapeSoundPage(): JSX.Element {
             ) : brush.mode === 'radius' ? (
               <>
                 <LogSlider label="Base frequency" min={55} max={880} value={ra.f0} show={`${Math.round(ra.f0)} Hz`} onChange={(f0) => setSetting('radius', { f0 })} />
-                <Slider label="Pitch range" min={0.2} max={4} step={0.05} value={ra.range} show={`${ra.range.toFixed(2)} oct`} onChange={(range) => setSetting('radius', { range })} />
-                {loop ? <Slider label="Lap" min={1} max={20} step={0.5} value={ra.lap} show={`${ra.lap.toFixed(1)} s`} onChange={(lap) => setSetting('radius', { lap })} /> : null}
+                <LogSlider label="Pitch range" min={LIMITS.radius.range![0]} max={LIMITS.radius.range![1]} value={ra.range} show={`${Number(ra.range.toPrecision(3))} oct`} onChange={(range) => setSetting('radius', { range })} />
+                {loop ? <LogSlider label="Lap" min={LIMITS.radius.lap![0]} max={LIMITS.radius.lap![1]} value={ra.lap} show={`${Number(ra.lap.toPrecision(2))} s`} onChange={(lap) => setSetting('radius', { lap })} /> : null}
               </>
             ) : (
               <>

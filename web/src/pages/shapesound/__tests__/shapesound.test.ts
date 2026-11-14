@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Pt } from '../../../core';
 import { loadWorld, reelDefaults } from '../../reel/director';
-import { CONSTANT_SECONDS, DEFAULT_SETTINGS, MAPPINGS, SPECTRUM_LAP, VOICE_RMS, clipSeconds, cornerChord, cornerSides, radiusDrone, renderConstant, renderCorners, renderPen, renderPenConstant, renderRadius, renderSpectrum } from '../render';
+import { CONSTANT_SECONDS, DEFAULT_SETTINGS, MAPPINGS, MAX_DRONE, foldHz, SPECTRUM_LAP, VOICE_RMS, clipSeconds, cornerChord, cornerSides, radiusDrone, renderConstant, renderCorners, renderPen, renderPenConstant, renderRadius, renderSpectrum } from '../render';
 import { applyBrush, paint, type Brush, type Voice } from '../paint';
 import { FLOOR_DB, fitCorners, isComb, makeShape, rdp, shapeTerms, termLevel, termRef } from '../shape';
 
@@ -258,5 +258,55 @@ describe('loops', () => {
         expect(Math.abs(ch[0] - ch[n - 1]), m).toBeLessThanOrEqual(1.2 * near);
       }
     }
+  });
+});
+
+describe('distance at the extremes', () => {
+  const sr = 44100;
+  const shape = makeShape(wobble(400, -2, 0.2));
+  const seamStep = (ch: Float32Array): [number, number] => {
+    const n = ch.length;
+    const w = Math.round(0.005 * sr);
+    let near = 0;
+    for (let i = 1; i < w; i++) near = Math.max(near, Math.abs(ch[i] - ch[i - 1]), Math.abs(ch[n - i] - ch[n - i - 1]));
+    return [Math.abs(ch[0] - ch[n - 1]), near];
+  };
+
+  it('loops a 0.1 s lap without a seam', () => {
+    for (const f0 of [55, 220, 880]) {
+      const c = renderRadius(shape, { f0, range: 1.3, lap: 0.1 }, sr);
+      expect(c.left.length).toBe(Math.round(0.1 * sr));
+      for (const ch of [c.left, c.right]) {
+        const [seam, near] = seamStep(ch);
+        expect(seam, `f0 ${f0}`).toBeLessThanOrEqual(1.2 * near);
+      }
+    }
+  });
+
+  it('keeps a 100-octave range audible, below 18 kHz and finite', () => {
+    const c = renderRadius(shape, { f0: 220, range: 100, lap: 2 }, sr);
+    let peak = 0;
+    for (const ch of [c.left, c.right]) for (const x of ch) peak = Math.max(peak, Math.abs(x));
+    expect(Number.isFinite(peak)).toBe(true);
+    expect(peak).toBeLessThan(1);
+    for (const hz of [1e-9, 1, 19, 20, 440, 18000, 1e30]) {
+      const f = foldHz(hz);
+      expect(f).toBeGreaterThanOrEqual(20);
+      expect(f).toBeLessThan(20 * 2 ** 9);
+      // Folding keeps the note.
+      const octaves = Math.log2(f / hz);
+      expect(Math.abs(octaves - Math.round(octaves))).toBeLessThan(1e-6);
+    }
+    const [seam, near] = seamStep(c.left);
+    expect(seam).toBeLessThanOrEqual(1.2 * near);
+  });
+
+  it('caps the held tone at 64 pitches, the most visited', () => {
+    const drone = radiusDrone(shape, { f0: 220, range: 100 });
+    expect(drone.length).toBeLessThanOrEqual(MAX_DRONE);
+    // Rounded to the semitone, the top of the fold can round up to 20 x 2^9.
+    expect(drone.every((b) => b.hz >= 20 && b.hz <= 20 * 2 ** 9)).toBe(true);
+    const held = renderConstant(shape, 'radius', { ...DEFAULT_SETTINGS, radius: { f0: 220, range: 100, lap: 5 } }, 8000);
+    expect(rms(held.left, held.right)).toBeCloseTo(VOICE_RMS, 6);
   });
 });
