@@ -12,7 +12,7 @@ const mtof = (m: number): number => 440 * 2 ** ((m - 69) / 12);
 /** Resting cutoff of a sweep voice, Hz. */
 const SWEEP_CUTOFF = 1800;
 const VIBRATO_HZ = 5.5;
-const REVERB_SECONDS = 2.6;
+export const REVERB_SECONDS = 2.6;
 /** A bell's second partial, as a ratio to its note, and its level. */
 const BELL_PARTIAL = 2.76;
 const BELL_LEVEL = 0.3;
@@ -31,7 +31,8 @@ interface Voice {
   readonly out: GainNode;
 }
 
-function impulse(ctx: AudioContext): AudioBuffer {
+/** A decaying noise tail for a convolver reverb, `REVERB_SECONDS` long. */
+export function impulse(ctx: BaseAudioContext): AudioBuffer {
   const n = Math.floor(REVERB_SECONDS * ctx.sampleRate);
   const buf = ctx.createBuffer(2, n, ctx.sampleRate);
   for (let ch = 0; ch < 2; ch++) {

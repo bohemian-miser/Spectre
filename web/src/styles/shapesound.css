@@ -1,0 +1,84 @@
+/* Shape sound page; builds on sound.css. The map and the view stay dark in both themes. */
+
+.shapesound-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 480px;
+  gap: 14px;
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .shapesound-main {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.shapesound-left {
+  display: grid;
+  gap: 10px;
+}
+.shapesound-main .shapesound-map {
+  position: relative;
+  top: 0;
+  height: 420px;
+  min-height: 0;
+}
+.shapesound-voices {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+.shapesound-voices li {
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr) auto 110px 3.5em auto;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  font-size: 12px;
+  cursor: pointer;
+}
+.shapesound-voices li.is-selected {
+  border-color: var(--accent);
+}
+.shapesound-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+}
+.shapesound-voice-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.shapesound-mappings {
+  display: flex;
+  gap: 0;
+}
+.shapesound-mappings button {
+  flex: 1;
+  border-radius: 0;
+}
+.shapesound-mappings button:first-child {
+  border-radius: var(--radius) 0 0 var(--radius);
+}
+.shapesound-mappings button:last-child {
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
+.shapesound-mappings button.is-on {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+.shapesound-view {
+  display: block;
+  max-width: 100%;
+  border-radius: var(--radius);
+}
+.shapesound-count {
+  margin: 0;
+  font-size: 12px;
+}
+.shapesound-panel .sound-slider {
+  grid-template-columns: 8.5em minmax(0, 1fr) 7em;
+}

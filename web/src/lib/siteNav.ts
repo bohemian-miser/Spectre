@@ -243,6 +243,14 @@ export const SITE_NAV: readonly NavItem[] = Object.freeze([
     blurb: 'Hear a rule’s circuits: a chord from the supertiles each spans, a voice that follows the trace, one voice per congruent copy.',
   },
   {
+    id: 'shapesound',
+    label: 'Shape sound',
+    short: 'Shape sound',
+    entry: 'shapesound.html',
+    status: 'ready',
+    blurb: 'A rule’s circuits as sound: Fourier spectrum, distance from centre, corners.',
+  },
+  {
     id: 'legacy',
     label: 'Legacy p5 app',
     short: 'Legacy',

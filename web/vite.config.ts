@@ -50,6 +50,7 @@ export default defineConfig({
         identify: resolve(__dirname, 'identify.html'),
         reel: resolve(__dirname, 'reel.html'),
         sound: resolve(__dirname, 'sound.html'),
+        shapesound: resolve(__dirname, 'shapesound.html'),
         legacy: resolve(__dirname, 'legacy.html'),
         widgets: resolve(__dirname, 'widgets.html'),
       },
