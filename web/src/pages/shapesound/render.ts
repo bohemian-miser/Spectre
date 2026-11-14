@@ -72,7 +72,7 @@ export const DEFAULT_SETTINGS: Settings = {
 
 /** Each setting's range: the sliders, the URL hash and export_card.py all keep to it. */
 export const LIMITS: { readonly [M in Mapping]: { readonly [K in keyof Settings[M]]?: readonly [number, number] } } = {
-  spectrum: { f0: [40, 400], terms: [2, 48], penSpeed: [500, 40000], penLevel: [0, 1], penRate: [0, 10000], penFrom: [0, 40000], penMax: [500, 40000], penHold: [0, 30] },
+  spectrum: { f0: [40, 400], terms: [2, 512], penSpeed: [500, 40000], penLevel: [0, 1], penRate: [0, 10000], penFrom: [0, 40000], penMax: [500, 40000], penHold: [0, 30] },
   radius: { f0: [55, 880], range: [0.05, 100], lap: [0.1, 20] },
   corners: { tolerance: [0.05, 50], root: [36, 84], lap: [0.1, 20] },
 };
@@ -203,7 +203,8 @@ export function joinedAt(k: number, K: number): number {
 /**
  * `spectrum.spectrum` without its pen: term k is a sine at |k| × f0, panned
  * 0.7 left for k < 0 and right for k > 0, as loud as its bar, joining from
- * |k| = 1 to K over `JOIN` seconds, then held to the end of the lap. Each
+ * |k| = 1 to K over `JOIN` seconds (the same time however many there are),
+ * then held to the end of the lap. Each
  * partial makes a whole number of cycles in the lap; the circle terms
  * (|k| = 1) sound throughout, and the rest fade out just before the lap
  * ends so the next lap can join them again. `held`: a longer clip in which

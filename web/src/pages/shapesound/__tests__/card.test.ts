@@ -35,11 +35,11 @@ describe('hash', () => {
   });
 
   it('keeps values to the sliders\' ranges', () => {
-    const s = decodeHash('#radius.range=500&radius.lap=0.01&corners.lap=0.01&spectrum.terms=99', base);
+    const s = decodeHash('#radius.range=500&radius.lap=0.01&corners.lap=0.01&spectrum.terms=999', base);
     expect(s.brush.settings.corners.lap).toBe(0.1);
     expect(s.brush.settings.radius.range).toBe(100);
     expect(s.brush.settings.radius.lap).toBe(0.1);
-    expect(s.brush.settings.spectrum.terms).toBe(48);
+    expect(s.brush.settings.spectrum.terms).toBe(512);
   });
 
   it('keeps the fallback for what a hash leaves out', () => {

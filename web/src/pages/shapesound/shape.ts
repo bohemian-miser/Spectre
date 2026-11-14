@@ -89,10 +89,19 @@ export interface Term {
   readonly amp: number;
 }
 
-/** Terms 1 <= |k| <= K of the loop (Shapes page `terms`), over the radius of gyration. */
+/** The most terms a spectrum takes: a cap for cost. */
+export const MAX_TERMS = 512;
+
+/** How many terms a loop has: half its steps (a term needs two samples a cycle), at most `MAX_TERMS`. */
+export const usableTerms = (shape: Shape): number => Math.max(1, Math.min(MAX_TERMS, Math.floor((shape.steps - 1) / 2)));
+
+/**
+ * Terms 1 <= |k| <= K of the loop (Shapes page `terms`), over the radius of
+ * gyration, from one point per step so a long loop has all its terms.
+ */
 export function shapeTerms(shape: Shape, K: number): Term[] {
-  const usable = Math.max(1, Math.min(K, Math.floor((shape.n - 1) / 2)));
-  const t = terms({ xy: shape.p, n: shape.n }, usable);
+  const usable = Math.max(1, Math.min(K, usableTerms(shape)));
+  const t = terms({ xy: shape.full, n: shape.steps }, usable);
   const out: Term[] = [];
   for (let k = -usable; k <= usable; k++) {
     if (k === 0) continue;

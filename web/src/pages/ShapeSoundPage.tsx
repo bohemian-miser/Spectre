@@ -46,10 +46,11 @@ import {
   penPlan,
   penSpeedNow,
 } from './shapesound/render';
-import { cornerEps, fitCorners, makeShape, type Shape } from './shapesound/shape';
+import { cornerEps, fitCorners, makeShape, usableTerms, type Shape } from './shapesound/shape';
 import { ShapeView } from './shapesound/ShapeView';
 import { cardAudio, cardInfo, cardPainter, recordCard, type CardOptions, type CardPainter, type CardSource } from './shapesound/card';
 import { decodeHash, encodeHash, type HashState } from './shapesound/hash';
+import { renderInWorker } from './shapesound/renderClient';
 import '../styles/sound.css';
 import '../styles/shapesound.css';
 
@@ -212,17 +213,21 @@ export function ShapeSoundPage(): JSX.Element {
     return s;
   }, []);
   const clips = useRef(new Map<string, Clip>());
-  const clipFor = (sig: string, make: () => Clip): Clip => {
-    let c = clips.current.get(sig);
+  /** A cached clip, marked as the most recently used. */
+  const cached = (sig: string): Clip | undefined => {
+    const c = clips.current.get(sig);
     if (c) {
       clips.current.delete(sig);
-    } else {
-      c = make();
-      if (clips.current.size >= CACHE_CLIPS) clips.current.delete(clips.current.keys().next().value!);
+      clips.current.set(sig, c);
     }
+    return c;
+  };
+  const remember = (sig: string, c: Clip): Clip => {
+    if (clips.current.size >= CACHE_CLIPS) clips.current.delete(clips.current.keys().next().value!);
     clips.current.set(sig, c);
     return c;
   };
+  const clipFor = (sig: string, make: () => Clip): Clip => cached(sig) ?? remember(sig, make());
   /** A voice's lap clip and pen clip, rendered or from the cache. */
   const clipsOf = (v: Voice): { main: Clip; pen: Clip | null } => {
     const shape = shapeOf(v);
@@ -232,27 +237,51 @@ export function ShapeSoundPage(): JSX.Element {
     const pen = ps ? clipFor(ps, () => (v.play === 'constant' ? renderPenConstant(shape, speed, SR) : renderPen(shape, v.settings.spectrum, SR))) : null;
     return { main, pen };
   };
-  const clipsRef = useRef(clipsOf);
-  clipsRef.current = clipsOf;
+  /** The same, rendered in the worker so the page keeps responding while long clips are made. */
+  const clipsAsync = async (v: Voice): Promise<{ main: Clip; pen: Clip | null }> => {
+    const job = { key: v.key, points: v.points, mode: v.mode, play: v.play, settings: v.settings, sr: SR };
+    const ms = mainSig(v);
+    const ps = penSig(v);
+    const main = cached(ms) ?? remember(ms, await renderInWorker({ ...job, part: 'main' }));
+    const pen = !ps ? null : (cached(ps) ?? remember(ps, await renderInWorker({ ...job, part: 'pen' })));
+    return { main, pen };
+  };
+  const clipsRef = useRef(clipsAsync);
+  clipsRef.current = clipsAsync;
   /** The signatures each voice's mixer clips were made from. */
   const given = useRef(new Map<number, string>());
   const queued = useRef(false);
+  const busy = useRef(false);
 
-  /** Render one out-of-date voice per task, so clicks keep landing while clips are made. */
+  /** Render one out-of-date voice at a time, in the worker; each new clip moves into its voice as it lands. */
   const pump = useCallback((): void => {
-    if (queued.current) return;
+    if (queued.current || busy.current) return;
     queued.current = true;
     setTimeout(() => {
       queued.current = false;
       const v = voicesRef.current.find((x) => given.current.get(x.id) !== mainSig(x) + penSig(x));
       if (!v) return;
-      const { main, pen } = clipsRef.current(v);
-      const m = mixerRef.current;
-      const fresh = !given.current.has(v.id);
-      given.current.set(v.id, mainSig(v) + penSig(v));
-      m.setClips(v.id, main, pen, REVERB[v.mode]);
-      if (fresh) m.start(v.id, true);
-      pump();
+      busy.current = true;
+      const sig = mainSig(v) + penSig(v);
+      clipsRef.current(v).then(
+        ({ main, pen }) => {
+          busy.current = false;
+          // Removed while it rendered: nothing to give it.
+          if (voicesRef.current.some((x) => x.id === v.id)) {
+            const m = mixerRef.current;
+            const fresh = !given.current.has(v.id);
+            given.current.set(v.id, sig);
+            m.setClips(v.id, main, pen, REVERB[v.mode]);
+            if (fresh) m.start(v.id, true);
+          }
+          pump();
+        },
+        () => {
+          busy.current = false;
+          given.current.set(v.id, sig);
+          pump();
+        },
+      );
     }, 30);
   }, []);
 
@@ -743,7 +772,14 @@ export function ShapeSoundPage(): JSX.Element {
             {brush.mode === 'spectrum' ? (
               <>
                 <LogSlider label="Base frequency" min={40} max={400} value={sp.f0} show={`${Math.round(sp.f0)} Hz`} onChange={(f0) => setSetting('spectrum', { f0 })} />
-                <Slider label="Terms" min={2} max={48} step={1} value={sp.terms} show={`±${sp.terms}`} onChange={(terms) => setSetting('spectrum', { terms })} />
+                <LogSlider
+                  label="Terms"
+                  min={LIMITS.spectrum.terms![0]}
+                  max={LIMITS.spectrum.terms![1]}
+                  value={sp.terms}
+                  show={pShape && sp.terms > usableTerms(pShape) ? `±${usableTerms(pShape)} max` : `±${sp.terms}`}
+                  onChange={(t) => setSetting('spectrum', { terms: Math.round(t) })}
+                />
                 <label className="sound-check">
                   <input type="checkbox" aria-label="Pen" checked={sp.pen} onChange={(e) => setSetting('spectrum', { pen: e.target.checked })} />
                   Pen

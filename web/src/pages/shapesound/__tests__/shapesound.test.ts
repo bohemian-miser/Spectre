@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Pt } from '../../../core';
 import { loadWorld, reelDefaults } from '../../reel/director';
-import { CONSTANT_SECONDS, DEFAULT_SETTINGS, MAPPINGS, MAX_DRONE, PEN_START, foldHz, penMotion, penPlan, penSpeedAt, penSpeedNow, penSteps, renderPen, renderPenMotion, SPECTRUM_LAP, VOICE_RMS, clipSeconds, cornerChord, cornerSides, radiusDrone, renderConstant, renderCorners, renderPen, renderPenConstant, renderRadius, renderSpectrum } from '../render';
+import { CONSTANT_SECONDS, DEFAULT_SETTINGS, MAPPINGS, MAX_DRONE, PEN_START, foldHz, penMotion, penPlan, penSpeedAt, penSpeedNow, penSteps, renderPenMotion, SPECTRUM_LAP, VOICE_RMS, clipSeconds, cornerChord, cornerSides, radiusDrone, renderConstant, renderCorners, renderPen, renderPenConstant, renderRadius, renderSpectrum } from '../render';
 import { applyBrush, paint, type Brush, type Voice } from '../paint';
 import { FLOOR_DB, fitCorners, isComb, makeShape, rdp, shapeTerms, termLevel, termRef } from '../shape';
 
@@ -426,5 +426,16 @@ describe('pen hold', () => {
     const covered = penSteps(plan.motion, plan.ramp) + 40000 * plan.hold;
     expect(covered / 429).toBeCloseTo(Math.round(covered / 429), 6);
     expect(Math.abs(plan.hold - 2)).toBeLessThanOrEqual(429 / 40000);
+  });
+});
+
+describe('many terms', () => {
+  it('gives a loop half its steps in terms, up to 512', () => {
+    const d = reelDefaults('hex');
+    const world = loadWorld({ ...d, radius: 30, seed: 1, family: 'hex', seconds: 0, circuits: 0, fps: 30, bpm: 110, width: 1, height: 1 });
+    const c = [...world.circuits].sort((a, b) => b.points.length - a.points.length)[0];
+    const shape = makeShape(c.points);
+    const ts = shapeTerms(shape, 512);
+    expect(Math.max(...ts.map((t) => t.k))).toBe(Math.min(512, Math.floor((c.points.length - 1) / 2)));
   });
 });

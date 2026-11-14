@@ -206,7 +206,9 @@ export function drawShape(g: CanvasRenderingContext2D, s: ShapeScene, pre: Prepa
       const xx = pad + (x.k + K) * bw;
       const on = t === null || joinedAt(x.k, K) <= t;
       g.fillStyle = isComb(x.k) ? (on ? ORANGE : ORANGE_DIM) : on ? BLUE : BLUE_DIM;
-      g.fillRect(xx + bw * 0.1, bot - h, Math.max(1, bw * 0.8), h);
+      // Gaps only while bars are wide enough to keep them; hundreds of bars sit edge to edge.
+      const gap = bw >= 4 ? 0.1 * bw : 0;
+      g.fillRect(xx + gap, bot - h, Math.max(0.5, bw - 2 * gap), h);
     }
     g.strokeStyle = 'rgb(90,95,110)';
     g.beginPath();
