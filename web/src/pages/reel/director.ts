@@ -41,6 +41,8 @@ export interface ReelOptions {
   readonly seconds: number;
   /** How many circuit types to trace, at most; Infinity runs until they or `seconds` run out. */
   readonly circuits: number;
+  /** Stretch the traces to fill `seconds`, longer circuits taking longer. */
+  readonly fit?: boolean;
   readonly fps: number;
   readonly bpm: number;
   /** Half the side of the square of tiling the reel uses, in world units. */
@@ -186,6 +188,27 @@ const TAIL = 4;
 const CLOSE_UP = 1.6;
 
 /**
+ * Bars for each trace so the reel fills `seconds`: what is left after the
+ * gaps and the closing pull-back, shared in proportion to the square root of
+ * each circuit's length, at least one bar each.
+ */
+export function fitBars(lengths: readonly number[], seconds: number, beat: number, gap: (k: number) => number): number[] {
+  const bar = 4 * beat;
+  const ending = Math.ceil((3 * beat + TAIL) / bar);
+  let budget = Math.floor(seconds / bar) - ending;
+  for (let k = 0; k + 1 < lengths.length; k++) budget -= gap(k);
+  const weights = lengths.map(Math.sqrt);
+  const total = weights.reduce((a, b) => a + b, 0);
+  const share = weights.map((w) => Math.max(0, budget - lengths.length) * (w / total));
+  const bars = share.map((x) => 1 + Math.floor(x));
+  // Hand out what rounding down left, largest remainders first.
+  let left = budget - bars.reduce((a, b) => a + b, 0);
+  const byRemainder = share.map((x, k) => [x - Math.floor(x), k]).sort((a, b) => b[0] - a[0]);
+  for (let i = 0; left > 0 && i < byRemainder.length; i++, left--) bars[byRemainder[i][1]]++;
+  return bars;
+}
+
+/**
  * Whether the camera can frame all of `c`, with the margin the post-close view
  * gives it, without looking past the cut.
  */
@@ -212,13 +235,12 @@ export function planReel(o: ReelOptions, world: ReelWorld): ReelPlan {
   const pool = world.circuits.filter((c) => fitsCut(o, c));
   const shown = new Set<string>();
 
-  const traces: Trace[] = [];
+  // The circuits in order, each with the index of its segment nearest the
+  // middle of the view when it was picked. Every circuit of a type already
+  // traced is lit, so unexplored means of a type not yet shown.
+  const picks: { circuit: ReelCircuit; nearest: number }[] = [];
   let at: Pt = { x: 0, y: 0 };
-  let start = beat;
-  for (let k = 0; k < o.circuits; k++) {
-    // The next circuit owns the unexplored segment nearest the middle of the
-    // view. Every circuit of a type already traced is lit, so unexplored
-    // means of a type not yet shown.
+  while (picks.length < o.circuits) {
     let found: ReelCircuit | null = null;
     let nearest = 0;
     let best = Infinity;
@@ -237,13 +259,24 @@ export function planReel(o: ReelOptions, world: ReelWorld): ReelPlan {
       }
     }
     if (!found) break;
-    const circuit = found;
+    shown.add(found.shape);
+    picks.push({ circuit: found, nearest });
+    at = { x: (found.min.x + found.max.x) / 2, y: (found.min.y + found.max.y) / 2 };
+  }
+  const gap = (k: number): number => (k % 2 === 1 ? 2 : 1);
+  const fitted = o.fit ? fitBars(picks.map((x) => x.circuit.points.length), o.seconds, beat, gap) : null;
+
+  const traces: Trace[] = [];
+  let start = beat;
+  for (let k = 0; k < picks.length; k++) {
+    const { circuit, nearest } = picks[k];
     const n = circuit.points.length;
-    const bars = Math.max(1, Math.min(4, Math.round(n / (FIRST_PACE * PACE_GROWTH ** k) / bar)));
-    const close = (Math.floor(start / bar) + bars) * bar;
+    const bars = fitted ? fitted[k] : Math.max(1, Math.min(4, Math.round(n / (FIRST_PACE * PACE_GROWTH ** k) / bar)));
+    // start sits on a bar line after the first trace; keep rounding from
+    // dropping it into the bar before.
+    const close = (Math.floor(start / bar + 1e-9) + bars) * bar;
     const fill = close + 2 * beat;
     if (close + 2 * beat + TAIL > o.seconds) break;
-    shown.add(circuit.shape);
     // Start on the nearest segment, in a seeded direction: forwards it is
     // step 0 from its first end, backwards from its second.
     const backward = rng() < 0.5;
@@ -255,9 +288,8 @@ export function planReel(o: ReelOptions, world: ReelWorld): ReelPlan {
     const tiles = new Int32Array(n);
     for (let i = 0; i < n; i++) tiles[i] = backward ? circuit.tiles[(order[(n - i) % n] + n - 1) % n] : circuit.tiles[order[i]];
     traces.push({ circuit, points, tiles, start, close, fill, color: circuitHueRgb(k + 1) });
-    at = { x: (circuit.min.x + circuit.max.x) / 2, y: (circuit.min.y + circuit.max.y) / 2 };
     // Pull back to show the pattern after every second close.
-    start = close + (k % 2 === 1 ? 2 : 1) * bar;
+    start = close + gap(k) * bar;
   }
   if (traces.length === 0) throw new Error('no circuit fits the reel');
 

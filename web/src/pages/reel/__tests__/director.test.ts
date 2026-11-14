@@ -69,6 +69,15 @@ describe('planReel', () => {
     }
   });
 
+  it('stretches the traces to fill the time with fit', () => {
+    const long = planReel({ ...options, seconds: 300, circuits: Infinity, fit: true }, world);
+    expect(long.log.seconds).toBeGreaterThan(300 - bar);
+    expect(long.log.seconds).toBeLessThanOrEqual(300);
+    const bars = long.traces.map((t) => Math.round((t.close - Math.floor(t.start / bar + 1e-9) * bar) / bar));
+    const longest = long.traces.reduce((k, t, i) => (t.points.length > long.traces[k].points.length ? i : k), 0);
+    expect(bars[longest]).toBe(Math.max(...bars));
+  });
+
   it('runs until nothing unexplored is left without a cap', () => {
     const open = { ...options, seconds: 600, circuits: Infinity };
     const all = planReel(open, world);
