@@ -1,6 +1,6 @@
 /**
  * Entry point for `reel.html`: a scripted trace for video capture, with no
- * controls. `?reel=<seed>&f=<family>&e=<edges>&c=<combo>&s=<seconds>&lw=<line width>`;
+ * controls. `?reel=<seed>&f=<family>&e=<edges>&c=<combo>&n=<circuits>&s=<seconds>&lw=<line width>`;
  * absent parameters take `reelDefaults`. The page exposes its progress and
  * event log as `window.reel` for the capture script.
  */
@@ -43,7 +43,8 @@ function start(): void {
     family,
     subset: q.has('e') ? subsetToEdges(subsetFromString(q.get('e') ?? '')) : defaults.subset,
     combo: q.get('c') ?? defaults.combo,
-    seconds: num('s', 30),
+    seconds: num('s', 180),
+    circuits: num('n', Infinity),
     fps: num('fps', 30),
     bpm: num('bpm', 110),
     radius: num('r', defaults.radius),

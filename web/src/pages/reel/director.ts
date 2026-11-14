@@ -38,6 +38,8 @@ export interface ReelOptions {
   readonly combo: string;
   /** The most the reel may run; it ends sooner when it runs out of circuit types. */
   readonly seconds: number;
+  /** How many circuit types to trace, at most; Infinity runs until they or `seconds` run out. */
+  readonly circuits: number;
   readonly fps: number;
   readonly bpm: number;
   /** Half the side of the square of tiling the reel uses, in world units. */
@@ -207,7 +209,7 @@ export function planReel(o: ReelOptions, world: ReelWorld): ReelPlan {
   const traces: Trace[] = [];
   let at: Pt = { x: 0, y: 0 };
   let start = beat;
-  for (let k = 0; candidates.length > 0; k++) {
+  for (let k = 0; k < o.circuits && candidates.length > 0; k++) {
     // The next type: one of the two shortest left, so traces get longer.
     const pick = candidates.splice(Math.min(candidates.length - 1, Math.floor(rng() * 2)), 1)[0];
     const pool = pick.filter(inside);

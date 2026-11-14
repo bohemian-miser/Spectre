@@ -6,6 +6,7 @@ const options: ReelOptions = {
   family: 'hex',
   ...reelDefaults('hex'),
   seconds: 30,
+  circuits: 6,
   fps: 30,
   bpm: 110,
   width: 540,
