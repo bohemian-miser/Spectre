@@ -129,3 +129,64 @@
   font-size: 12px;
   resize: vertical;
 }
+.sound-tiles {
+  display: grid;
+  gap: 8px;
+}
+.sound-tile-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.sound-tile-row button {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  padding: 2px 3px;
+  font-size: 10px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  color: var(--text);
+}
+.sound-tile-row button.is-active {
+  border-color: var(--accent);
+}
+/* The tile editor sits in the panel here, not floating over the page. */
+.sound-tiles .tile-editor-pop {
+  position: relative;
+  left: auto;
+  bottom: auto;
+  transform: none;
+  width: auto;
+  box-shadow: none;
+  z-index: auto;
+}
+.sound-assign {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+.sound-assign input[type='number'] {
+  width: 5em;
+}
+.sound-assigned {
+  font-size: 12px;
+}
+.sound-assigned ul {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 2px;
+}
+.sound-assigned li {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+}
+.sound-assigned li button {
+  padding: 0 6px;
+}

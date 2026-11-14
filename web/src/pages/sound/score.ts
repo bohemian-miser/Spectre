@@ -6,6 +6,7 @@
  */
 
 import type { Pt } from '../../core';
+import type { Instrument, ModState, NoteAction } from './tileSounds';
 
 export const SCALES: Readonly<Record<string, readonly number[]>> = {
   dorian: [0, 2, 3, 5, 7, 9, 10],
@@ -109,6 +110,21 @@ export interface NoteEvent {
   readonly detune: number;
   readonly attack: number;
   readonly wave: Choice<'wave'>;
+  /** Added to the reverb send of 1 (-1 is dry). */
+  readonly send?: number;
+  /** Set on tile notes; a bell adds an inharmonic partial. */
+  readonly instrument?: Instrument;
+}
+
+/** Settings of a sweep voice from time `t` on (see `ModState`). */
+export interface SweepControl {
+  readonly t: number;
+  readonly pan: number;
+  /** Octaves on the resting cutoff. */
+  readonly octaves: number;
+  readonly detune: number;
+  readonly send: number;
+  readonly glide: number;
 }
 
 /** One voice with a moving pitch; times inside are from the event's `t`. */
@@ -127,6 +143,8 @@ export interface SweepEvent {
   readonly bends: readonly { t: number; semis: number }[];
   /** Low-pass openings that close again, octaves above the resting cutoff. */
   readonly filter: readonly { t: number; octaves: number }[];
+  /** Changes to pan, cutoff, detune, send and glide, from tile assignments. */
+  readonly controls?: readonly SweepControl[];
 }
 
 export type SoundEvent = NoteEvent | SweepEvent;
@@ -335,22 +353,25 @@ const MAX_SAMPLES = 2000;
  * position (`positionMap`) across `low..high`, snapped to the scale when
  * `quantise` is on; at each corner a bend, a filter opening, or a shift of
  * `cornerDepth` semitones up for a left turn and down for a right one that
- * holds until the next corner.
+ * holds until the next corner. `states`, one per step, are the tile
+ * assignments in force (`stepActions`): they move the pitch and the corner
+ * depth here, and the rest become `controls`.
  */
-export function traceSweep(points: readonly Pt[], p: SoundParams, seconds?: number): SweepEvent {
+export function traceSweep(points: readonly Pt[], p: SoundParams, seconds?: number, states?: readonly ModState[]): SweepEvent {
   const n = points.length;
   const dur = seconds ?? n / p.pace;
   const dt = dur / n;
   const per = Math.max(1, Math.min(SAMPLES_PER_STEP, Math.floor(MAX_SAMPLES / n)));
   const place = positionMap(points, p.trace);
   const corners = p.corner === 'none' ? [] : findCorners(points, p.cornerWindow, p.cornerAngle);
+  const depthAt = (k: number): number => p.cornerDepth + (states?.[k]?.corner ?? 0);
   const shiftAt = new Map<number, number>();
-  if (p.corner === 'shift') for (const c of corners) shiftAt.set(c.index, Math.sign(c.turn) * p.cornerDepth);
+  if (p.corner === 'shift') for (const c of corners) shiftAt.set(c.index, Math.sign(c.turn) * depthAt(c.index));
   // Before the first corner, the shift left by the last one (the loop comes round).
-  let shift = corners.length && p.corner === 'shift' ? Math.sign(corners[corners.length - 1].turn) * p.cornerDepth : 0;
+  let shift = corners.length && p.corner === 'shift' ? (shiftAt.get(corners[corners.length - 1].index) ?? 0) : 0;
   const pitch: { t: number; midi: number }[] = [];
-  const pitchOf = (q: Pt): number => {
-    const m = p.low + place(q) * (p.high - p.low) + shift;
+  const pitchOf = (q: Pt, k: number): number => {
+    const m = p.low + place(q) * (p.high - p.low) + shift + (states?.[k]?.trace ?? 0);
     return p.quantise ? snapToScale(p, m) : m;
   };
   for (let k = 0; k < n; k++) {
@@ -359,10 +380,20 @@ export function traceSweep(points: readonly Pt[], p: SoundParams, seconds?: numb
     const b = points[(k + 1) % n];
     for (let s = 0; s < per; s++) {
       const u = s / per;
-      pitch.push({ t: (k + u) * dt, midi: pitchOf({ x: a.x + (b.x - a.x) * u, y: a.y + (b.y - a.y) * u }) });
+      pitch.push({ t: (k + u) * dt, midi: pitchOf({ x: a.x + (b.x - a.x) * u, y: a.y + (b.y - a.y) * u }, k) });
     }
   }
-  pitch.push({ t: dur, midi: pitchOf(points[0]) });
+  pitch.push({ t: dur, midi: pitchOf(points[0], n - 1) });
+  const controls: SweepControl[] = [];
+  if (states) {
+    let last = '';
+    states.forEach((st, k) => {
+      const c = { t: k * dt, pan: Math.max(-1, Math.min(1, st.pan)), octaves: st.cutoff, detune: st.detune, send: st.reverb, glide: Math.max(0, p.glide + st.glide) };
+      const sig = `${c.pan},${c.octaves},${c.detune},${c.send},${c.glide}`;
+      if (sig !== last) controls.push(c);
+      last = sig;
+    });
+  }
   return {
     kind: 'sweep',
     t: 0,
@@ -374,9 +405,38 @@ export function traceSweep(points: readonly Pt[], p: SoundParams, seconds?: numb
     glide: p.glide,
     vibrato: p.vibrato,
     pitch,
-    bends: p.corner === 'bend' ? corners.map((c) => ({ t: c.index * dt, semis: Math.sign(c.turn) * p.cornerDepth })) : [],
-    filter: p.corner === 'filter' ? corners.map((c) => ({ t: c.index * dt, octaves: p.cornerDepth })) : [],
+    bends: p.corner === 'bend' ? corners.map((c) => ({ t: c.index * dt, semis: Math.sign(c.turn) * depthAt(c.index) })) : [],
+    filter: p.corner === 'filter' ? corners.map((c) => ({ t: c.index * dt, octaves: depthAt(c.index) })) : [],
+    ...(controls.length ? { controls } : {}),
   };
+}
+
+/** Wave, attack and length per instrument. */
+const INSTRUMENT_VOICE: Readonly<Record<Instrument, { wave: Choice<'wave'>; attack: number; dur: number }>> = {
+  pluck: { wave: 'triangle', attack: 0.005, dur: 0.35 },
+  bell: { wave: 'sine', attack: 0.002, dur: 1.2 },
+  soft: { wave: 'sine', attack: 0.06, dur: 0.9 },
+  click: { wave: 'square', attack: 0.001, dur: 0.04 },
+};
+
+/** The notes tile assignments play, step `k` at `k * dt` seconds. */
+export function tileNoteEvents(notes: readonly { step: number; note: NoteAction; state: ModState }[], p: SoundParams, dt: number): NoteEvent[] {
+  return notes.map(({ step, note, state }) => {
+    const v = INSTRUMENT_VOICE[note.instrument];
+    return {
+      kind: 'note',
+      t: step * dt,
+      dur: v.dur,
+      midi: (note.midi ? note.degree : scaleNote(p, Math.round(note.degree))) + state.pitch,
+      gain: 0.4 * note.velocity,
+      pan: Math.max(-1, Math.min(1, state.pan)),
+      detune: 0,
+      attack: v.attack,
+      wave: v.wave,
+      send: state.reverb,
+      instrument: note.instrument,
+    };
+  });
 }
 
 // --- the fill -------------------------------------------------------------------
@@ -451,6 +511,8 @@ export function fillEvents(
         pitch: contour.pitch.map((q) => ({ t: q.t * k, midi: q.midi })),
         bends: contour.bends.map((q) => ({ t: q.t * k, semis: q.semis })),
         filter: contour.filter.map((q) => ({ t: q.t * k, octaves: q.octaves })),
+        // A copy keeps its own place in the stereo field.
+        ...(contour.controls ? { controls: contour.controls.map((c) => ({ ...c, t: c.t * k, pan })) } : {}),
       });
       continue;
     }

@@ -5,7 +5,7 @@
  * must come from a user gesture.
  */
 
-import type { NoteEvent, SoundEvent, SweepEvent } from './score';
+import type { NoteEvent, SoundEvent, SweepControl, SweepEvent } from './score';
 
 const mtof = (m: number): number => 440 * 2 ** ((m - 69) / 12);
 
@@ -13,6 +13,9 @@ const mtof = (m: number): number => 440 * 2 ** ((m - 69) / 12);
 const SWEEP_CUTOFF = 1800;
 const VIBRATO_HZ = 5.5;
 const REVERB_SECONDS = 2.6;
+/** A bell's second partial, as a ratio to its note, and its level. */
+const BELL_PARTIAL = 2.76;
+const BELL_LEVEL = 0.3;
 
 export interface Player {
   /** Context seconds now (0 before the first play). */
@@ -41,6 +44,7 @@ function impulse(ctx: AudioContext): AudioBuffer {
 export function createPlayer(): Player {
   let ctx: AudioContext | null = null;
   let bus: GainNode;
+  let verbIn: GainNode;
   let wet: GainNode;
   let dry: GainNode;
   let master: GainNode;
@@ -59,6 +63,7 @@ export function createPlayer(): Player {
     if (ctx) return ctx;
     ctx = new AudioContext();
     bus = ctx.createGain();
+    verbIn = ctx.createGain();
     wet = ctx.createGain();
     dry = ctx.createGain();
     master = ctx.createGain();
@@ -68,7 +73,7 @@ export function createPlayer(): Player {
     comp.threshold.value = -18;
     comp.ratio.value = 4;
     bus.connect(dry).connect(master);
-    bus.connect(verb).connect(wet).connect(master);
+    verbIn.connect(verb).connect(wet).connect(master);
     master.connect(comp).connect(ctx.destination);
     applyMix();
     return ctx;
@@ -83,10 +88,15 @@ export function createPlayer(): Player {
     voices.add(v);
   };
 
-  const panned = (c: AudioContext, gain: GainNode, pan: number): void => {
+  /** Route a voice to the bus through a panner, and to the reverb through its own send (1 + `send`). */
+  const panned = (c: AudioContext, gain: GainNode, pan: number, send = 0): { pan: StereoPannerNode; send: GainNode } => {
     const p = c.createStereoPanner();
     p.pan.value = pan;
+    const s = c.createGain();
+    s.gain.value = Math.max(0, 1 + send);
     gain.connect(p).connect(bus);
+    p.connect(s).connect(verbIn);
+    return { pan: p, send: s };
   };
 
   const note = (c: AudioContext, e: NoteEvent, t0: number): void => {
@@ -102,23 +112,42 @@ export function createPlayer(): Player {
     g.gain.linearRampToValueAtTime(e.gain, t + e.attack);
     g.gain.setTargetAtTime(0, t + e.attack, e.dur / 3);
     osc.connect(lp).connect(g);
-    panned(c, g, e.pan);
+    const sources = [osc];
+    if (e.instrument === 'bell') {
+      const partial = c.createOscillator();
+      partial.frequency.value = BELL_PARTIAL * mtof(e.midi);
+      const pg = c.createGain();
+      pg.gain.value = BELL_LEVEL;
+      partial.connect(pg).connect(g);
+      partial.start(t);
+      sources.push(partial);
+    }
+    panned(c, g, e.pan, e.send);
     osc.start(t);
-    finish({ sources: [osc], out: g }, t + e.attack + e.dur + 0.3);
+    finish({ sources, out: g }, t + e.attack + e.dur + 0.3);
   };
 
   const sweep = (c: AudioContext, e: SweepEvent, t0: number): void => {
     const t = t0 + e.t;
     const osc = c.createOscillator();
     osc.type = e.wave;
+    const controls = e.controls ?? [];
+    const rest: SweepControl = { t: 0, pan: e.pan, octaves: 0, detune: e.detune, send: 0, glide: e.glide };
+    /** The settings in force at `at` seconds into the event. */
+    const at = (time: number): SweepControl => {
+      let c = rest;
+      for (const k of controls) if (k.t <= time) c = k;
+      return c;
+    };
     const f = osc.frequency;
     f.setValueAtTime(mtof(e.pitch[0]?.midi ?? 60), t);
-    const tc = Math.max(0.003, e.glide / 3);
-    for (const q of e.pitch) f.setTargetAtTime(mtof(q.midi), t + q.t, tc);
+    for (const q of e.pitch) f.setTargetAtTime(mtof(q.midi), t + q.t, Math.max(0.003, at(q.t).glide / 3));
     osc.detune.setValueAtTime(e.detune, t);
+    for (const k of controls) osc.detune.setTargetAtTime(k.detune, t + k.t, 0.02);
     for (const b of e.bends) {
-      osc.detune.setTargetAtTime(e.detune + 100 * b.semis, t + b.t, 0.015);
-      osc.detune.setTargetAtTime(e.detune, t + b.t + 0.1, 0.05);
+      const base = at(b.t).detune;
+      osc.detune.setTargetAtTime(base + 100 * b.semis, t + b.t, 0.015);
+      osc.detune.setTargetAtTime(base, t + b.t + 0.1, 0.05);
     }
     const lfo = c.createOscillator();
     lfo.frequency.value = VIBRATO_HZ;
@@ -126,10 +155,13 @@ export function createPlayer(): Player {
     depth.gain.value = e.vibrato;
     lfo.connect(depth).connect(osc.detune);
     const lp = c.createBiquadFilter();
+    const cutoff = (octaves: number): number => Math.max(40, Math.min(16000, SWEEP_CUTOFF * 2 ** octaves));
     lp.frequency.setValueAtTime(SWEEP_CUTOFF, t);
+    for (const k of controls) lp.frequency.setTargetAtTime(cutoff(k.octaves), t + k.t, 0.02);
     for (const q of e.filter) {
-      lp.frequency.setTargetAtTime(Math.min(16000, SWEEP_CUTOFF * 2 ** q.octaves), t + q.t, 0.02);
-      lp.frequency.setTargetAtTime(SWEEP_CUTOFF, t + q.t + 0.08, 0.1);
+      const base = at(q.t).octaves;
+      lp.frequency.setTargetAtTime(cutoff(base + q.octaves), t + q.t, 0.02);
+      lp.frequency.setTargetAtTime(cutoff(base), t + q.t + 0.08, 0.1);
     }
     const g = c.createGain();
     const attack = Math.min(0.05, e.dur / 4);
@@ -139,7 +171,11 @@ export function createPlayer(): Player {
     g.gain.setValueAtTime(e.gain, t + e.dur - release);
     g.gain.linearRampToValueAtTime(0, t + e.dur);
     osc.connect(lp).connect(g);
-    panned(c, g, e.pan);
+    const route = panned(c, g, e.pan);
+    for (const k of controls) {
+      route.pan.pan.setTargetAtTime(k.pan, t + k.t, 0.02);
+      route.send.gain.setTargetAtTime(Math.max(0, 1 + k.send), t + k.t, 0.02);
+    }
     osc.start(t);
     lfo.start(t);
     finish({ sources: [osc, lfo], out: g }, t + e.dur + 0.05);

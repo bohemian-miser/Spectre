@@ -2,8 +2,10 @@
  * Sound: hear a rule's circuits. Click a circuit to play the chord of the
  * supertiles it spans and trace it with a voice whose pitch follows the
  * trace head; Fill lights every congruent copy in view, each with its own
- * copy of the sound. The events come from `sound/score.ts` and play through
- * `sound/synth.ts`; the tiling and circuits are the reel's (`reel/director`).
+ * copy of the sound. Tile sounds (`sound/tileSounds.ts`) add notes and
+ * setting changes as the trace crosses chosen tiles, edges and lines. The
+ * events come from `sound/score.ts` and play through `sound/synth.ts`; the
+ * tiling and circuits are the reel's (`reel/director`).
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -11,17 +13,18 @@ import {
   FAMILIES,
   FAMILY_DISPLAY_NAMES,
   SUPER_RULES,
-  leafOrder,
+  comboToMatchingIndices,
+  matchingIndicesToCombo,
+  normalizeMatchingVector,
   unrootedEngineFor,
   type Pt,
   type Rgb,
   type TileFamilyId,
 } from '../core';
-import { EdgeSubsetPicker } from '../components';
+import { ComboBar } from '../components';
 import { ancestorPath, parseTileId, type TileId } from './map/ancestry';
 import { panBy, screenToWorld, zoomAt, type MapCamera } from './map/camera';
 import { createCanvas2dRenderer } from './map/canvasRenderer';
-import { comboLength, normalizeCombo } from './map/mapUrl';
 import type { MapRenderer, TrailGeometry } from './map/rendererTypes';
 import { LIGHT_LINE_COLOR } from './map/webglRenderer';
 import type { ReelCircuit } from './reel/circuits';
@@ -37,12 +40,16 @@ import {
   fillEvents,
   parsePatch,
   spannedAt,
+  tileNoteEvents,
   traceSweep,
   type SoundEvent,
   type SoundParams,
   type StepAncestry,
 } from './sound/score';
 import { createPlayer } from './sound/synth';
+import { circuitSteps } from './sound/steps';
+import { TileSoundEditor, download } from './sound/TileSoundEditor';
+import { EMPTY_TILE_SOUNDS, readTileSounds, stepActions, type TileSounds } from './sound/tileSounds';
 import '../styles/sound.css';
 
 const NAMES = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
@@ -96,6 +103,17 @@ const MIX_SLIDERS: readonly SliderSpec[] = [
 const PATCH_HELP = `# name = value, one per line; these override the controls.
 # scale = pentatonic        or  scale = 0 2 3 7 9
 # root = d3   low = a3   high = a5   corner = shift   fill = scatter`;
+
+const TILE_SOUNDS_KEY = 'spectre-sound-tiles';
+
+function loadTileSounds(): TileSounds {
+  try {
+    const raw = localStorage.getItem(TILE_SOUNDS_KEY);
+    return raw ? readTileSounds(JSON.parse(raw)) : EMPTY_TILE_SOUNDS;
+  } catch {
+    return EMPTY_TILE_SOUNDS;
+  }
+}
 
 interface Animation {
   /** Context time the trace starts, its length in seconds, and its points. */
@@ -162,15 +180,6 @@ function partial(points: readonly Pt[], steps: number, origin: Pt): TrailGeometr
   return geometry(pts, origin, false, undefined, Math.round(steps * 1000));
 }
 
-function download(name: string, text: string): void {
-  const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = name;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-
 function Slider(props: { spec: SliderSpec; params: SoundParams; overridden: boolean; onChange: (k: NumKey, v: number) => void }): JSX.Element {
   const { spec, params, overridden } = props;
   const v = params[spec.key];
@@ -217,7 +226,9 @@ export function SoundPage(): JSX.Element {
   const [seed, setSeed] = useState(1);
   const [seedDraft, setSeedDraft] = useState('1');
   const [subset, setSubset] = useState<readonly number[]>(reelDefaults('hex').subset);
-  const [combo, setCombo] = useState(reelDefaults('hex').combo);
+  const [matching, setMatching] = useState<readonly number[]>(() => comboToMatchingIndices('hex', reelDefaults('hex').subset, reelDefaults('hex').combo));
+  const combo = useMemo(() => matchingIndicesToCombo(family, subset, matching), [family, subset, matching]);
+  const [tileSounds, setTileSounds] = useState<TileSounds>(loadTileSounds);
   const [base, setBase] = useState<SoundParams>(DEFAULT_PARAMS);
   const [patch, setPatch] = useState('');
   const [onClick, setOnClick] = useState<'chord' | 'trace' | 'both'>('both');
@@ -231,6 +242,7 @@ export function SoundPage(): JSX.Element {
 
   const loaded = useMemo((): { world: ReelWorld | null; error: string | null } => {
     const d = reelDefaults(family);
+    if (combo === null) return { world: null, error: 'These pairings cross, so no combination code names them.' };
     try {
       const world = loadWorld({ ...d, seed, family, subset, combo, seconds: 0, circuits: 0, fps: 30, bpm: 110, width: 1, height: 1 });
       return { world, error: null };
@@ -361,6 +373,14 @@ export function SoundPage(): JSX.Element {
 
   useEffect(() => () => playerRef.current.stop(), []);
 
+  useEffect(() => {
+    try {
+      localStorage.setItem(TILE_SOUNDS_KEY, JSON.stringify(tileSounds));
+    } catch {
+      // storage blocked: the map lasts as long as the page
+    }
+  }, [tileSounds]);
+
   // A new world drops what was playing and lit in the old one.
   useEffect(() => {
     playerRef.current.stop();
@@ -413,9 +433,13 @@ export function SoundPage(): JSX.Element {
       if (what.chord) events.push(...chordEvents(chord, p));
       let fillAt = 0;
       let traceDur = 0;
+      let contour = traceSweep(c.points, p);
       if (what.trace) {
-        const sweep = traceSweep(c.points, p);
-        events.push(sweep);
+        const steps = world ? circuitSteps(world, family, subset, c) : [];
+        const acts = stepActions(steps, tileSounds);
+        const sweep = traceSweep(c.points, p, undefined, acts.states);
+        contour = sweep;
+        events.push(sweep, ...tileNoteEvents(acts.notes, p, sweep.dur / c.points.length));
         traceDur = sweep.dur;
         fillAt = sweep.dur + FILL_GAP;
       }
@@ -429,7 +453,7 @@ export function SoundPage(): JSX.Element {
           copies.map((o) => ({ centre: o.centre, pan: ((o.centre.x - cam.cx) * cam.scale) / half })),
           c.centre,
           chord,
-          traceSweep(c.points, p),
+          contour,
           p,
           c.id + 1,
         );
@@ -447,7 +471,7 @@ export function SoundPage(): JSX.Element {
       describe(c, paths, chord, extra);
       redraw();
     },
-    [params, ancestry, colors, copiesInView, describe, redraw],
+    [params, ancestry, colors, copiesInView, describe, redraw, world, family, subset, tileSounds],
   );
 
   const play = (what: 'chord' | 'trace' | 'fill'): void => {
@@ -514,7 +538,12 @@ export function SoundPage(): JSX.Element {
     const d = reelDefaults(f);
     setFamily(f);
     setSubset(d.subset);
-    setCombo(d.combo);
+    setMatching(comboToMatchingIndices(f, d.subset, d.combo));
+  };
+  const setRule = (f: TileFamilyId, nextSubset: readonly number[], nextMatching: readonly number[]): void => {
+    if (f !== family) return changeFamily(f);
+    setSubset(nextSubset);
+    setMatching(normalizeMatchingVector(f, nextSubset, nextMatching));
   };
   const scaleName = Object.entries(SCALES).find(([, s]) => s.join() === params.scale.join())?.[0] ?? 'custom';
   const sliders = (list: readonly SliderSpec[]): JSX.Element[] =>
@@ -526,7 +555,7 @@ export function SoundPage(): JSX.Element {
         <h1>Sound</h1>
         <p className="sound-note">
           Click a circuit to hear it: a chord from the supertiles it spans, and a voice whose pitch follows the trace head.
-          Fill lights every congruent copy in view, and each copy adds its own voice. Drag to pan, wheel to zoom.
+          Fill lights every congruent copy in view, and each copy adds its own voice. Tile sounds add notes and setting changes as the trace crosses the tiles, edges and lines you pick. Drag to pan, wheel to zoom.
         </p>
       </header>
 
@@ -554,21 +583,15 @@ export function SoundPage(): JSX.Element {
           <input type="text" inputMode="numeric" aria-label="World seed" value={seedDraft} onChange={(e) => setSeedDraft(e.target.value)} />
         </label>
         <button type="submit">Reseed</button>
-        <label className="sound-choice">
-          <span>Matchings</span>
-          <input
-            type="text"
-            className="sound-combo"
-            aria-label="Combination string"
-            spellCheck={false}
-            maxLength={comboLength(family)}
-            value={combo}
-            onChange={(e) => setCombo(normalizeCombo(e.target.value, family))}
-            title={`One digit per leaf type: ${leafOrder(family).join(', ')}`}
-          />
-        </label>
-        <EdgeSubsetPicker family={family} subset={subset} advanced={false} onSubsetChange={setSubset} />
       </form>
+      <ComboBar
+        family={family}
+        subset={subset}
+        matching={matching}
+        nonCrossingOnly
+        tiles={false}
+        onChange={(next) => setRule(next.family, next.subset, next.matching)}
+      />
 
       <div className="sound-main">
         <div
@@ -610,8 +633,8 @@ export function SoundPage(): JSX.Element {
               disabled={!selected}
               onClick={() =>
                 download(
-                  `sound-${family}-${seed}-${combo}.json`,
-                  JSON.stringify({ family, seed, edges: subset, combo, circuit: selected?.points.length ?? null, params, events: lastRef.current }),
+                  `sound-${family}-${seed}-${combo ?? 'crossing'}.json`,
+                  JSON.stringify({ family, seed, edges: subset, combo, circuit: selected?.points.length ?? null, params, tileSounds, events: lastRef.current }),
                 )
               }
             >
@@ -668,6 +691,19 @@ export function SoundPage(): JSX.Element {
             <Choice name="fill" label="Onsets" value={params.fill} disabled={overridden.has('fill')} onChange={(v) => setChoice('fill', v)} />
             <Choice name="fillSound" label="Each copy plays" value={params.fillSound} disabled={overridden.has('fillSound')} onChange={(v) => setChoice('fillSound', v)} />
             {sliders(FILL_SLIDERS)}
+          </fieldset>
+
+          <fieldset>
+            <legend>Tile sounds</legend>
+            <TileSoundEditor
+              family={family}
+              subset={subset}
+              matching={matching}
+              map={tileSounds}
+              onMap={setTileSounds}
+              onMatching={(i, index) => setMatching(matching.map((m, j) => (j === i ? index : m)))}
+              onToggleClass={(m) => setRule(family, subset.includes(m) ? subset.filter((x) => x !== m) : [...subset, m].sort((a, b) => a - b), matching)}
+            />
           </fieldset>
 
           <fieldset>

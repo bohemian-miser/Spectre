@@ -19,6 +19,8 @@ export interface ReelCircuit {
   readonly points: readonly Pt[];
   /** Cut instance of the tile crossed from `points[k]` to `points[k + 1]`. */
   readonly tiles: Int32Array;
+  /** Which of that tile's chords (its index in the chord table's segments for the tile's type). */
+  readonly chords: Int32Array;
   readonly centre: Pt;
   readonly min: Pt;
   readonly max: Pt;
@@ -77,9 +79,11 @@ export function cutCircuits(cut: FindCut, table: FindTable): ReelCircuit[] {
   for (let i = 0; i < cut.count; i++) cap += table.segments[cut.type[i]]?.length ?? 0;
   const xy = new Float64Array(4 * cap);
   const tileOf = new Int32Array(cap);
+  const chordOf = new Int32Array(cap);
   let count = 0;
-  forEachChord(cut, table, (i, _s, ax, ay, bx, by) => {
+  forEachChord(cut, table, (i, s, ax, ay, bx, by) => {
     tileOf[count] = i;
+    chordOf[count] = s;
     const o = 4 * count++;
     xy[o] = ax;
     xy[o + 1] = ay;
@@ -91,12 +95,14 @@ export function cutCircuits(cut: FindCut, table: FindTable): ReelCircuit[] {
     const points = loop.points;
     if (points.length < 3) continue;
     const tiles = new Int32Array(points.length);
+    const chords = new Int32Array(points.length);
     let sx = 0;
     let sy = 0;
     const min = { x: Infinity, y: Infinity };
     const max = { x: -Infinity, y: -Infinity };
     points.forEach((p, k) => {
       tiles[k] = tileOf[loop.segs[k]];
+      chords[k] = chordOf[loop.segs[k]];
       sx += p.x;
       sy += p.y;
       min.x = Math.min(min.x, p.x);
@@ -108,6 +114,7 @@ export function cutCircuits(cut: FindCut, table: FindTable): ReelCircuit[] {
       id: out.length,
       points,
       tiles,
+      chords,
       centre: { x: sx / points.length, y: sy / points.length },
       min,
       max,
