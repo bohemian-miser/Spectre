@@ -9,7 +9,7 @@
 
 import { useEffect, useMemo, useRef } from 'react';
 import { FLOOR_DB, isComb, partialCurve, pointAt, shapeTerms, termLevel, termRef, type CornerFit, type Shape, type Term } from './shape';
-import { PEN_START, joinedAt, penMotion, penPlan, penSteps, penStepsNow, radiusDrone, type DroneBin, type Mapping, type Play, type Settings } from './render';
+import { PEN_START, joinedAt, penBarFraction, penMotion, penPlan, penSpeedAt, penSpeedNow, penSteps, penStepsNow, radiusDrone, type DroneBin, type PenMotion, type Mapping, type Play, type Settings } from './render';
 
 /** The preview's size, CSS px; line widths are set for it and scale with the width. */
 const W = 460;
@@ -82,9 +82,26 @@ const MAX_STROKE = 0.5;
  * One frame of scene `s` at `t` seconds into the lap (null: the whole lap),
  * into a context whose user space is `layout.w` by `loopH + barsH`.
  * `timeline`: `t` runs past the lap and the pen keeps going (a ramp card).
- * `penT`: seconds into the pen's own loop, when it runs on one (`penPlan`).
+ * `penT`: seconds into the pen's own loop, when it runs on one (`penPlan`);
+ * on a timeline, the seconds since the pen started, which then sets the pen
+ * whatever `t` is (`t` still sets the terms' joining).
+ * `penBar`: the height of the pen-speed bar behind the spectrum's bars, as a
+ * share 0..1 of the tallest term bar (null: no bar); left out, it is worked
+ * out from the pen's speed at `t` (`penBarFraction`).
+ * `motion`: on a timeline, the pen's motion to draw instead of the
+ * settings' (a `PenMotion` with its own `steps` curve, say).
  */
-export function drawShape(g: CanvasRenderingContext2D, s: ShapeScene, pre: Prepared, layout: Layout, t: number | null, timeline = false, penT: number | null = null): void {
+export function drawShape(
+  g: CanvasRenderingContext2D,
+  s: ShapeScene,
+  pre: Prepared,
+  layout: Layout,
+  t: number | null,
+  timeline = false,
+  penT: number | null = null,
+  penBar?: number | null,
+  motion?: PenMotion,
+): void {
   const { shape, mapping, play, settings, fit } = s;
   const { ts, drone } = pre;
   const { w: Wd, loopH, barsH } = layout;
@@ -155,12 +172,16 @@ export function drawShape(g: CanvasRenderingContext2D, s: ShapeScene, pre: Prepa
     // Steps the pen has covered now and when the shutter opened, or null where it is silent.
     let stepsNow: number | null = null;
     let stepsBefore = 0;
-    if (sp.pen && t !== null) {
+    if (timeline && penT !== null && (sp.pen || motion)) {
+      const m = motion ?? penMotion(sp);
+      stepsNow = penSteps(m, penT);
+      stepsBefore = penSteps(m, Math.max(0, penT - SHUTTER));
+    } else if (sp.pen && t !== null) {
       if (timeline) {
-        const motion = penMotion(sp);
+        const m = motion ?? penMotion(sp);
         if (t >= PEN_START) {
-          stepsNow = penSteps(motion, t - PEN_START);
-          stepsBefore = penSteps(motion, Math.max(0, t - PEN_START - SHUTTER));
+          stepsNow = penSteps(m, t - PEN_START);
+          stepsBefore = penSteps(m, Math.max(0, t - PEN_START - SHUTTER));
         }
       } else {
         const plan = penPlan(sp, shape.steps);
@@ -211,6 +232,22 @@ export function drawShape(g: CanvasRenderingContext2D, s: ShapeScene, pre: Prepa
       g.lineTo(Wd - right, yy);
       g.stroke();
       if (layout.labels) g.fillText(`${db}`, Wd - 30 * u1, yy + 4 * u1);
+    }
+    // The pen's speed, as a pale bar behind the terms, up to the tallest term's height.
+    let bar = penBar;
+    if (bar === undefined) {
+      bar = null;
+      if (timeline && penT !== null && (sp.pen || motion)) bar = penBarFraction(sp, penSpeedAt(motion ?? penMotion(sp), penT));
+      else if (sp.pen && t !== null) {
+        const speed = timeline ? (t >= PEN_START ? penSpeedAt(motion ?? penMotion(sp), t - PEN_START) : null) : penSpeedNow(penPlan(sp, shape.steps), t, penT ?? 0);
+        if (speed !== null) bar = penBarFraction(sp, speed);
+      }
+    }
+    if (bar !== null && bar > 0) {
+      const tallest = Math.max(0, ...ts.map((x) => termLevel(x.amp, ref))) * (bot - top);
+      const h = Math.min(1, bar) * tallest;
+      g.fillStyle = 'rgba(255,255,255,0.16)';
+      g.fillRect(pad, bot - h, Wd - pad - right, h);
     }
     for (const x of ts) {
       const h = termLevel(x.amp, ref) * (bot - top);

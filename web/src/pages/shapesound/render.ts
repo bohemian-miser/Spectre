@@ -253,12 +253,23 @@ export function renderSpectrum(shape: Shape, s: SpectrumSettings, sr: number, se
   return clip;
 }
 
-/** How the pen moves once it starts: from `start` steps a second, gaining `rate` every second up to `max`. */
+/**
+ * How the pen moves once it starts: from `start` steps a second, gaining
+ * `rate` every second up to `max`; or, when `steps` is given, along that
+ * curve instead (any motion, slowing down included).
+ */
 export interface PenMotion {
   readonly start: number;
   readonly rate: number;
   readonly max: number;
+  /** Steps covered `tau` seconds after the pen starts; non-decreasing, 0 at 0. */
+  readonly steps?: (tau: number) => number;
+  /** Its speed in steps a second, if known exactly; else taken from `steps`. */
+  readonly speed?: (tau: number) => number;
 }
+
+/** Seconds either side for the speed of a `steps` curve with no `speed`. */
+const SPEED_DT = 1e-4;
 
 export function penMotion(s: SpectrumSettings): PenMotion {
   return s.penRate > 0 ? { start: s.penFrom, rate: s.penRate, max: Math.max(s.penFrom, s.penMax) } : { start: s.penSpeed, rate: 0, max: s.penSpeed };
@@ -269,12 +280,31 @@ export const rampSeconds = (m: PenMotion): number => (m.rate > 0 ? (m.max - m.st
 
 /** Steps a second, `tau` seconds after the pen starts. */
 export function penSpeedAt(m: PenMotion, tau: number): number {
+  if (m.speed) return m.speed(Math.max(0, tau));
+  if (m.steps) {
+    const a = Math.max(0, tau - SPEED_DT);
+    const b = Math.max(a + SPEED_DT, tau + SPEED_DT);
+    return (m.steps(b) - m.steps(a)) / (b - a);
+  }
   return tau <= 0 ? m.start : Math.min(m.max, m.start + m.rate * tau);
+}
+
+/**
+ * Where a pen speed sits between its lowest and highest, 0..1, on a log
+ * scale: a ramp's from its start (or a thousandth of its top, when it starts
+ * at rest) to its top; a steady pen's on the pen speed slider's range.
+ */
+export function penBarFraction(s: SpectrumSettings, speed: number): number {
+  if (speed <= 0) return 0;
+  const [lo, hi] = s.penRate > 0 ? [s.penFrom > 0 ? s.penFrom : s.penMax / 1000, s.penMax] : (LIMITS.spectrum.penSpeed as readonly [number, number]);
+  if (hi <= lo) return 1;
+  return Math.max(0, Math.min(1, Math.log(speed / lo) / Math.log(hi / lo)));
 }
 
 /** Steps covered `tau` seconds after the pen starts: the speed integrated, so the pen never jumps. */
 export function penSteps(m: PenMotion, tau: number): number {
   if (tau <= 0) return 0;
+  if (m.steps) return m.steps(tau);
   const up = rampSeconds(m);
   if (tau <= up) return m.start * tau + (m.rate * tau * tau) / 2;
   return m.start * up + (m.rate * up * up) / 2 + m.max * (tau - up);

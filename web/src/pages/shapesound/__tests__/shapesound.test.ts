@@ -439,3 +439,33 @@ describe('many terms', () => {
     expect(Math.max(...ts.map((t) => t.k))).toBe(Math.min(512, Math.floor((c.points.length - 1) / 2)));
   });
 });
+
+describe('pen on a curve', () => {
+  it('slows down along it, its pitch falling with its speed, without clicks', () => {
+    // 40000 steps/s easing down to 13300: v = v1 + (v0 - v1) e^(-tau / 2), and its integral.
+    const [v0, v1, tc] = [40000, 13300, 2];
+    const motion = { start: v0, rate: 0, max: v0, steps: (tau: number) => v1 * tau + (v0 - v1) * tc * (1 - Math.exp(-tau / tc)) };
+    expect(penSpeedAt(motion, 3)).toBeCloseTo(v1 + (v0 - v1) * Math.exp(-3 / tc), 0);
+    const sr = 22050;
+    const circle = makeShape(wobble(100, 1, 0));
+    const c = renderPenMotion(circle, motion, 0, 10, sr);
+    const hzAt = (t: number): number => {
+      let n = 0;
+      for (let i = Math.round((t - 0.05) * sr) + 1; i < Math.round((t + 0.05) * sr); i++) if (c.left[i - 1] < 0 && c.left[i] >= 0) n++;
+      return n / 0.1;
+    };
+    for (const t of [1, 3, 5, 9]) {
+      const want = penSpeedAt(motion, t) / 100;
+      expect(hzAt(t) / want, `t ${t}`).toBeGreaterThan(0.9);
+      expect(hzAt(t) / want, `t ${t}`).toBeLessThan(1.1);
+    }
+    // No clicks: no sample-to-sample jump beyond what its highest pitch (400 Hz) allows.
+    let peak = 0;
+    let step = 0;
+    for (let i = Math.round(0.2 * sr); i < c.left.length; i++) {
+      peak = Math.max(peak, Math.abs(c.left[i]));
+      step = Math.max(step, Math.abs(c.left[i] - c.left[i - 1]));
+    }
+    expect(step / peak).toBeLessThan((2 * Math.PI * 400 * 1.5) / sr);
+  });
+});
