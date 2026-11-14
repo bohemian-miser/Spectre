@@ -44,6 +44,8 @@ import {
 } from './shapesound/render';
 import { cornerEps, fitCorners, makeShape, type Shape } from './shapesound/shape';
 import { ShapeView } from './shapesound/ShapeView';
+import { cardAudio, cardInfo, cardPainter, recordCard, type CardPainter, type CardSource } from './shapesound/card';
+import { decodeHash, encodeHash, type HashState } from './shapesound/hash';
 import '../styles/sound.css';
 import '../styles/shapesound.css';
 
@@ -116,11 +118,31 @@ interface Preview {
 }
 
 export function ShapeSoundPage(): JSX.Element {
-  const [family, setFamily] = useState<TileFamilyId>('hex');
-  const [subset, setSubset] = useState<readonly number[]>(reelDefaults('hex').subset);
-  const [matching, setMatching] = useState<readonly number[]>(() => comboToMatchingIndices('hex', reelDefaults('hex').subset, reelDefaults('hex').combo));
+  const [initial] = useState<HashState>(() => {
+    const d = reelDefaults('hex');
+    const fallback: HashState = { family: 'hex', subset: d.subset, combo: d.combo, circuit: null, brush: { mode: 'spectrum', play: 'loop', settings: DEFAULT_SETTINGS } };
+    try {
+      return decodeHash(window.location.hash, fallback);
+    } catch {
+      return fallback;
+    }
+  });
+  const [family, setFamily] = useState<TileFamilyId>(initial.family);
+  const [subset, setSubset] = useState<readonly number[]>(initial.subset);
+  const [matching, setMatching] = useState<readonly number[]>(() => {
+    try {
+      return comboToMatchingIndices(initial.family, initial.subset, initial.combo);
+    } catch {
+      const d = reelDefaults(initial.family);
+      return comboToMatchingIndices(initial.family, d.subset, d.combo);
+    }
+  });
+  /** The circuit the hash selects, painted once its world has loaded. */
+  const pendingCircuit = useRef(initial.circuit);
   const combo = useMemo(() => matchingIndicesToCombo(family, subset, matching), [family, subset, matching]);
-  const [brush, setBrush] = useState<Brush>({ mode: 'spectrum', play: 'loop', settings: DEFAULT_SETTINGS });
+  const [brush, setBrush] = useState<Brush>(initial.brush);
+  const brushRef = useRef(brush);
+  brushRef.current = brush;
   const [voices, setVoices] = useState<readonly Voice[]>([]);
   const [selected, setSelected] = useState<number | null>(null);
   const [hover, setHover] = useState<Preview | null>(null);
@@ -163,6 +185,17 @@ export function ShapeSoundPage(): JSX.Element {
     clips.current.set(sig, c);
     return c;
   };
+  /** A voice's lap clip and pen clip, rendered or from the cache. */
+  const clipsOf = (v: Voice): { main: Clip; pen: Clip | null } => {
+    const shape = shapeOf(v);
+    const main = clipFor(mainSig(v), () => render(shape, v.mode, v.settings, SR, v.play));
+    const ps = penSig(v);
+    const speed = v.settings.spectrum.penSpeed;
+    const pen = ps ? clipFor(ps, () => (v.play === 'constant' ? renderPenConstant(shape, speed, SR) : renderPen(shape, speed, SR))) : null;
+    return { main, pen };
+  };
+  const clipsRef = useRef(clipsOf);
+  clipsRef.current = clipsOf;
   /** The signatures each voice's mixer clips were made from. */
   const given = useRef(new Map<number, string>());
   const queued = useRef(false);
@@ -175,11 +208,7 @@ export function ShapeSoundPage(): JSX.Element {
       queued.current = false;
       const v = voicesRef.current.find((x) => given.current.get(x.id) !== mainSig(x) + penSig(x));
       if (!v) return;
-      const shape = shapeOf(v);
-      const main = clipFor(mainSig(v), () => render(shape, v.mode, v.settings, SR, v.play));
-      const ps = penSig(v);
-      const speed = v.settings.spectrum.penSpeed;
-      const pen = ps ? clipFor(ps, () => (v.play === 'constant' ? renderPenConstant(shape, speed, SR) : renderPen(shape, speed, SR))) : null;
+      const { main, pen } = clipsRef.current(v);
       const m = mixerRef.current;
       const fresh = !given.current.has(v.id);
       given.current.set(v.id, mainSig(v) + penSig(v));
@@ -187,7 +216,7 @@ export function ShapeSoundPage(): JSX.Element {
       if (fresh) m.start(v.id, true);
       pump();
     }, 30);
-  }, [shapeOf]);
+  }, []);
 
   useEffect(() => {
     const m = mixerRef.current;
@@ -233,6 +262,20 @@ export function ShapeSoundPage(): JSX.Element {
     setHover(null);
     setClicked(null);
     shapes.current.clear();
+    // Kept until the rule changes: a remount runs this again and must paint it again.
+    const want = pendingCircuit.current;
+    if (!want || !world) return;
+    // The circuit by key if its size matches, else the copy of that size nearest the centre.
+    const sized = world.circuits.filter((c) => !want.steps || c.points.length === want.steps);
+    const byKey = sized.find((c) => `c${c.id}` === want.key);
+    const c = byKey ?? [...sized].sort((a, b) => Math.hypot(a.centre.x, a.centre.y) - Math.hypot(b.centre.x, b.centre.y))[0];
+    if (!c) return;
+    const r = paint([], null, { key: `c${c.id}`, points: c.points }, brushRef.current, false, nextId.current++);
+    voicesRef.current = r.voices;
+    selectedRef.current = r.selected;
+    setVoices(r.voices);
+    setSelected(r.selected);
+    setClicked({ key: `c${c.id}`, points: c.points });
   }, [world]);
 
   const onPaint = (c: Preview, shift: boolean): void => {
@@ -417,6 +460,7 @@ export function ShapeSoundPage(): JSX.Element {
   };
 
   const changeFamily = (f: TileFamilyId): void => {
+    pendingCircuit.current = null;
     const d = reelDefaults(f);
     setFamily(f);
     setSubset(d.subset);
@@ -424,6 +468,7 @@ export function ShapeSoundPage(): JSX.Element {
   };
   const setRule = (f: TileFamilyId, nextSubset: readonly number[], nextMatching: readonly number[]): void => {
     if (f !== family) return changeFamily(f);
+    pendingCircuit.current = null;
     setSubset(nextSubset);
     setMatching(normalizeMatchingVector(f, nextSubset, nextMatching));
   };
@@ -432,13 +477,91 @@ export function ShapeSoundPage(): JSX.Element {
   const setSetting = <M extends Mapping>(m: M, patch: Partial<Settings[M]>): void =>
     setBrush((b) => ({ ...b, settings: { ...b.settings, [m]: { ...b.settings[m], ...patch } } }));
   const sel = voices.find((v) => v.id === selected) ?? null;
+
+  useEffect(() => {
+    if (combo === null) return;
+    const hash = encodeHash({ family, subset, combo, circuit: sel ? { key: sel.key, steps: sel.points.length } : null, brush });
+    window.history.replaceState(null, '', `#${hash}`);
+  }, [family, subset, combo, sel, brush]);
+
+  /** The selected circuit as a card, and the file name it goes by. */
+  const cardOf = (v: Voice): { src: CardSource; name: string } => {
+    const shape = shapeOf(v);
+    const { main, pen } = clipsOf(v);
+    const s = v.settings;
+    const params =
+      v.mode === 'spectrum'
+        ? `${Math.round(s.spectrum.f0)}hz-k${s.spectrum.terms}${s.spectrum.pen ? '-pen' : ''}`
+        : v.mode === 'radius'
+          ? `${Math.round(s.radius.f0)}hz-r${s.radius.range}`
+          : `t${Number(s.corners.tolerance.toPrecision(2))}-${noteName(s.corners.root)}`;
+    const edges = subset.some((e) => e > 9) ? subset.join(',') : subset.join('');
+    return {
+      src: { shape, mapping: v.mode, play: v.play, settings: s, fit: fitCorners(shape, s.corners.tolerance), main, pen, penLevel: s.spectrum.pen ? s.spectrum.penLevel : 0, reverb: REVERB[v.mode] },
+      name: [family, edges, combo, v.points.length, v.mode, ...(v.play === 'constant' ? ['constant'] : []), params].join('-'),
+    };
+  };
+  const cardRef = useRef(cardOf);
+  cardRef.current = cardOf;
+  const selRef = useRef(sel);
+  selRef.current = sel;
+
+  // The hook export_card.py drives: the selected circuit's card, frame by frame and its sound.
+  useEffect(() => {
+    let painter: { sig: string; p: CardPainter } | null = null;
+    const current = (): { src: CardSource; name: string; sig: string } => {
+      const v = selRef.current;
+      if (!v) throw new Error('no circuit selected');
+      return { ...cardRef.current(v), sig: mainSig(v) + penSig(v) };
+    };
+    (window as unknown as { __shapesoundCard?: unknown }).__shapesoundCard = {
+      ready: () => !!selRef.current,
+      info: () => {
+        const c = current();
+        return { ...cardInfo(c.src), name: c.name };
+      },
+      frame: (t: number) => {
+        const c = current();
+        if (!painter || painter.sig !== c.sig) painter = { sig: c.sig, p: cardPainter(c.src) };
+        painter.p.draw(t);
+        return painter.p.canvas.toDataURL('image/png');
+      },
+      audio: async () => {
+        const a = await cardAudio(current().src);
+        const inter = new Float32Array(2 * a.left.length);
+        for (let i = 0; i < a.left.length; i++) {
+          inter[2 * i] = a.left[i];
+          inter[2 * i + 1] = a.right[i];
+        }
+        const bytes = new Uint8Array(inter.buffer);
+        let bin = '';
+        for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+        return { sr: a.sr, data: btoa(bin) };
+      },
+    };
+  }, []);
+
+  const [exporting, setExporting] = useState(false);
+  const exportCard = async (): Promise<void> => {
+    if (!sel) return;
+    setExporting(true);
+    try {
+      const { src, name } = cardOf(sel);
+      const blob = await recordCard(src);
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `${name}.webm`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
+    } finally {
+      setExporting(false);
+    }
+  };
   const preview = hover ?? sel ?? clicked;
   const pShape = preview ? shapeOf(preview) : null;
   const tol = brush.settings.corners.tolerance;
   const fit = useMemo(() => (pShape ? fitCorners(pShape, tol) : null), [pShape, tol]);
   const clock = useRef(performance.now() / 1000);
-  const brushRef = useRef(brush);
-  brushRef.current = brush;
   const previewRef = useRef(preview);
   previewRef.current = preview;
   /** The preview's place in the lap: a painted copy's if it plays the brush's lap, else a clock of its own. */
@@ -553,6 +676,11 @@ export function ShapeSoundPage(): JSX.Element {
           ) : (
             <div className="shapesound-view shapesound-view-empty" />
           )}
+          <div className="sound-buttons">
+            <button type="button" disabled={!sel || exporting} onClick={() => void exportCard()}>
+              {exporting ? 'Exporting…' : 'Export'}
+            </button>
+          </div>
           <fieldset>
             <legend>{MODE_LABELS[brush.mode]}</legend>
             {brush.mode === 'spectrum' ? (

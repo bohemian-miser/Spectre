@@ -141,8 +141,8 @@ export function normalise(l: Float32Array, r: Float32Array, rms: number): void {
   }
 }
 
-/** Seeded uniform noise in -1..1 (mulberry32), for the corner clicks. */
-function noise(seed: number): () => number {
+/** Seeded uniform noise in -1..1 (mulberry32), for the corner clicks and the card reverb. */
+export function noise(seed: number): () => number {
   let a = seed >>> 0;
   return () => {
     a = (a + 0x6d2b79f5) >>> 0;

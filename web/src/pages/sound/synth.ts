@@ -31,13 +31,13 @@ interface Voice {
   readonly out: GainNode;
 }
 
-/** A decaying noise tail for a convolver reverb, `REVERB_SECONDS` long. */
-export function impulse(ctx: BaseAudioContext): AudioBuffer {
+/** A decaying noise tail for a convolver reverb, `REVERB_SECONDS` long; pass `rand` for the same tail every time. */
+export function impulse(ctx: BaseAudioContext, rand: () => number = Math.random): AudioBuffer {
   const n = Math.floor(REVERB_SECONDS * ctx.sampleRate);
   const buf = ctx.createBuffer(2, n, ctx.sampleRate);
   for (let ch = 0; ch < 2; ch++) {
     const d = buf.getChannelData(ch);
-    for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.exp((-4 * i) / n);
+    for (let i = 0; i < n; i++) d[i] = (rand() * 2 - 1) * Math.exp((-4 * i) / n);
   }
   return buf;
 }
