@@ -2,9 +2,10 @@
  * A circuit as the shape-sound prototypes see it
  * (social/experiments/shapesound/gallery.py `Shape`): anticlockwise, centred
  * on the mean of its points, scaled to radius of gyration 1. `full` keeps one
- * point per step; `p` is thinned to at most 720 points for the head track.
- * Also the corner fit of `mappings.corners_v2`: Ramer-Douglas-Peucker on the
- * full loop.
+ * point per step; `p` is thinned to at most 720 points for the head track,
+ * and `view` to at most 8192 for drawing. Also the corner fit of
+ * `mappings.corners_v2`: Ramer-Douglas-Peucker on the full loop (every k-th
+ * step of a very long one).
  */
 
 import type { Pt } from '../../core';
@@ -17,12 +18,23 @@ export interface Shape {
   /** Thinned (every k-th step, at most `THIN` points), normalised. */
   readonly p: Float64Array;
   readonly n: number;
+  /** Every k-th step, at most `VIEW` points, for drawing and for Fourier terms of long loops. */
+  readonly view: Float64Array;
+  readonly viewN: number;
   /** Median step length, in normalised units. */
   readonly tile: number;
   readonly perimeter: number;
+  /** An open path (a strand that did not close), closed here by a straight chord of tile-spaced points. */
+  readonly open: boolean;
 }
 
 const THIN = 720;
+/** Points kept for drawing and for the Fourier terms of a long loop: 4096 terms either side, far past the 512 used. */
+export const VIEW = 8192;
+/** Points the corner fit works on at most; a longer loop is fitted on every k-th step. */
+export const FIT_POINTS = 50_000;
+/** Step lengths sampled for the median, at most. */
+const MEDIAN_SAMPLES = 20_000;
 
 function signedArea(pts: readonly Pt[]): number {
   let s = 0;
@@ -34,10 +46,29 @@ function signedArea(pts: readonly Pt[]): number {
   return s / 2;
 }
 
-export function makeShape(points: readonly Pt[]): Shape {
+/** Every k-th of n interleaved points, k the smallest that leaves at most `most`. */
+function every(xy: Float64Array, n: number, most: number): { xy: Float64Array; n: number; k: number } {
+  const k = Math.ceil(n / most);
+  if (k <= 1) return { xy, n, k: 1 };
+  const m = Math.ceil(n / k);
+  const out = new Float64Array(2 * m);
+  for (let i = 0; i < m; i++) {
+    out[2 * i] = xy[2 * i * k];
+    out[2 * i + 1] = xy[2 * i * k + 1];
+  }
+  return { xy: out, n: m, k };
+}
+
+/**
+ * The shape of a loop of points, one per step. `open`: a path that did not
+ * close; its centre and size come from its own points, and a straight run of
+ * points about a step apart joins its end back to its start, so every mapping
+ * can go round it as a loop.
+ */
+export function makeShape(points: readonly Pt[], open = false): Shape {
   const pts = signedArea(points) < 0 ? [...points].reverse() : [...points];
-  const steps = pts.length;
-  const k = Math.ceil(steps / THIN);
+  const traced = pts.length;
+  const k = Math.ceil(traced / THIN);
   const thin = pts.filter((_, i) => i % k === 0);
   let cx = 0;
   let cy = 0;
@@ -50,6 +81,22 @@ export function makeShape(points: readonly Pt[]): Shape {
   let s = 0;
   for (const q of thin) s += (q.x - cx) ** 2 + (q.y - cy) ** 2;
   const rg = Math.sqrt(s / thin.length) || 1;
+  const median = (n: number, len: (i: number) => number): number => {
+    const stride = Math.max(1, Math.ceil(n / MEDIAN_SAMPLES));
+    const d: number[] = [];
+    for (let i = 0; i < n; i += stride) d.push(len(i));
+    d.sort((a, b) => a - b);
+    return d[Math.floor(d.length / 2)];
+  };
+  if (open && traced > 1) {
+    // Close the path by its chord, in steps of about one step length.
+    const step = median(traced - 1, (i) => Math.hypot(pts[i + 1].x - pts[i].x, pts[i + 1].y - pts[i].y)) || 1;
+    const a = pts[traced - 1];
+    const b = pts[0];
+    const m = Math.floor(Math.hypot(b.x - a.x, b.y - a.y) / step);
+    for (let j = 1; j < m; j++) pts.push({ x: a.x + ((b.x - a.x) * j) / m, y: a.y + ((b.y - a.y) * j) / m });
+  }
+  const steps = pts.length;
   const norm = (list: readonly Pt[]): Float64Array => {
     const out = new Float64Array(2 * list.length);
     list.forEach((q, i) => {
@@ -59,16 +106,14 @@ export function makeShape(points: readonly Pt[]): Shape {
     return out;
   };
   const full = norm(pts);
-  const d: number[] = [];
-  let perimeter = 0;
-  for (let i = 0; i < steps; i++) {
+  const seg = (i: number): number => {
     const j = (i + 1) % steps;
-    const l = Math.hypot(full[2 * j] - full[2 * i], full[2 * j + 1] - full[2 * i + 1]);
-    d.push(l);
-    perimeter += l;
-  }
-  d.sort((a, b) => a - b);
-  return { full, steps, p: norm(thin), n: thin.length, tile: d[Math.floor(d.length / 2)], perimeter };
+    return Math.hypot(full[2 * j] - full[2 * i], full[2 * j + 1] - full[2 * i + 1]);
+  };
+  let perimeter = 0;
+  for (let i = 0; i < steps; i++) perimeter += seg(i);
+  const view = every(full, steps, VIEW);
+  return { full, steps, p: norm(thin), n: thin.length, view: view.xy, viewN: view.n, tile: median(steps, seg), perimeter, open };
 }
 
 /** Point at lap share u of a closed path xy (n points), interpolated. */
@@ -101,7 +146,9 @@ export const usableTerms = (shape: Shape): number => Math.max(1, Math.min(MAX_TE
  */
 export function shapeTerms(shape: Shape, K: number): Term[] {
   const usable = Math.max(1, Math.min(K, usableTerms(shape)));
-  const t = terms({ xy: shape.full, n: shape.steps }, usable);
+  // A long loop's terms come from its drawn points: up to 4096 terms, far past what is used.
+  const src = shape.steps <= VIEW ? { xy: shape.full, n: shape.steps } : { xy: shape.view, n: shape.viewN };
+  const t = terms(src, usable);
   const out: Term[] = [];
   for (let k = -usable; k <= usable; k++) {
     if (k === 0) continue;
@@ -213,7 +260,22 @@ export interface CornerFit {
   readonly eps: number;
 }
 
+/** Corners a fit keeps at most: each is a note, and a lap of tens of thousands of them is a buzz that takes minutes to render. */
+export const MAX_CORNERS = 4096;
+
+/**
+ * The corners at `scale` times the default tolerance; with more than
+ * `MAX_CORNERS`, the tolerance is raised (by quarters) until there are no more
+ * than that. `eps` is the tolerance used.
+ */
 export function fitCorners(shape: Shape, scale: number): CornerFit {
-  const eps = cornerEps(shape, scale);
-  return { cuts: rdp(shape.full, shape.steps, eps), eps };
+  // A long loop is fitted on every k-th step, its corners put back on the steps they came from.
+  const d = shape.steps <= FIT_POINTS ? { xy: shape.full, n: shape.steps, k: 1 } : every(shape.full, shape.steps, FIT_POINTS);
+  let eps = cornerEps(shape, scale);
+  let cuts = rdp(d.xy, d.n, eps);
+  while (cuts.length > MAX_CORNERS) {
+    eps *= 1.25;
+    cuts = rdp(d.xy, d.n, eps);
+  }
+  return { cuts: d.k === 1 ? cuts : cuts.map((i) => i * d.k), eps };
 }

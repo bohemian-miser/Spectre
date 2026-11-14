@@ -3,7 +3,7 @@ import { cardLaps, timelineSeconds } from '../card';
 import { decodeHash, encodeHash, type HashState } from '../hash';
 import { DEFAULT_SETTINGS } from '../render';
 
-const base: HashState = { family: 'hex', subset: [0, 2, 3, 4, 6, 8], combo: '000000000', circuit: null, brush: { mode: 'spectrum', play: 'loop', settings: DEFAULT_SETTINGS } };
+const base: HashState = { family: 'hex', subset: [0, 2, 3, 4, 6, 8], combo: '000000000', circuit: null, maxSteps: 1_000_000, brush: { mode: 'spectrum', play: 'loop', settings: DEFAULT_SETTINGS } };
 
 describe('hash', () => {
   it('reads the link the card was asked for', () => {
@@ -20,7 +20,8 @@ describe('hash', () => {
       family: 'hex',
       subset: [0, 1, 2, 3, 4, 5, 6, 8],
       combo: '310021340',
-      circuit: { key: 'c812', steps: 429 },
+      circuit: { key: 'o12.3', steps: 1_000_000, at: { x: 602561.75, y: 1809835.044 } },
+      maxSteps: 2_000_000,
       brush: {
         mode: 'corners',
         play: 'constant',

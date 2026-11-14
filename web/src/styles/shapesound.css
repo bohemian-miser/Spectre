@@ -102,3 +102,12 @@
 .sound-slider.is-disabled {
   opacity: 0.55;
 }
+.shapesound-max-steps {
+  min-width: 320px;
+}
+.shapesound-max-steps .sound-slider {
+  grid-template-columns: 6em minmax(0, 1fr) 6.5em;
+}
+.shapesound-tracing {
+  font-size: 12px;
+}

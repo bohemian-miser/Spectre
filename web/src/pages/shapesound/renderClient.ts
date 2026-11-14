@@ -15,6 +15,7 @@ export interface RenderJob {
   readonly part: 'main' | 'pen';
   readonly key: string;
   readonly points: readonly Pt[];
+  readonly open?: boolean;
   readonly mode: Mapping;
   readonly play: Play;
   readonly settings: Settings;
@@ -26,7 +27,7 @@ export type RenderReply = { readonly id: number; readonly clip: Clip } | { reado
 let lastShape: { key: string; shape: Shape } | null = null;
 
 export function runRender(job: Omit<RenderJob, 'id'>): Clip {
-  if (!lastShape || lastShape.key !== job.key) lastShape = { key: job.key, shape: makeShape(job.points) };
+  if (!lastShape || lastShape.key !== job.key) lastShape = { key: job.key, shape: makeShape(job.points, job.open) };
   const shape = lastShape.shape;
   if (job.part === 'main') return render(shape, job.mode, job.settings, job.sr, job.play);
   const sp = job.settings.spectrum;

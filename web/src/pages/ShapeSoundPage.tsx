@@ -28,7 +28,7 @@ import { loadWorld, reelDefaults } from './reel/director';
 import { cutCuller } from './reel/stage';
 import { strandFinder } from './sound/strands';
 import { createMixer } from './shapesound/mixer';
-import { applyBrush, brushOf, paint, type Brush, type Voice } from './shapesound/paint';
+import { applyBrush, brushOf, paint, type Brush, type Painted, type Voice } from './shapesound/paint';
 import {
   DEFAULT_SETTINGS,
   LIMITS,
@@ -46,10 +46,12 @@ import {
   penPlan,
   penSpeedNow,
 } from './shapesound/render';
-import { cornerEps, fitCorners, makeShape, usableTerms, type Shape } from './shapesound/shape';
+import { fitCorners, makeShape, usableTerms, type Shape } from './shapesound/shape';
 import { ShapeView } from './shapesound/ShapeView';
 import { cardAudio, cardInfo, cardPainter, recordCard, type CardOptions, type CardPainter, type CardSource } from './shapesound/card';
-import { decodeHash, encodeHash, type HashState } from './shapesound/hash';
+import { MAX_STEPS_RANGE, decodeHash, encodeHash, type HashState } from './shapesound/hash';
+import { DEFAULT_MAX_STEPS } from './shapesound/trace';
+import { traceInWorker, type TraceHandle } from './shapesound/traceClient';
 import { renderInWorker } from './shapesound/renderClient';
 import '../styles/sound.css';
 import '../styles/shapesound.css';
@@ -151,15 +153,33 @@ function Segmented<T extends string>(props: { label: string; options: readonly T
   );
 }
 
-interface Preview {
-  readonly key: string;
-  readonly points: readonly Pt[];
+/** A circuit or traced strand: what the preview draws and a click paints. */
+type Preview = Painted;
+
+/** Points a painted path is drawn and hit-tested with on the map, at most. */
+const MAP_POINTS = 20_000;
+
+/** Every k-th point of a path, at most `MAP_POINTS`, and its last. */
+function mapPoints(pts: readonly Pt[]): readonly Pt[] {
+  const k = Math.ceil(pts.length / MAP_POINTS);
+  if (k <= 1) return pts;
+  const out: Pt[] = [];
+  for (let i = 0; i < pts.length; i += k) out.push(pts[i]);
+  out.push(pts[pts.length - 1]);
+  return out;
+}
+
+function segmentDistance(q: Pt, a: Pt, b: Pt): number {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const u = Math.max(0, Math.min(1, ((q.x - a.x) * dx + (q.y - a.y) * dy) / (dx * dx + dy * dy || 1)));
+  return Math.hypot(q.x - a.x - u * dx, q.y - a.y - u * dy);
 }
 
 export function ShapeSoundPage(): JSX.Element {
   const [initial] = useState<HashState>(() => {
     const d = reelDefaults('hex');
-    const fallback: HashState = { family: 'hex', subset: d.subset, combo: d.combo, circuit: null, brush: { mode: 'spectrum', play: 'loop', settings: DEFAULT_SETTINGS } };
+    const fallback: HashState = { family: 'hex', subset: d.subset, combo: d.combo, circuit: null, maxSteps: DEFAULT_MAX_STEPS, brush: { mode: 'spectrum', play: 'loop', settings: DEFAULT_SETTINGS } };
     try {
       return decodeHash(window.location.hash, fallback);
     } catch {
@@ -180,6 +200,10 @@ export function ShapeSoundPage(): JSX.Element {
   const pendingCircuit = useRef(initial.circuit);
   const combo = useMemo(() => matchingIndicesToCombo(family, subset, matching), [family, subset, matching]);
   const [brush, setBrush] = useState<Brush>(initial.brush);
+  const [maxSteps, setMaxSteps] = useState(initial.maxSteps);
+  /** The strand being traced, and its steps so far. */
+  const [tracing, setTracing] = useState<{ key: string; steps: number } | null>(null);
+  const traceRef = useRef<TraceHandle | null>(null);
   const brushRef = useRef(brush);
   brushRef.current = brush;
   const [voices, setVoices] = useState<readonly Voice[]>([]);
@@ -209,7 +233,7 @@ export function ShapeSoundPage(): JSX.Element {
   const shapes = useRef(new Map<string, Shape>());
   const shapeOf = useCallback((c: Preview): Shape => {
     let s = shapes.current.get(c.key);
-    if (!s) shapes.current.set(c.key, (s = makeShape(c.points)));
+    if (!s) shapes.current.set(c.key, (s = makeShape(c.points, c.open)));
     return s;
   }, []);
   const clips = useRef(new Map<string, Clip>());
@@ -239,7 +263,7 @@ export function ShapeSoundPage(): JSX.Element {
   };
   /** The same, rendered in the worker so the page keeps responding while long clips are made. */
   const clipsAsync = async (v: Voice): Promise<{ main: Clip; pen: Clip | null }> => {
-    const job = { key: v.key, points: v.points, mode: v.mode, play: v.play, settings: v.settings, sr: SR };
+    const job = { key: v.key, points: v.points, open: v.open, mode: v.mode, play: v.play, settings: v.settings, sr: SR };
     const ms = mainSig(v);
     const ps = penSig(v);
     const main = cached(ms) ?? remember(ms, await renderInWorker({ ...job, part: 'main' }));
@@ -332,6 +356,11 @@ export function ShapeSoundPage(): JSX.Element {
     // Kept until the rule changes: a remount runs this again and must paint it again.
     const want = pendingCircuit.current;
     if (!want || !world) return;
+    if (want.at) {
+      // A traced strand: follow it again from where it was clicked.
+      traceFrom(want.key ?? `t${want.at.x},${want.at.y}`, want.at);
+      return;
+    }
     // The circuit by key if its size matches, else the copy of that size nearest the centre.
     const sized = world.circuits.filter((c) => !want.steps || c.points.length === want.steps);
     const byKey = sized.find((c) => `c${c.id}` === want.key);
@@ -347,7 +376,7 @@ export function ShapeSoundPage(): JSX.Element {
 
   const onPaint = (c: Preview, shift: boolean): void => {
     setClicked(c);
-    const r = paint(voicesRef.current, selectedRef.current, c, brush, shift, nextId.current);
+    const r = paint(voicesRef.current, selectedRef.current, c, brushRef.current, shift, nextId.current);
     if (r.kind === 'add') {
       nextId.current++;
       // Make the voice (and the audio context) inside the click; the queue starts it once its clip is ready.
@@ -359,6 +388,29 @@ export function ShapeSoundPage(): JSX.Element {
     selectedRef.current = r.selected;
     setVoices(r.voices);
     setSelected(r.selected);
+  };
+
+  /** Follow a strand from a point on it in the worker, then paint whatever it traced. */
+  const traceFrom = (key: string, at: Pt): void => {
+    traceRef.current?.cancel();
+    if (combo === null) return;
+    setTracing({ key, steps: 0 });
+    const h = traceInWorker({ family, subset, combo, at, maxSteps }, (steps) => setTracing({ key, steps }));
+    traceRef.current = h;
+    void h.done.then((r) => {
+      if (traceRef.current !== h) return;
+      traceRef.current = null;
+      setTracing(null);
+      if (!r) return;
+      const points: Pt[] = new Array(r.xy.length / 2);
+      for (let i = 0; i < points.length; i++) points[i] = { x: r.xy[2 * i], y: r.xy[2 * i + 1] };
+      onPaint({ key, points, at, ...(r.closed ? {} : { open: true }), ...(r.capped ? { capped: true } : {}) }, false);
+    });
+  };
+  const cancelTrace = (): void => {
+    traceRef.current?.cancel();
+    traceRef.current = null;
+    setTracing(null);
   };
 
   // --- map --------------------------------------------------------------------
@@ -373,6 +425,12 @@ export function ShapeSoundPage(): JSX.Element {
   const hoverRef = useRef(hover);
   hoverRef.current = hover;
 
+  const mapCache = useRef(new Map<number, readonly Pt[]>());
+  const mapPointsOf = (v: Voice): readonly Pt[] => {
+    let p = mapCache.current.get(v.id);
+    if (!p) mapCache.current.set(v.id, (p = mapPoints(v.points)));
+    return p;
+  };
   const draw = useCallback((): void => {
     const r = rendererRef.current;
     if (!r || !world || !cullRef.current) return;
@@ -396,35 +454,49 @@ export function ShapeSoundPage(): JSX.Element {
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
     g.clearRect(0, 0, w, h);
     g.lineJoin = 'round';
-    const stroke = (pts: readonly Pt[]): void => {
+    const stroke = (pts: readonly Pt[], open = false): void => {
       g.beginPath();
       pts.forEach((p, i) => {
         const s = worldToScreen(cam, p.x, p.y, w, h);
         if (i === 0) g.moveTo(s.x, s.y);
         else g.lineTo(s.x, s.y);
       });
-      g.closePath();
+      if (!open) g.closePath();
       g.stroke();
     };
+    /** An open path's ends, as dots. */
+    const ends = (pts: readonly Pt[]): void => {
+      for (const p of [pts[0], pts[pts.length - 1]]) {
+        const s = worldToScreen(cam, p.x, p.y, w, h);
+        g.beginPath();
+        g.arc(s.x, s.y, 4.5, 0, 2 * Math.PI);
+        g.fill();
+      }
+    };
     for (const v of voicesRef.current) {
+      const pts = mapPointsOf(v);
       if (v.id === selectedRef.current) {
         // The selected circuit: a white outline under its colour.
         g.setLineDash([]);
         g.strokeStyle = '#fff';
         g.lineWidth = 8;
-        stroke(v.points);
+        stroke(pts, v.open);
       }
       g.strokeStyle = rgb(MODE_COLORS[v.mode], v.on ? 1 : 0.3);
       g.lineWidth = 3.5;
       g.setLineDash(v.play === 'loop' ? [9, 6] : []);
-      stroke(v.points);
+      stroke(pts, v.open);
+      if (v.open) {
+        g.fillStyle = rgb(MODE_COLORS[v.mode], v.on ? 1 : 0.3);
+        ends(pts);
+      }
     }
     const hv = hoverRef.current;
     if (hv) {
       g.setLineDash([]);
       g.strokeStyle = 'rgba(255,255,255,0.9)';
       g.lineWidth = 1.5;
-      stroke(hv.points);
+      stroke(mapPoints(hv.points), hv.open);
     }
   }, [world]);
 
@@ -483,12 +555,26 @@ export function ShapeSoundPage(): JSX.Element {
     return () => host.removeEventListener('wheel', onWheel);
   }, [redraw]);
 
-  const pick = (e: React.PointerEvent): Preview | null => {
-    if (!findStrand) return null;
+  /**
+   * What a pointer is over: a painted circuit or strand; else a circuit that
+   * closes in the loaded tiles; else (`traceable`) the strand to trace, with
+   * the world point to start from.
+   */
+  const pick = (e: React.PointerEvent): { preview: Preview | null; traceable: { key: string; at: Pt } | null } => {
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     const cam = camRef.current;
-    const c = findStrand(screenToWorld(cam, e.clientX - rect.left, e.clientY - rect.top, rect.width, rect.height), PICK_PX / cam.scale);
-    return c && c.closed ? { key: c.key, points: c.points } : null;
+    const at = screenToWorld(cam, e.clientX - rect.left, e.clientY - rect.top, rect.width, rect.height);
+    const tol = PICK_PX / cam.scale;
+    for (const v of voicesRef.current) {
+      const pts = mapPointsOf(v);
+      for (let i = 0; i + 1 < pts.length + (v.open ? 0 : 1); i++) {
+        if (segmentDistance(at, pts[i], pts[(i + 1) % pts.length]) < tol) return { preview: { key: v.key, points: v.points, open: v.open }, traceable: null };
+      }
+    }
+    const c = findStrand ? findStrand(at, tol) : null;
+    if (!c) return { preview: null, traceable: null };
+    if (c.closed) return { preview: { key: c.key, points: c.points }, traceable: null };
+    return { preview: null, traceable: { key: c.key, at } };
   };
   const dragRef = useRef<{ x: number; y: number; moved: number } | null>(null);
   const hoverFrame = useRef(0);
@@ -503,7 +589,7 @@ export function ShapeSoundPage(): JSX.Element {
       const ev = { clientX: e.clientX, clientY: e.clientY, currentTarget: e.currentTarget } as React.PointerEvent;
       hoverFrame.current = requestAnimationFrame(() => {
         hoverFrame.current = 0;
-        const c = pick(ev);
+        const c = pick(ev).preview;
         setHover((h) => (h?.key === c?.key ? h : c));
       });
       return;
@@ -522,8 +608,11 @@ export function ShapeSoundPage(): JSX.Element {
     const d = dragRef.current;
     dragRef.current = null;
     if (!d || d.moved >= CLICK_PX) return;
-    const c = pick(e);
-    if (c) onPaint(c, e.shiftKey);
+    // A click anywhere stops a trace that is still going.
+    cancelTrace();
+    const { preview, traceable } = pick(e);
+    if (preview) onPaint(preview, e.shiftKey);
+    else if (traceable) traceFrom(traceable.key, traceable.at);
   };
 
   const changeFamily = (f: TileFamilyId): void => {
@@ -547,9 +636,10 @@ export function ShapeSoundPage(): JSX.Element {
 
   useEffect(() => {
     if (combo === null) return;
-    const hash = encodeHash({ family, subset, combo, circuit: sel ? { key: sel.key, steps: sel.points.length } : null, brush });
+    const circuit = sel ? { key: sel.key, steps: sel.points.length, ...(sel.at ? { at: sel.at } : {}) } : null;
+    const hash = encodeHash({ family, subset, combo, circuit, maxSteps, brush });
     window.history.replaceState(null, '', `#${hash}`);
-  }, [family, subset, combo, sel, brush]);
+  }, [family, subset, combo, sel, brush, maxSteps]);
 
   /** The selected circuit as a card, and the file name it goes by. */
   const cardOf = (v: Voice): { src: CardSource; name: string } => {
@@ -681,6 +771,16 @@ export function ShapeSoundPage(): JSX.Element {
             ))}
           </select>
         </label>
+        <div className="shapesound-max-steps">
+          <LogSlider
+            label="Max steps"
+            min={MAX_STEPS_RANGE[0]}
+            max={MAX_STEPS_RANGE[1]}
+            value={maxSteps}
+            show={maxSteps.toLocaleString()}
+            onChange={(v) => setMaxSteps(Math.round(Number(v.toPrecision(2))))}
+          />
+        </div>
       </div>
       <ComboBar family={family} subset={subset} matching={matching} nonCrossingOnly tiles={false} onChange={(next) => setRule(next.family, next.subset, next.matching)} />
 
@@ -711,13 +811,20 @@ export function ShapeSoundPage(): JSX.Element {
               Clear
             </button>
             <span className="sound-value shapesound-count">{voices.length} / 16</span>
+            {tracing ? (
+              <span className="sound-value shapesound-tracing" data-testid="shapesound-tracing">
+                ⟳ {tracing.steps.toLocaleString()} steps
+              </span>
+            ) : null}
           </div>
           <ul className="shapesound-voices" data-testid="shapesound-voices">
             {voices.map((v, i) => (
               <li key={v.id} className={v.id === selected ? 'is-selected' : undefined} onClick={() => select(v)}>
                 <span className={`shapesound-swatch is-${v.play}`} style={{ borderColor: rgb(MODE_COLORS[v.mode]) }} />
                 <span className="shapesound-voice-name">
-                  {v.points.length} · {MODE_LABELS[v.mode]} · {PLAY_LABELS[v.play].toLowerCase()}
+                  {v.points.length}
+                  {v.capped ? <span title="Stopped at max steps"> …</span> : v.open ? <span title="Ends"> ⊣</span> : null} · {MODE_LABELS[v.mode]} ·{' '}
+                  {PLAY_LABELS[v.play].toLowerCase()}
                 </span>
                 <label className="sound-check" onClick={(e) => e.stopPropagation()}>
                   <input
@@ -816,7 +923,7 @@ export function ShapeSoundPage(): JSX.Element {
                   min={0.05}
                   max={50}
                   value={co.tolerance}
-                  show={pShape ? `${(cornerEps(pShape, co.tolerance) / pShape.tile).toPrecision(2)} tiles` : `×${co.tolerance.toPrecision(2)}`}
+                  show={pShape && fit ? `${(fit.eps / pShape.tile).toPrecision(2)} tiles` : `×${co.tolerance.toPrecision(2)}`}
                   onChange={(tolerance) => setSetting('corners', { tolerance })}
                 />
                 {fit ? (

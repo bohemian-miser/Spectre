@@ -153,7 +153,7 @@ export function drawShape(
   g.lineJoin = 'round';
   g.fillStyle = BG;
   g.fillRect(0, 0, Wd, H);
-  path(shape.full, shape.steps);
+  path(shape.view, shape.viewN);
   g.strokeStyle = FAINT;
   g.lineWidth = 2 * u1;
   g.stroke();

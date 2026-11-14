@@ -679,7 +679,8 @@ export function renderCorners(shape: Shape, s: CornerSettings, sr: number): Clip
   const len = left.length;
   for (const sd of sides) {
     const hold = Math.max(sd.dur, 0.03);
-    const m = Math.floor((hold + 0.25) * sr);
+    // The gate closes 0.06 s after the side; past that the note is silent, so stop there.
+    const m = Math.min(Math.floor((hold + 0.25) * sr), Math.ceil((hold + 0.06) * sr) + 1);
     const f = 440 * 2 ** ((sd.midi - 69) / 12);
     const att = Math.min(0.002 + 0.1 * (1 - sd.sharp) ** 2, 0.4 * hold);
     const idx = 0.3 + 4 * sd.sharp;

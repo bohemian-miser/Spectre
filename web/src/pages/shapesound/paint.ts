@@ -21,6 +21,20 @@ export interface Voice extends Brush {
   readonly points: readonly Pt[];
   readonly level: number;
   readonly on: boolean;
+  /** A traced strand that did not close; `capped` when it stopped at the step limit. */
+  readonly open?: boolean;
+  readonly capped?: boolean;
+  /** Where a traced strand was clicked, world coordinates (for links). */
+  readonly at?: Pt;
+}
+
+/** A circuit or traced strand as a click delivers it. */
+export interface Painted {
+  readonly key: string;
+  readonly points: readonly Pt[];
+  readonly open?: boolean;
+  readonly capped?: boolean;
+  readonly at?: Pt;
 }
 
 export const MAX_VOICES = 16;
@@ -41,7 +55,7 @@ export const brushOf = (v: Brush): Brush => ({ mode: v.mode, play: v.play, setti
 export function paint(
   voices: readonly Voice[],
   selected: number | null,
-  circuit: { readonly key: string; readonly points: readonly Pt[] },
+  circuit: Painted,
   brush: Brush,
   shift: boolean,
   id: number,
@@ -51,7 +65,8 @@ export function paint(
   if (have && shift) return { kind: 'select', voices, selected: have.id };
   if (have) return { kind: 'remove', id: have.id, voices: voices.filter((v) => v !== have), selected: selected === have.id ? null : selected };
   if (voices.length >= cap) return { kind: 'full', voices, selected };
-  return { kind: 'add', id, selected: id, voices: [...voices, { ...brushOf(brush), id, key: circuit.key, points: circuit.points, level: DEFAULT_LEVEL, on: true }] };
+  const traced = { ...(circuit.open ? { open: true } : {}), ...(circuit.capped ? { capped: true } : {}), ...(circuit.at ? { at: circuit.at } : {}) };
+  return { kind: 'add', id, selected: id, voices: [...voices, { ...brushOf(brush), id, key: circuit.key, points: circuit.points, level: DEFAULT_LEVEL, on: true, ...traced }] };
 }
 
 /** The voices with the brush applied to the selected one (unchanged if it already has it). */
