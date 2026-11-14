@@ -5,14 +5,15 @@
  *
  * Sequence: trace a circuit, speeding up as it goes, so that it closes on a
  * bar line of the soundtrack's tempo. Two beats later every other circuit
- * congruent to it lights up at once. The camera then moves to ground away
- * from the circuits traced so far and traces a circuit of a type not yet
- * shown, longer and faster than the last; after every second close it pulls
- * back to show the pattern first. After the last close it pulls back over the
- * whole cut and holds.
+ * congruent to it lights up at once. The next circuit is the one owning the
+ * unexplored segment nearest the middle of the view, of any size; the camera
+ * frames each trace, so bigger circuits pull it back. After every second
+ * close it pulls back to show the pattern first. After the last close it
+ * pulls back over the whole cut and holds.
  *
- * Every circuit is a different type from every one drawn before it, and the
- * types are whole classes, so a trace never runs over a circuit already lit.
+ * Every circuit of a traced type is lit, so the next circuit is always of a
+ * new type and a trace never runs over a circuit already lit. Circuits the
+ * camera can't frame inside the cut are passed over.
  */
 
 import {
@@ -36,7 +37,7 @@ export interface ReelOptions {
   readonly family: TileFamilyId;
   readonly subset: readonly number[];
   readonly combo: string;
-  /** The most the reel may run; it ends sooner when it runs out of circuit types. */
+  /** The most the reel may run; it ends sooner when nothing unexplored is left. */
   readonly seconds: number;
   /** How many circuit types to trace, at most; Infinity runs until they or `seconds` run out. */
   readonly circuits: number;
@@ -51,7 +52,7 @@ export interface ReelOptions {
   readonly height: number;
 }
 
-/** A rule per family with several circuit types of a few to ~150 tiles. */
+/** A rule per family with circuits of many sizes. */
 export function reelDefaults(family: TileFamilyId): Pick<ReelOptions, 'subset' | 'combo' | 'radius' | 'scale'> {
   return family === 'hex'
     ? { subset: [0, 2, 3, 4, 6, 8], combo: '000000000', radius: 100, scale: 14 }
@@ -184,17 +185,22 @@ const TAIL = 4;
 /** How much closer than `scale` the camera starts a trace. */
 const CLOSE_UP = 1.6;
 
+/**
+ * Whether the camera can frame all of `c`, with the margin the post-close view
+ * gives it, without looking past the cut.
+ */
+export function fitsCut(o: ReelOptions, c: ReelCircuit): boolean {
+  const pad = (0.6 * o.width) / o.scale;
+  const scale = Math.min(o.width / (c.max.x - c.min.x + 2 * pad), o.height / (c.max.y - c.min.y + 2 * pad));
+  const cx = (c.min.x + c.max.x) / 2;
+  const cy = (c.min.y + c.max.y) / 2;
+  return Math.abs(cx) + o.width / (2 * scale) <= o.radius && Math.abs(cy) + o.height / (2 * scale) <= o.radius;
+}
+
 export function planReel(o: ReelOptions, world: ReelWorld): ReelPlan {
   const beat = 60 / o.bpm;
   const bar = 4 * beat;
   const rng = mulberry32(o.seed * 7919 + 17);
-  const screenW = o.width / o.scale;
-  const screenH = o.height / o.scale;
-  // Traced circuits stay far enough inside the cut that the camera never
-  // shows past its edge while close up.
-  const inner = o.radius - 0.6 * Math.max(screenW, screenH);
-  const inside = (c: ReelCircuit): boolean =>
-    c.min.x > -inner && c.max.x < inner && c.min.y > -inner && c.max.y < inner;
 
   const byShape = new Map<string, ReelCircuit[]>();
   for (const c of world.circuits) {
@@ -202,54 +208,58 @@ export function planReel(o: ReelOptions, world: ReelWorld): ReelPlan {
     if (list) list.push(c);
     else byShape.set(c.shape, [c]);
   }
-  const candidates = [...byShape.values()]
-    .filter((list) => list.length >= 3 && list[0].points.length >= 5 && list.some(inside))
-    .sort((a, b) => a[0].points.length - b[0].points.length || (a[0].shape < b[0].shape ? -1 : 1));
+  // Strands that leave the cut never close in it, so only circuits are here.
+  const pool = world.circuits.filter((c) => fitsCut(o, c));
+  const shown = new Set<string>();
 
   const traces: Trace[] = [];
   let at: Pt = { x: 0, y: 0 };
   let start = beat;
-  for (let k = 0; k < o.circuits && candidates.length > 0; k++) {
-    // The next type: one of the two shortest left, so traces get longer.
-    const pick = candidates.splice(Math.min(candidates.length - 1, Math.floor(rng() * 2)), 1)[0];
-    const pool = pick.filter(inside);
-    const dist = (c: ReelCircuit): number => Math.hypot(c.centre.x - at.x, c.centre.y - at.y);
-    let circuit: ReelCircuit;
-    if (k === 0) {
-      const near = [...pool].sort((a, b) => dist(a) - dist(b)).slice(0, 3);
-      circuit = near[Math.floor(rng() * near.length)];
-    } else {
-      // Fresh ground: within reach of a pan, as far as possible from every
-      // circuit traced so far.
-      const reach = (c: ReelCircuit): number => Math.max(0, dist(c) - 1.2 * screenH) + Math.max(0, 0.5 * screenH - dist(c));
-      const fresh = (c: ReelCircuit): number =>
-        Math.min(...traces.map((t) => Math.hypot(c.centre.x - t.circuit.centre.x, c.centre.y - t.circuit.centre.y)));
-      circuit = [...pool].sort((a, b) => reach(a) - reach(b) || fresh(b) - fresh(a))[0];
+  for (let k = 0; k < o.circuits; k++) {
+    // The next circuit owns the unexplored segment nearest the middle of the
+    // view. Every circuit of a type already traced is lit, so unexplored
+    // means of a type not yet shown.
+    let found: ReelCircuit | null = null;
+    let nearest = 0;
+    let best = Infinity;
+    for (const c of pool) {
+      if (shown.has(c.shape)) continue;
+      const n = c.points.length;
+      for (let i = 0; i < n; i++) {
+        const p = c.points[i];
+        const q = c.points[(i + 1) % n];
+        const d = Math.hypot((p.x + q.x) / 2 - at.x, (p.y + q.y) / 2 - at.y);
+        if (d < best) {
+          best = d;
+          found = c;
+          nearest = i;
+        }
+      }
     }
+    if (!found) break;
+    const circuit = found;
     const n = circuit.points.length;
     const bars = Math.max(1, Math.min(4, Math.round(n / (FIRST_PACE * PACE_GROWTH ** k) / bar)));
     const close = (Math.floor(start / bar) + bars) * bar;
     const fill = close + 2 * beat;
     if (close + 2 * beat + TAIL > o.seconds) break;
-    // Start at the point nearest where the camera is, in a seeded direction.
-    let first = 0;
-    circuit.points.forEach((p, i) => {
-      const q = circuit.points[first];
-      if (Math.hypot(p.x - at.x, p.y - at.y) < Math.hypot(q.x - at.x, q.y - at.y)) first = i;
-    });
-    const order = Array.from({ length: n }, (_, i) => (first + i) % n);
+    shown.add(circuit.shape);
+    // Start on the nearest segment, in a seeded direction: forwards it is
+    // step 0 from its first end, backwards from its second.
     const backward = rng() < 0.5;
+    const first = backward ? (nearest + 1) % n : nearest;
+    const order = Array.from({ length: n }, (_, i) => (first + i) % n);
     const points = backward ? order.map((_, i) => circuit.points[order[(n - i) % n]]) : order.map((i) => circuit.points[i]);
     // Step k runs from points[k] to points[k + 1]; backwards, step k is the
     // forward step that ends at points[k].
     const tiles = new Int32Array(n);
     for (let i = 0; i < n; i++) tiles[i] = backward ? circuit.tiles[(order[(n - i) % n] + n - 1) % n] : circuit.tiles[order[i]];
     traces.push({ circuit, points, tiles, start, close, fill, color: circuitHueRgb(k + 1) });
-    at = circuit.centre;
+    at = { x: (circuit.min.x + circuit.max.x) / 2, y: (circuit.min.y + circuit.max.y) / 2 };
     // Pull back to show the pattern after every second close.
     start = close + (k % 2 === 1 ? 2 : 1) * bar;
   }
-  if (traces.length === 0) throw new Error('no circuit type fits the reel');
+  if (traces.length === 0) throw new Error('no circuit fits the reel');
 
   // End on a bar line once the last pull-back has had its time.
   const last = traces[traces.length - 1];

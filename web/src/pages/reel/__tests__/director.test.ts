@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { cameraAt, loadWorld, planReel, reelDefaults, stepsAt, traceTime, type ReelOptions } from '../director';
+import { cameraAt, fitsCut, loadWorld, planReel, reelDefaults, stepsAt, traceTime, type ReelOptions } from '../director';
 
 const options: ReelOptions = {
   seed: 1,
   family: 'hex',
   ...reelDefaults('hex'),
-  seconds: 30,
+  radius: 160,
+  seconds: 60,
   circuits: 6,
   fps: 30,
   bpm: 110,
@@ -35,12 +36,44 @@ describe('planReel', () => {
     for (const e of closes) expect(Math.abs(e.t - Math.round(e.t / bar) * bar)).toBeLessThanOrEqual(0.5 / options.fps + 1e-9);
   });
 
-  it('logs every step in order, each trace faster than the last', () => {
+  it('logs every step in order, no trace longer than four bars', () => {
     const steps = plan.log.events.filter((e) => e.type === 'step');
     expect(steps.length).toBe(plan.traces.reduce((n, t) => n + t.points.length, 0));
     for (let i = 1; i < steps.length; i++) expect(steps[i].frame).toBeGreaterThanOrEqual(steps[i - 1].frame);
-    const pace = plan.traces.map((t) => t.points.length / (t.close - t.start));
-    for (let i = 1; i < pace.length; i++) expect(pace[i]).toBeGreaterThan(pace[i - 1]);
+    for (const t of plan.traces) expect(t.close - t.start).toBeLessThanOrEqual(4 * bar + 1e-9);
+  });
+
+  it('picks the circuit owning the unexplored segment nearest the view', () => {
+    const shown = new Set<string>();
+    let at = { x: 0, y: 0 };
+    for (const tr of plan.traces) {
+      const nearest = (pts: readonly { x: number; y: number }[]): number => {
+        let best = Infinity;
+        for (let i = 0; i < pts.length; i++) {
+          const p = pts[i];
+          const q = pts[(i + 1) % pts.length];
+          best = Math.min(best, Math.hypot((p.x + q.x) / 2 - at.x, (p.y + q.y) / 2 - at.y));
+        }
+        return best;
+      };
+      const mine = nearest(tr.circuit.points);
+      for (const c of world.circuits) {
+        if (shown.has(c.shape) || !fitsCut(options, c)) continue;
+        expect(nearest(c.points)).toBeGreaterThanOrEqual(mine - 1e-9);
+      }
+      // The trace starts on that segment.
+      const [a, b] = [tr.points[0], tr.points[1]];
+      expect(Math.hypot((a.x + b.x) / 2 - at.x, (a.y + b.y) / 2 - at.y)).toBeCloseTo(mine, 9);
+      shown.add(tr.circuit.shape);
+      at = { x: (tr.circuit.min.x + tr.circuit.max.x) / 2, y: (tr.circuit.min.y + tr.circuit.max.y) / 2 };
+    }
+  });
+
+  it('runs until nothing unexplored is left without a cap', () => {
+    const open = { ...options, seconds: 600, circuits: Infinity };
+    const all = planReel(open, world);
+    const shown = new Set(all.traces.map((t) => t.circuit.shape));
+    for (const c of world.circuits) if (fitsCut(open, c)) expect(shown.has(c.shape)).toBe(true);
   });
 
   it('speeds up within a trace', () => {
