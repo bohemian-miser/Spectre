@@ -68,8 +68,15 @@ export function prepare(s: ShapeScene): Prepared {
   };
 }
 
-/** Seconds between frames, for drawing what a fast pen covered since the last one. */
-const FRAME = 1 / 30;
+/**
+ * The pen is drawn as a camera with a short shutter would see it: only the
+ * stretch it covers in this window, ending at the frame's time (an eighth of
+ * a 30 fps frame). A fast pen's stretch then jumps round the loop from frame
+ * to frame, like a wagon wheel, instead of filling it in.
+ */
+export const SHUTTER = 1 / 240;
+/** The most of the loop the stretch shows, so it never closes into a solid line. */
+const MAX_STROKE = 0.5;
 
 /**
  * One frame of scene `s` at `t` seconds into the lap (null: the whole lap),
@@ -145,7 +152,7 @@ export function drawShape(g: CanvasRenderingContext2D, s: ShapeScene, pre: Prepa
       g.stroke();
     }
     const sp = settings.spectrum;
-    // Steps the pen has covered now and a frame ago, or null where it is silent.
+    // Steps the pen has covered now and when the shutter opened, or null where it is silent.
     let stepsNow: number | null = null;
     let stepsBefore = 0;
     if (sp.pen && t !== null) {
@@ -153,31 +160,35 @@ export function drawShape(g: CanvasRenderingContext2D, s: ShapeScene, pre: Prepa
         const motion = penMotion(sp);
         if (t >= PEN_START) {
           stepsNow = penSteps(motion, t - PEN_START);
-          stepsBefore = penSteps(motion, Math.max(0, t - PEN_START - FRAME));
+          stepsBefore = penSteps(motion, Math.max(0, t - PEN_START - SHUTTER));
         }
       } else {
         const plan = penPlan(sp, shape.steps);
         const pt = penT ?? 0;
         stepsNow = penStepsNow(plan, t, pt);
-        stepsBefore = penStepsNow(plan, t - FRAME, Math.max(0, pt - FRAME)) ?? stepsNow ?? 0;
+        stepsBefore = penStepsNow(plan, t - SHUTTER, Math.max(0, pt - SHUTTER)) ?? stepsNow ?? 0;
       }
     }
     if (stepsNow !== null) {
-      // What the pen covered since the last frame (the whole loop when it laps faster than the frames).
+      // What the shutter caught, at most half the loop; the more laps it would catch, the harder it flashes.
       const u = stepsNow / shape.steps;
-      const u0 = Math.min(u, stepsBefore / shape.steps);
-      const all = u - u0 >= 1;
-      const m = all ? CURVE_POINTS : 200;
+      const laps = Math.max(0, u - Math.min(u, stepsBefore / shape.steps));
+      const u0 = u - Math.min(laps, MAX_STROKE);
+      const flash = Math.min(1, laps / MAX_STROKE);
+      const m = 200;
       const pts = new Float64Array(2 * (m + 1));
       for (let i = 0; i <= m; i++) {
-        const [x, y] = pointAt(shape.full, shape.steps, all ? i / m : u0 + ((u - u0) * i) / m);
+        const [x, y] = pointAt(shape.full, shape.steps, u0 + ((u - u0) * i) / m);
         pts[2 * i] = x;
         pts[2 * i + 1] = y;
       }
       path(pts, m + 1, false);
       g.strokeStyle = '#fff';
-      g.lineWidth = 3 * u1;
+      g.lineWidth = (3 + 4 * flash) * u1;
+      g.shadowColor = 'rgba(255,255,255,0.9)';
+      g.shadowBlur = 18 * flash * u1;
       g.stroke();
+      g.shadowBlur = 0;
       const [hx, hy] = pointAt(shape.full, shape.steps, u);
       dot(hx, hy, 6, '#fff');
     }
