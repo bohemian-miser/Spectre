@@ -190,3 +190,45 @@
 .sound-assigned li button {
   padding: 0 6px;
 }
+.sound-spectra {
+  display: grid;
+  gap: 8px;
+}
+.sound-spectrum {
+  margin: 0;
+  display: grid;
+  gap: 4px;
+}
+.sound-spectrum figcaption {
+  font-size: 12px;
+  color: var(--muted);
+}
+.sound-spectrum figcaption b {
+  color: var(--text);
+}
+.sound-spectrum svg {
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+.sound-spectrum-bar {
+  cursor: pointer;
+}
+.sound-spectrum-bar rect + rect {
+  fill: var(--accent);
+  transition: fill 0.1s;
+}
+.sound-spectrum-bar rect.is-on {
+  fill: var(--warn);
+}
+.sound-spectrum-bar:hover rect + rect {
+  opacity: 0.8;
+}
+.sound-spectrum-axis {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+.sound-spectrum-tick {
+  font-size: 9px;
+  fill: var(--muted);
+}

@@ -54,6 +54,7 @@ import { knockEvents, type KnockCircuit } from './sound/knock';
 import { strandFinder, circuitStrand, type Strand } from './sound/strands';
 import { circuitSteps } from './sound/steps';
 import { TileSoundEditor, download } from './sound/TileSoundEditor';
+import { SpectrumPanel } from './sound/SpectrumPanel';
 import { EMPTY_TILE_SOUNDS, readTileSounds, stepActions, type TileSounds } from './sound/tileSounds';
 import '../styles/sound.css';
 
@@ -229,6 +230,9 @@ export function SoundPage(): JSX.Element {
   /** The strand the buttons act on: the last one clicked. */
   const [selected, setSelected] = useState<Strand | null>(null);
   const [litCount, setLitCount] = useState(0);
+  /** The last circuit clicked and the one before it, for their spectra. */
+  const [spectra, setSpectra] = useState<{ a: Strand | null; b: Strand | null }>({ a: null, b: null });
+  const [compare, setCompare] = useState(false);
   const [note, setNote] = useState<string>('');
 
   const patched = useMemo(() => parsePatch(patch, base), [patch, base]);
@@ -404,6 +408,7 @@ export function SoundPage(): JSX.Element {
     flashRef.current = new Map();
     setLitCount(0);
     setSelected(null);
+    setSpectra({ a: null, b: null });
     setNote('');
     camRef.current = { cx: 0, cy: 0, scale: reelDefaults(family).scale };
   }, [world, family]);
@@ -587,6 +592,7 @@ export function SoundPage(): JSX.Element {
       return;
     }
     setSelected(c);
+    if (c.closed) setSpectra((s) => (s.a?.key === c.key ? s : { a: c, b: s.a }));
     followRef.current = follow;
     perform(c, { chord: onClick !== 'trace', trace: onClick !== 'chord', fill: onClick !== 'chord' && fillAfter });
   };
@@ -746,6 +752,22 @@ export function SoundPage(): JSX.Element {
             <input type="checkbox" checked={follow} onChange={(e) => setFollow(e.target.checked)} />
             Camera follows the trace
           </label>
+
+          <fieldset>
+            <legend>Spectrum</legend>
+            <label className="sound-check">
+              <input type="checkbox" checked={compare} onChange={(e) => setCompare(e.target.checked)} />
+              Compare with the circuit clicked before
+            </label>
+            <SpectrumPanel
+              a={spectra.a ? { label: 'Last clicked', points: spectra.a.points } : null}
+              b={compare && spectra.b ? { label: 'Clicked before', points: spectra.b.points } : null}
+              f0={440 * 2 ** ((params.root - 12 - 69) / 12)}
+              f0Label={noteName(params.root - 12)}
+              play={(events) => playerRef.current.play(events)}
+              now={() => playerRef.current.now()}
+            />
+          </fieldset>
 
           <fieldset>
             <legend>Knock</legend>
