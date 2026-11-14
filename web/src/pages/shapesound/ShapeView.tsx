@@ -8,7 +8,7 @@
 
 import { useEffect, useMemo, useRef } from 'react';
 import { FLOOR_DB, isComb, partialCurve, pointAt, shapeTerms, termLevel, termRef, type CornerFit, type Shape } from './shape';
-import { PEN_START, PRE, SPECTRUM_LAP, joinedAt, radiusDrone, type Mapping, type Play, type Settings } from './render';
+import { PEN_START, SPECTRUM_LAP, joinedAt, radiusDrone, type Mapping, type Play, type Settings } from './render';
 
 const W = 460;
 const LOOP_H = 460;
@@ -125,7 +125,7 @@ export function ShapeView(props: ShapeViewProps): JSX.Element {
           g.stroke();
         }
         const s = settings.spectrum;
-        if (s.pen && t !== null && t >= PEN_START && t <= PRE + SPECTRUM_LAP) {
+        if (s.pen && t !== null && t >= PEN_START && t <= SPECTRUM_LAP) {
           const u1 = (s.penSpeed * (t - PEN_START)) / shape.steps;
           const u0 = Math.max(0, Math.min(lastPen, u1));
           const pts: number[] = [];
@@ -190,7 +190,7 @@ export function ShapeView(props: ShapeViewProps): JSX.Element {
           }
         }
         if (t !== null) {
-          const u = Math.max(0, Math.min(1, (t - PRE) / lap));
+          const u = Math.max(0, Math.min(1, t / lap));
           trail(u);
           const [hx, hy] = pointAt(shape.p, shape.n, u);
           g.beginPath();
@@ -203,7 +203,7 @@ export function ShapeView(props: ShapeViewProps): JSX.Element {
         }
       } else {
         const lap = settings.corners.lap;
-        const u = t === null ? 1 : Math.max(0, Math.min(1, (t - PRE) / lap));
+        const u = t === null ? 1 : Math.max(0, Math.min(1, t / lap));
         if (t !== null) trail(u);
         const cs = fit.cuts;
         const poly = new Float64Array(2 * cs.length);

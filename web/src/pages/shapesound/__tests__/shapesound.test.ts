@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Pt } from '../../../core';
 import { loadWorld, reelDefaults } from '../../reel/director';
-import { CONSTANT_SECONDS, DEFAULT_SETTINGS, MAPPINGS, PRE, SPECTRUM_LAP, VOICE_RMS, clipSeconds, cornerChord, cornerSides, radiusDrone, renderConstant, renderCorners, renderPen, renderPenConstant, renderRadius, renderSpectrum } from '../render';
+import { CONSTANT_SECONDS, DEFAULT_SETTINGS, MAPPINGS, SPECTRUM_LAP, VOICE_RMS, clipSeconds, cornerChord, cornerSides, radiusDrone, renderConstant, renderCorners, renderPen, renderPenConstant, renderRadius, renderSpectrum } from '../render';
 import { applyBrush, paint, type Brush, type Voice } from '../paint';
 import { FLOOR_DB, fitCorners, isComb, makeShape, rdp, shapeTerms, termLevel, termRef } from '../shape';
 
@@ -50,8 +50,8 @@ describe('Fourier terms as partials', () => {
     const f0 = 100;
     const shape = makeShape(wobble(240, -2, 0.1));
     const c = renderSpectrum(shape, { ...DEFAULT_SETTINGS.spectrum, f0, terms: 8 }, sr);
-    const i0 = Math.round((PRE + 2) * sr);
-    const i1 = Math.round((PRE + SPECTRUM_LAP - 0.2) * sr);
+    const i0 = Math.round(2 * sr);
+    const i1 = Math.round((SPECTRUM_LAP - 0.2) * sr);
     const amp = (hz: number): number => Math.hypot(amplitude(c.left, sr, hz, i0, i1), amplitude(c.right, sr, hz, i0, i1));
     expect(amp(200) / amp(100)).toBeCloseTo(termLevel(0.1, 1), 2);
     expect(amp(300) / amp(100)).toBeLessThan(1e-3);
@@ -106,7 +106,7 @@ describe('renders', () => {
       ['radius', renderRadius(shape, s.radius, sr)],
       ['corners', renderCorners(shape, s.corners, sr)],
     ] as const) {
-      expect(c.left.length).toBe(Math.ceil(clipSeconds(m, s) * sr));
+      expect(c.left.length).toBe(Math.round(clipSeconds(m, s) * sr));
       expect(rms(c.left, c.right)).toBeCloseTo(VOICE_RMS, 6);
     }
     const pen = renderPen(shape, 7000, sr);
@@ -127,7 +127,7 @@ describe('renders', () => {
       return n / 0.05;
     };
     // The loop is out at u = 0 (and every third of the lap) and in at u = 1/6.
-    expect(zeroCrossHz(PRE + 4 / 3)).toBeGreaterThan(zeroCrossHz(PRE + 4 / 6 + 4 / 3));
+    expect(zeroCrossHz(4 / 3)).toBeGreaterThan(zeroCrossHz(4 / 6 + 4 / 3));
   });
 });
 
@@ -216,5 +216,47 @@ describe('painting', () => {
     expect(out.find((v) => v.id === 2)).toMatchObject({ play: 'loop', settings: edited.settings });
     expect(out.find((v) => v.id === 1)).toBe(vs[0]);
     expect(applyBrush(vs, null, edited)).toBe(vs);
+  });
+});
+
+describe('loops', () => {
+  const sr = 8000;
+  const real = (() => {
+    const d = reelDefaults('hex');
+    const world = loadWorld({ ...d, radius: 30, seed: 1, family: 'hex', seconds: 0, circuits: 0, fps: 30, bpm: 110, width: 1, height: 1 });
+    return makeShape([...world.circuits].sort((a, b) => b.points.length - a.points.length)[0].points);
+  })();
+  const s = DEFAULT_SETTINGS;
+  const clips = [real, makeShape(wobble(90, -2, 0.2))].flatMap((shape) => [
+    ['spectrum', renderSpectrum(shape, s.spectrum, sr)] as const,
+    ['radius', renderRadius(shape, s.radius, sr)] as const,
+    ['corners', renderCorners(shape, s.corners, sr)] as const,
+  ]);
+  const win = Math.round(0.05 * sr);
+
+  it('are one lap with no gap at either end', () => {
+    for (const [m, c] of clips) {
+      const n = c.left.length;
+      const mid = rms(c.left.subarray(win, n - win), c.right.subarray(win, n - win));
+      const first = rms(c.left.subarray(0, win), c.right.subarray(0, win));
+      const last = rms(c.left.subarray(n - win), c.right.subarray(n - win));
+      // The spectrum starts each lap from its circle terms alone, so its ends are quieter than its middle, never silent.
+      const floor = m === 'spectrum' ? 0.2 : 0.4;
+      expect(first / mid, `${m} first`).toBeGreaterThan(floor);
+      expect(last / mid, `${m} last`).toBeGreaterThan(floor);
+      expect(first / mid, `${m} first`).toBeLessThan(2.5);
+    }
+  });
+
+  it('have no step at the seam', () => {
+    for (const [m, c] of clips) {
+      for (const ch of [c.left, c.right]) {
+        // The step from the last sample back to the first is no bigger than the steps either side of it.
+        const n = ch.length;
+        let near = 0;
+        for (let i = 1; i < win; i++) near = Math.max(near, Math.abs(ch[i] - ch[i - 1]), Math.abs(ch[n - i] - ch[n - i - 1]));
+        expect(Math.abs(ch[0] - ch[n - 1]), m).toBeLessThanOrEqual(1.2 * near);
+      }
+    }
   });
 });

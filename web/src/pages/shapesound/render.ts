@@ -4,17 +4,19 @@
  * partials), `mappings.radius` (distance from the centre as pitch) and
  * `mappings.corners_v2` (one note per fitted side). The pen trace
  * (`mappings.pen_trace`) renders on its own so it can be mixed in or left out.
- * Each clip is a lap with `PRE` seconds before it and `POST` after.
+ * A loop clip is exactly one lap with no lead-in or tail: whatever sounds
+ * across the end of the lap is wrapped onto its start, so it repeats without
+ * a gap. Reverb is the live bus's (`mixer.ts`), not part of the clip.
  */
 
 import { fitCorners, pointAt, shapeTerms, termLevel, termRef, type Shape } from './shape';
 
-export const PRE = 0.4;
-export const POST = 0.8;
-/** Spectrum: seconds for the terms to join, and when the pen starts. */
+/** Spectrum: seconds into the lap for the terms to join, and when the pen starts. */
 export const JOIN = 1.8;
 export const SPECTRUM_LAP = 5;
-export const PEN_START = PRE + JOIN + 0.2;
+export const PEN_START = JOIN + 0.2;
+/** Seconds the joined terms and the pen take to fade before the lap ends. */
+const LAP_FADE = 0.15;
 /** Partials above this are left out. */
 const MAX_HZ = 18000;
 
@@ -64,7 +66,7 @@ export const DEFAULT_SETTINGS: Settings = {
 export const REVERB: Record<Mapping, number> = { spectrum: 0.12, radius: 0.22, corners: 0.2 };
 
 export function clipSeconds(m: Mapping, s: Settings): number {
-  return PRE + (m === 'spectrum' ? SPECTRUM_LAP : s[m].lap) + POST;
+  return m === 'spectrum' ? SPECTRUM_LAP : s[m].lap;
 }
 
 // ---------------------------------------------------------------- helpers
@@ -73,11 +75,6 @@ export function clipSeconds(m: Mapping, s: Settings): number {
 function panGains(pan: number): [number, number] {
   const th = ((pan + 1) * Math.PI) / 4;
   return [Math.cos(th), Math.sin(th)];
-}
-
-/** `mappings.envelope`: attack from `start`, release after `end`. */
-function envelope(t: number, attack: number, release: number, start: number, end: number): number {
-  return Math.max(0, Math.min(1, (t - start) / attack)) * Math.max(0, Math.min(1, 1 - (t - end) / release));
 }
 
 /** A second-order Butterworth section (bilinear transform), run in place. */
@@ -104,8 +101,8 @@ export function butter2(x: Float32Array | Float64Array, hz: number, sr: number, 
   }
 }
 
-/** Gaussian smoothing with edges held (`gaussian_filter1d`, mode nearest). */
-function gauss(x: Float64Array, sigma: number): Float64Array {
+/** Gaussian smoothing (`gaussian_filter1d`), the ends held, or wrapped round for a lap. */
+function gauss(x: Float64Array, sigma: number, wrap = false): Float64Array {
   const s = Math.max(sigma, 1e-3);
   const r = Math.ceil(4 * s);
   const w = Array.from({ length: 2 * r + 1 }, (_, i) => Math.exp(-0.5 * ((i - r) / s) ** 2));
@@ -113,7 +110,8 @@ function gauss(x: Float64Array, sigma: number): Float64Array {
   const out = new Float64Array(x.length);
   for (let i = 0; i < x.length; i++) {
     let acc = 0;
-    for (let j = -r; j <= r; j++) acc += w[j + r] * x[Math.max(0, Math.min(x.length - 1, i + j))];
+    const n = x.length;
+    for (let j = -r; j <= r; j++) acc += w[j + r] * x[wrap ? (((i + j) % n) + n) % n : Math.max(0, Math.min(n - 1, i + j))];
     out[i] = acc / sum;
   }
   return out;
@@ -156,27 +154,33 @@ function noise(seed: number): () => number {
 }
 
 function blank(seconds: number, sr: number): Clip {
-  const len = Math.ceil(seconds * sr);
-  return { sr, seconds, left: new Float32Array(len), right: new Float32Array(len) };
+  const len = Math.round(seconds * sr);
+  return { sr, seconds: len / sr, left: new Float32Array(len), right: new Float32Array(len) };
 }
+
+/** Half-cosine ramp 0..1 over [a, b]. */
+const ramp = (t: number, a: number, b: number): number => (t <= a ? 0 : t >= b ? 1 : 0.5 - 0.5 * Math.cos((Math.PI * (t - a)) / (b - a)));
 
 /** Loudness every voice is brought to, RMS of the clip. */
 export const VOICE_RMS = 0.1;
 
 // ---------------------------------------------------------------- 1. spectrum
 
-/** Seconds into the clip at which term k joins. */
+/** Seconds into the lap at which term k joins. */
 export function joinedAt(k: number, K: number): number {
-  return PRE + (JOIN * (Math.abs(k) - 1)) / Math.max(1, K - 1);
+  return (JOIN * (Math.abs(k) - 1)) / Math.max(1, K - 1);
 }
 
 /**
  * `spectrum.spectrum` without its pen: term k is a sine at |k| × f0, panned
  * 0.7 left for k < 0 and right for k > 0, as loud as its bar, joining from
- * |k| = 1 to K over `JOIN` seconds, then held to the end of the lap.
+ * |k| = 1 to K over `JOIN` seconds, then held to the end of the lap. Each
+ * partial makes a whole number of cycles in the lap; the circle terms
+ * (|k| = 1) sound throughout, and the rest fade out just before the lap
+ * ends so the next lap can join them again.
  */
 export function renderSpectrum(shape: Shape, s: SpectrumSettings, sr: number): Clip {
-  const clip = blank(PRE + SPECTRUM_LAP + POST, sr);
+  const clip = blank(SPECTRUM_LAP, sr);
   const ts = shapeTerms(shape, s.terms);
   const K = Math.max(...ts.map((t) => Math.abs(t.k)));
   const ref = termRef(ts);
@@ -184,10 +188,11 @@ export function renderSpectrum(shape: Shape, s: SpectrumSettings, sr: number): C
   const len = left.length;
   for (const t of ts) {
     const a = termLevel(t.amp, ref);
-    const hz = Math.abs(t.k) * s.f0;
+    const hz = whole(Math.abs(t.k) * s.f0, clip.seconds);
     if (a <= 0 || hz > MAX_HZ) continue;
     const [gl, gr] = panGains(0.7 * Math.sign(t.k));
     const on = joinedAt(t.k, K);
+    const circle = Math.abs(t.k) === 1;
     // A rotating phasor instead of a sine per sample.
     const w = (2 * Math.PI * hz) / sr;
     const cw = Math.cos(w);
@@ -197,7 +202,7 @@ export function renderSpectrum(shape: Shape, s: SpectrumSettings, sr: number): C
     let si = Math.sin(ph);
     for (let i = 0; i < len; i++) {
       const tt = i / sr;
-      const e = Math.max(0, Math.min(1, (tt - on) / 0.03));
+      const e = circle ? 1 : Math.max(0, Math.min(1, (tt - on) / 0.03)) * (1 - ramp(tt, clip.seconds - LAP_FADE, clip.seconds));
       if (e > 0) {
         const x = a * si * e;
         left[i] += x * gl;
@@ -213,11 +218,6 @@ export function renderSpectrum(shape: Shape, s: SpectrumSettings, sr: number): C
       }
     }
   }
-  for (let i = 0; i < len; i++) {
-    const e = envelope(i / sr, 0.03, 0.5, PRE, PRE + SPECTRUM_LAP);
-    left[i] *= e;
-    right[i] *= e;
-  }
   normalise(left, right, VOICE_RMS);
   return clip;
 }
@@ -226,10 +226,10 @@ export function renderSpectrum(shape: Shape, s: SpectrumSettings, sr: number): C
  * `mappings.pen_trace`: a pen runs round the full loop from `PEN_START` at
  * `speed` steps a second; the sound is its velocity (x left, y right),
  * mixed 0.7 : 0.3 with its position, low-passed at 9 kHz and high-passed at
- * 60 Hz. Same length as the spectrum clip.
+ * 60 Hz. One spectrum lap long; it fades out before the lap ends.
  */
 export function renderPen(shape: Shape, speed: number, sr: number): Clip {
-  const clip = blank(PRE + SPECTRUM_LAP + POST, sr);
+  const clip = blank(SPECTRUM_LAP, sr);
   const len = clip.left.length;
   const i0 = Math.ceil(PEN_START * sr);
   const m = len - i0;
@@ -269,7 +269,8 @@ export function renderPen(shape: Shape, speed: number, sr: number): Clip {
   butter2(yl, 60, sr, 'high');
   butter2(yr, 60, sr, 'high');
   for (let i = 0; i < m; i++) {
-    const e = envelope((i0 + i) / sr, 0.1, 0.5, PEN_START, PRE + SPECTRUM_LAP);
+    const t = (i0 + i) / sr;
+    const e = ramp(t, PEN_START, PEN_START + 0.1) * (1 - ramp(t, clip.seconds - LAP_FADE, clip.seconds));
     clip.left[i0 + i] = yl[i] * e;
     clip.right[i0 + i] = yr[i] * e;
   }
@@ -286,38 +287,39 @@ const CONTROL_HZ = 1000;
  * `mappings.radius`: the head's distance r from the centroid (radius of
  * gyration 1) is the pitch, f0 × 2^(range (r - 1)); its bearing is the pan;
  * how fast the path turns at the head brightens the tone with harmonics 2, 3
- * and 5.
+ * and 5. The head track is periodic in the lap, the vibrato makes whole
+ * cycles in it, and the pitch is nudged (by under half a cycle a lap) so the
+ * tone's phase closes at the seam.
  */
 export function renderRadius(shape: Shape, s: RadiusSettings, sr: number): Clip {
-  const T = PRE + s.lap + POST;
-  const clip = blank(T, sr);
-  const nc = Math.ceil(T * CONTROL_HZ) + 1;
-  const lapPos = (t: number): number => Math.max(0, Math.min(1, (t - PRE) / s.lap));
+  const clip = blank(s.lap, sr);
+  const T = clip.seconds;
+  const nc = Math.max(8, Math.round(T * CONTROL_HZ));
   let px: Float64Array = new Float64Array(nc);
   let py: Float64Array = new Float64Array(nc);
   for (let i = 0; i < nc; i++) {
-    const [x, y] = pointAt(shape.p, shape.n, lapPos(i / CONTROL_HZ));
+    const [x, y] = pointAt(shape.p, shape.n, i / nc);
     px[i] = x;
     py[i] = y;
   }
   // Smoothed over 0.6 of a thinned point.
-  const sig = (0.6 / shape.n) * s.lap * CONTROL_HZ;
-  px = gauss(px, sig);
-  py = gauss(py, sig);
-  const vx = gradient(px);
-  const vy = gradient(py);
+  const perPoint = nc / shape.n;
+  px = gauss(px, 0.6 * perPoint, true);
+  py = gauss(py, 0.6 * perPoint, true);
   const ang = new Float64Array(nc);
   for (let i = 0; i < nc; i++) {
-    let a = Math.atan2(vy[i], vx[i] + 1e-12);
-    if (i > 0) {
-      while (a - ang[i - 1] > Math.PI) a -= 2 * Math.PI;
-      while (a - ang[i - 1] < -Math.PI) a += 2 * Math.PI;
-    }
-    ang[i] = a;
+    const a = (i + nc - 1) % nc;
+    const b = (i + 1) % nc;
+    ang[i] = Math.atan2(py[b] - py[a], px[b] - px[a] + 1e-12);
   }
   // Radians per thinned point.
-  const turn = gradient(ang).map((v) => Math.min(3, Math.abs(v) * ((s.lap * CONTROL_HZ) / shape.n)));
-  const bright = gauss(turn, 0.02 * CONTROL_HZ).map((v) => Math.min(1, v / 1.2));
+  const turn = new Float64Array(nc);
+  for (let i = 0; i < nc; i++) {
+    const d = ang[(i + 1) % nc] - ang[(i + nc - 1) % nc];
+    const w = Math.abs((((d + Math.PI) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI) - Math.PI) / 2;
+    turn[i] = Math.min(3, w * perPoint);
+  }
+  const bright = gauss(turn, (0.02 * nc) / T, true).map((v) => Math.min(1, v / 1.2));
   const freq = new Float64Array(nc);
   const pan = new Float64Array(nc);
   for (let i = 0; i < nc; i++) {
@@ -325,25 +327,32 @@ export function renderRadius(shape: Shape, s: RadiusSettings, sr: number): Clip 
     pan[i] = 0.7 * Math.cos(Math.atan2(py[i], px[i]));
   }
   const at = (arr: Float64Array, t: number): number => {
-    const x = Math.min(nc - 1, t * CONTROL_HZ);
-    const i = Math.floor(x);
-    const f = x - i;
-    return i + 1 < nc ? arr[i] * (1 - f) + arr[i + 1] * f : arr[i];
+    const x = (t / T) * nc;
+    const i = Math.floor(x) % nc;
+    const f = x - Math.floor(x);
+    return arr[i] * (1 - f) + arr[(i + 1) % nc] * f;
   };
-  let ph = 0;
   const { left, right } = clip;
-  for (let i = 0; i < left.length; i++) {
+  const len = left.length;
+  const vib = whole(5.5, T);
+  const hz = new Float64Array(len);
+  let cycles = 0;
+  for (let i = 0; i < len; i++) {
     const t = i / sr;
-    const f = at(freq, t) * (1 + 0.004 * Math.sin(2 * Math.PI * 5.5 * t) * Math.max(0, Math.min(1, (t - PRE) / 1)));
-    ph += f / sr;
+    hz[i] = at(freq, t) * (1 + 0.004 * Math.sin(2 * Math.PI * vib * t));
+    cycles += hz[i] / sr;
+  }
+  const close = Math.max(1, Math.round(cycles)) / cycles;
+  let ph = 0;
+  for (let i = 0; i < len; i++) {
+    const t = i / sr;
     const b = at(bright, t);
     const w = 2 * Math.PI * ph;
-    const x =
-      (Math.sin(w) + (0.25 + 0.5 * b) * Math.sin(2 * w) + 0.35 * b * Math.sin(3 * w) + 0.2 * b * Math.sin(5 * w)) *
-      envelope(t, 0.08, 0.5, PRE, PRE + s.lap);
+    const x = Math.sin(w) + (0.25 + 0.5 * b) * Math.sin(2 * w) + 0.35 * b * Math.sin(3 * w) + 0.2 * b * Math.sin(5 * w);
     const [gl, gr] = panGains(at(pan, t));
     left[i] = x * gl;
     right[i] = x * gr;
+    ph += (hz[i] * close) / sr;
   }
   normalise(left, right, VOICE_RMS);
   return clip;
@@ -354,7 +363,7 @@ export function renderRadius(shape: Shape, s: RadiusSettings, sr: number): Clip 
 const PENTA_DOWN = [0, 3, 5, 8, 10];
 
 export interface Side {
-  /** Clip seconds the side starts and lasts. */
+  /** Seconds into the lap the side starts, and how long it lasts. */
   readonly start: number;
   readonly dur: number;
   readonly midi: number;
@@ -391,7 +400,7 @@ export function cornerSides(shape: Shape, cuts: readonly number[], s: CornerSett
     const d = h - Math.atan2(y0 - yp, x0 - xp) + Math.PI;
     const turn = Math.abs((((d % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI)) - Math.PI);
     out.push({
-      start: PRE + (s.lap * a0) / n,
+      start: (s.lap * a0) / n,
       dur: (s.lap * span) / n,
       midi,
       sharp: Math.max(0, Math.min(1, turn / ((120 * Math.PI) / 180))),
@@ -404,10 +413,11 @@ export function cornerSides(shape: Shape, cuts: readonly number[], s: CornerSett
 /**
  * Each side an FM note (modulator at twice the note, index 0.3 + 4 × sharp)
  * with a sub-octave, its attack quick for a sharp corner and slow for a
- * shallow one, and a click as loud as the corner is sharp.
+ * shallow one, and a click as loud as the corner is sharp. A note still
+ * ringing at the end of the lap carries on at its start.
  */
 export function renderCorners(shape: Shape, s: CornerSettings, sr: number): Clip {
-  const clip = blank(PRE + s.lap + POST, sr);
+  const clip = blank(s.lap, sr);
   const { cuts } = fitCorners(shape, s.tolerance);
   const sides = cornerSides(shape, cuts, s);
   const rnd = noise(3);
@@ -427,15 +437,16 @@ export function renderCorners(shape: Shape, s: CornerSettings, sr: number): Clip
     }
     const [gl, gr] = panGains(sd.pan);
     const i0 = Math.floor(sd.start * sr);
-    for (let i = 0; i < m && i0 + i < len; i++) {
+    for (let i = 0; i < m; i++) {
       const tt = i / sr;
       let env = Math.min(1, tt / att) * Math.exp(-tt / (0.08 + hold));
       env *= Math.max(0, Math.min(1, (hold + 0.06 - tt) / 0.06));
       const mod = Math.sin(2 * Math.PI * 2 * f * tt) * idx * Math.exp(-tt / modDecay);
       let x = (Math.sin(2 * Math.PI * f * tt + mod) + 0.3 * Math.sin(Math.PI * f * tt)) * env;
       if (i < click.length) x += click[i];
-      left[i0 + i] += x * gl;
-      right[i0 + i] += x * gr;
+      const j = (i0 + i) % len;
+      left[j] += x * gl;
+      right[j] += x * gr;
     }
   }
   normalise(left, right, VOICE_RMS);
