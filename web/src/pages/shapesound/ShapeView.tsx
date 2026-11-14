@@ -9,7 +9,7 @@
 
 import { useEffect, useMemo, useRef } from 'react';
 import { FLOOR_DB, isComb, partialCurve, pointAt, shapeTerms, termLevel, termRef, type CornerFit, type Shape, type Term } from './shape';
-import { PEN_START, SPECTRUM_LAP, joinedAt, penMotion, penSteps, radiusDrone, type DroneBin, type Mapping, type Play, type Settings } from './render';
+import { PEN_START, joinedAt, penMotion, penPlan, penSteps, penStepsNow, radiusDrone, type DroneBin, type Mapping, type Play, type Settings } from './render';
 
 /** The preview's size, CSS px; line widths are set for it and scale with the width. */
 const W = 460;
@@ -75,8 +75,9 @@ const FRAME = 1 / 30;
  * One frame of scene `s` at `t` seconds into the lap (null: the whole lap),
  * into a context whose user space is `layout.w` by `loopH + barsH`.
  * `timeline`: `t` runs past the lap and the pen keeps going (a ramp card).
+ * `penT`: seconds into the pen's own loop, when it runs on one (`penPlan`).
  */
-export function drawShape(g: CanvasRenderingContext2D, s: ShapeScene, pre: Prepared, layout: Layout, t: number | null, timeline = false): void {
+export function drawShape(g: CanvasRenderingContext2D, s: ShapeScene, pre: Prepared, layout: Layout, t: number | null, timeline = false, penT: number | null = null): void {
   const { shape, mapping, play, settings, fit } = s;
   const { ts, drone } = pre;
   const { w: Wd, loopH, barsH } = layout;
@@ -144,11 +145,27 @@ export function drawShape(g: CanvasRenderingContext2D, s: ShapeScene, pre: Prepa
       g.stroke();
     }
     const sp = settings.spectrum;
-    if (sp.pen && t !== null && t >= PEN_START && (timeline || t <= SPECTRUM_LAP)) {
+    // Steps the pen has covered now and a frame ago, or null where it is silent.
+    let stepsNow: number | null = null;
+    let stepsBefore = 0;
+    if (sp.pen && t !== null) {
+      if (timeline) {
+        const motion = penMotion(sp);
+        if (t >= PEN_START) {
+          stepsNow = penSteps(motion, t - PEN_START);
+          stepsBefore = penSteps(motion, Math.max(0, t - PEN_START - FRAME));
+        }
+      } else {
+        const plan = penPlan(sp, shape.steps);
+        const pt = penT ?? 0;
+        stepsNow = penStepsNow(plan, t, pt);
+        stepsBefore = penStepsNow(plan, t - FRAME, Math.max(0, pt - FRAME)) ?? stepsNow ?? 0;
+      }
+    }
+    if (stepsNow !== null) {
       // What the pen covered since the last frame (the whole loop when it laps faster than the frames).
-      const motion = penMotion(sp);
-      const u = penSteps(motion, t - PEN_START) / shape.steps;
-      const u0 = penSteps(motion, Math.max(0, t - PEN_START - FRAME)) / shape.steps;
+      const u = stepsNow / shape.steps;
+      const u0 = Math.min(u, stepsBefore / shape.steps);
       const all = u - u0 >= 1;
       const m = all ? CURVE_POINTS : 200;
       const pts = new Float64Array(2 * (m + 1));
@@ -267,6 +284,8 @@ export function drawShape(g: CanvasRenderingContext2D, s: ShapeScene, pre: Prepa
 export interface ShapeViewProps extends ShapeScene {
   /** Seconds into the lap, or null for the whole of it at once. */
   time(): number | null;
+  /** Seconds into the pen's own loop, when it has one. */
+  penTime?(): number | null;
 }
 
 export function ShapeView(props: ShapeViewProps): JSX.Element {
@@ -274,6 +293,8 @@ export function ShapeView(props: ShapeViewProps): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const timeRef = useRef(props.time);
   timeRef.current = props.time;
+  const penRef = useRef(props.penTime);
+  penRef.current = props.penTime;
   const layout = previewLayout(mapping);
   const H = layout.loopH + layout.barsH;
   const scene = useMemo(() => ({ shape, mapping, play, settings, fit }), [shape, mapping, play, settings, fit]);
@@ -293,7 +314,7 @@ export function ShapeView(props: ShapeViewProps): JSX.Element {
     const loop = (): void => {
       // Drawn every frame while the lap runs, once when it is held.
       const t = timeRef.current();
-      if (t !== null || !still) drawShape(g, scene, pre, layout, t);
+      if (t !== null || !still) drawShape(g, scene, pre, layout, t, false, penRef.current?.() ?? null);
       still = t === null;
       frame = requestAnimationFrame(loop);
     };

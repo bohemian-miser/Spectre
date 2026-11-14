@@ -14,6 +14,8 @@ const FADE = 0.03;
 export interface VoicePlayback {
   /** Seconds into the clip, or null when not playing. */
   readonly t: number | null;
+  /** Seconds into the pen's own clip (it may loop at another length), or null. */
+  readonly penT: number | null;
   readonly loop: boolean;
 }
 
@@ -199,10 +201,11 @@ export function createMixer(): Mixer {
     },
     playback(id) {
       const v = voices.get(id);
-      if (!v) return { t: null, loop: false };
+      if (!v) return { t: null, penT: null, loop: false };
       const t = position(v);
       if (t === null && v.take) v.take = null;
-      return { t, loop: v.loop };
+      const penT = t !== null && v.pen && ctx ? (ctx.currentTime - v.origin) % v.pen.duration : null;
+      return { t, penT, loop: v.loop };
     },
   };
 }

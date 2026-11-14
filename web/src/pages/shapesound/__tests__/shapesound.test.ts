@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Pt } from '../../../core';
 import { loadWorld, reelDefaults } from '../../reel/director';
-import { CONSTANT_SECONDS, DEFAULT_SETTINGS, MAPPINGS, MAX_DRONE, PEN_START, foldHz, penMotion, penSpeedAt, penSteps, renderPenMotion, SPECTRUM_LAP, VOICE_RMS, clipSeconds, cornerChord, cornerSides, radiusDrone, renderConstant, renderCorners, renderPen, renderPenConstant, renderRadius, renderSpectrum } from '../render';
+import { CONSTANT_SECONDS, DEFAULT_SETTINGS, MAPPINGS, MAX_DRONE, PEN_START, foldHz, penMotion, penPlan, penSpeedAt, penSpeedNow, penSteps, renderPen, renderPenMotion, SPECTRUM_LAP, VOICE_RMS, clipSeconds, cornerChord, cornerSides, radiusDrone, renderConstant, renderCorners, renderPen, renderPenConstant, renderRadius, renderSpectrum } from '../render';
 import { applyBrush, paint, type Brush, type Voice } from '../paint';
 import { FLOOR_DB, fitCorners, isComb, makeShape, rdp, shapeTerms, termLevel, termRef } from '../shape';
 
@@ -364,5 +364,67 @@ describe('corners at a 0.1 s lap', () => {
       }
       expect(rms(c.left, c.right)).toBeCloseTo(VOICE_RMS, 6);
     }
+  });
+});
+
+describe('pen hold', () => {
+  const circle = makeShape(wobble(100, 1, 0));
+  const sr = 22050;
+  const zeroCrossHz = (ch: Float32Array, t: number, w = 0.1): number => {
+    let n = 0;
+    for (let i = Math.round((t - w / 2) * sr) + 1; i < Math.round((t + w / 2) * sr); i++) if (ch[i - 1] < 0 && ch[i] >= 0) n++;
+    return n / w;
+  };
+  const rmsAt = (ch: Float32Array, t: number, w = 0.05): number => {
+    let s2 = 0;
+    const i0 = Math.round(t * sr);
+    const n = Math.round(w * sr);
+    for (let i = i0; i < i0 + n; i++) s2 += ch[i] ** 2;
+    return Math.sqrt(s2 / n);
+  };
+
+  it('holds the top speed for its hold, then stops, when ramp and hold fit in a lap', () => {
+    const s = { ...DEFAULT_SETTINGS.spectrum, pen: true, penRate: 2000, penFrom: 0, penMax: 2000, penHold: 0.5 };
+    const plan = penPlan(s, 100);
+    expect(plan.kind).toBe('lap');
+    expect(penSpeedNow(plan, PEN_START + 1.2, 0)).toBe(2000);
+    expect(penSpeedNow(plan, PEN_START + 1.7, 0)).toBeNull();
+    const c = renderPen(circle, s, sr);
+    // 2000 steps a second round a 100-step circle: 20 Hz is below the high-pass, so hear the hold by level instead.
+    expect(rmsAt(c.left, PEN_START + 1.3)).toBeGreaterThan(0);
+    expect(rmsAt(c.left, PEN_START + 1.75)).toBeLessThan(1e-6);
+  });
+
+  it('carries a ramp too long for a lap across laps: ramp, hold, again', () => {
+    const s = { ...DEFAULT_SETTINGS.spectrum, pen: true, penRate: 1000, penFrom: 0, penMax: 40000, penHold: 2 };
+    const plan = penPlan(s, 100);
+    expect(plan.kind).toBe('cycle');
+    expect(plan.ramp).toBe(40);
+    // 800000 steps in the ramp are 8000 laps of the circle, so the hold needs no stretch.
+    expect(plan.hold).toBeCloseTo(2, 9);
+    expect(penSpeedNow(plan, 0, 41)).toBe(40000);
+    expect(penSpeedNow(plan, 0, 20)).toBe(20000);
+    const c = renderPen(circle, s, sr);
+    expect(c.seconds).toBeCloseTo(42, 3);
+    // The pen sounds at its lap rate: 200 Hz halfway up the ramp, 400 Hz through the hold.
+    expect(zeroCrossHz(c.left, 20) / 200).toBeGreaterThan(0.9);
+    expect(zeroCrossHz(c.left, 20) / 200).toBeLessThan(1.1);
+    for (const t of [40.5, 41.5]) {
+      expect(zeroCrossHz(c.left, t) / 400).toBeGreaterThan(0.95);
+      expect(zeroCrossHz(c.left, t) / 400).toBeLessThan(1.05);
+    }
+    // No seam where the cycle starts again.
+    const n = c.left.length;
+    let near = 0;
+    for (let i = 1; i < 200; i++) near = Math.max(near, Math.abs(c.left[i] - c.left[i - 1]), Math.abs(c.left[n - i] - c.left[n - i - 1]));
+    expect(Math.abs(c.left[0] - c.left[n - 1])).toBeLessThanOrEqual(1.2 * near);
+  });
+
+  it('stretches the hold to whole laps of the loop, by under one lap at the top speed', () => {
+    const s = { ...DEFAULT_SETTINGS.spectrum, pen: true, penRate: 1000, penFrom: 0, penMax: 40000, penHold: 2 };
+    const plan = penPlan(s, 429);
+    const covered = penSteps(plan.motion, plan.ramp) + 40000 * plan.hold;
+    expect(covered / 429).toBeCloseTo(Math.round(covered / 429), 6);
+    expect(Math.abs(plan.hold - 2)).toBeLessThanOrEqual(429 / 40000);
   });
 });

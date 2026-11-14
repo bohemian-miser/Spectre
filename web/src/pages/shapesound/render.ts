@@ -286,9 +286,9 @@ export function penSteps(m: PenMotion, tau: number): number {
  * 0.3 with its position, low-passed at 9 kHz and high-passed at 60 Hz, so it
  * repeats at the rate the pen laps and follows its speed as that changes.
  * Brought to `VOICE_RMS` over the part where it runs; fades in over 0.1 s and
- * out over [fadeFrom, seconds].
+ * out over [fadeFrom, fadeTo].
  */
-export function renderPenMotion(shape: Shape, motion: PenMotion, from: number, seconds: number, sr: number, fadeFrom = seconds): Clip {
+export function renderPenMotion(shape: Shape, motion: PenMotion, from: number, seconds: number, sr: number, fadeFrom = seconds, fadeTo = seconds): Clip {
   const clip = blank(seconds, sr);
   const len = clip.left.length;
   const i0 = Math.min(len, Math.ceil(from * sr));
@@ -348,7 +348,7 @@ export function renderPenMotion(shape: Shape, motion: PenMotion, from: number, s
   let s2 = 0;
   for (let i = 0; i < m; i++) {
     const t = (i0 + i) / sr;
-    const e = ramp(t, from, from + 0.1) * (1 - ramp(t, fadeFrom, seconds));
+    const e = ramp(t, from, from + 0.1) * (1 - ramp(t, fadeFrom, fadeTo));
     clip.left[i0 + i] = yl[i] * e;
     clip.right[i0 + i] = yr[i] * e;
     s2 += clip.left[i0 + i] ** 2 + clip.right[i0 + i] ** 2;
@@ -361,9 +361,137 @@ export function renderPenMotion(shape: Shape, motion: PenMotion, from: number, s
   return clip;
 }
 
-/** The pen within a spectrum lap: from `PEN_START`, fading out just before the lap ends. */
+/** Seconds of a spectrum lap the pen has: from `PEN_START` to the lap's fade. */
+export const PEN_WINDOW = SPECTRUM_LAP - LAP_FADE - PEN_START;
+/** Seconds a ramped pen takes to fade out after its hold. */
+const PEN_FADE = 0.1;
+
+/**
+ * How the pen plays in a live loop:
+ * - steady: one speed, from `PEN_START` to the end of each lap;
+ * - lap: a ramp and hold that fit in the lap: from `PEN_START` it ramps,
+ *   holds `penHold` seconds at the top, then fades out, every lap;
+ * - cycle: a ramp and hold too long for a lap: the pen runs on its own loop,
+ *   carried across laps: it ramps, holds, then starts again from `penFrom`.
+ *   The hold is stretched (by under one lap of the loop at the top speed) so
+ *   the cycle covers whole laps of the loop and its seam does not jump.
+ */
+export interface PenPlan {
+  readonly kind: 'steady' | 'lap' | 'cycle';
+  readonly motion: PenMotion;
+  readonly ramp: number;
+  readonly hold: number;
+  /** The pen's own loop, seconds (cycle), else the spectrum lap. */
+  readonly seconds: number;
+}
+
+export function penPlan(s: SpectrumSettings, steps: number): PenPlan {
+  const motion = penMotion(s);
+  if (s.penRate <= 0) return { kind: 'steady', motion, ramp: 0, hold: 0, seconds: SPECTRUM_LAP };
+  const up = rampSeconds(motion);
+  if (up + s.penHold + PEN_FADE <= PEN_WINDOW) return { kind: 'lap', motion, ramp: up, hold: s.penHold, seconds: SPECTRUM_LAP };
+  const covered = penSteps(motion, up);
+  const top = Math.max(motion.max, 1e-9);
+  const laps = Math.max(Math.ceil(covered / steps - 1e-9), Math.round((covered + top * s.penHold) / steps), 1);
+  const hold = Math.max(0, (laps * steps - covered) / top);
+  return { kind: 'cycle', motion, ramp: up, hold, seconds: up + hold };
+}
+
+/**
+ * The pen's speed in steps a second at `t` seconds into the voice's lap
+ * (`penT`: into the pen's own loop, for a cycle), or null when it is silent.
+ */
+export function penSpeedNow(plan: PenPlan, t: number, penT: number): number | null {
+  if (plan.kind === 'cycle') return penSpeedAt(plan.motion, penT);
+  const tau = t - PEN_START;
+  if (tau < 0) return null;
+  if (plan.kind === 'lap' && tau > plan.ramp + plan.hold) return null;
+  return penSpeedAt(plan.motion, tau);
+}
+
+/** Steps the pen has covered at those times (for drawing it), or null when it is silent. */
+export function penStepsNow(plan: PenPlan, t: number, penT: number): number | null {
+  if (plan.kind === 'cycle') return penSteps(plan.motion, penT);
+  const tau = t - PEN_START;
+  if (tau < 0 || (plan.kind === 'lap' && tau > plan.ramp + plan.hold) || tau > SPECTRUM_LAP - PEN_START) return null;
+  return penSteps(plan.motion, tau);
+}
+
+/**
+ * A ramped pen on its own loop (`penPlan` cycle): ramp, hold, again, with no
+ * seam: its position is continuous because the cycle covers whole laps, and
+ * the filters run over the end of the cycle first.
+ */
+export function renderPenCycle(shape: Shape, plan: PenPlan, sr: number): Clip {
+  const clip = blank(plan.seconds, sr);
+  const len = clip.left.length;
+  const T = plan.seconds;
+  const lapSteps = penSteps(plan.motion, T);
+  const warm = Math.min(len, Math.ceil(0.1 * sr));
+  const m = warm + len;
+  // Steps covered at sample i (from -warm - 1), unwrapped across cycles.
+  const at = (i: number): number => {
+    const u = (i * T) / len;
+    const k = Math.floor(u / T);
+    return k * lapSteps + penSteps(plan.motion, u - k * T);
+  };
+  const ss = new Float64Array(m + 2);
+  const zx = new Float64Array(m + 2);
+  const zy = new Float64Array(m + 2);
+  for (let i = 0; i < m + 2; i++) {
+    ss[i] = at(i - warm - 1);
+    const [x, y] = pointAt(shape.full, shape.steps, ss[i] / shape.steps);
+    zx[i] = x;
+    zy[i] = y;
+  }
+  const vx = new Float64Array(m);
+  const vy = new Float64Array(m);
+  for (let i = 0; i < m; i++) {
+    const ds = ss[i + 2] - ss[i];
+    if (ds > 1e-9) {
+      vx[i] = (zx[i + 2] - zx[i]) / ds;
+      vy[i] = (zy[i + 2] - zy[i]) / ds;
+    } else {
+      const j = ((Math.floor(ss[i + 1]) % shape.steps) + shape.steps) % shape.steps;
+      const k = (j + 1) % shape.steps;
+      vx[i] = shape.full[2 * k] - shape.full[2 * j];
+      vy[i] = shape.full[2 * k + 1] - shape.full[2 * j + 1];
+    }
+  }
+  butter2(vx, 9000, sr, 'low');
+  butter2(vy, 9000, sr, 'low');
+  let sv = 0;
+  for (let i = warm; i < m; i++) sv += vx[i] ** 2 + vy[i] ** 2;
+  // The loop is centred, so its position needs no mean taken off.
+  let sz = 0;
+  for (let i = warm; i < m; i++) sz += zx[i + 1] ** 2 + zy[i + 1] ** 2;
+  const rv = Math.sqrt(sv / (2 * len)) + 1e-9;
+  const rz = Math.sqrt(sz / (2 * len)) + 1e-9;
+  const yl = new Float64Array(m);
+  const yr = new Float64Array(m);
+  for (let i = 0; i < m; i++) {
+    yl[i] = (0.7 * vx[i]) / rv + (0.3 * zx[i + 1]) / rz;
+    yr[i] = (0.7 * vy[i]) / rv + (0.3 * zy[i + 1]) / rz;
+  }
+  butter2(yl, 60, sr, 'high');
+  butter2(yr, 60, sr, 'high');
+  for (let i = 0; i < len; i++) {
+    clip.left[i] = yl[warm + i];
+    clip.right[i] = yr[warm + i];
+  }
+  normalise(clip.left, clip.right, VOICE_RMS);
+  return clip;
+}
+
+/** The pen in a live spectrum loop, as `penPlan` says. */
 export function renderPen(shape: Shape, s: SpectrumSettings, sr: number): Clip {
-  return renderPenMotion(shape, penMotion(s), PEN_START, SPECTRUM_LAP, sr, SPECTRUM_LAP - LAP_FADE);
+  const plan = penPlan(s, shape.steps);
+  if (plan.kind === 'cycle') return renderPenCycle(shape, plan, sr);
+  if (plan.kind === 'lap') {
+    const end = PEN_START + plan.ramp + plan.hold;
+    return renderPenMotion(shape, plan.motion, PEN_START, SPECTRUM_LAP, sr, end, end + PEN_FADE);
+  }
+  return renderPenMotion(shape, plan.motion, PEN_START, SPECTRUM_LAP, sr, SPECTRUM_LAP - LAP_FADE);
 }
 
 // ---------------------------------------------------------------- 2. radius

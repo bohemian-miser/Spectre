@@ -42,6 +42,9 @@ import {
   type Clip,
   type Mapping,
   type Settings,
+  type SpectrumSettings,
+  penPlan,
+  penSpeedNow,
 } from './shapesound/render';
 import { cornerEps, fitCorners, makeShape, type Shape } from './shapesound/shape';
 import { ShapeView } from './shapesound/ShapeView';
@@ -99,6 +102,38 @@ function Slider(props: { label: string; min: number; max: number; step: number; 
       <span>{props.label}</span>
       <input type="range" min={props.min} max={props.max} step={props.step} value={props.value} aria-label={props.label} onChange={(e) => props.onChange(Number(e.target.value))} />
       <span className="sound-value">{props.show}</span>
+    </label>
+  );
+}
+
+/**
+ * The pen speed while a ramp drives it: greyed and fixed, moving with the
+ * selected voice's speed as the audio clock says, every animation frame.
+ */
+function LivePenSpeed(props: { settings: SpectrumSettings; steps: number; read: () => { t: number | null; penT: number | null } }): JSX.Element {
+  const { settings, steps, read } = props;
+  const [speed, setSpeed] = useState<number | null>(null);
+  useEffect(() => {
+    const plan = penPlan(settings, steps);
+    let frame = 0;
+    const tick = (): void => {
+      const r = read();
+      const v = r.t === null ? null : penSpeedNow(plan, r.t, r.penT ?? 0);
+      setSpeed((old) => (v === null ? null : old !== null && Math.round(old) === Math.round(v) ? old : v));
+      frame = requestAnimationFrame(tick);
+    };
+    tick();
+    return () => cancelAnimationFrame(frame);
+  }, [settings, steps, read]);
+  const [lo, hi] = [500, 40000];
+  const shown = Math.max(lo, Math.min(hi, speed ?? settings.penFrom));
+  return (
+    <label className="sound-slider is-disabled">
+      <span>Pen speed</span>
+      <input type="range" min={0} max={1000} value={Math.round((1000 * Math.log(shown / lo)) / Math.log(hi / lo))} aria-label="Pen speed" disabled readOnly />
+      <span className="sound-value" data-testid="shapesound-pen-speed">
+        {speed === null ? '—' : `${Math.round(speed)} steps/s`}
+      </span>
     </label>
   );
 }
@@ -579,6 +614,22 @@ export function ShapeSoundPage(): JSX.Element {
     const t = v ? mixerRef.current.playback(v.id).t : null;
     return t ?? (performance.now() / 1000 - clock.current) % clipSeconds(b.mode, b.settings);
   }, []);
+  /** The preview's place in the pen's own loop: a painted copy's, else the same clock. */
+  const penTime = useCallback((): number | null => {
+    const b = brushRef.current;
+    const p = previewRef.current;
+    if (!p || b.play === 'constant') return null;
+    const v = voicesRef.current.find((x) => x.key === p.key && x.play === 'loop' && mainSig(x) + penSig(x) === mainSig({ ...b, key: p.key }) + penSig({ ...b, key: p.key }));
+    const t = v ? mixerRef.current.playback(v.id).penT : null;
+    return t ?? (performance.now() / 1000 - clock.current) % penPlan(b.settings.spectrum, p.points.length).seconds;
+  }, []);
+  /** The selected voice's place in its lap and pen loop, by the audio clock. */
+  const selClock = useCallback((): { t: number | null; penT: number | null } => {
+    const v = selRef.current;
+    if (!v) return { t: null, penT: null };
+    const r = mixerRef.current.playback(v.id);
+    return { t: r.t, penT: r.penT };
+  }, []);
 
   const sp = brush.settings.spectrum;
   const ra = brush.settings.radius;
@@ -678,7 +729,7 @@ export function ShapeSoundPage(): JSX.Element {
           <Segmented label="Mode" options={MAPPINGS} names={MODE_LABELS} value={brush.mode} onChange={(mode) => setBrush((b) => ({ ...b, mode }))} />
           <Segmented label="Play" options={PLAYS} names={PLAY_LABELS} value={brush.play} onChange={(play) => setBrush((b) => ({ ...b, play }))} />
           {pShape && fit ? (
-            <ShapeView shape={pShape} mapping={brush.mode} play={brush.play} settings={brush.settings} fit={fit} time={time} />
+            <ShapeView shape={pShape} mapping={brush.mode} play={brush.play} settings={brush.settings} fit={fit} time={time} penTime={penTime} />
           ) : (
             <div className="shapesound-view shapesound-view-empty" />
           )}
@@ -706,6 +757,9 @@ export function ShapeSoundPage(): JSX.Element {
                         <LogSlider label="Ramp to" min={500} max={40000} value={sp.penMax} show={`${Math.round(sp.penMax)} steps/s`} onChange={(penMax) => setSetting('spectrum', { penMax: Math.round(penMax) })} />
                         <Slider label="Hold" min={0} max={30} step={0.5} value={sp.penHold} show={`${sp.penHold} s`} onChange={(penHold) => setSetting('spectrum', { penHold })} />
                       </>
+                    ) : null}
+                    {sp.penRate > 0 ? (
+                      <LivePenSpeed settings={sp} steps={sel?.points.length ?? pShape?.steps ?? 1} read={selClock} />
                     ) : (
                       <LogSlider label="Pen speed" min={500} max={40000} value={sp.penSpeed} show={`${Math.round(sp.penSpeed)} steps/s`} onChange={(penSpeed) => setSetting('spectrum', { penSpeed })} />
                     )}
