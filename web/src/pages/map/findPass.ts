@@ -63,6 +63,33 @@ export interface FindPassResult {
   readonly seenWhole: readonly number[];
 }
 
+/**
+ * Every chord of a cut's leaf tiles in world coordinates: tile `i`, its
+ * segment `s`, and the segment's ends.
+ */
+export function forEachChord(
+  cut: FindCut,
+  table: FindTable,
+  visit: (i: number, s: number, ax: number, ay: number, bx: number, by: number) => void,
+): void {
+  for (let i = 0; i < cut.count; i++) {
+    const tb = cut.type[i];
+    if (isAggregateType(tb)) continue;
+    const local = table.segments[tb];
+    if (!local || local.length === 0) continue;
+    const code = cut.code[i];
+    const co = COS30[code & 15];
+    const si = SIN30[code & 15];
+    const mir = (code & 16) !== 0 ? -1 : 1;
+    const px = cut.pos[i * 2] + cut.origin.x;
+    const py = cut.pos[i * 2 + 1] + cut.origin.y;
+    for (let s = 0; s < local.length; s++) {
+      const [a, b] = local[s];
+      visit(i, s, co * mir * a.x - si * a.y + px, si * mir * a.x + co * a.y + py, co * mir * b.x - si * b.y + px, si * mir * b.x + co * b.y + py);
+    }
+  }
+}
+
 export class FindPassState {
   private index = new FoundIndex<number>();
   /** Each circuit's chord midpoints (world x, y pairs), by id. */
@@ -89,48 +116,35 @@ export class FindPassState {
     // Curved strands: each chord's world curve handles, by segment index.
     const ctrls: StrandCurve[] = [];
     let count = 0;
-    for (let i = 0; i < cut.count; i++) {
-      const tb = cut.type[i];
-      if (isAggregateType(tb)) continue;
-      const local = table.segments[tb];
-      if (!local || local.length === 0) continue;
-      const code = cut.code[i];
-      const rot = code & 15;
-      const mir = (code & 16) !== 0 ? -1 : 1;
-      const co = COS30[rot];
-      const si = SIN30[rot];
-      const px = cut.pos[i * 2] + cut.origin.x;
-      const py = cut.pos[i * 2 + 1] + cut.origin.y;
-      const localCtrls = table.controls?.[tb];
-      const localAux = table.aux?.[tb];
-      for (let s = 0; s < local.length; s++) {
-        const [a, b] = local[s];
-        const ax = co * mir * a.x - si * a.y + px;
-        const ay = si * mir * a.x + co * a.y + py;
-        const bx = co * mir * b.x - si * b.y + px;
-        const by = si * mir * b.x + co * b.y + py;
-        // Found already: its chords are its own (a found circuit is a pure
-        // loop), so nothing else traces differently without them.
-        const slot = known.find((ax + bx) / 2, (ay + by) / 2);
-        if (slot >= 0) {
-          knownSeen[slot]++;
-          continue;
-        }
-        if (aux && localAux?.[s]) aux[count] = 1;
-        const c = localCtrls?.[s];
-        if (c) {
-          ctrls[count] = {
-            c1: { x: co * mir * c.c1.x - si * c.c1.y + px, y: si * mir * c.c1.x + co * c.c1.y + py },
-            c2: { x: co * mir * c.c2.x - si * c.c2.y + px, y: si * mir * c.c2.x + co * c.c2.y + py },
-          };
-        }
-        const o = 4 * count++;
-        xy[o] = ax;
-        xy[o + 1] = ay;
-        xy[o + 2] = bx;
-        xy[o + 3] = by;
+    forEachChord(cut, table, (i, s, ax, ay, bx, by) => {
+      // Found already: its chords are its own (a found circuit is a pure
+      // loop), so nothing else traces differently without them.
+      const slot = known.find((ax + bx) / 2, (ay + by) / 2);
+      if (slot >= 0) {
+        knownSeen[slot]++;
+        return;
       }
-    }
+      const tb = cut.type[i];
+      if (aux && table.aux?.[tb]?.[s]) aux[count] = 1;
+      const c = table.controls?.[tb]?.[s];
+      if (c) {
+        const code = cut.code[i];
+        const co = COS30[code & 15];
+        const si = SIN30[code & 15];
+        const mir = (code & 16) !== 0 ? -1 : 1;
+        const px = cut.pos[i * 2] + cut.origin.x;
+        const py = cut.pos[i * 2 + 1] + cut.origin.y;
+        ctrls[count] = {
+          c1: { x: co * mir * c.c1.x - si * c.c1.y + px, y: si * mir * c.c1.x + co * c.c1.y + py },
+          c2: { x: co * mir * c.c2.x - si * c.c2.y + px, y: si * mir * c.c2.x + co * c.c2.y + py },
+        };
+      }
+      const o = 4 * count++;
+      xy[o] = ax;
+      xy[o + 1] = ay;
+      xy[o + 2] = bx;
+      xy[o + 3] = by;
+    });
 
     const fresh: FoundLoop[] = [];
     for (const loop of traceLoops(xy, count)) {

@@ -48,6 +48,7 @@ export default defineConfig({
         line: resolve(__dirname, 'line.html'),
         limit: resolve(__dirname, 'limit.html'),
         identify: resolve(__dirname, 'identify.html'),
+        reel: resolve(__dirname, 'reel.html'),
         legacy: resolve(__dirname, 'legacy.html'),
         widgets: resolve(__dirname, 'widgets.html'),
       },
