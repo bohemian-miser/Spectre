@@ -5,7 +5,7 @@
  * must come from a user gesture.
  */
 
-import type { NoteEvent, SoundEvent, SweepControl, SweepEvent } from './score';
+import type { HitEvent, NoteEvent, SoundEvent, SweepControl, SweepEvent } from './score';
 
 const mtof = (m: number): number => 440 * 2 ** ((m - 69) / 12);
 
@@ -27,7 +27,7 @@ export interface Player {
 }
 
 interface Voice {
-  readonly sources: OscillatorNode[];
+  readonly sources: AudioScheduledSourceNode[];
   readonly out: GainNode;
 }
 
@@ -106,13 +106,13 @@ export function createPlayer(): Player {
     osc.frequency.value = mtof(e.midi);
     osc.detune.value = e.detune;
     const lp = c.createBiquadFilter();
-    lp.frequency.value = Math.min(12000, 6 * mtof(e.midi));
+    lp.frequency.value = e.cutoff ?? Math.min(12000, 6 * mtof(e.midi));
     const g = c.createGain();
     g.gain.setValueAtTime(0, t);
     g.gain.linearRampToValueAtTime(e.gain, t + e.attack);
     g.gain.setTargetAtTime(0, t + e.attack, e.dur / 3);
     osc.connect(lp).connect(g);
-    const sources = [osc];
+    const sources: AudioScheduledSourceNode[] = [osc];
     if (e.instrument === 'bell') {
       const partial = c.createOscillator();
       partial.frequency.value = BELL_PARTIAL * mtof(e.midi);
@@ -181,6 +181,50 @@ export function createPlayer(): Player {
     finish({ sources: [osc, lfo], out: g }, t + e.dur + 0.05);
   };
 
+  let noiseBuf: AudioBuffer | null = null;
+  /** A drum: a tone that rings (dropping in pitch for a tom) and a noise burst, filtered by `cutoff`. */
+  const hit = (c: AudioContext, e: HitEvent, t0: number): void => {
+    const t = t0 + e.t;
+    if (!noiseBuf) {
+      noiseBuf = c.createBuffer(1, Math.floor(0.5 * c.sampleRate), c.sampleRate);
+      const d = noiseBuf.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    }
+    const g = c.createGain();
+    g.gain.value = e.gain;
+    const lp = c.createBiquadFilter();
+    lp.frequency.value = e.cutoff;
+    lp.connect(g);
+    const ring = Math.max(0.02, e.ring);
+    const noiseLen = e.drum === 'hat' ? 0.04 : e.drum === 'snare' ? 0.12 : 0.03;
+    const noiseLevel = e.drum === 'hat' ? 0.7 : e.drum === 'snare' ? 0.5 : 0.15;
+    const sources: AudioScheduledSourceNode[] = [];
+    if (e.drum !== 'hat') {
+      const osc = c.createOscillator();
+      osc.frequency.setValueAtTime(e.drum === 'tom' ? 1.6 * e.tone : e.tone, t);
+      osc.frequency.setTargetAtTime(e.tone, t, 0.03);
+      const og = c.createGain();
+      og.gain.setValueAtTime(0.8, t);
+      og.gain.setTargetAtTime(0, t, ring / 3);
+      osc.connect(og).connect(lp);
+      osc.start(t);
+      sources.push(osc);
+    }
+    const noise = c.createBufferSource();
+    noise.buffer = noiseBuf;
+    const band = c.createBiquadFilter();
+    band.type = e.drum === 'hat' ? 'highpass' : 'bandpass';
+    band.frequency.value = e.drum === 'hat' ? 7000 : 2200;
+    const ng = c.createGain();
+    ng.gain.setValueAtTime(noiseLevel, t);
+    ng.gain.setTargetAtTime(0, t, noiseLen / 3);
+    noise.connect(band).connect(ng).connect(lp);
+    noise.start(t);
+    sources.push(noise);
+    panned(c, g, e.pan);
+    finish({ sources, out: g }, t + Math.max(ring, noiseLen) + 0.2);
+  };
+
   return {
     now: () => ctx?.currentTime ?? 0,
     play(events, at) {
@@ -189,6 +233,7 @@ export function createPlayer(): Player {
       const t0 = at ?? c.currentTime + 0.05;
       for (const e of events) {
         if (e.kind === 'note') note(c, e, t0);
+        else if (e.kind === 'hit') hit(c, e, t0);
         else sweep(c, e, t0);
       }
       return t0;

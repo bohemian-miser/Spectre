@@ -70,6 +70,14 @@ export interface SoundParams {
   /** Reverb send, 0..1. */
   reverb: number;
   volume: number;
+  /** Knock lit circuits the trace head passes (`knock.ts`). */
+  knock: boolean;
+  /** A knocked circuit also knocks the lit circuits inside it. */
+  nested: boolean;
+  /** World units from the head within which a lit circuit is knocked. */
+  reach: number;
+  /** Tempo of the 16ths knocks fall on. */
+  bpm: number;
 }
 
 export const DEFAULT_PARAMS: SoundParams = {
@@ -96,6 +104,10 @@ export const DEFAULT_PARAMS: SoundParams = {
   detune: 10,
   reverb: 0.3,
   volume: 0.7,
+  knock: false,
+  nested: false,
+  reach: 1.5,
+  bpm: 110,
 };
 
 export interface NoteEvent {
@@ -114,6 +126,22 @@ export interface NoteEvent {
   readonly send?: number;
   /** Set on tile notes; a bell adds an inharmonic partial. */
   readonly instrument?: Instrument;
+  /** Low-pass cutoff, Hz; by default six times the note. */
+  readonly cutoff?: number;
+}
+
+/** A drum hit: a tone and a noise burst, shaped by `drum`. */
+export interface HitEvent {
+  readonly kind: 'hit';
+  readonly t: number;
+  readonly drum: 'snare' | 'tom' | 'hat';
+  /** Hz. */
+  readonly tone: number;
+  /** Seconds the tone rings. */
+  readonly ring: number;
+  readonly gain: number;
+  readonly pan: number;
+  readonly cutoff: number;
 }
 
 /** Settings of a sweep voice from time `t` on (see `ModState`). */
@@ -147,7 +175,7 @@ export interface SweepEvent {
   readonly controls?: readonly SweepControl[];
 }
 
-export type SoundEvent = NoteEvent | SweepEvent;
+export type SoundEvent = NoteEvent | SweepEvent | HitEvent;
 
 /** Degree `d` of the scale (0 = root; wraps into higher and lower octaves). */
 export function scaleNote(p: Pick<SoundParams, 'root' | 'scale'>, d: number): number {
@@ -357,18 +385,23 @@ const MAX_SAMPLES = 2000;
  * assignments in force (`stepActions`): they move the pitch and the corner
  * depth here, and the rest become `controls`.
  */
-export function traceSweep(points: readonly Pt[], p: SoundParams, seconds?: number, states?: readonly ModState[]): SweepEvent {
-  const n = points.length;
+export function traceSweep(points: readonly Pt[], p: SoundParams, seconds?: number, states?: readonly ModState[], open = false): SweepEvent {
+  // An open path has one more point than steps and no step back to its start.
+  const n = open ? points.length - 1 : points.length;
   const dur = seconds ?? n / p.pace;
   const dt = dur / n;
   const per = Math.max(1, Math.min(SAMPLES_PER_STEP, Math.floor(MAX_SAMPLES / n)));
   const place = positionMap(points, p.trace);
-  const corners = p.corner === 'none' ? [] : findCorners(points, p.cornerWindow, p.cornerAngle);
+  const w = Math.max(1, Math.floor(p.cornerWindow));
+  const corners = (p.corner === 'none' ? [] : findCorners(points, p.cornerWindow, p.cornerAngle)).filter(
+    // An open path's ends would be measured against each other.
+    (c) => !open || (c.index >= w && c.index <= points.length - 1 - w),
+  );
   const depthAt = (k: number): number => p.cornerDepth + (states?.[k]?.corner ?? 0);
   const shiftAt = new Map<number, number>();
   if (p.corner === 'shift') for (const c of corners) shiftAt.set(c.index, Math.sign(c.turn) * depthAt(c.index));
   // Before the first corner, the shift left by the last one (the loop comes round).
-  let shift = corners.length && p.corner === 'shift' ? (shiftAt.get(corners[corners.length - 1].index) ?? 0) : 0;
+  let shift = corners.length && p.corner === 'shift' && !open ? (shiftAt.get(corners[corners.length - 1].index) ?? 0) : 0;
   const pitch: { t: number; midi: number }[] = [];
   const pitchOf = (q: Pt, k: number): number => {
     const m = p.low + place(q) * (p.high - p.low) + shift + (states?.[k]?.trace ?? 0);
@@ -377,13 +410,13 @@ export function traceSweep(points: readonly Pt[], p: SoundParams, seconds?: numb
   for (let k = 0; k < n; k++) {
     shift = shiftAt.get(k) ?? shift;
     const a = points[k];
-    const b = points[(k + 1) % n];
+    const b = points[(k + 1) % points.length];
     for (let s = 0; s < per; s++) {
       const u = s / per;
       pitch.push({ t: (k + u) * dt, midi: pitchOf({ x: a.x + (b.x - a.x) * u, y: a.y + (b.y - a.y) * u }, k) });
     }
   }
-  pitch.push({ t: dur, midi: pitchOf(points[0], n - 1) });
+  pitch.push({ t: dur, midi: pitchOf(open ? points[n] : points[0], n - 1) });
   const controls: SweepControl[] = [];
   if (states) {
     let last = '';

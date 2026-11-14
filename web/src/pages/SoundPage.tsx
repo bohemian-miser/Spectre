@@ -1,8 +1,10 @@
 /**
- * Sound: hear a rule's circuits. Click a circuit to play the chord of the
+ * Sound: hear a rule's circuits. Click any strand to play the chord of the
  * supertiles it spans and trace it with a voice whose pitch follows the
- * trace head; Fill lights every congruent copy in view, each with its own
- * copy of the sound. Tile sounds (`sound/tileSounds.ts`) add notes and
+ * trace head, the camera following; clicked strands stay lit until clicked
+ * again or cleared. Fill lights every congruent copy in view, each with its
+ * own copy of the sound, and Knock sounds lit circuits as the head passes
+ * them (`sound/knock.ts`). Tile sounds (`sound/tileSounds.ts`) add notes and
  * setting changes as the trace crosses chosen tiles, edges and lines. The
  * events come from `sound/score.ts` and play through `sound/synth.ts`; the
  * tiling and circuits are the reel's (`reel/director`).
@@ -30,6 +32,7 @@ import { LIGHT_LINE_COLOR } from './map/webglRenderer';
 import type { ReelCircuit } from './reel/circuits';
 import { loadWorld, reelColor, reelDefaults, type ReelWorld } from './reel/director';
 import { cutCuller, geometry } from './reel/stage';
+import { findTableOf } from './map/findPass';
 import {
   CHOICES,
   DEFAULT_PARAMS,
@@ -47,6 +50,8 @@ import {
   type StepAncestry,
 } from './sound/score';
 import { createPlayer } from './sound/synth';
+import { knockEvents, type KnockCircuit } from './sound/knock';
+import { strandFinder, circuitStrand, type Strand } from './sound/strands';
 import { circuitSteps } from './sound/steps';
 import { TileSoundEditor, download } from './sound/TileSoundEditor';
 import { EMPTY_TILE_SOUNDS, readTileSounds, stepActions, type TileSounds } from './sound/tileSounds';
@@ -61,6 +66,20 @@ const LIGHT_SECONDS = 0.35;
 const FILL_GAP = 0.3;
 /** Pointer travel, px, below which a press counts as a click. */
 const CLICK_PX = 4;
+/** How near a click must land to a strand, px. */
+const PICK_PX = 12;
+/** Seconds a knocked circuit flashes white. */
+const FLASH_SECONDS = 0.25;
+/** How quickly the camera catches up with the trace head, per second. */
+const FOLLOW_RATE = 4;
+/** Ink of an open strand, which has no shape to colour it by. */
+const OPEN_COLOR: Rgb = [230, 230, 230];
+/** Tiling sizes on offer, as multiples of the reel's square. */
+const SIZES = [
+  { label: 'small', factor: 0.5 },
+  { label: 'reel', factor: 1 },
+  { label: 'large', factor: 2 },
+];
 
 type NumKey = { [K in keyof SoundParams]: SoundParams[K] extends number ? K : never }[keyof SoundParams];
 
@@ -95,6 +114,7 @@ const FILL_SLIDERS: readonly SliderSpec[] = [
   { key: 'voices', label: 'Voices', min: 1, max: 256, step: 1 },
   { key: 'detune', label: 'Detune', min: 0, max: 50, step: 1, show: (v) => `${v} cents` },
 ];
+const KNOCK_SLIDERS: readonly SliderSpec[] = [{ key: 'reach', label: 'Reach', min: 0.5, max: 4, step: 0.1, show: (v) => `${v.toFixed(1)} units` }];
 const MIX_SLIDERS: readonly SliderSpec[] = [
   { key: 'reverb', label: 'Reverb', min: 0, max: 1, step: 0.01, show: pct },
   { key: 'volume', label: 'Volume', min: 0, max: 1, step: 0.01, show: pct },
@@ -115,68 +135,39 @@ function loadTileSounds(): TileSounds {
   }
 }
 
-interface Animation {
-  /** Context time the trace starts, its length in seconds, and its points. */
-  trace: { start: number; dur: number; points: readonly Pt[]; color: Rgb } | null;
-  /** Context time each circuit lights. */
-  lit: Map<number, { at: number; color: Rgb }>;
+/** The trace in progress: context time it starts, its length in seconds, and its path. */
+interface Trace {
+  readonly start: number;
+  readonly dur: number;
+  readonly strand: Strand;
 }
 
-function pointInPolygon(q: Pt, pts: readonly Pt[]): boolean {
-  let inside = false;
-  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
-    const a = pts[i];
-    const b = pts[j];
-    if (a.y > q.y !== b.y > q.y && q.x < ((b.x - a.x) * (q.y - a.y)) / (b.y - a.y) + a.x) inside = !inside;
-  }
-  return inside;
+/** A lit strand: context time it lights, its colour, and whether it was clicked (a fill copy is not). */
+interface Lit {
+  readonly strand: Strand;
+  readonly at: number;
+  readonly color: Rgb;
+  readonly picked: boolean;
 }
 
-function segmentDistance(q: Pt, a: Pt, b: Pt): number {
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
-  const u = Math.max(0, Math.min(1, ((q.x - a.x) * dx + (q.y - a.y) * dy) / (dx * dx + dy * dy || 1)));
-  return Math.hypot(q.x - a.x - u * dx, q.y - a.y - u * dy);
+
+/** Where the head is after `steps` (fractional) of a strand. */
+function headAt(s: Strand, steps: number): Pt {
+  const n = s.tiles.length;
+  const whole = Math.max(0, Math.min(n - 1, Math.floor(steps)));
+  const u = Math.max(0, Math.min(1, steps - whole));
+  const a = s.points[whole];
+  const b = s.points[(whole + 1) % s.points.length];
+  return { x: a.x + (b.x - a.x) * u, y: a.y + (b.y - a.y) * u };
 }
 
-/** The circuit whose line is within `tol` of `q`, else the smallest one around it. */
-function pickCircuit(circuits: readonly ReelCircuit[], q: Pt, tol: number): ReelCircuit | null {
-  let best: ReelCircuit | null = null;
-  let bestD = tol;
-  let around: ReelCircuit | null = null;
-  let aroundArea = Infinity;
-  for (const c of circuits) {
-    if (q.x < c.min.x - tol || q.x > c.max.x + tol || q.y < c.min.y - tol || q.y > c.max.y + tol) continue;
-    const n = c.points.length;
-    for (let i = 0; i < n; i++) {
-      const d = segmentDistance(q, c.points[i], c.points[(i + 1) % n]);
-      if (d < bestD) {
-        bestD = d;
-        best = c;
-      }
-    }
-    const area = (c.max.x - c.min.x) * (c.max.y - c.min.y);
-    if (area < aroundArea && pointInPolygon(q, c.points)) {
-      around = c;
-      aroundArea = area;
-    }
-  }
-  return best ?? around;
-}
-
-function partial(points: readonly Pt[], steps: number, origin: Pt): TrailGeometry | null {
-  const n = points.length;
+/** The part of a strand drawn by `steps` (fractional). */
+function partial(s: Strand, steps: number, origin: Pt): TrailGeometry | null {
   if (steps <= 0) return null;
-  const whole = Math.min(n, Math.floor(steps));
-  const pts = points.slice(0, whole + 1);
-  if (whole < n) {
-    const a = points[whole];
-    const b = points[(whole + 1) % n];
-    const u = steps - whole;
-    pts.push({ x: a.x + (b.x - a.x) * u, y: a.y + (b.y - a.y) * u });
-  } else {
-    pts.push(points[0]);
-  }
+  const whole = Math.min(s.tiles.length, Math.floor(steps));
+  const pts = s.points.slice(0, whole + 1);
+  if (whole < s.tiles.length) pts.push(headAt(s, steps));
+  else if (s.closed) pts.push(s.points[0]);
   return geometry(pts, origin, false, undefined, Math.round(steps * 1000));
 }
 
@@ -233,7 +224,11 @@ export function SoundPage(): JSX.Element {
   const [patch, setPatch] = useState('');
   const [onClick, setOnClick] = useState<'chord' | 'trace' | 'both'>('both');
   const [fillAfter, setFillAfter] = useState(true);
-  const [selected, setSelected] = useState<ReelCircuit | null>(null);
+  const [follow, setFollow] = useState(true);
+  const [sizeFactor, setSizeFactor] = useState(1);
+  /** The strand the buttons act on: the last one clicked. */
+  const [selected, setSelected] = useState<Strand | null>(null);
+  const [litCount, setLitCount] = useState(0);
   const [note, setNote] = useState<string>('');
 
   const patched = useMemo(() => parsePatch(patch, base), [patch, base]);
@@ -244,13 +239,15 @@ export function SoundPage(): JSX.Element {
     const d = reelDefaults(family);
     if (combo === null) return { world: null, error: 'These pairings cross, so no combination code names them.' };
     try {
-      const world = loadWorld({ ...d, seed, family, subset, combo, seconds: 0, circuits: 0, fps: 30, bpm: 110, width: 1, height: 1 });
+      const radius = Math.round(d.radius * sizeFactor);
+      const world = loadWorld({ ...d, radius, seed, family, subset, combo, seconds: 0, circuits: 0, fps: 30, bpm: 110, width: 1, height: 1 });
       return { world, error: null };
     } catch (err) {
       return { world: null, error: err instanceof Error ? err.message : String(err) };
     }
-  }, [family, seed, subset, combo]);
+  }, [family, seed, subset, combo, sizeFactor]);
   const world = loaded.world;
+  const findStrand = useMemo(() => (world ? strandFinder(world.cut, findTableOf(world.table), world.circuits) : null), [world]);
 
   const ids = useMemo<(TileId | null)[]>(() => (world?.cut.ids ?? []).map(parseTileId), [world]);
   /** One colour per circuit shape, smallest shapes first. */
@@ -262,7 +259,7 @@ export function SoundPage(): JSX.Element {
   }, [world]);
 
   const ancestry = useCallback(
-    (c: ReelCircuit): StepAncestry[] => {
+    (c: Pick<Strand, 'tiles'>): StepAncestry[] => {
       const tiles = Array.from(c.tiles, (i) => ids[i]);
       if (tiles.some((t) => !t)) return [];
       const top = Math.max(...tiles.map((t) => t!.d)) + 1;
@@ -280,9 +277,13 @@ export function SoundPage(): JSX.Element {
   const rendererRef = useRef<MapRenderer | null>(null);
   const camRef = useRef<MapCamera>({ cx: 0, cy: 0, scale: reelDefaults('hex').scale });
   const sizeRef = useRef({ w: 1, h: 1 });
-  const animRef = useRef<Animation>({ trace: null, lit: new Map() });
-  const selectedRef = useRef<ReelCircuit | null>(null);
-  selectedRef.current = selected;
+  const traceRef = useRef<Trace | null>(null);
+  const litRef = useRef(new Map<string, Lit>());
+  /** Context times each lit strand is knocked. */
+  const flashRef = useRef(new Map<string, number[]>());
+  const followRef = useRef(true);
+  followRef.current = follow;
+  const lastFrameRef = useRef(0);
   const playerRef = useRef(createPlayer());
   const lastRef = useRef<SoundEvent[]>([]);
   const frameRef = useRef(0);
@@ -291,37 +292,51 @@ export function SoundPage(): JSX.Element {
   const draw = useCallback((): boolean => {
     const r = rendererRef.current;
     if (!r || !world) return false;
-    const cam = camRef.current;
     const { w, h } = sizeRef.current;
     const now = playerRef.current.now();
     const origin = world.cut.origin;
-    r.setCut(cullRef.current!(cam, w, h));
     r.setStyle({ showFills: false, showOutlines: false, lineColor: LIGHT_LINE_COLOR, lineScale: 1.5 });
     const lit: TrailGeometry[] = [];
     let busy = false;
+    const tr = traceRef.current;
+    const tracing = !!tr && now < tr.start + tr.dur;
+    const dt = Math.min(0.1, Math.max(0, performance.now() / 1000 - lastFrameRef.current));
+    lastFrameRef.current = performance.now() / 1000;
+    if (tracing && followRef.current) {
+      // Ride the head, as the map's auto-follow does.
+      const head = headAt(tr.strand, ((now - tr.start) / tr.dur) * tr.strand.tiles.length);
+      const k = 1 - Math.exp(-FOLLOW_RATE * dt);
+      camRef.current = { ...camRef.current, cx: camRef.current.cx + (head.x - camRef.current.cx) * k, cy: camRef.current.cy + (head.y - camRef.current.cy) * k };
+    }
+    const cam = camRef.current;
+    r.setCut(cullRef.current!(cam, w, h));
     const hw = w / 2 / cam.scale;
     const hh = h / 2 / cam.scale;
-    const anim = animRef.current;
-    const tr = anim.trace;
-    for (const c of world.circuits) {
-      const on = anim.lit.get(c.id);
-      if (!on) continue;
+    for (const [key, on] of litRef.current) {
+      const c = on.strand;
       if (c.max.x < cam.cx - hw || c.min.x > cam.cx + hw || c.max.y < cam.cy - hh || c.min.y > cam.cy + hh) continue;
       const age = (now - on.at) / LIGHT_SECONDS;
       if (age < 0) {
         busy = true;
         continue;
       }
-      const u = Math.min(1, age);
+      let u = Math.min(1, age);
       if (u < 1) busy = true;
+      for (const at of flashRef.current.get(key) ?? []) {
+        if (now < at) busy = true;
+        else if (now < at + FLASH_SECONDS) {
+          busy = true;
+          u = Math.min(u, (now - at) / FLASH_SECONDS);
+        }
+      }
       const col = on.color;
       const mixed: Rgb = [255 + (col[0] - 255) * u, 255 + (col[1] - 255) * u, 255 + (col[2] - 255) * u];
-      lit.push(geometry(c.points, origin, true, mixed, Math.round(u * 100)));
+      lit.push(geometry(c.points, origin, c.closed, mixed, Math.round(u * 100)));
     }
     r.setCircuits(lit);
-    if (tr && now < tr.start + tr.dur) {
+    if (tracing) {
       busy = true;
-      r.setTrail(partial(tr.points, ((now - tr.start) / tr.dur) * tr.points.length, origin));
+      r.setTrail(partial(tr.strand, ((now - tr.start) / tr.dur) * tr.strand.tiles.length, origin));
     } else {
       r.setTrail(null);
     }
@@ -384,7 +399,10 @@ export function SoundPage(): JSX.Element {
   // A new world drops what was playing and lit in the old one.
   useEffect(() => {
     playerRef.current.stop();
-    animRef.current = { trace: null, lit: new Map() };
+    traceRef.current = null;
+    litRef.current = new Map();
+    flashRef.current = new Map();
+    setLitCount(0);
     setSelected(null);
     setNote('');
     camRef.current = { cx: 0, cy: 0, scale: reelDefaults(family).scale };
@@ -392,15 +410,16 @@ export function SoundPage(): JSX.Element {
 
   // --- sound --------------------------------------------------------------------
   const describe = useCallback(
-    (c: ReelCircuit, paths: readonly StepAncestry[], chord: readonly number[], extra = ''): void => {
+    (c: Strand, paths: readonly StepAncestry[], chord: readonly number[], extra = ''): void => {
+      const what = c.closed ? `${c.tiles.length} steps` : `Open strand, ${c.tiles.length} steps to the edge of the loaded tiles`;
       if (paths.length === 0) {
-        setNote(`${c.points.length} steps; no supertile ids for its tiles.`);
+        setNote(`${what}; no supertile ids for its tiles.`);
         return;
       }
       const L = commonLevel(paths);
       const spans = L > 0 ? spannedAt(paths, L - 1).map((s) => s.type) : [];
       setNote(
-        `${c.points.length} steps, inside a level-${L} ${paths[0].types[L]}` +
+        `${what}, inside a level-${L} ${paths[0].types[L]}` +
           (spans.length ? `, across ${spans.length} level-${L - 1} supertiles (${spans.join(', ')})` : '') +
           `. Chord ${chord.map(noteName).join(' ')}.${extra}`,
       );
@@ -421,57 +440,90 @@ export function SoundPage(): JSX.Element {
     [world],
   );
 
-  /** Play the chord, trace and fill of circuit `c`, as asked, and light what they light. */
+  const chordCache = useRef(new Map<string, number[]>());
+  useEffect(() => chordCache.current.clear(), [world, params]);
+  const chordOf = useCallback(
+    (c: Strand): number[] => {
+      let chord = chordCache.current.get(c.key);
+      if (!chord) {
+        chord = circuitChord(ancestry(c), params);
+        chordCache.current.set(c.key, chord);
+      }
+      return chord;
+    },
+    [ancestry, params],
+  );
+
+  /** Play the chord, trace, knocks and fill of strand `c`, as asked, and light what they light. */
   const perform = useCallback(
-    (c: ReelCircuit, what: { chord: boolean; trace: boolean; fill: boolean }): void => {
+    (c: Strand, what: { chord: boolean; trace: boolean; fill: boolean }): void => {
       const player = playerRef.current;
       const p = params;
       const paths = ancestry(c);
-      const chord = circuitChord(paths, p);
-      const color = colors.get(c.shape) ?? [255, 255, 255];
+      const chord = chordOf(c);
+      const color = c.circuit ? (colors.get(c.circuit.shape) ?? OPEN_COLOR) : OPEN_COLOR;
       const events: SoundEvent[] = [];
       if (what.chord) events.push(...chordEvents(chord, p));
       let fillAt = 0;
       let traceDur = 0;
-      let contour = traceSweep(c.points, p);
+      let contour = traceSweep(c.points, p, undefined, undefined, !c.closed);
+      let knocks: { key: string; t: number }[] = [];
+      const fill = what.fill && !!c.circuit;
       if (what.trace) {
         const steps = world ? circuitSteps(world, family, subset, c) : [];
         const acts = stepActions(steps, tileSounds);
-        const sweep = traceSweep(c.points, p, undefined, acts.states);
+        const sweep = traceSweep(c.points, p, undefined, acts.states, !c.closed);
         contour = sweep;
-        events.push(sweep, ...tileNoteEvents(acts.notes, p, sweep.dur / c.points.length));
+        const dt = sweep.dur / c.tiles.length;
+        events.push(sweep, ...tileNoteEvents(acts.notes, p, dt));
+        if (p.knock) {
+          const targets: KnockCircuit[] = [...litRef.current.values()]
+            .filter((l) => l.strand.closed && l.strand.key !== c.key)
+            .map((l) => ({ ...l.strand, chord: chordOf(l.strand) }));
+          const k = knockEvents(c.points, c.tiles.length, dt, targets, p);
+          events.push(...k.events);
+          knocks = k.hits;
+        }
         traceDur = sweep.dur;
         fillAt = sweep.dur + FILL_GAP;
       }
       let extra = '';
-      const copies = what.fill ? copiesInView(c) : [];
+      const copies = fill ? copiesInView(c.circuit!) : [];
       let onsets: number[] = [];
-      if (what.fill) {
+      if (fill) {
         const cam = camRef.current;
         const half = sizeRef.current.w / 2;
-        const fill = fillEvents(
+        const f = fillEvents(
           copies.map((o) => ({ centre: o.centre, pan: ((o.centre.x - cam.cx) * cam.scale) / half })),
           c.centre,
           chord,
           contour,
           p,
-          c.id + 1,
+          c.circuit!.id + 1,
         );
-        onsets = fill.onsets;
-        events.push(...fill.events.map((e) => ({ ...e, t: e.t + fillAt })));
-        extra = ` ${copies.length} copies in view, ${fill.voiced} voiced.`;
+        onsets = f.onsets;
+        events.push(...f.events.map((e) => ({ ...e, t: e.t + fillAt })));
+        extra = ` ${copies.length} copies in view, ${f.voiced} voiced.`;
       }
+      if (knocks.length) extra += ` ${knocks.length} knocks.`;
       player.stop();
       const start = player.play(events);
       lastRef.current = events;
-      const lit = new Map<number, { at: number; color: Rgb }>();
-      lit.set(c.id, { at: start + traceDur, color });
-      copies.forEach((o, i) => lit.set(o.id, { at: start + fillAt + onsets[i], color }));
-      animRef.current = { trace: what.trace ? { start, dur: traceDur, points: c.points, color } : null, lit };
+      const lit = litRef.current;
+      lit.set(c.key, { strand: c, at: start + traceDur, color, picked: true });
+      copies.forEach((o, i) => {
+        const key = `c${o.id}`;
+        if (!lit.get(key)?.picked) lit.set(key, { strand: circuitStrand(o), at: start + fillAt + onsets[i], color, picked: false });
+      });
+      const flashes = new Map<string, number[]>();
+      for (const h of knocks) flashes.set(h.key, [...(flashes.get(h.key) ?? []), start + h.t]);
+      flashRef.current = flashes;
+      traceRef.current = what.trace ? { start, dur: traceDur, strand: c } : null;
+      setLitCount(lit.size);
       describe(c, paths, chord, extra);
       redraw();
     },
-    [params, ancestry, colors, copiesInView, describe, redraw, world, family, subset, tileSounds],
+    [params, ancestry, chordOf, colors, copiesInView, describe, redraw, world, family, subset, tileSounds],
   );
 
   const play = (what: 'chord' | 'trace' | 'fill'): void => {
@@ -479,6 +531,17 @@ export function SoundPage(): JSX.Element {
     if (what === 'chord') perform(selected, { chord: true, trace: false, fill: false });
     else if (what === 'trace') perform(selected, { chord: false, trace: true, fill: fillAfter });
     else perform(selected, { chord: false, trace: false, fill: true });
+  };
+
+  const clearLit = (): void => {
+    playerRef.current.stop();
+    traceRef.current = null;
+    litRef.current = new Map();
+    flashRef.current = new Map();
+    setLitCount(0);
+    setSelected(null);
+    setNote('');
+    redraw();
   };
 
   // --- pointer --------------------------------------------------------------------
@@ -496,6 +559,8 @@ export function SoundPage(): JSX.Element {
     d.x = e.clientX;
     d.y = e.clientY;
     if (d.moved >= CLICK_PX) {
+      // Dragging takes the camera back from the follow until the next click.
+      followRef.current = false;
       camRef.current = panBy(camRef.current, dx, dy);
       redraw();
     }
@@ -503,19 +568,26 @@ export function SoundPage(): JSX.Element {
   const onPointerUp = (e: React.PointerEvent): void => {
     const d = dragRef.current;
     dragRef.current = null;
-    if (!d || d.moved >= CLICK_PX || !world) return;
+    if (!d || d.moved >= CLICK_PX || !findStrand) return;
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     const cam = camRef.current;
     const q = screenToWorld(cam, e.clientX - rect.left, e.clientY - rect.top, rect.width, rect.height);
-    const c = pickCircuit(world.circuits, q, 8 / cam.scale);
-    setSelected(c);
-    if (!c) {
-      playerRef.current.stop();
-      animRef.current = { trace: null, lit: new Map() };
-      setNote('');
+    const c = findStrand(q, PICK_PX / cam.scale);
+    if (!c) return;
+    // A clicked strand clicked again is let go.
+    if (litRef.current.get(c.key)?.picked) {
+      litRef.current.delete(c.key);
+      if (traceRef.current?.strand.key === c.key) {
+        playerRef.current.stop();
+        traceRef.current = null;
+      }
+      setLitCount(litRef.current.size);
+      if (selected?.key === c.key) setSelected(null);
       redraw();
       return;
     }
+    setSelected(c);
+    followRef.current = follow;
     perform(c, { chord: onClick !== 'trace', trace: onClick !== 'chord', fill: onClick !== 'chord' && fillAfter });
   };
   useEffect(() => {
@@ -554,7 +626,8 @@ export function SoundPage(): JSX.Element {
       <header>
         <h1>Sound</h1>
         <p className="sound-note">
-          Click a circuit to hear it: a chord from the supertiles it spans, and a voice whose pitch follows the trace head.
+          Click any strand to hear it: a chord from the supertiles it spans, and a voice whose pitch follows the trace head while
+          the camera follows it. Clicked strands stay lit; click one again to let it go.
           Fill lights every congruent copy in view, and each copy adds its own voice. Tile sounds add notes and setting changes as the trace crosses the tiles, edges and lines you pick. Drag to pan, wheel to zoom.
         </p>
       </header>
@@ -583,6 +656,16 @@ export function SoundPage(): JSX.Element {
           <input type="text" inputMode="numeric" aria-label="World seed" value={seedDraft} onChange={(e) => setSeedDraft(e.target.value)} />
         </label>
         <button type="submit">Reseed</button>
+        <label className="sound-choice">
+          <span>Tiling</span>
+          <select aria-label="Tiling size" value={sizeFactor} onChange={(e) => setSizeFactor(Number(e.target.value))}>
+            {SIZES.map((z) => (
+              <option key={z.factor} value={z.factor}>
+                {z.label}
+              </option>
+            ))}
+          </select>
+        </label>
       </form>
       <ComboBar
         family={family}
@@ -615,18 +698,21 @@ export function SoundPage(): JSX.Element {
             <button type="button" disabled={!selected} onClick={() => play('trace')}>
               Trace
             </button>
-            <button type="button" disabled={!selected} onClick={() => play('fill')}>
+            <button type="button" disabled={!selected?.circuit} onClick={() => play('fill')}>
               Fill
             </button>
             <button
               type="button"
               onClick={() => {
                 playerRef.current.stop();
-                animRef.current = { trace: null, lit: new Map() };
+                traceRef.current = null;
                 redraw();
               }}
             >
               Stop
+            </button>
+            <button type="button" disabled={litCount === 0} onClick={clearLit}>
+              Clear lit ({litCount})
             </button>
             <button
               type="button"
@@ -634,7 +720,7 @@ export function SoundPage(): JSX.Element {
               onClick={() =>
                 download(
                   `sound-${family}-${seed}-${combo ?? 'crossing'}.json`,
-                  JSON.stringify({ family, seed, edges: subset, combo, circuit: selected?.points.length ?? null, params, tileSounds, events: lastRef.current }),
+                  JSON.stringify({ family, seed, edges: subset, combo, strand: selected ? { key: selected.key, closed: selected.closed, steps: selected.tiles.length } : null, params, tileSounds, events: lastRef.current }),
                 )
               }
             >
@@ -642,7 +728,7 @@ export function SoundPage(): JSX.Element {
             </button>
           </div>
           <p className="sound-note" role="status" data-testid="sound-status">
-            {note || (world ? `${world.circuits.length} circuits of ${colors.size} shapes. Click one.` : '')}
+            {note || (world ? `${world.circuits.length} circuits of ${colors.size} shapes. Click any strand.` : '')}
           </p>
           <label className="sound-choice">
             <span>Click plays</span>
@@ -656,6 +742,23 @@ export function SoundPage(): JSX.Element {
             <input type="checkbox" checked={fillAfter} onChange={(e) => setFillAfter(e.target.checked)} />
             Fill when a trace closes
           </label>
+          <label className="sound-check">
+            <input type="checkbox" checked={follow} onChange={(e) => setFollow(e.target.checked)} />
+            Camera follows the trace
+          </label>
+
+          <fieldset>
+            <legend>Knock</legend>
+            <label className="sound-check">
+              <input type="checkbox" checked={params.knock} disabled={overridden.has('knock')} onChange={(e) => setChoice('knock', e.target.checked)} />
+              Lit circuits sound as the trace passes them
+            </label>
+            <label className="sound-check">
+              <input type="checkbox" checked={params.nested} disabled={overridden.has('nested')} onChange={(e) => setChoice('nested', e.target.checked)} />
+              Circuits inside a knocked one too, a 16th later
+            </label>
+            {sliders(KNOCK_SLIDERS)}
+          </fieldset>
 
           <fieldset>
             <legend>Chord</legend>

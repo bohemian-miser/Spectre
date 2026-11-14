@@ -13,11 +13,11 @@ import type { StepEdges } from './tileSounds';
 /** A seam's label without its tile type (`Delta/-3A` → `-3A`). */
 export const seamLabel = (id: string): string => id.slice(id.indexOf('/') + 1);
 
-export function circuitSteps(world: ReelWorld, family: TileFamilyId, subset: readonly number[], c: ReelCircuit): StepEdges[] {
+export function circuitSteps(world: ReelWorld, family: TileFamilyId, subset: readonly number[], c: Pick<ReelCircuit, 'points' | 'tiles' | 'chords'>): StepEdges[] {
   const { cut, table } = world;
   const names = leafOrder(family);
   const selected = new Set(subset);
-  const n = c.points.length;
+  const n = c.tiles.length;
   const out: StepEdges[] = [];
   for (let k = 0; k < n; k++) {
     const i = c.tiles[k];
