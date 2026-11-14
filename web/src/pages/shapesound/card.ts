@@ -12,7 +12,7 @@
  * thing in real time in the browser.
  */
 
-import { impulse } from '../sound/synth';
+import { REVERB_SECONDS, impulse } from '../sound/synth';
 import { PEN_START, noise, penMotion, rampSeconds, renderPenMotion, renderSpectrum, type Clip } from './render';
 import { drawShape, prepare, type Layout, type Prepared, type ShapeScene } from './ShapeView';
 
@@ -142,9 +142,9 @@ function wire(ctx: BaseAudioContext, main: Clip, pen: Clip | null, penLevel: num
 }
 
 /**
- * The card's sound, rendered offline. A loop card renders one lap first and
- * drops it, so the reverb is already ringing at the start and the card loops
- * without a seam; a timeline card starts from silence and fades out at its
+ * The card's sound, rendered offline. A loop card renders laps first, as
+ * many as the reverb's tail lasts, and drops them, so the reverb is already
+ * ringing at the start and the card loops without a seam; a timeline card starts from silence and fades out at its
  * end.
  */
 export async function cardAudio(src: CardSource, opts: CardOptions = {}): Promise<{ sr: number; left: Float32Array; right: Float32Array }> {
@@ -167,10 +167,12 @@ export async function cardAudio(src: CardSource, opts: CardOptions = {}): Promis
   }
   const lapLen = Math.round(info.lap * CARD_SR);
   const len = lapLen * info.laps;
-  const ctx = new OfflineAudioContext(2, lapLen + len, CARD_SR);
+  // Enough laps first for the reverb's whole tail, however short the lap.
+  const warm = lapLen * Math.ceil(REVERB_SECONDS / info.lap);
+  const ctx = new OfflineAudioContext(2, warm + len, CARD_SR);
   for (const s of wire(ctx, src.main, src.pen, src.penLevel, src.reverb, ctx.destination, true)) s.start(0);
   const out = await ctx.startRendering();
-  return { sr: CARD_SR, left: out.getChannelData(0).slice(lapLen), right: out.getChannelData(1).slice(lapLen) };
+  return { sr: CARD_SR, left: out.getChannelData(0).slice(warm), right: out.getChannelData(1).slice(warm) };
 }
 
 /** Record the card in real time as WebM, the frames drawn from the audio clock. */
@@ -182,9 +184,10 @@ export async function recordCard(src: CardSource, opts: CardOptions = {}): Promi
   const timeline = info.kind === 'timeline';
   const clips = timeline ? timelineClips(src, info.seconds, ctx.sampleRate) : { main: src.main, pen: src.pen };
   const sources = wire(ctx, clips.main, clips.pen, src.penLevel, src.reverb, dest, !timeline);
-  // A loop card starts a lap early, silently, so the reverb is ringing when recording starts.
-  const t0 = ctx.currentTime + 0.1 + (timeline ? 0 : info.lap);
-  for (const s of sources) s.start(timeline ? t0 : t0 - info.lap);
+  // A loop card starts early, silently, so the reverb is ringing when recording starts.
+  const early = timeline ? 0 : info.lap * Math.ceil(REVERB_SECONDS / info.lap);
+  const t0 = ctx.currentTime + 0.1 + early;
+  for (const s of sources) s.start(t0 - early);
   const stream = new MediaStream([...painter.canvas.captureStream(CARD_FPS).getVideoTracks(), ...dest.stream.getAudioTracks()]);
   const type = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'].find((t) => MediaRecorder.isTypeSupported(t)) ?? '';
   const rec = new MediaRecorder(stream, type ? { mimeType: type, videoBitsPerSecond: 8_000_000 } : undefined);

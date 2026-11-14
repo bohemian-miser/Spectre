@@ -735,7 +735,7 @@ export function ShapeSoundPage(): JSX.Element {
                   </p>
                 ) : null}
                 <Slider label="Root" min={36} max={84} step={1} value={co.root} show={noteName(co.root)} onChange={(root) => setSetting('corners', { root })} />
-                {loop ? <Slider label="Lap" min={1} max={20} step={0.5} value={co.lap} show={`${co.lap.toFixed(1)} s`} onChange={(lap) => setSetting('corners', { lap })} /> : null}
+                {loop ? <LogSlider label="Lap" min={LIMITS.corners.lap![0]} max={LIMITS.corners.lap![1]} value={co.lap} show={`${Number(co.lap.toPrecision(2))} s`} onChange={(lap) => setSetting('corners', { lap })} /> : null}
               </>
             )}
           </fieldset>

@@ -74,7 +74,7 @@ export const DEFAULT_SETTINGS: Settings = {
 export const LIMITS: { readonly [M in Mapping]: { readonly [K in keyof Settings[M]]?: readonly [number, number] } } = {
   spectrum: { f0: [40, 400], terms: [2, 48], penSpeed: [500, 40000], penLevel: [0, 1], penRate: [0, 10000], penFrom: [0, 40000], penMax: [500, 40000], penHold: [0, 30] },
   radius: { f0: [55, 880], range: [0.05, 100], lap: [0.1, 20] },
-  corners: { tolerance: [0.05, 50], root: [36, 84], lap: [1, 20] },
+  corners: { tolerance: [0.05, 50], root: [36, 84], lap: [0.1, 20] },
 };
 
 /** Lowest and highest pitch a voice plays; further out, pitches fold back by octaves. */
@@ -508,7 +508,8 @@ export function cornerSides(shape: Shape, cuts: readonly number[], s: CornerSett
  * Each side an FM note (modulator at twice the note, index 0.3 + 4 × sharp)
  * with a sub-octave, its attack quick for a sharp corner and slow for a
  * shallow one, and a click as loud as the corner is sharp. A note still
- * ringing at the end of the lap carries on at its start.
+ * ringing at the end of the lap carries on at its start, wrapping as many
+ * times as it needs when it is longer than the lap.
  */
 export function renderCorners(shape: Shape, s: CornerSettings, sr: number): Clip {
   const clip = blank(s.lap, sr);

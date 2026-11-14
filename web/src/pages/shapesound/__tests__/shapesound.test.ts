@@ -342,3 +342,27 @@ describe('pen ramp', () => {
     for (const t of [5, 9]) expect(hzAt(t) / (penSpeedAt(fast, t) / 100)).toBeLessThan(1.15);
   });
 });
+
+describe('corners at a 0.1 s lap', () => {
+  it('loops without a seam, its notes wrapping round more than once', () => {
+    const sr = 44100;
+    const d = reelDefaults('hex');
+    const world = loadWorld({ ...d, radius: 30, seed: 1, family: 'hex', seconds: 0, circuits: 0, fps: 30, bpm: 110, width: 1, height: 1 });
+    const big = makeShape([...world.circuits].sort((a, b) => b.points.length - a.points.length)[0].points);
+    for (const shape of [big, makeShape(wobble(12, 1, 0))]) {
+      const s = { ...DEFAULT_SETTINGS.corners, lap: 0.1 };
+      const c = renderCorners(shape, s, sr);
+      expect(c.left.length).toBe(Math.round(0.1 * sr));
+      // Every note (at least 0.28 s with its tail) is longer than the lap.
+      expect(cornerSides(shape, fitCorners(shape, 1).cuts, s).every((x) => Math.max(x.dur, 0.03) + 0.25 > 0.1)).toBe(true);
+      const n = c.left.length;
+      const w = Math.round(0.005 * sr);
+      for (const ch of [c.left, c.right]) {
+        let near = 0;
+        for (let i = 1; i < w; i++) near = Math.max(near, Math.abs(ch[i] - ch[i - 1]), Math.abs(ch[n - i] - ch[n - i - 1]));
+        expect(Math.abs(ch[0] - ch[n - 1])).toBeLessThanOrEqual(1.2 * near);
+      }
+      expect(rms(c.left, c.right)).toBeCloseTo(VOICE_RMS, 6);
+    }
+  });
+});
